@@ -29,7 +29,7 @@ against, so it must travel with the code rather than living in a conversation.
 | --- | --- |
 | Current slice | Gate 5 — real File System Access spike in Papers |
 | Branch | `codex/gate-1b-correction` (local acceptance worktree) |
-| Last audited SHA | `7981e39` — Gate 4 PASS; source-only candidate with local Papers acceptance evidence. |
+| Last audited SHA | `31d7da6` — Gate 5 core FSA viability PASS in the real Papers surface; follow-up truths remain explicitly open. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -524,20 +524,25 @@ Inside the real `papers-backpack://` surface:
       proven: the real Papers page reports a function in a secure context.
 - [x] User gesture requirement recorded: a deferred non-gesture call is rejected by
       the real surface; selection still needs a foreground gesture acceptance run.
-- [ ] Selected directory can be enumerated.
-- [ ] Files can be read.
-- [ ] Current on-disk state is observed after external edits.
-- [ ] Handle can be stored in IndexedDB.
-- [ ] Restart behavior tested.
-- [ ] `queryPermission()` state after restart recorded.
-- [ ] `requestPermission()` behavior recorded.
+- [x] Selected disposable directory can be enumerated.
+- [x] Files can be read with bounded relative-path/text evidence.
+- [x] Current on-disk state is observed after an external edit without reacquisition.
+- [x] Handle can be stored in IndexedDB and restored after an in-place Papers reload.
+- [ ] Full Papers process restart behavior tested.
+- [x] `queryPermission()` state after the in-place reload recorded (`prompt`).
+- [x] Foreground `requestPermission()` behavior recorded (`prompt` → `granted`).
 - [ ] Clean-profile behavior recorded.
 
 The same real Papers surface also completed a disposable OPFS write/read/delete
 round-trip and an IndexedDB write/read/delete round-trip. Those prove storage APIs
 exist in the origin, not external-directory selection or durable directory-handle
-permission. The remaining unchecked items require selecting a disposable external
-directory through the native picker.
+permission. Gate 5 core evidence used `gate5-fsa-fixture`: the first foreground
+selection read `root-note.txt` and `nested/child-note.txt`; a separate Node process
+appended `external-fsa-edit-v1`; a cached-handle reread observed the changed bytes and
+revision; an in-place Papers reload restored the handle in `prompt`; and a second
+foreground read request restored `granted`. No absolute path was emitted and no
+creator-vault data was touched. Full process restart and clean-profile checks remain
+open.
 
 ### 5.2 Read-only real vault
 
@@ -552,7 +557,7 @@ directory through the native picker.
 
 ### 5.3 FSA decision
 
-- [ ] FSA is sufficient for v1 read-only access; or
+- [x] FSA is sufficient for the disposable v1 read-only viability slice; or
 - [ ] Specific failed acceptance test proves it is insufficient.
 
 If insufficient, state the missing truth exactly before asking Papers for anything.
@@ -1232,7 +1237,8 @@ Each pushed SHA is sent for audit approximately in this order.
 6. [x] Gate 3A — action dispatcher + inspection projection
 7. [x] Gate 3B — revision/settling + event ring + evidence schema
 8. [x] Gate 4 — adapter conformance: disk + OPFS
-9. [ ] Gate 5 — real Papers FSA spike
+9. [x] Gate 5 — real Papers FSA spike (core viability; full-restart and real-vault
+       follow-ups remain open)
 10. [ ] Gate 6 — read-only creator vault
 11. [ ] Gate 7 — Excalidraw display
 12. [ ] Gate 8 — arbitrary-file canvas

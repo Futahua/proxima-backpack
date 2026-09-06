@@ -344,3 +344,18 @@ remain unchecked until a foreground picker selection can be exercised.
 No host capability or real-vault access is justified by API availability alone. If
 the native picker cannot complete a disposable external-directory read in Papers,
 that exact failed acceptance test becomes the only basis for a later host request.
+
+## D16 — Gate 5 core proves disposable read-only FSA viability
+
+**Decided:** the Gate 5 core acceptance slice is complete for a disposable external
+directory. A foreground picker selection enumerated and read bounded relative entries;
+a separate Node process changed a fixture file; a cached handle reread observed the
+new bytes and revision; the handle was restored from IndexedDB after an in-place
+Papers reload; and a foreground read permission request restored `prompt` to `granted`.
+The report never emits an absolute path. The implementation keeps the handle module-
+local and performs no creator-vault writes.
+
+This is a viability result, not the full product gate. Clean-profile behaviour, a full
+Papers process restart, real creator-vault read-only acceptance, live Obsidian edits,
+and any write/concurrency semantics remain separate follow-ups. Until those are
+accepted, Proxima remains read-only and no Papers host bridge is justified.
