@@ -404,3 +404,17 @@ arbitrary user-selected directory.
 
 **Boundary:** this validates evidence and prepares disposable data; it does not grant
 permissions, drive a native picker, or claim clean-profile/creator-vault acceptance.
+
+## D20 — Remaining Gate 5 acceptance is explicitly deferred
+
+**Decided:** the remaining interactive and real-vault checkpoints are intentionally
+deferred: clean-profile native picker/read, creator-vault read-only access, Obsidian
+coexistence, and write/concurrency semantics. The reviewer ledger records these as
+`DEFERRED / OPEN`; no later gate may be treated as complete or inferred from the
+earlier disposable-fixture passes.
+
+**Why:** the user elected to skip the remaining foreground/native handling for this
+run. Keeping the items open preserves the audit boundary and avoids claiming evidence
+that was not collected.
+
+**Reverses if:** the user explicitly resumes Gate 5 with a new acceptance run.

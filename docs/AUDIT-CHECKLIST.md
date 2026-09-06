@@ -535,7 +535,7 @@ Inside the real `papers-backpack://` surface:
 - [x] Foreground `requestPermission()` behavior recorded (`prompt` → `granted`).
 - [x] Acceptance report is validated as bounded, relative-only evidence, with a
       fixed-path disposable-fixture reset helper (`src/app/fsaEvidence.ts`, D19).
-- [ ] Clean-profile behavior recorded.
+- [ ] Clean-profile behavior recorded. _(deferred by explicit user decision; no PASS inferred)_
 
 Clean-profile acceptance preparation is complete but intentionally unexecuted: an
 isolated Papers data directory contains only copied Backpack registry/binding
@@ -558,8 +558,8 @@ restored read included the external marker. Clean-profile checks remain open.
 
 ### 5.2 Read-only real vault
 
-- [ ] Grant actual creator vault manually.
-- [ ] Proxima reads through the same repository contract.
+- [ ] Grant actual creator vault manually. _(deferred)_
+- [ ] Proxima reads through the same repository contract. _(deferred)_
 - [ ] No writes.
 - [ ] No migration.
 - [ ] No automatic reorganization.
