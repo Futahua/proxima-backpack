@@ -17,6 +17,7 @@ import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, eventsByDay, eventsForSelect
 import { localDateKey } from '../domain/time.js';
 import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
+import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
 import { createBrowserSource } from './sourceFactory.js';
 
@@ -292,11 +293,13 @@ function bindInteractions(): void {
 
 async function boot(): Promise<void> {
   setBootState('loading');
-  const source = createBrowserSource();
-  const loaded = await loadVaultState(source.reader);
+  const bridgeUrl = new URLSearchParams(window.location.search).get('bridge');
+  const automationDirectory = bridgeUrl ? createHttpDirectoryHandle(bridgeUrl) : null;
+  const fixture = createBrowserSource();
+  const loaded = await loadVaultState(fixture.reader);
   const startup = createStartupSessionOrchestrator({
-    fixture: { mode: 'fixture', reader: source.reader, initial: loaded },
-    restored: { store: { restore: async () => null }, permissions: { queryPermission: async () => 'denied' } },
+    fixture: { mode: 'fixture', reader: fixture.reader, initial: loaded },
+    restored: { store: { restore: async () => automationDirectory }, permissions: { queryPermission: async () => automationDirectory ? 'granted' : 'denied' } },
     intervalMs: 60_000,
     onProjection: (projection, mode, result) => applyProjection(projection, mode, result),
   });

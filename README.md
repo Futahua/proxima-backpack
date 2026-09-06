@@ -102,6 +102,22 @@ npm run typecheck
 npm run build
 ```
 
+## Agent-controlled read-only bridge
+
+The browser can be bootstrapped without a native folder-picker gesture by using the
+loopback bridge. Start it with the explicit creator-vault root, then open the generated
+page with `?bridge=`:
+
+```bash
+npm run agent:bridge -- --root "D:\\Vaults\\Creator" --port 4174
+# open http://127.0.0.1:4173/?bridge=http://127.0.0.1:4174
+```
+
+The bridge binds only to loopback, accepts only bounded `GET`/`OPTIONS` requests, and
+exposes list/read/exists/walk data. It never writes, migrates, watches, invokes Papers,
+or replaces the native grant boundary. The root is intentionally explicit; Proxima does
+not crawl the machine or guess which directory is a creator vault.
+
 ## Papers binding
 
 The acceptance machine has a real Papers Backpack identity and a machine-local

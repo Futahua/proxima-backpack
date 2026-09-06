@@ -817,6 +817,17 @@ Only then consider a project-scoped external read capability in Papers.
       blocked, aborted, unsafe-path, and deterministic outputs (Gate 6N, D37).
 - [ ] Native creator-vault select/grant action.
 
+### 6.1N Zero-click read-only agent bridge (Gate 6O)
+
+- [x] A loopback-only bridge exposes bounded list/read/exists/walk operations for an
+      explicitly configured root; no native picker gesture is required for automation.
+- [x] Browser startup consumes the bridge through the existing structural directory seam
+      and preserves the read-only source/session/runbook/preflight pipeline.
+- [x] Non-loopback URLs, traversal, oversized responses, and non-GET methods are rejected;
+      bridge tests exercise the real child process and temporary disk fixture.
+- [x] README documents the one-time root configuration and automatic `?bridge=` bootstrap.
+- [ ] Native creator-vault grant and real Obsidian coexistence acceptance remain OPEN.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

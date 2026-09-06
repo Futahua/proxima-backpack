@@ -682,6 +682,19 @@ paths or authority objects.
 **Boundary:** Gate 6N is final preflight only. It does not perform native selection,
 claim creator-vault behavior, or enable writes.
 
+## D38 — Automation uses a loopback read-only bridge instead of a picker gesture
+
+**Decided:** agents may bootstrap a browser session against an explicitly configured
+creator-vault root through a loopback HTTP bridge. The bridge is GET/OPTIONS-only,
+loopback-bound, path-safe, bounded by depth/entry/byte limits, and structurally adapted
+to the existing read-only vault seam. Browser startup treats it as a restored granted
+source, so the normal discovery, session, runbook, and preflight checks still run.
+
+The root must be supplied explicitly; the bridge does not crawl the machine, infer a
+creator vault, write files, migrate data, watch the filesystem, invoke Papers, or grant
+native permissions. Native creator-vault selection and real Obsidian coexistence remain
+separate OPEN acceptance work.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure
