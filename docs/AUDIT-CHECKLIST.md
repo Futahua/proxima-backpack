@@ -602,6 +602,23 @@ Only then consider a project-scoped external read capability in Papers.
 - [ ] Renamed source follows defined identity semantics.
 - [ ] UI never shows stale state as confirmed-current without indication.
 
+### 6.1A Provenance-aware product projection (Gate 6B)
+
+- [x] Projects/Board/Calendar consume one bounded accepted refresh generation.
+- [x] Every exposed project/task/event carries logical id, source kind, relative
+      source path, source revision, and id-origin provenance.
+- [x] Projection carries source/app revision, stale/degraded health, last successful
+      refresh revision, last refresh reason, and bounded problem codes.
+- [x] Successful edits update cross-surface consumers atomically from one snapshot.
+- [x] Malformed/unreadable refreshes preserve the last-good domain generation while
+      exposing stale/degraded health; recovery advances it atomically.
+- [x] Inspection output is bounded and copy-safe; no reader/controller/file handle
+      or mutable internal object escapes.
+- [x] Board elastic semantics and Calendar problem-sink behavior remain covered.
+- [x] Fixture/disposable-reader tests cover provenance, coherence, failure retention,
+      and mutation isolation (Gate 6B, D25).
+- [ ] Real-vault projection acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

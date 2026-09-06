@@ -448,6 +448,24 @@ justified until measured evidence shows pull refresh is insufficient.
 **Boundary:** Gate 6A is fixture/disk-adapter only and does not claim real-vault
 acceptance or advance the native FSA boundary.
 
+## D25 — Gate 6B projects one accepted refresh generation
+
+**Decided:** Projects, Elastic Board, Calendar, and inspection consume a bounded
+`ReadOnlyProjection` created from one accepted `RefreshControllerSnapshot`. The
+projection copies state, revisions, and problems; carries source kind, logical id,
+relative source path, source revision, and id origin for every exposed record; and
+publishes source/app revision, stale/degraded health, last successful refresh, last
+reason, and bounded problem codes. It never rereads the source or exposes a reader,
+controller, file handle, or mutable internal object.
+
+Successful edits advance all consumers together. Malformed or unreadable refreshes
+keep the last-good domain generation visible while health becomes stale/degraded;
+recovery advances the generation atomically. Board elastic allocation and Calendar's
+problem sink remain the existing domain functions.
+
+**Boundary:** Gate 6B is fixture/disposable-reader only. It does not claim real-vault,
+native FSA, Obsidian, polling, or Papers-host acceptance.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

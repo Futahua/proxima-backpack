@@ -1,6 +1,8 @@
 import { createMemoryVault } from '../adapters/memoryVault.js';
 import { createActionDispatcher, type ProximaActionDispatcher, type Surface } from '../app/actionProtocol.js';
 import { createInspectionProjection } from '../app/inspection.js';
+import { createReadOnlyProjection, type ReadOnlyProjection } from '../app/readOnlyProjection.js';
+import { createRefreshController, type RefreshController } from '../app/refreshController.js';
 import { evaluateCleanProfileAcceptance } from '../app/fsaEvidence.js';
 import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
 import { loadVaultState } from '../app/vaultRepository.js';
@@ -23,6 +25,8 @@ let selection = ALL_PROJECTS;
 let surface: Surface = 'board';
 let calendarCursor = new Date(FIXED_CLOCK.now());
 let actionDispatcher: ProximaActionDispatcher | null = null;
+let refreshController: RefreshController | null = null;
+let sourceProjection: ReadOnlyProjection | null = null;
 
 function element<T extends Element>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -137,9 +141,9 @@ function updateHydrationSummary(state: ProximaState, problems: LoadProblem[]): v
 
 function exposeInspection(): void {
   if (!actionDispatcher) return;
-  const inspection = createInspectionProjection(actionDispatcher.snapshot(), BUILD_IDENTITY);
+  const inspection = createInspectionProjection(actionDispatcher.snapshot(), BUILD_IDENTITY, sourceProjection?.health);
   const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection };
-  target.__PROXIMA_INSPECTION__ = () => createInspectionProjection(actionDispatcher!.snapshot(), BUILD_IDENTITY);
+  target.__PROXIMA_INSPECTION__ = () => createInspectionProjection(actionDispatcher!.snapshot(), BUILD_IDENTITY, sourceProjection?.health);
   const root = element<HTMLElement>('#proxima-app');
   root.dataset.proximaStateRevision = String(inspection.applicationStateRevision);
 }
@@ -213,8 +217,10 @@ async function boot(): Promise<void> {
   setBootState('loading');
   const vault = createMemoryVault(FIXTURE_ROOT);
   const loaded = await loadVaultState(vault);
-  appState = loaded.state;
-  loadProblems = loaded.problems;
+  refreshController = createRefreshController({ vault, initial: loaded });
+  sourceProjection = createReadOnlyProjection(refreshController.snapshot());
+  appState = sourceProjection.state;
+  loadProblems = sourceProjection.problems;
   actionDispatcher = createActionDispatcher({ state: appState, problems: loadProblems, revisions: loaded.revisions, mode: 'fixture', initialCalendarMonth: '2026-09-01', clock: FIXED_CLOCK, idGenerator: DETERMINISTIC_IDS });
   const initial = actionDispatcher.snapshot();
   selection = initial.selection;

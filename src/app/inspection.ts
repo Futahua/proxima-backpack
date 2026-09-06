@@ -4,6 +4,7 @@ import { elasticBoard, eventsByDay, eventsForSelection, projectsFor, tasksForSel
 import { localDateKey } from '../domain/time.js';
 import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
 import type { ActionDispatcherState, Surface } from './actionProtocol.js';
+import { sourceProvenance, type ReadOnlyProjectionHealth, type RecordProvenance } from './readOnlyProjection.js';
 
 export const INSPECTION_SCHEMA_VERSION = 1 as const;
 export const MAX_INSPECTION_ITEMS = 500;
@@ -28,13 +29,14 @@ export interface InspectionProjection {
   applicationStateRevision: number;
   surface: Surface;
   selection: ProjectSelection;
-  projects: Array<{ id: string; name: string; projectType: 'task' | 'schedule'; status: string }>;
-  board: { counts: { backlog: number; running: number; finished: number }; tasks: Array<{ id: string; name: string; projectId: string | null; column: string; deadline: string | null; durationMinutes: number | null }> };
-  calendar: { cursorMonth: string; events: Array<{ id: string; name: string; projectId: string | null; startDate: string; deadline: string; dayKeys: string[] }> };
+  projects: Array<{ id: string; name: string; projectType: 'task' | 'schedule'; status: string; provenance: RecordProvenance }>;
+  board: { counts: { backlog: number; running: number; finished: number }; tasks: Array<{ id: string; name: string; projectId: string | null; column: string; deadline: string | null; durationMinutes: number | null; provenance: RecordProvenance }> };
+  calendar: { cursorMonth: string; events: Array<{ id: string; name: string; projectId: string | null; startDate: string; deadline: string; dayKeys: string[]; provenance: RecordProvenance }> };
   loadProblems: Array<{ code: string; severity: string; id?: string; path?: string; detail: string }>;
   sourceRevisions: Array<{ kind: string; id: string; revision: string; path?: string }>;
   pendingOperations: string[];
   degraded: { state: 'healthy' | 'degraded'; blockingProblemCount: number };
+  sourceHealth: ReadOnlyProjectionHealth;
   latestEventSequence: number;
   settled: { state: 'settled' | 'busy'; revision: number };
 }
@@ -68,11 +70,11 @@ function sourceRevisions(state: ProximaState, dispatcher: ActionDispatcherState)
 function eventSummary(event: CalendarEvent, byDay: Map<string, CalendarEvent[]>): InspectionProjection['calendar']['events'][number] {
   const dayKeys: string[] = [];
   for (const [key, events] of byDay) if (events.some((candidate) => candidate.id === event.id)) dayKeys.push(key);
-  return { id: event.id, name: event.name, projectId: event.projectId, startDate: event.startDate, deadline: event.deadline, dayKeys };
+  return { id: event.id, name: event.name, projectId: event.projectId, startDate: event.startDate, deadline: event.deadline, dayKeys, provenance: sourceProvenance(event) };
 }
 
 /** Build a bounded, renderer-independent, read-only state projection. */
-export function createInspectionProjection(dispatcher: ActionDispatcherState, build: BuildIdentityLike): InspectionProjection {
+export function createInspectionProjection(dispatcher: ActionDispatcherState, build: BuildIdentityLike, sourceHealth?: ReadOnlyProjectionHealth): InspectionProjection {
   const boardProjects = new Set(projectsFor(dispatcher.state.projects, 'task').map((project) => project.id));
   const boardTasks = dispatcher.state.tasks.filter((task) => task.projectId === null || boardProjects.has(task.projectId));
   const selectedTasks = tasksForSelection(boardTasks, dispatcher.selection);
@@ -81,12 +83,21 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
   const now = new Date(build.fixedClock);
   const firstDeadline = board.running.map((task) => task.deadline ? new Date(task.deadline) : null).filter((date): date is Date => date !== null && Number.isFinite(date.getTime()) && date.getTime() > now.getTime()).sort((a, b) => a.getTime() - b.getTime())[0] ?? new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const heights = elasticCardHeights(board.running, calculateElasticTimeline(board.running, now, firstDeadline), 460);
-  const taskSummaries = boardGroups.flatMap(([column, tasks]) => tasks.map((task) => ({ id: task.id, name: task.name, projectId: task.projectId, column, deadline: task.deadline, durationMinutes: column === 'running' ? Math.round(heights[task.id] ?? taskDuration(task) ?? 0) : taskDuration(task) })));
+  const taskSummaries = boardGroups.flatMap(([column, tasks]) => tasks.map((task) => ({ id: task.id, name: task.name, projectId: task.projectId, column, deadline: task.deadline, durationMinutes: column === 'running' ? Math.round(heights[task.id] ?? taskDuration(task) ?? 0) : taskDuration(task), provenance: sourceProvenance(task) })));
   const scheduleProjects = new Set(projectsFor(dispatcher.state.projects, 'schedule').map((project) => project.id));
   const calendarEvents = eventsForSelection(dispatcher.state.events.filter((event) => event.projectId === null || scheduleProjects.has(event.projectId)), dispatcher.selection);
   const calendarProblems: LoadProblem[] = [];
   const byDay = eventsByDay(calendarEvents, calendarProblems);
   const problems = [...dispatcher.problems, ...calendarProblems];
+  const health = sourceHealth ?? {
+    sourceRevision: 1,
+    applicationRevision: dispatcher.stateRevision,
+    stale: false,
+    degraded: problems.some(isBlocking),
+    lastSuccessfulRefreshRevision: 1,
+    lastRefreshReason: null,
+    problemCodes: [...new Set(problems.map((problem) => problem.code))].slice(0, 20),
+  };
   return {
     schemaVersion: INSPECTION_SCHEMA_VERSION,
     build,
@@ -94,13 +105,17 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     applicationStateRevision: dispatcher.stateRevision,
     surface: dispatcher.surface,
     selection: dispatcher.selection,
-    projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), projectType: project.projectType, status: project.status })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
-    board: { counts: { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length }, tasks: taskSummaries.slice(0, MAX_INSPECTION_ITEMS).map((task) => ({ ...task, id: safeText(task.id), name: safeText(task.name) })) },
+    projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), projectType: project.projectType, status: project.status, provenance: sourceProvenance(project) })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
+    board: { counts: { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length }, tasks: taskSummaries.slice(0, MAX_INSPECTION_ITEMS).map((task) => ({ ...task, id: safeText(task.id), name: safeText(task.name), provenance: { ...task.provenance, logicalId: safeText(task.provenance.logicalId), sourceRevision: safeText(task.provenance.sourceRevision) } })) },
     calendar: { cursorMonth: dispatcher.calendarMonth, events: calendarEvents.map((event) => eventSummary(event, byDay)).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS).map((event) => ({ ...event, id: safeText(event.id), name: safeText(event.name) })) },
     loadProblems: problems.slice(0, MAX_INSPECTION_ITEMS).map((problem) => safeProblem(problem, dispatcher.mode)),
     sourceRevisions: sourceRevisions(dispatcher.state, dispatcher),
     pendingOperations: [],
-    degraded: { state: problems.some(isBlocking) ? 'degraded' : 'healthy', blockingProblemCount: problems.filter(isBlocking).length },
+    degraded: { state: problems.some(isBlocking) || health.degraded ? 'degraded' : 'healthy', blockingProblemCount: problems.filter(isBlocking).length },
+    sourceHealth: {
+      ...health,
+      problemCodes: health.problemCodes.slice(0, 20).map((code) => safeText(code, 100)),
+    },
     latestEventSequence: dispatcher.latestEventSequence,
     settled: { state: dispatcher.settled ? 'settled' : 'busy', revision: dispatcher.settledRevision },
   };
