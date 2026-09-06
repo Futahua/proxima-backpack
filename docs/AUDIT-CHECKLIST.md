@@ -685,6 +685,22 @@ Only then consider a project-scoped external read capability in Papers.
       mutation, deletion, failure, and no permission authority (Gate 6F, D29).
 - [ ] Native picker/creator-vault external-source acceptance.
 
+### 6.1F Persisted-handle bootstrap contract (Gate 6G)
+
+- [x] Restored handle enters through injected store + read-permission provider seams.
+- [x] Bootstrap calls `queryPermission({mode: 'read'})` only; no automatic
+      `requestPermission`, picker, or IndexedDB write.
+- [x] `granted` constructs the existing external-directory `VaultReader` path.
+- [x] `prompt`, `denied`, no-handle, restore/query failure, and invalid structure are
+      explicit bounded statuses with fixture fallback where access is unavailable.
+- [x] Raw handle is discarded at the boundary; only safe bounded kind/name metadata is
+      available to inspection, and no absolute path is exposed.
+- [x] Restored granted readers reuse the 6F–6E refresh/projection/health/dispatcher/UI
+      path without a parallel implementation.
+- [x] In-memory persistence and permission fakes cover all bootstrap states and prove
+      no write-capable or permission-request authority (Gate 6G, D30).
+- [ ] Native restored-handle/creator-vault acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

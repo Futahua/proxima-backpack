@@ -537,6 +537,24 @@ the existing 6A–6E refresh, projection, health, and last-good semantics.
 directory, request permission, persist handles, touch the creator vault, or change
 Papers/Obsidian.
 
+## D30 — Restored-handle bootstrap is permission-query-only
+
+**Decided:** persisted-handle entry is isolated behind injected `RestoredHandleStore`
+and `ReadPermissionProvider` seams. Bootstrap calls only
+`queryPermission({ mode: 'read' })`; it never calls `requestPermission`, opens a
+picker, or writes IndexedDB. `granted` creates the existing external-directory
+`VaultReader`; `prompt` and `denied` return bounded permission-required/denied
+inspection and fall back to the fixture source. Restore/query/shape failures are
+explicit bounded bootstrap problems.
+
+Only safe handle metadata (directory kind and a sanitized bounded name) is exposed;
+the raw handle is discarded at the adapter boundary. A restored granted reader uses
+the same 6F–6E refresh, projection, health, dispatcher, and UI path as every other
+source. Persistence remains an injected repository concern.
+
+**Boundary:** Gate 6G uses mocked structural handles only. Native acquisition,
+creator-vault selection, permission prompts, and Papers/host changes remain open.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

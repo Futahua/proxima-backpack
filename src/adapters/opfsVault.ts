@@ -2,7 +2,7 @@ import type { VaultEntry, VaultFile, VaultReader } from '../ports/vault.js';
 
 /** Minimal structural subset shared by browser OPFS and test doubles. */
 export interface OpfsFileHandleLike { kind: 'file'; getFile(): Promise<{ text(): Promise<string>; size: number; lastModified: number }> }
-export interface OpfsDirectoryHandleLike { kind: 'directory'; entries(): AsyncIterableIterator<[string, OpfsHandleLike]> }
+export interface OpfsDirectoryHandleLike { kind: 'directory'; readonly name?: string; entries(): AsyncIterableIterator<[string, OpfsHandleLike]> }
 export type OpfsHandleLike = OpfsFileHandleLike | OpfsDirectoryHandleLike;
 
 export interface OpfsVaultOptions {
