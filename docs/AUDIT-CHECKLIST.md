@@ -539,7 +539,7 @@ Inside the real `papers-backpack://` surface:
       exact disposable fixture shape and emits structured failure codes (D21).
 - [x] Browser surface emits the harness result alongside each captured FSA report;
       no manual evidence transcription is required (D22).
-- [ ] Clean-profile behavior recorded. _(deferred by explicit user decision; no PASS inferred)_
+- [ ] Clean-profile behavior recorded. _(pending the final native picker; no PASS inferred)_
 
 Clean-profile acceptance preparation is complete but intentionally unexecuted: an
 isolated Papers data directory contains only copied Backpack registry/binding
@@ -562,8 +562,8 @@ restored read included the external marker. Clean-profile checks remain open.
 
 ### 5.2 Read-only real vault
 
-- [ ] Grant actual creator vault manually. _(deferred)_
-- [ ] Proxima reads through the same repository contract. _(deferred)_
+- [ ] Grant actual creator vault manually. _(after clean-profile acceptance)_
+- [ ] Proxima reads through the same repository contract. _(after clean-profile acceptance)_
 - [ ] No writes.
 - [ ] No migration.
 - [ ] No automatic reorganization.

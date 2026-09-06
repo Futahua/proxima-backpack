@@ -419,6 +419,17 @@ that was not collected.
 
 **Reverses if:** the user explicitly resumes Gate 5 with a new acceptance run.
 
+## D23 — Autonomous work resumes after a figurative skip request
+
+**Decided:** the earlier D20 pause was a workflow clarification, not abandonment.
+Autonomous implementation, testing, documentation, and reviewer audits continue.
+The current Gate 5 state is OPEN pending the single native clean-profile picker
+action; creator-vault, Obsidian, and write/concurrency checks remain sequenced after
+that boundary.
+
+**Boundary:** no deferred or open item is promoted to PASS without its required
+runtime evidence.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure
