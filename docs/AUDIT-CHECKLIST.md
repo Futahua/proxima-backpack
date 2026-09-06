@@ -927,14 +927,33 @@ no picker, no gesture, nobody at the screen.
 - [ ] Run against the actual creator vault. Not yet performed; this gate covers the
       harness being source-tested, not the real baseline it makes possible.
 
-**Open question for the reviewer, raised by the legacy fixture.**
-`realVaultAcceptance.ts:91` fails the baseline when `projection.problems.length > 0`,
-with no regard for severity. The legacy fixture trips it on a single warning-level
-`unexpected-type`. A real vault of any size will almost certainly carry at least one
-such warning, so as written the real-vault baseline is close to unreachable. This is
-an audited evaluator, so it has not been loosened here; the harness now reports the
-evaluator's own `baselineFailures` codes so the reason is visible rather than hidden
-behind `acceptance-6j-failed`.
+### 6.1Q Severity-aware baseline semantics (Gate 6P.1)
+
+Raised by the legacy fixture and specified by the reviewer: the baseline condition
+was severity-blind, failing whenever any problem existed. A creator vault of any
+size carries at least one benign warning, so a real baseline was close to
+unreachable and would have rejected a healthy vault for something that is not a
+defect.
+
+- [x] A known warning is visible and does not fail `baselineRead`.
+- [x] An error-severity problem still blocks.
+- [x] A problem whose severity cannot be classified **fails closed**, so a severity
+      added elsewhere later cannot become silently non-blocking here.
+- [x] No numeric allowance and no caller-supplied tolerance: either would let unknown
+      problem classes be blessed into a pass.
+- [x] Warnings are reported as bounded evidence (`baselineWarnings`), not discarded.
+- [x] The rule lives in 6J. Neither 6L nor the harness waives `baseline-problems`,
+      so acceptance semantics cannot diverge by caller.
+- [x] The acceptance input carried no `severity` field at all, so the classification
+      never reached the evaluator. The contract now carries it.
+- [x] Fixture matrix: basic PASS, legacy PASS (warning-only), malformed PASS
+      (warning-only by design — records still load with defaults), duplicates
+      BLOCKED (error-severity `duplicate-id`).
+
+The regression suite is `tests/baselineSeverity.test.ts`: warning-only passes,
+one error fails, warning+error fails with warnings still reported, unclassified
+severity fails, warning codes stay bounded, and the other stages stay OPEN rather
+than quietly passing.
 
 ### 6.2 Elastic board
 

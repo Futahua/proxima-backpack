@@ -133,11 +133,14 @@ describe('Gate 6P bridge-backed acceptance harness', () => {
 
   it('cannot pass when the hosted evaluators reject the source', async () => {
     // The regression the reviewer asked for, driven by a source that genuinely
-    // fails rather than by a test-only hook: a malformed vault loads, so the
-    // transport and witness stages pass, and only 6J/6L/6N block the run.
+    // fails rather than by a test-only hook. The duplicates fixture carries
+    // error-severity problems, so the transport and witness stages pass and only
+    // 6J/6L/6N block the run. (The malformed fixture is warning-only by design:
+    // its records still load with defaults, so under severity-aware semantics it
+    // correctly passes the baseline.)
     const root = await mkdtemp(join(tmpdir(), 'proxima-6p-evalfail-'));
     try {
-      await copyFixtureToDisk(fixtureFiles('vault-malformed'), root);
+      await copyFixtureToDisk(fixtureFiles('vault-duplicates'), root);
       const report = await runAcceptance({ root });
       expect(report.stages.bridge).toBe('PASS');
       expect(report.stages.zeroWriteWitness).toBe('PASS');

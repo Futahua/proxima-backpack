@@ -73,3 +73,24 @@ export function problemCodeForField(code: FieldIssueCode): ProblemCode {
 export function problemsFor(problems: LoadProblem[], code: ProblemCode): LoadProblem[] {
   return problems.filter((p) => p.code === code);
 }
+
+/**
+ * Whether a problem must block a real-vault baseline.
+ *
+ * The acceptance evaluator previously failed a baseline whenever *any* problem was
+ * present. A creator vault of any size carries at least one benign warning — a
+ * stray `type:` on a note, a field the reader chose not to interpret — so that rule
+ * made a real baseline close to unreachable, and would have rejected a healthy
+ * vault for a reason that is not a defect.
+ *
+ * Severity is the distinction the reader already makes, so acceptance consumes it
+ * rather than inventing a numeric allowance or an operator-declared tolerance. Both
+ * of those would let unknown problem classes be blessed into a pass.
+ *
+ * Unknown or missing severity fails closed. A problem this function cannot classify
+ * is not evidence of health; treating it as a warning would make every future
+ * severity added elsewhere silently non-blocking here.
+ */
+export function blocksBaseline(problem: { severity?: unknown }): boolean {
+  return problem?.severity !== 'warning';
+}

@@ -1,3 +1,4 @@
+import { blocksBaseline } from '../domain/problems.js';
 import type { BuildIdentityLike, InspectionProjection } from './inspection.js';
 import type { ReadOnlyProjectionHealth } from './readOnlyProjection.js';
 import type { StartupInspection } from './startupSession.js';
@@ -20,7 +21,7 @@ export interface RealVaultAcceptanceInput {
   build: BuildIdentityLike;
   startup: Pick<StartupInspection, 'startupSourceMode' | 'restoredHandlePresent' | 'bootstrapStatus'>;
   session: { sourceMode: 'fixture' | 'external'; sourceGeneration: number; transitionState: 'stable' | 'switching' | 'failed' };
-  projection: { generation: number; state: ProximaState; health: ReadOnlyProjectionHealth; revisions: Record<string, string>; problems: Array<{ code: string; path: string; detail: string }> };
+  projection: { generation: number; state: ProximaState; health: ReadOnlyProjectionHealth; revisions: Record<string, string>; problems: Array<{ code: string; path: string; detail: string; severity?: string }> };
   inspection: InspectionProjection;
   refreshEvidence?: { outcome: 'changed' | 'deleted' | 'renamed' | 'unchanged' | 'unreadable' | 'malformed'; changed: boolean; previousGeneration: number; currentGeneration: number; beforeRevision: string; afterRevision: string; beforeMarker: string; afterMarker: string };
   renameDeleteEvidence?: { outcome: 'deleted' | 'renamed'; removedPath: string; addedPath?: string };
@@ -44,6 +45,8 @@ export interface RealVaultAcceptanceReport {
   externalChangeEvidence: { beforeMarker: string; afterMarker: string } | null;
   renameDeleteEvidence: { outcome: 'deleted' | 'renamed'; removedPath: string; addedPath?: string } | null;
   writeInvariant: { writesAttempted: number; writerMethodsCalled: string[] };
+  /** Warning-level problems: visible, bounded, and not a baseline failure. */
+  baselineWarnings: { count: number; codes: string[] };
   stages: Record<AcceptanceStageName, AcceptanceStage>;
   passed: boolean;
 }
@@ -88,7 +91,13 @@ export function evaluateRealVaultAcceptance(input: RealVaultAcceptanceInput): Re
   if (input.projection.health.stale || input.projection.health.degraded || input.inspection.sourceHealth.status !== 'healthy') baselineFailures.push('degraded-baseline');
   if (!generationCoherent) baselineFailures.push('mixed-generation');
   if (provenanceFailures.length > 0 || samples.length === 0) baselineFailures.push('missing-provenance');
-  if (input.projection.problems.length > 0) baselineFailures.push('baseline-problems');
+  // Severity-aware, not severity-blind. A warning-level problem is reported and
+  // does not fail the baseline; an error, or a problem whose severity this cannot
+  // classify, does. Failing closed on unknown severity matters: otherwise any
+  // severity added elsewhere later becomes silently non-blocking here.
+  const blockingProblems = input.projection.problems.filter((problem) => blocksBaseline(problem));
+  const warningProblems = input.projection.problems.filter((problem) => !blocksBaseline(problem));
+  if (blockingProblems.length > 0) baselineFailures.push('baseline-problems');
 
   const externalFailures: string[] = [];
   const edit = input.refreshEvidence;
@@ -130,6 +139,7 @@ export function evaluateRealVaultAcceptance(input: RealVaultAcceptanceInput): Re
     externalChangeEvidence: edit ? { beforeMarker: text(edit.beforeMarker), afterMarker: text(edit.afterMarker) } : null,
     renameDeleteEvidence: rename ? { outcome: rename.outcome, removedPath: relative(rename.removedPath) ?? '', ...(rename.addedPath === undefined ? {} : { addedPath: relative(rename.addedPath) ?? '' }) } : null,
     writeInvariant: { writesAttempted: input.writeInvariant.writesAttempted, writerMethodsCalled: input.writeInvariant.writerMethodsCalled.slice(0, MAX_CODES).map((method) => text(method, 100)) },
+    baselineWarnings: { count: warningProblems.length, codes: codes(warningProblems.map((problem) => problem.code)) },
     stages,
     passed: stages.overall.verdict === 'PASS',
   };
