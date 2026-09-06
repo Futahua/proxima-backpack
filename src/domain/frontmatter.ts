@@ -43,6 +43,8 @@ export type FrontmatterIssueCode =
   | 'unsupported-escape'
   /** A quoted scalar never closed, so treating its bytes as a plain string would guess. */
   | 'unterminated-quote'
+  /** A quoted scalar closed, but had non-comment bytes after the closing quote. */
+  | 'malformed-quote'
   /** The same key given twice at the top level. */
   | 'duplicate-key'
   /** A line that is not blank, not a comment, not a list item and not `key: value`. */
@@ -144,10 +146,11 @@ export function parseFrontmatter(raw: string): FrontmatterResult {
         continue;
       }
       const content = item[1] ?? '';
-      if (hasUnterminatedQuotedScalar(content)) {
+      const quoteIssue = quotedScalarIssue(content);
+      if (quoteIssue) {
         if (!pendingPoisoned) {
           issue(
-            'unterminated-quote',
+            quoteIssue,
             pendingKey,
             lineNumber,
             'a quoted scalar did not close; the key is left unset rather than treating it as plain text.',
@@ -239,12 +242,15 @@ export function parseFrontmatter(raw: string): FrontmatterResult {
       continue;
     }
 
-    if (hasUnterminatedQuotedScalar(rest)) {
+    const quoteIssue = quotedScalarIssue(rest);
+    if (quoteIssue) {
       issue(
-        'unterminated-quote',
+        quoteIssue,
         key,
         lineNumber,
-        'a quoted scalar did not close; the key is left unset rather than treating it as plain text.',
+        quoteIssue === 'unterminated-quote'
+          ? 'a quoted scalar did not close; the key is left unset rather than treating it as plain text.'
+          : 'a quoted scalar has trailing bytes after its closing quote; the key is left unset rather than treating it as plain text.',
       );
       continue;
     }
@@ -394,6 +400,7 @@ function parseInlineList(text: string): unknown[] | null {
 
   if (quote) return null;
   parts.push(current);
+  if (parts.some((part) => quotedScalarIssue(part) !== null)) return null;
   return parts.map((part) => coerceScalar(part));
 }
 
@@ -444,10 +451,10 @@ function unescapeDouble(inner: string): string {
   return out;
 }
 
-/** Return true only for a scalar that starts quoted but never closes. */
-function hasUnterminatedQuotedScalar(text: string): boolean {
-  const value = text.trim();
-  if (value.length === 0 || (value[0] !== '"' && value[0] !== "'")) return false;
+/** Validate the entire shape of a quoted scalar, not just whether it eventually closes. */
+function quotedScalarIssue(text: string): 'unterminated-quote' | 'malformed-quote' | null {
+  const value = stripComment(text).trim();
+  if (value.length === 0 || (value[0] !== '"' && value[0] !== "'")) return null;
 
   const quote = value[0];
   for (let i = 1; i < value.length; i += 1) {
@@ -456,12 +463,13 @@ function hasUnterminatedQuotedScalar(text: string): boolean {
       i += 1;
       continue;
     }
-    if (char === quote) return false;
     if (quote === "'" && char === "'" && value[i + 1] === "'") {
       i += 1;
+      continue;
     }
+    if (char === quote) return value.slice(i + 1).trim() === '' ? null : 'malformed-quote';
   }
-  return true;
+  return 'unterminated-quote';
 }
 
 /**

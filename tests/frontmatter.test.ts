@@ -148,6 +148,14 @@ describe('forms outside the subset are reported, not guessed', () => {
     expect(codes('tags:\n  - "unfinished')).toEqual(['unterminated-quote']);
   });
 
+  it('refuses quoted scalars with trailing bytes after the closing quote', () => {
+    expect(values('name: "finished"junk')).toEqual({});
+    expect(codes('name: "finished"junk')).toEqual(['malformed-quote']);
+    expect(values("status: 'running'junk")).toEqual({});
+    expect(codes("status: 'running'junk")).toEqual(['malformed-quote']);
+    expect(codes('tags: ["finished"junk, safe]')).toEqual(['unterminated-list']);
+  });
+
   it('poisons a whole list when one quoted item has an unsupported escape', () => {
     expect(values('tags: [safe, "caf\\u00e9"]')).toEqual({});
     expect(codes('tags: [safe, "caf\\u00e9"]')).toEqual(['unsupported-escape']);

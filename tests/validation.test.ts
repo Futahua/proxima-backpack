@@ -189,7 +189,7 @@ describe('the malformed fixture vault', () => {
   it('loads every record rather than dropping the malformed ones', async () => {
     const { state } = await malformed();
     expect(state.projects).toHaveLength(1);
-    expect(state.tasks).toHaveLength(10);
+    expect(state.tasks).toHaveLength(11);
     expect(state.events).toHaveLength(2);
   });
 
@@ -273,11 +273,32 @@ describe('the malformed fixture vault', () => {
     expect(task?.status).toBe('running');
     expect(state.tasks.some((t) => t.id === 'task-hijacked')).toBe(false);
 
-    expect(problemsFor(problems, 'unsupported-frontmatter')).toHaveLength(1);
-    expect(problemsFor(problems, 'unsupported-frontmatter')[0]).toMatchObject({
+    const nestedProblems = problemsFor(problems, 'unsupported-frontmatter').filter((p) =>
+      p.path.endsWith('task-nested.md'),
+    );
+    expect(nestedProblems).toHaveLength(1);
+    expect(nestedProblems[0]).toMatchObject({
       kind: 'task',
       severity: 'warning',
     });
+  });
+
+  it('does not let malformed quoted identity bytes rewrite the filename identity', async () => {
+    const { state, problems } = await malformed();
+    const task = state.tasks.find((t) => t.source.path.endsWith('task-quoted-id-junk.md'));
+    expect(task?.id).toBe('task-quoted-id-junk');
+    expect(state.tasks.some((t) => t.id === 'corrupt')).toBe(false);
+    expect(problemsFor(problems, 'unsupported-frontmatter').filter((p) =>
+      p.path.endsWith('task-quoted-id-junk.md'),
+    )).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'Proxima/tasks/task-quoted-id-junk.md',
+          kind: 'task',
+          detail: expect.stringContaining('trailing bytes'),
+        }),
+      ]),
+    );
   });
 
   it('reports every problem against the file that caused it', async () => {
