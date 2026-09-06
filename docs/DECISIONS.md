@@ -574,6 +574,25 @@ the existing atomic source replacement seam.
 **Boundary:** Gate 6H is code-only with injected readers and mocked scheduling.
 Native acquisition, creator-vault use, and real-source acceptance stay open.
 
+## D32 — Restart restoration composes bootstrap and one source session
+
+**Decided:** `StartupSessionOrchestrator` consumes the 6G bootstrap result and
+initializes exactly one 6H `SourceSession`. No restored handle falls back to fixture;
+granted restoration loads the external source once and enters the same session path;
+prompt, denied, query failure, and granted activation failure remain fixture-stable
+with bounded bootstrap metadata. Repeated `start()` on one orchestrator is idempotent.
+
+Each orchestrator/session is disposable. Permission loss after a granted boot flows
+through the normal refresh controller/policy degradation and last-good projection;
+a newly constructed granted restart creates a clean external session and cannot inherit
+stale state or late commits from the disposed instance. Startup inspection exposes only
+source mode, restored-handle presence, bootstrap status, source generation, session
+state, and bounded problem codes.
+
+**Boundary:** Gate 6I uses structural mocked handles and injected stores/providers.
+It does not persist handles, request permission, select a native directory, or touch
+creator-vault/Papers/host APIs.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

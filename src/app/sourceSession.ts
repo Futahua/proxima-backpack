@@ -39,6 +39,7 @@ export interface SourceSessionOptions {
 export interface SourceSession {
   switchTo(candidate: SourceCandidate): Promise<SourceTransitionResult>;
   refresh(reason: RefreshReason): Promise<RefreshResult | null>;
+  dispose(): void;
   snapshot(): SourceSessionSnapshot;
   projection(): ReadOnlyProjection;
 }
@@ -64,6 +65,7 @@ export function createSourceSession(options: SourceSessionOptions): SourceSessio
   let transitionState: SourceTransitionState = 'stable';
   let lastTransitionReason: SourceSessionSnapshot['lastTransitionReason'] = 'activate';
   let lastFailureCode: string | null = null;
+  let disposed = false;
   let active!: ActiveSource;
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -77,7 +79,7 @@ export function createSourceSession(options: SourceSessionOptions): SourceSessio
     const controller = createRefreshController({ vault: candidate.reader, initial: candidate.initial });
     const source: ActiveSource = { candidate, controller, policy: undefined as unknown as RefreshPolicy, projection: projectionFor(controller.snapshot(), generation) };
     source.policy = createRefreshPolicy({ controller, intervalMs: options.intervalMs, scheduler: options.scheduler, onResult(result) {
-      if (active !== source) return;
+      if (disposed || active !== source) return;
       if (result.ok && result.changed) sourceGeneration += 1;
       source.projection = projectionFor(result.snapshot, sourceGeneration, source.projection);
       options.onProjection?.(source.projection, source.candidate.mode);
@@ -100,6 +102,7 @@ export function createSourceSession(options: SourceSessionOptions): SourceSessio
   return {
     switchTo(candidate) {
       const operation = queue.then(async (): Promise<SourceTransitionResult> => {
+        if (disposed) return { ok: false, sourceMode: active.candidate.mode, snapshot: snapshot(), projection: active.projection };
         transitionState = 'switching';
         lastTransitionReason = 'switch';
         const previous = active;
@@ -125,9 +128,14 @@ export function createSourceSession(options: SourceSessionOptions): SourceSessio
       return operation;
     },
     refresh(reason) {
-      if (transitionState === 'switching') return Promise.resolve(null);
+      if (disposed || transitionState === 'switching') return Promise.resolve(null);
       lastTransitionReason = 'refresh';
       return active.policy.trigger(reason);
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      active.policy.dispose();
     },
     snapshot,
     projection() { return active.projection; },

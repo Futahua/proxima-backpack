@@ -719,6 +719,26 @@ Only then consider a project-scoped external read capability in Papers.
       (Gate 6H, D31).
 - [ ] Native source-mode transition acceptance.
 
+### 6.1H Restart/session restoration semantics (Gate 6I)
+
+- [x] Startup/session orchestrator consumes 6G bootstrap and creates exactly one 6H
+      source session.
+- [x] No handle, granted, prompt, denied, query failure, and activation failure have
+      deterministic fixture/external startup states with bounded metadata.
+- [x] Repeated initialization on one orchestrator is idempotent; policies/timers do
+      not duplicate.
+- [x] Simulated restart restores the same external logical state without re-selection.
+- [x] Permission loss after restored boot preserves last-good data and degrades through
+      the normal refresh path; a later granted restart recovers healthy state.
+- [x] Disposed prior sessions cannot commit late work or leak authority into the new
+      session.
+- [x] Startup inspection is bounded and exposes no raw handles, stores, providers,
+      readers, policies, timers, picker, host, write, or migration authority.
+- [x] Tests cover cold fixture, granted external, prompt/denied/query fallback,
+      activation failure, restart equivalence, permission loss/recovery, disposal,
+      duplicate prevention, and authority isolation (Gate 6I, D32).
+- [ ] Native restart/creator-vault restoration acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.
