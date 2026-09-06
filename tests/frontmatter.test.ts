@@ -110,6 +110,8 @@ describe('forms that used to be read wrongly', () => {
 
   it('unescapes a quoted string rather than keeping the backslashes', () => {
     expect(values('name: "say \\"hi\\""')).toEqual({ name: 'say "hi"' });
+    expect(values('path: "C:\\\\Notes"')).toEqual({ path: 'C:\\Notes' });
+    expect(values('label: "line\\nnext\\tcell"')).toEqual({ label: 'line\nnext\tcell' });
     expect(values("name: 'it''s here'")).toEqual({ name: "it's here" });
   });
 
@@ -127,6 +129,25 @@ describe('forms that used to be read wrongly', () => {
 });
 
 describe('forms outside the subset are reported, not guessed', () => {
+  it('refuses unsupported double-quoted escapes without silently removing backslashes', () => {
+    for (const raw of [
+      'name: "caf\\u00e9"',
+      'name: "caf\\xE9"',
+      'name: "bad\\qescape"',
+      'path: "C:\\Users\\Ana"',
+    ]) {
+      expect(values(raw)).toEqual({});
+      expect(issues(raw)[0]).toMatchObject({ code: 'unsupported-escape', line: 1 });
+    }
+  });
+
+  it('poisons a whole list when one quoted item has an unsupported escape', () => {
+    expect(values('tags: [safe, "caf\\u00e9"]')).toEqual({});
+    expect(codes('tags: [safe, "caf\\u00e9"]')).toEqual(['unsupported-escape']);
+    expect(values('tags:\n  - safe\n  - "bad\\q"')).toEqual({});
+    expect(codes('tags:\n  - safe\n  - "bad\\q"')).toEqual(['unsupported-escape']);
+  });
+
   it('refuses a nested mapping instead of hoisting its keys', () => {
     const raw = 'meta:\n  owner: ana\n  rank: 2\nname: Studio';
     // The old parser produced { meta: [], owner: 'ana', rank: 2, name: 'Studio' } —

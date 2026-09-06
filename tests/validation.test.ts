@@ -12,6 +12,7 @@ import {
   readBoolean,
   readDate,
   readDurationMinutes,
+  readEnum,
   readOptionalDate,
   readOrderIndex,
   readStatus,
@@ -140,6 +141,21 @@ describe('readStatus', () => {
   });
 });
 
+describe('readEnum', () => {
+  it('accepts an allowed value or an absent field', () => {
+    const issues = collect();
+    expect(readEnum('schedule', 'projectType', ['task', 'schedule'], 'task', issues)).toBe('schedule');
+    expect(readEnum(undefined, 'projectType', ['task', 'schedule'], 'task', issues)).toBe('task');
+    expect(issues).toEqual([]);
+  });
+
+  it('reports and defaults a value outside the closed vocabulary', () => {
+    const issues = collect();
+    expect(readEnum('schedul', 'projectType', ['task', 'schedule'], 'task', issues)).toBe('task');
+    expect(issues[0]).toMatchObject({ field: 'projectType', code: 'invalid-enum' });
+  });
+});
+
 describe('date readers', () => {
   it('keeps a readable date exactly as written', () => {
     const issues = collect();
@@ -172,8 +188,22 @@ describe('date readers', () => {
 describe('the malformed fixture vault', () => {
   it('loads every record rather than dropping the malformed ones', async () => {
     const { state } = await malformed();
+    expect(state.projects).toHaveLength(1);
     expect(state.tasks).toHaveLength(10);
     expect(state.events).toHaveLength(2);
+  });
+
+  it('reports routing-critical project enums instead of silently defaulting them', async () => {
+    const { state, problems } = await malformed();
+    expect(state.projects[0]).toMatchObject({
+      id: 'proj-bad-routing',
+      status: 'active',
+      projectType: 'task',
+    });
+    expect(problemsFor(problems, 'invalid-enum').map((problem) => problem.detail)).toEqual([
+      expect.stringContaining('status'),
+      expect.stringContaining('projectType'),
+    ]);
   });
 
   it('substitutes a safe weight and reports the range', async () => {
@@ -253,7 +283,7 @@ describe('the malformed fixture vault', () => {
   it('reports every problem against the file that caused it', async () => {
     const { problems } = await malformed();
     for (const problem of problems) {
-      expect(problem.path).toMatch(/^Proxima\/(tasks|events)\/.+\.md$/);
+      expect(problem.path).toMatch(/^Proxima\/(projects|tasks|events)\/.+\.md$/);
       expect(problem.detail).not.toBe('');
     }
   });

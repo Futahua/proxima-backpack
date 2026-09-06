@@ -176,7 +176,7 @@ notices.
 | version/date-like token | `version: 1.2.3`, `day: 2026-09-06` | string, never a number |
 | boolean | `done: true`, `done: TRUE` | boolean |
 | null | `project: null`, `project: ~` | `null` |
-| quoted string | `colour: "#00b894"`, `name: 'Studio'` | unquoted, unescaped |
+| quoted string | `colour: "#00b894"`, `name: 'Studio'` | unquoted; double quotes support `\"`, `\\`, `\n`, and `\t` |
 | inline list | `tags: [a, b]`, `tags: ["a,b", c]` | array |
 | block list | `tags:`<br>`  - alpha` | array |
 | empty value | `description:` | `""` |
@@ -204,11 +204,18 @@ why.
 | `{ ... }` flow mapping | `flow-mapping` | the key is left unset |
 | `&anchor` / `*alias` | `anchor-or-alias` | the key is left unset |
 | nested or unterminated inline list | `unterminated-list` | the key is left unset |
+| unsupported double-quoted escape | `unsupported-escape` | the key is left unset; no backslash or following character is silently changed |
 | the same key twice | `duplicate-key` | the **first** wins, as with duplicate ids |
 | anything else non-blank | `unparsable-line` | the line is skipped |
 
 Parsing continues after an unsupported construct: one bad key does not cost the rest of
 the file.
+
+Double-quoted strings deliberately support only `\"`, `\\`, `\n`, and `\t`. YAML's
+Unicode/hex escapes and any invalid escape are reported rather than partly decoded.
+For example, `"caf\u00e9"`, `"bad\q"`, and `"C:\Users\Ana"` are left unset with an
+`unsupported-escape` issue. Full YAML escape handling remains part of the Gate 13 parser
+re-evaluation; this read-only subset must never mutate text it cannot interpret.
 
 The hoisting case is the one that motivated this. Given
 
@@ -243,7 +250,9 @@ default nobody chose looks exactly like a card sized from a real number.
 | `fixedDuration` | absent, or finite `> 0` minutes | unset, reported. Negative would run the timeline cursor backwards over the previous task. |
 | `maxDuration` | absent, or finite `> 0` minutes | unset, reported |
 | `isFixedDuration`, `isCompleted` | `true` / `false` | the default, reported |
-| `status` | any non-empty identifier | `running`, reported |
+| task `status` | any non-empty identifier | `running`, reported |
+| project `status` | `active` or `archived` | `active`, reported |
+| project `projectType` | `task` or `schedule` | `task`, reported; invalid input must not silently route a project to the board |
 | `createdAt` | a readable date | epoch, reported |
 | `startDate`, `deadline` | absent, or a readable date | unset, reported |
 
@@ -269,6 +278,7 @@ Nothing is dropped quietly. A record either enters state or a problem says why n
 | `bad-number` | warning | a numeric field was unreadable or out of range |
 | `bad-boolean` | warning | a boolean field held something else |
 | `invalid-status` | warning | a status field held no usable identifier |
+| `invalid-enum` | warning | a closed-vocabulary project field held an unsupported value |
 | `missing-project` | warning | a reference pointed at no loaded project |
 
 Codes are stable identifiers. The prose in `detail` may change freely; match on `code`.

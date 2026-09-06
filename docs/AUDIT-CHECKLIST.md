@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 1C — Elastic/calendar edge-test closure |
+| Current slice | Gate 1B correction — quoted-escape safety and routing-critical project validation |
 | Branch | `claude/proxima-audit-checklist-fqhxkf` |
-| Last audited SHA | `53f0558` — Gate 1A, conditional pass; the `type:` veto was corrected in `17eebea` (see D4). Gate 1B pushed for audit. |
+| Last audited SHA | `f81ef8c` — Gate 1B conditional fail; correcting unsupported quoted escapes and project routing-field validation before Gate 1C. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |

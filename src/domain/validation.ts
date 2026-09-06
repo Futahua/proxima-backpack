@@ -23,7 +23,9 @@ export type FieldIssueCode =
   /** Present, but not a date any clock could read. */
   | 'invalid-date'
   /** Present, but not a usable status identifier. */
-  | 'invalid-status';
+  | 'invalid-status'
+  /** Present, but not one of a field's closed set of values. */
+  | 'invalid-enum';
 
 export interface FieldIssue {
   field: string;
@@ -137,6 +139,24 @@ export function readStatus(raw: unknown, fallback: string, issues: FieldIssue[])
     field: 'status',
     code: 'invalid-status',
     detail: `${describe(raw)} is not a status identifier; using "${fallback}".`,
+  });
+  return fallback;
+}
+
+/** A closed vocabulary whose values affect product routing or record state. */
+export function readEnum<const T extends string>(
+  raw: unknown,
+  field: string,
+  allowed: readonly T[],
+  fallback: T,
+  issues: FieldIssue[],
+): T {
+  if (raw === undefined) return fallback;
+  if (typeof raw === 'string' && (allowed as readonly string[]).includes(raw)) return raw as T;
+  issues.push({
+    field,
+    code: 'invalid-enum',
+    detail: `${describe(raw)} is not one of ${allowed.map((value) => `"${value}"`).join(', ')}; using "${fallback}".`,
   });
   return fallback;
 }

@@ -164,9 +164,11 @@ the issue-reporting cases, which a library alone will not satisfy.
 
 ## D8 — Invalid fields are substituted *and* reported, never silently
 
-**Decided:** every domain field has a valid range. A value outside it is replaced with
-a safe default so nothing downstream has to defend against NaN, and a `LoadProblem` is
-always emitted saying which file, which field, and what was substituted.
+**Decided:** every field that affects current domain behavior has a defined valid range
+or vocabulary. A value outside it is replaced with a safe default so nothing downstream
+has to defend against NaN or invalid routing, and a `LoadProblem` is always emitted
+saying which file, which field, and what was substituted. Descriptive fields such as
+names, colours and linked-folder labels are not claimed to have artificial ranges.
 
 **Why not reject the whole record:** a task with one bad number is still a real task the
 creator can see in Obsidian. Dropping it would make Proxima disagree with the vault
@@ -181,6 +183,11 @@ theoretical — they are what the unvalidated reader produced.
 **Specific ranges and their reasoning** are in `docs/VAULT-FORMATS.md`. The two worth
 repeating: `weight` must be `> 0`, and a duration must be `> 0` or absent — zero is
 indistinguishable from unset, which `null` already says.
+
+Project `status` and `projectType` are closed vocabularies because they control whether
+a project is archived and whether it appears on the board or calendar. An invalid value
+is reported before falling back; silently treating `projectType: schedul` as `task`
+would route creator data to the wrong product surface.
 
 **Reverses if:** a field turns out to have a legitimate use for a value this rejects,
 in which case the range widens and the reason is recorded here.

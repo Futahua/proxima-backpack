@@ -38,6 +38,8 @@ export type ProblemCode =
   | 'bad-boolean'
   /** A status field held something that is not a usable identifier. */
   | 'invalid-status'
+  /** A closed-vocabulary field held a value outside its allowed set. */
+  | 'invalid-enum'
   /** A record referenced a project id that no loaded project has. */
   | 'missing-project';
 
@@ -62,6 +64,7 @@ export function problemCodeForField(code: FieldIssueCode): ProblemCode {
   if (code === 'invalid-date') return 'bad-date';
   if (code === 'not-a-boolean') return 'bad-boolean';
   if (code === 'invalid-status') return 'invalid-status';
+  if (code === 'invalid-enum') return 'invalid-enum';
   return 'bad-number';
 }
 

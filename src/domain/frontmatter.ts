@@ -39,6 +39,8 @@ export type FrontmatterIssueCode =
   | 'list-of-mappings'
   /** An inline list that never closed, or held a structure the subset cannot hold. */
   | 'unterminated-list'
+  /** A double-quoted scalar used an escape this deliberately small subset cannot decode. */
+  | 'unsupported-escape'
   /** The same key given twice at the top level. */
   | 'duplicate-key'
   /** A line that is not blank, not a comment, not a list item and not `key: value`. */
@@ -140,6 +142,19 @@ export function parseFrontmatter(raw: string): FrontmatterResult {
         continue;
       }
       const content = item[1] ?? '';
+      const unsupportedEscape = findUnsupportedDoubleQuotedEscape(content);
+      if (unsupportedEscape) {
+        if (!pendingPoisoned) {
+          issue(
+            'unsupported-escape',
+            pendingKey,
+            lineNumber,
+            `${unsupportedEscape}; the key is left unset rather than silently changing the value.`,
+          );
+        }
+        pendingPoisoned = true;
+        continue;
+      }
       if (looksLikeMapping(content)) {
         if (!pendingPoisoned) {
           issue(
@@ -207,6 +222,17 @@ export function parseFrontmatter(raw: string): FrontmatterResult {
       pendingList = [];
       pendingPoisoned = false;
       values[key] = '';
+      continue;
+    }
+
+    const unsupportedEscape = findUnsupportedDoubleQuotedEscape(rest);
+    if (unsupportedEscape) {
+      issue(
+        'unsupported-escape',
+        key,
+        lineNumber,
+        `${unsupportedEscape}; the key is left unset rather than silently changing the value.`,
+      );
       continue;
     }
 
@@ -392,6 +418,34 @@ function unescapeDouble(inner: string): string {
     else out += next;
   }
   return out;
+}
+
+/**
+ * Validate the only double-quoted escapes this subset deliberately interprets.
+ *
+ * YAML has a much larger escape grammar. Pretending to support it is dangerous: the
+ * old fallback removed the backslash from every unknown escape, turning `\u00e9` into
+ * `u00e9` and Windows paths such as `C:\Users` into different paths. Full YAML escape
+ * support belongs to a real YAML parser; this reader instead fails visibly.
+ */
+function findUnsupportedDoubleQuotedEscape(text: string): string | null {
+  let inDouble = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i] as string;
+    if (char === '"') {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (!inDouble || char !== '\\') continue;
+
+    if (i === text.length - 1) return 'a trailing backslash is not a supported quoted escape';
+    const next = text[i + 1] as string;
+    if (next !== '"' && next !== '\\' && next !== 'n' && next !== 't') {
+      return `\\${next} is not a supported quoted escape`;
+    }
+    i += 1;
+  }
+  return null;
 }
 
 export function asString(value: unknown, fallback = ''): string {
