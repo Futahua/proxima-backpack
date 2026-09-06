@@ -11,5 +11,7 @@ describe('Gate 3B evidence schema', () => {
     expect(isScenarioEvidence(evidence)).toBe(true);
     expect(evidence.schemaVersion).toBe(1);
     expect(evidence.eventTranscript).toHaveLength(MAX_EVIDENCE_ITEMS);
+    expect(isScenarioEvidence({ ...evidence, schemaVersion: 2 })).toBe(false);
+    expect(isScenarioEvidence({ ...evidence, eventTranscript: [{ bad: true }] })).toBe(false);
   });
 });
