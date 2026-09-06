@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 2A — static build and fixture-only browser boot |
-| Branch | `claude/proxima-audit-checklist-fqhxkf` |
-| Last audited SHA | `01a277f` — Gate 1C PASS; Gate 2A authorized. |
+| Current slice | Gate 2B — first visible deterministic fixture surface |
+| Branch | `codex/gate-1b-correction` (local acceptance worktree) |
+| Last audited SHA | `3b5a391` — Gate 2A PASS; local Papers identity acceptance reported separately. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -239,17 +239,16 @@ Pin important behavior from old `calculateLiquidTimeline`.
 
 ### 2.1 Backpack identity
 
-No real Papers Backpack was created in Gate 2A, so these host-identity items remain
-unchecked. They become required only in the slice that creates an actual Backpack.
+Gate 2A was accepted locally through the normal Papers Backpack UI and the current
+Papers project runtime. The identity and absolute-root binding are intentionally
+machine-local; the committed `project.json` is only valid on that machine.
 
-Only when a real Papers Backpack is created:
-
-- [ ] Create actual Backpack in Papers.
-- [ ] Obtain real `bp-...` identity.
-- [ ] Add machine-local `backpack-projects.json` binding.
-- [ ] Commit `project.json` only if its `backpackId` matches the real binding.
-- [ ] `entry` points inside `public/`.
-- [ ] No placeholder Backpack ID is ever committed.
+- [x] Create actual Backpack in Papers.
+- [x] Obtain real `bp-...` identity.
+- [x] Add machine-local `backpack-projects.json` binding.
+- [x] Commit `project.json` only if its `backpackId` matches the real binding.
+- [x] `entry` points inside `public/`.
+- [x] No placeholder Backpack ID is ever committed.
 
 ### 2.2 Build system
 
@@ -282,37 +281,37 @@ Only when a real Papers Backpack is created:
 
 Minimum useful shell only.
 
-- [ ] Projects navigation.
-- [ ] Elastic board.
-- [ ] Calendar.
-- [ ] Switching surfaces preserves valid selection.
-- [ ] Schedule project cannot leak into board selection.
-- [ ] Task project cannot become a calendar-only selection.
-- [ ] No write controls imply that real creator data can be modified.
+- [x] Projects navigation.
+- [x] Elastic board.
+- [x] Calendar.
+- [x] Switching surfaces preserves valid selection.
+- [x] Schedule project cannot leak into board selection.
+- [x] Task project cannot become a calendar-only selection.
+- [x] No write controls imply that real creator data can be modified.
 
 ### 2.5 C1 visual semantic keys
 
-- [ ] Top-level app/root key.
-- [ ] Project navigation region key.
-- [ ] Board region key.
-- [ ] Calendar region key.
-- [ ] Backlog/running/finished column keys.
-- [ ] Project item keys based on stable domain IDs.
-- [ ] Task card keys based on stable task IDs.
-- [ ] Event keys based on stable event IDs.
-- [ ] Empty/error/loading states have semantic keys where relevant.
-- [ ] No semantic key depends on:
-  - [ ] CSS selector
-  - [ ] component implementation name
-  - [ ] visible translated text
-  - [ ] list index
-- [ ] Total keys remain within Papers' bounded C1 contract.
+- [x] Top-level app/root key.
+- [x] Project navigation region key.
+- [x] Board region key.
+- [x] Calendar region key.
+- [x] Backlog/running/finished column keys.
+- [x] Project item keys based on stable domain IDs.
+- [x] Task card keys based on stable task IDs.
+- [x] Event keys based on stable event IDs.
+- [x] Empty/error/loading states have semantic keys where relevant.
+- [x] No semantic key depends on:
+  - [x] CSS selector
+  - [x] component implementation name
+  - [x] visible translated text
+  - [x] list index
+- [x] Total keys remain within Papers' bounded C1 contract.
 
 ### 2.6 Papers lifecycle diagnostics
 
-- [ ] Report state hydrated only after fixture state is actually ready.
-- [ ] Hydration revision is deterministic.
-- [ ] Bounded numeric hydration summary includes useful counts.
+- [x] Report state hydrated only after fixture state is actually ready.
+- [x] Hydration revision is deterministic.
+- [x] Bounded numeric hydration summary includes useful counts.
 - [ ] Parse/load failure reports a structured hydration failure.
 - [ ] Unhandled errors remain visible through Papers diagnostics.
 - [ ] Layout stability reaches C1.

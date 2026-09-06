@@ -5,28 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Proxima Backpack — Fixture</title>
     <style>
-      :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; }
-      body { margin: 0; min-width: 320px; background: #111827; color: #e5e7eb; }
-      main { max-width: 780px; margin: 4rem auto; padding: 2rem; }
-      article { border: 1px solid #374151; border-radius: 14px; padding: 1.5rem; background: #1f2937; }
-      code, pre { font: 0.85rem/1.45 ui-monospace, monospace; }
-      pre { overflow: auto; padding: 1rem; border-radius: 8px; background: #111827; }
-      [data-proxima-boot-state="loading"] #boot-status { color: #fbbf24; }
-      [data-proxima-boot-state="ready"] #boot-status { color: #34d399; }
-      [data-proxima-boot-state="error"] #boot-status { color: #f87171; }
+      :root { color-scheme: dark; font: 14px/1.45 Inter, ui-sans-serif, system-ui, sans-serif; --bg:#0c111b; --panel:#131b29; --panel-2:#182235; --line:#26344b; --muted:#8492aa; --text:#edf3ff; --accent:#7c9cff; --green:#4fd1a1; --yellow:#f6c85f; }
+      * { box-sizing: border-box; }
+      body { margin:0; min-width:320px; background:radial-gradient(circle at 70% -20%,#1a2b4b 0,transparent 42%),var(--bg); color:var(--text); }
+      button { font:inherit; color:inherit; }
+      button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+      #proxima-app { min-height:100vh; }
+      .app-shell { max-width:1480px; min-height:100vh; margin:0 auto; padding:24px 28px 18px; display:flex; flex-direction:column; gap:18px; }
+      .app-header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+      .brand { display:flex; align-items:center; gap:12px; }.brand-mark { width:38px; height:38px; display:grid; place-items:center; border-radius:12px; background:linear-gradient(135deg,#7c9cff,#9d7cff); color:#0b1220; font-weight:900; font-size:20px; }.brand h1 { margin:0; font-size:20px; letter-spacing:.01em; }.brand span:not(.brand-mark) { color:var(--muted); font-size:12px; }
+      .header-state,.calendar-controls,.surface-switcher,.task-card-top,.task-card footer,.app-footer { display:flex; align-items:center; }.header-state { gap:8px; }.read-only-badge,.hydrated-badge { border:1px solid var(--line); border-radius:999px; padding:5px 10px; color:var(--muted); font-size:11px; }.hydrated-badge { color:var(--green); border-color:#1d5e50; background:#102c2a; }
+      .app-layout { flex:1; display:grid; grid-template-columns:230px minmax(0,1fr); gap:18px; min-height:640px; }
+      .project-navigation,.main-content { border:1px solid var(--line); background:rgba(19,27,41,.9); border-radius:18px; }.project-navigation { padding:16px 10px; }.region-heading { padding:2px 8px 10px; display:flex; justify-content:space-between; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }.count,.surface-count,.board-column header span,.diagnostics header span { color:var(--muted); font-variant-numeric:tabular-nums; }.project-list { display:grid; gap:4px; }.project-item { width:100%; display:flex; align-items:center; gap:9px; padding:9px 8px; border:1px solid transparent; border-radius:10px; background:transparent; text-align:left; cursor:pointer; }.project-item:hover { background:#1b2940; }.project-item.selected { background:#223455; border-color:#3c5886; }.project-dot { width:8px; height:8px; flex:0 0 auto; border-radius:50%; background:#65738a; }.project-dot.task { background:#7c9cff; }.project-dot.schedule { background:#f6c85f; }.project-item-copy { min-width:0; display:grid; gap:1px; }.project-item-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }.project-item-copy small { color:var(--muted); font-size:10px; }.surface-hint { margin-left:auto; color:var(--yellow); }
+      .main-content { padding:14px; display:flex; flex-direction:column; gap:14px; min-width:0; }.surface-switcher { gap:5px; padding:3px; width:max-content; border:1px solid var(--line); border-radius:10px; background:#0d1523; }.surface-tab { padding:7px 13px; border:0; border-radius:7px; color:var(--muted); background:transparent; cursor:pointer; }.surface-tab.selected { color:var(--text); background:#2a3f69; }
+      .surface { min-width:0; }.surface-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:8px 4px 14px; }.surface-header h2 { margin:0; font-size:22px; }.surface-description,.eyebrow { margin:3px 0 0; color:var(--muted); }.eyebrow { font-size:11px; text-transform:uppercase; letter-spacing:.08em; }.surface-count { white-space:nowrap; padding-top:8px; }
+      .board-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }.board-column { min-height:470px; border:1px solid var(--line); border-radius:13px; background:#101827; overflow:hidden; }.board-column>header { display:flex; justify-content:space-between; padding:11px 12px; border-bottom:1px solid var(--line); background:linear-gradient(180deg,#1b2940,#151f31); }.board-column h3 { margin:0; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }.column-cards { display:grid; align-content:start; gap:8px; padding:9px; }.task-card { display:flex; flex-direction:column; gap:7px; padding:11px; border:1px solid #2c3c57; border-radius:10px; background:#1a2639; box-shadow:0 4px 14px #07101e55; }.task-card h3 { margin:0; font-size:14px; }.task-card p { margin:0; color:#aab7cc; font-size:12px; }.task-card-top,.task-card footer { justify-content:space-between; gap:8px; }.task-status,.task-complete { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.05em; }.task-complete { color:var(--green); }.task-card footer { margin-top:auto; color:var(--muted); font-size:10px; }.empty-state { margin:12px 4px; color:var(--muted); text-align:center; font-size:12px; }
+      .calendar-controls { gap:10px; color:#cdd8eb; }.icon-button { width:28px; height:28px; border:1px solid var(--line); border-radius:7px; background:#172338; cursor:pointer; }.icon-button:hover { border-color:#5574aa; }.weekday-row,.calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; }.weekday-row { padding:0 2px 5px; color:var(--muted); font-size:10px; text-align:center; text-transform:uppercase; letter-spacing:.07em; }.calendar-day { min-height:92px; padding:6px; border:1px solid var(--line); border-radius:9px; background:#111b2b; }.calendar-day.outside { opacity:.48; }.calendar-day.today { border-color:#6c8fd7; box-shadow:inset 0 2px 0 var(--accent); }.day-number { color:#aab8ce; font-size:11px; }.day-events { display:grid; gap:4px; margin-top:5px; }.event-card { display:grid; gap:1px; padding:4px 5px; border-left:2px solid var(--yellow); border-radius:4px; background:#273149; overflow:hidden; }.event-card strong,.event-card small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.event-card strong { font-size:10px; }.event-card small { color:#aab7cc; font-size:9px; }
+      .diagnostics { border:1px solid #5c4b2a; border-radius:10px; background:#2b2416; }.diagnostics.clean { display:flex; align-items:center; gap:7px; border-color:#214d45; background:#102421; color:#9fe3c7; padding:9px 11px; font-size:12px; }.diagnostic-ok { font-size:16px; }.diagnostics header { display:flex; justify-content:space-between; padding:9px 11px; border-bottom:1px solid #5c4b2a; color:#f8d889; }.diagnostics ul { display:grid; gap:5px; margin:0; padding:9px 11px 11px; list-style:none; }.diagnostics li { display:flex; gap:8px; font-size:11px; }.diagnostics li>span:last-child { display:grid; gap:1px; }.diagnostics small { color:#d2bd8c; }.severity { height:max-content; padding:2px 5px; border-radius:4px; background:#654a20; color:#f8d889; font-size:9px; text-transform:uppercase; }.severity.error { background:#652d35; color:#ffb5ba; }
+      .app-footer { justify-content:space-between; color:var(--muted); font-size:10px; padding:0 3px; }.build-details { color:var(--muted); font-size:11px; }.build-details summary { cursor:pointer; }.build-details pre { max-height:160px; overflow:auto; padding:10px; border:1px solid var(--line); border-radius:8px; background:#0a111d; font:10px/1.4 ui-monospace,monospace; white-space:pre-wrap; }
+      [data-proxima-boot-state="loading"] .app-shell,[data-proxima-boot-state="error"] .app-shell { display:none; } [data-proxima-boot-state="loading"] #boot-status { color:var(--yellow); } [data-proxima-boot-state="error"] #boot-status { color:#ff9b9b; }
+      @media (max-width:900px) { .app-layout { grid-template-columns:1fr; }.project-navigation { padding:10px; }.project-list { display:flex; overflow:auto; }.project-item { min-width:145px; }.board-grid { grid-template-columns:1fr; }.board-column { min-height:unset; }.calendar-day { min-height:76px; } }
+      @media (max-width:560px) { .app-shell { padding:14px 10px; }.app-header,.surface-header { display:grid; }.header-state { justify-content:flex-start; }.calendar-day { min-height:62px; padding:4px; }.event-card small { display:none; }.event-card strong { font-size:9px; }.surface-description { font-size:12px; } }
     </style>
   </head>
   <body>
     <main id="proxima-app" data-proxima-mode="fixture" data-proxima-hydrated="false" data-proxima-boot-state="loading">
-      <article>
-        <h1>Proxima Backpack</h1>
-        <p id="boot-mode">Starting fixture boot…</p>
-        <p id="boot-status" aria-live="polite">Loading</p>
-        <h2>Hydration summary</h2>
-        <pre id="hydration-summary">Waiting for the bundled fixture vault.</pre>
-        <h2>Build identity</h2>
-        <pre id="build-identity">Waiting for build identity.</pre>
-      </article>
+      <section class="boot-panel" data-c1-key="boot-state"><h1>Proxima Backpack</h1><p id="boot-mode">Starting fixture boot…</p><p id="boot-status" aria-live="polite">Loading</p><pre id="hydration-summary">Waiting for the bundled fixture vault.</pre></section>
     </main>
     <script type="module" src="./build/browser/main.js"></script>
   </body>
