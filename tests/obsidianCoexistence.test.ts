@@ -11,6 +11,7 @@ import { ALL_PROJECTS } from '../src/domain/selectors.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from '../src/browser/realVaultLive.js';
 import { createDiskVault, copyFixtureToDisk, removeDiskFixture } from './test-disk-vault.js';
+import { changedPaths, createZeroWriteWitness } from './zero-write-witness.js';
 import { fixtureFiles } from './fixtures.js';
 
 async function childWrite(path: string, text: string): Promise<void> {
@@ -32,10 +33,15 @@ async function childAppend(path: string, text: string): Promise<void> {
 describe('Gate 6M disposable peer-writer coexistence', () => {
   it('observes independent edit/create/rename/delete and malformed recovery while remaining read-only', async () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-gate6m-'));
-    const writerCalls: string[] = [];
     try {
       await copyFixtureToDisk(fixtureFiles('vault-basic'), root);
-      const vault = createDiskVault(root);
+      // Zero-write is proved by instrumentation, not by an untouched counter: the
+      // reader is proxied so a write attempt throws and is recorded, and the tree is
+      // fingerprinted so any change Proxima caused would surface as unattributed.
+      const witness = createZeroWriteWitness(createDiskVault(root), root);
+      const vault = witness.reader;
+      const peerWrites: string[] = [];
+      const before = await witness.snapshot();
       const initial = await loadVaultState(vault);
       let projection: ReadOnlyProjection = createReadOnlyProjection({ sourceRevision: 1, lastSuccessfulRefreshRevision: 1, refreshState: 'idle', stale: false, lastRefreshReason: null, lastRefreshProblemCode: null, pendingRefreshCount: 0, load: initial });
       const dispatcher = createActionDispatcher({ state: projection.state, problems: projection.problems, revisions: projection.revisions, mode: 'live', initialSourceRevision: projection.generation });
@@ -61,6 +67,9 @@ describe('Gate 6M disposable peer-writer coexistence', () => {
       const created = await session.refresh('manual');
       expect(created?.changed).toBe(true);
       expect(projection.state.projects.some((project) => project.id === 'external-peer')).toBe(true);
+      // A rename touches both ends: the source disappears and the destination
+      // appears, so both are peer-caused.
+      peerWrites.push('Proxima/tasks/Write fixture vault-renamed.md', 'Proxima/tasks/Write fixture vault.md');
       await rename(taskPath, renamedTaskPath);
       const renamed = await session.refresh('external-signal');
       expect(renamed?.outcome).toBe('renamed');
@@ -84,7 +93,14 @@ describe('Gate 6M disposable peer-writer coexistence', () => {
       expect(deleted?.changed).toBe(true);
       expect(projection.state.projects.some((project) => project.id === 'external-peer')).toBe(false);
       expect(dispatcher.snapshot().selection).toBe(ALL_PROJECTS);
-      expect(writerCalls).toEqual([]);
+      // The instrument must have been live, and nothing outside the read surface
+      // may have been touched.
+      witness.assertObserved();
+      expect(witness.violations).toEqual([]);
+      expect(witness.reads.length).toBeGreaterThan(0);
+      // Every on-disk difference must be attributable to a declared peer write.
+      const unattributed = changedPaths(before, await witness.snapshot()).filter((path) => !peerWrites.includes(path));
+      expect(unattributed).toEqual([]);
       expect(dispatcher.snapshot().sourceRevision).toBe(projection.generation);
     } finally { await removeDiskFixture(root); }
   });
@@ -93,7 +109,13 @@ describe('Gate 6M disposable peer-writer coexistence', () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-gate6m-rapid-'));
     try {
       await copyFixtureToDisk(fixtureFiles('vault-basic'), root);
-      const vault = createDiskVault(root);
+      // Zero-write is proved by instrumentation, not by an untouched counter: the
+      // reader is proxied so a write attempt throws and is recorded, and the tree is
+      // fingerprinted so any change Proxima caused would surface as unattributed.
+      const witness = createZeroWriteWitness(createDiskVault(root), root);
+      const vault = witness.reader;
+      const peerWrites: string[] = [];
+      const before = await witness.snapshot();
       const initial = await loadVaultState(vault);
       const session = createSourceSession({ initial: { mode: 'fixture', reader: vault, initial }, intervalMs: 60_000 });
       const path = join(root, 'Proxima', 'tasks', 'Write fixture vault.md');

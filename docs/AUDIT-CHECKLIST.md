@@ -826,7 +826,46 @@ Only then consider a project-scoped external read capability in Papers.
 - [x] Non-loopback URLs, traversal, oversized responses, and non-GET methods are rejected;
       bridge tests exercise the real child process and temporary disk fixture.
 - [x] README documents the one-time root configuration and automatic `?bridge=` bootstrap.
+- [x] Bridge failures answer in a closed code vocabulary; no filesystem `error.message`,
+      errno text, or absolute root reaches an HTTP body, startup line, or evidence
+      bundle. Pinned by `tests/bridgeDisclosure.test.ts`.
+- [x] Allowed origin reflects a loopback page's own origin with `Vary: Origin` rather
+      than a hardcoded dev port, and a non-loopback `Host` is refused, closing DNS
+      rebinding. The rebinding case is exercised over raw `node:http`, because `fetch()`
+      drops a `Host` header and would have asserted nothing.
+- [x] Documented in the strong form: the bridge **cannot operate inside Papers**
+      (`papers-backpack://` origin, `connect-src 'none'`), so bridge-backed acceptance is
+      never Papers-hosted acceptance. → `docs/DECISIONS.md#d38`
 - [ ] Native creator-vault grant and real Obsidian coexistence acceptance remain OPEN.
+
+**Ledger correction (audited at `d95fb43`, first review with the diff actually
+readable).** Gate 6O at `5bf635e` is **FAIL, retroactively**: it forwarded raw
+filesystem errors carrying the absolute vault root, and pinned CORS to a guessed dev
+port. Gate 6O **PASSES at `d95fb43`**. Verdicts issued while the source was unpushed
+were not audits; see the process rule below.
+
+### 6.1O Provable invariants correction (Gate 6M/6N)
+
+- [x] Gate 6M zero-write evidence is non-vacuous: a proxied reader records reads, throws
+      on anything outside the read surface, and the tree is fingerprinted so an
+      unattributed change fails the run. The witness itself fails when it recorded no
+      reads, so an unwired instrument cannot report success.
+      → `tests/zero-write-witness.ts`, `tests/zeroWriteWitness.test.ts`
+- [x] Gate 6N live browser composition no longer passes a hardcoded coexistence literal.
+      Readiness is declared, defaults to every field false, and is coerced from literal
+      `true` only. → `src/browser/coexistenceReadiness.ts`
+- [ ] Gate 6N live browser READY composition remains **OPEN**: the surface stays BLOCKED
+      until an acceptance run declares observed evidence. This is the true state of a
+      freshly booted page, not a placeholder.
+
+### Process rule — an unpushed gate is not audited
+
+Gates 2B–6O were implemented and reported without being pushed. The reviewer said
+"not resolvable from the connected remote" on four consecutive verdicts and passed them
+anyway on the strength of the summary; the first review with the real diff overturned
+one gate and qualified two others. Therefore: **push the slice, confirm the SHA resolves
+on the remote, and only then request the audit.** A verdict on unreadable code records
+confidence, not review.
 
 ### 6.2 Elastic board
 

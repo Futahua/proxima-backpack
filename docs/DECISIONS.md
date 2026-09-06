@@ -695,6 +695,41 @@ creator vault, write files, migrate data, watch the filesystem, invoke Papers, o
 native permissions. Native creator-vault selection and real Obsidian coexistence remain
 separate OPEN acceptance work.
 
+**The bridge cannot operate inside Papers, and this is architectural rather than
+incidental.** A Papers-hosted Backpack page is served from a `papers-backpack://<id>`
+origin under a fixed CSP whose `connect-src` is `'none'`, so the page cannot issue the
+bridge's HTTP requests at all, and the bridge's own CORS reflection would not match that
+origin in any case. The bridge is therefore a dev/agent transport only.
+
+The consequence for every future reader of an acceptance report: **bridge-backed
+acceptance proves Proxima's read-only domain, session and evidence behaviour against a
+real creator vault. It proves nothing about Papers-hosted access, FSA permission, or
+native Papers integration**, all of which remain independently OPEN. A result that does
+not carry `transport` and `papersHosted` is not usable as Papers evidence.
+
+## D39 — Zero-write and readiness must be provable, not asserted
+
+**Decided:** an invariant is only recorded once something would fail if it were false.
+
+Two assertions in the Gate 6M/6N layer looked like evidence and were not. A coexistence
+test declared `const writerCalls: string[] = []` and asserted it stayed empty, while
+nothing ever appended to it — the assertion would have held had Proxima rewritten every
+file in the vault. The browser surface passed a literal
+`{ passed: false, zeroWrites: true, sourceBoundsValid: true, hostCapabilityResolved: true }`
+into the preflight: the `false` made `READY_FOR_NATIVE_GRANT` unreachable regardless of
+evidence, and the three `true`s claimed facts nobody had observed.
+
+Both are now structural. Zero-write is witnessed by a proxied reader that records reads,
+throws on anything outside `list/read/exists/walk`, and fingerprints the tree so an
+unattributed change fails the run; the witness fails if it recorded no reads at all, so
+an unwired instrument cannot report success. Coexistence readiness is a declared input
+defaulting to every field false, coerced from literal `true` only, and the surface never
+infers it.
+
+**Boundary:** this changes how the invariants are proved, not what they claim. A
+declared readiness is still only as good as the run that produced it, and Gate 6P must
+supply it from an actual acceptance run rather than a constant.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

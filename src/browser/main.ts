@@ -3,6 +3,7 @@ import { createInspectionProjection } from '../app/inspection.js';
 import type { ReadOnlyProjection } from '../app/readOnlyProjection.js';
 import { evaluateRealVaultAcceptance, isRealVaultAcceptanceReport, type RealVaultAcceptanceReport } from '../app/realVaultAcceptance.js';
 import { evaluateCreatorVaultPreflight, isCreatorVaultPreflightReport, type CreatorVaultPreflightReport } from '../app/creatorVaultPreflight.js';
+import { coexistenceReadiness, declareCoexistenceReadiness } from './coexistenceReadiness.js';
 import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
 import type { SourceSession } from '../app/sourceSession.js';
@@ -171,11 +172,18 @@ function exposeInspection(): void {
     writeInvariant: { writesAttempted: 0, writerMethodsCalled: [] },
   });
   const runbook = evaluateRealVaultRunbook({ report, expectedBuildSha: BUILD_IDENTITY.gitSha });
-  const preflight = evaluateCreatorVaultPreflight({ acceptance: report, runbook, coexistence: { passed: false, zeroWrites: true, sourceBoundsValid: true, hostCapabilityResolved: true }, expectedBuildSha: BUILD_IDENTITY.gitSha });
-  const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection; __PROXIMA_REAL_VAULT_ACCEPTANCE__?: (report: unknown) => void; __PROXIMA_CREATOR_VAULT_PREFLIGHT__?: (report: unknown) => void };
+  const preflight = evaluateCreatorVaultPreflight({ acceptance: report, runbook, coexistence: coexistenceReadiness(), expectedBuildSha: BUILD_IDENTITY.gitSha });
+  const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection; __PROXIMA_REAL_VAULT_ACCEPTANCE__?: (report: unknown) => void; __PROXIMA_CREATOR_VAULT_PREFLIGHT__?: (report: unknown) => void; __PROXIMA_DECLARE_COEXISTENCE__?: (evidence: unknown) => void };
   target.__PROXIMA_INSPECTION__ = () => createInspectionProjection(actionDispatcher!.snapshot(), BUILD_IDENTITY, currentUiHealth());
   target.__PROXIMA_REAL_VAULT_ACCEPTANCE__ = (report) => { if (isRealVaultAcceptanceReport(report)) renderRealVaultAcceptance(report); };
   target.__PROXIMA_CREATOR_VAULT_PREFLIGHT__ = (report) => { if (isCreatorVaultPreflightReport(report)) renderCreatorVaultPreflight(report); };
+  // An acceptance run declares observed Gate 6M evidence here; the surface never
+  // infers it. Absent a declaration the preflight stays BLOCKED, which is true.
+  target.__PROXIMA_DECLARE_COEXISTENCE__ = (evidence) => {
+    if (!evidence || typeof evidence !== 'object') return;
+    declareCoexistenceReadiness(evidence as Record<string, boolean>);
+    exposeInspection();
+  };
   const root = element<HTMLElement>('#proxima-app');
   root.dataset.proximaStateRevision = String(inspection.applicationStateRevision);
   root.dataset.proximaHealthGeneration = String(inspection.sourceHealth.sourceRevision);
