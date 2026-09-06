@@ -312,3 +312,21 @@ FSA work in Gate 5. No Papers host capability is introduced by this gate.
 **Reverses if:** a Gate 5 acceptance test demonstrates that the structural OPFS
 contract is insufficient for a required read-only scenario; the missing capability
 must then be named and justified before changing Papers.
+
+## D14 — Unreadable-file tests use a portable fail-visible policy
+
+**Decided:** an existing-but-unreadable file must remain observable as an existing
+path and its read must reject visibly; it must never become an empty or stale value.
+The disk conformance test pins that invariant with a deterministic `EACCES` reader
+injection because native ACL/permission denial is not reliably manufacturable in a
+Windows CI fixture. On platforms where permissions can be changed safely, a future
+acceptance layer may add a native denial case; the injected case is the portable
+fallback and is not presented as proof of Windows ACL semantics.
+
+The disk conformance test also starts a separate Node process to append to the
+disposable fixture, then verifies the reader observes the changed bytes and revision.
+All mutation remains inside a temporary directory removed in `finally`.
+
+**Reverses if:** a platform-specific acceptance requirement needs the exact native
+permission or cross-process locking semantics; that requirement must be named before
+expanding the adapter or Papers host surface.

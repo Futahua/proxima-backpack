@@ -463,7 +463,8 @@ One common behavioral suite runs against every storage implementation.
 - [x] nested directories
 - [x] missing file
 - [x] missing directory
-- [ ] unreadable file behavior
+- [x] unreadable file behavior (permission-denied injection pins fail-visible rejection;
+      native ACL manufacture remains platform-dependent and is documented)
 - [x] deterministic ordering
 - [x] large-but-reasonable file
 - [x] no traversal outside granted root
@@ -485,7 +486,7 @@ the memory adapter, a disposable real disk fixture, and an OPFS-shaped handle.
 - [x] Real rename behavior.
 - [x] Real delete/recreate.
 - [x] Real mtime/content changes.
-- [ ] External writer process can mutate fixture during test.
+- [x] External writer process can mutate fixture during test.
 - [x] Never point automated mutation tests at creator's real vault.
 
 ### 4.4 Browser OPFS adapter

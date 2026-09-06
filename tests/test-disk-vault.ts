@@ -2,6 +2,11 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path';
 import type { VaultEntry, VaultFile, VaultReader } from '../src/ports/vault.js';
 
+export interface DiskVaultOptions {
+  /** Test-only hook for deterministic permission-denied coverage on Windows/CI. */
+  readText?: (absolutePath: string) => Promise<string>;
+}
+
 function normalise(path: string): string {
   const value = path.replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
   if (value.split('/').some((part) => part === '..' || part === '.')) throw new Error('disk path traversal is not allowed');
@@ -22,7 +27,7 @@ function within(root: string, path: string): string {
   return target;
 }
 
-export function createDiskVault(root: string): VaultReader {
+export function createDiskVault(root: string, options: DiskVaultOptions = {}): VaultReader {
   async function entries(directory: string): Promise<VaultEntry[]> {
     const relativeDirectory = normalise(directory);
     const absoluteDirectory = within(root, relativeDirectory);
@@ -47,7 +52,7 @@ export function createDiskVault(root: string): VaultReader {
       const absolutePath = within(root, relativePath);
       const metadata = await stat(absolutePath);
       if (!metadata.isFile()) throw new Error(`disk path is not a file: ${path}`);
-      const text = await readFile(absolutePath, 'utf8');
+      const text = await (options.readText ? options.readText(absolutePath) : readFile(absolutePath, 'utf8'));
       const modifiedAt = metadata.mtime.toISOString();
       return { path: relativePath, text, size: metadata.size, modifiedAt, revision: `${modifiedAt}:${metadata.size}:${hash(text)}` };
     },

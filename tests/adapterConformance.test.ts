@@ -1,4 +1,5 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -71,10 +72,14 @@ describe('Gate 4 repository adapter conformance', () => {
       await assertContract(vault);
       const target = join(root, 'Proxima', 'tasks', 'Write fixture vault.md');
       const before = await vault.read('Proxima/tasks/Write fixture vault.md');
-      await writeFile(target, `${before.text}\nexternal edit`, 'utf8');
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(process.execPath, ['-e', `const fs = require('node:fs'); fs.appendFileSync(process.argv[1], '\\nexternal process edit', 'utf8');`, target], { stdio: 'inherit' });
+        child.once('error', reject);
+        child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`external writer exited with ${code}`)));
+      });
       const after = await vault.read('Proxima/tasks/Write fixture vault.md');
       expect(after.revision).not.toBe(before.revision);
-      expect(after.text).toContain('external edit');
+      expect(after.text).toContain('external process edit');
       await import('node:fs/promises').then(({ rename }) => rename(target, join(root, 'Proxima', 'tasks', 'renamed.md')));
       expect(await vault.exists('Proxima/tasks/Write fixture vault.md')).toBe(false);
       expect(await vault.exists('Proxima/tasks/renamed.md')).toBe(true);
@@ -83,6 +88,16 @@ describe('Gate 4 repository adapter conformance', () => {
       await writeFile(target, 'recreated after delete', 'utf8');
       const recreated = await vault.read('Proxima/tasks/Write fixture vault.md');
       expect(recreated.revision).not.toBe(after.revision);
+    } finally { await removeDiskFixture(root); }
+  });
+
+  it('keeps unreadable existing files fail-visible with a deterministic permission-denied fallback', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'proxima-gate4-unreadable-'));
+    try {
+      await copyFixtureToDisk(fixtureFiles('vault-basic'), root);
+      const vault = createDiskVault(root, { readText: async () => { const error = Object.assign(new Error('permission denied by test fixture'), { code: 'EACCES' }); throw error; } });
+      expect(await vault.exists('Proxima/tasks/Write fixture vault.md')).toBe(true);
+      await expect(vault.read('Proxima/tasks/Write fixture vault.md')).rejects.toThrow(/permission denied/i);
     } finally { await removeDiskFixture(root); }
   });
 
