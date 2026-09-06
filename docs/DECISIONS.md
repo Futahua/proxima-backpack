@@ -386,3 +386,21 @@ picker selection and the bounded read/edit/reload checks.
 No creator-vault data is part of this preparation. The clean profile does not prove
 cross-profile persistence; it proves that browser-native FSA works from a fresh
 profile after its own explicit grant.
+
+## D19 — FSA acceptance evidence is bounded and reproducible
+
+**Decided:** the Gate 5 report remains a small JSON projection of the granted handle:
+permission state, handle name, relative entries, bounded text markers/revisions, and
+the persisted flag. `src/app/fsaEvidence.ts` validates that projection without
+introducing filesystem or host dependencies: absolute paths, traversal segments,
+duplicate entries, invalid kinds, and unbounded fields fail visibly. The disposable
+clean-profile fixture can be reset only through the fixed-path
+`tools/reset-gate5-clean-fixture.mjs` helper.
+
+**Why:** a reviewer must be able to consume acceptance output mechanically while
+ensuring a report cannot accidentally disclose machine paths or grow without bound.
+The reset helper makes the final foreground test repeatable and cannot target an
+arbitrary user-selected directory.
+
+**Boundary:** this validates evidence and prepares disposable data; it does not grant
+permissions, drive a native picker, or claim clean-profile/creator-vault acceptance.
