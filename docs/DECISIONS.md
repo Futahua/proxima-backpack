@@ -614,6 +614,27 @@ authorization.
 Native creator-vault selection, real-directory integration, Obsidian coexistence,
 and any write capability remain open for later gates.
 
+## D34 — Live browser acceptance consumes the one startup/session path
+
+**Decided:** the browser bootstrap now composes the 6I startup orchestrator with a
+fixture candidate and an injected restored-handle seam. The default remains a
+fixture when no restored handle exists; an already-granted external candidate would
+enter the same `SourceSession` path, with no parallel real-vault controller. Source
+projections replace the dispatcher atomically, and the browser recomputes the 6J
+report after startup and every accepted refresh. Edit evidence comes from the normal
+refresh result plus before/after accepted projections; rename/delete evidence comes
+from source identity/path deltas, never a manually supplied PASS bit.
+
+The live seam exposes only the copy-safe inspection and validated acceptance report.
+It retains no raw handle, reader, session, controller, policy, store, permission
+provider, or DOM authority in the global surface. Fixture startup is explicitly
+non-PASS, while external edits, unreadable/last-good degradation, recovery, and
+stale-source callback suppression remain covered by the existing session tests.
+
+**Boundary:** Gate 6K still uses injected structural sources in tests. It does not
+invoke a native picker, request permission, select a creator vault, change Papers,
+or enable writes.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

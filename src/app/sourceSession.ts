@@ -33,7 +33,7 @@ export interface SourceSessionOptions {
   initial: SourceCandidate;
   intervalMs?: number;
   scheduler?: RefreshScheduler;
-  onProjection?: (projection: ReadOnlyProjection, mode: SourceMode) => void;
+  onProjection?: (projection: ReadOnlyProjection, mode: SourceMode, result?: RefreshResult) => void;
 }
 
 export interface SourceSession {
@@ -82,7 +82,7 @@ export function createSourceSession(options: SourceSessionOptions): SourceSessio
       if (disposed || active !== source) return;
       if (result.ok && result.changed) sourceGeneration += 1;
       source.projection = projectionFor(result.snapshot, sourceGeneration, source.projection);
-      options.onProjection?.(source.projection, source.candidate.mode);
+      options.onProjection?.(source.projection, source.candidate.mode, result);
     } });
     source.policy.start();
     return source;

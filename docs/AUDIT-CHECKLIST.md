@@ -758,6 +758,22 @@ Only then consider a project-scoped external read capability in Papers.
 - [ ] Native creator-vault readiness, real-directory integration, and Obsidian
       coexistence acceptance.
 
+### 6.1J Live external-source browser acceptance wiring (Gate 6K)
+
+- [x] Browser bootstrap composes the 6I startup/session orchestrator; fixture
+      remains the deterministic fallback when no restored source is present.
+- [x] Accepted source projections replace UI state atomically and recompute the
+      bounded 6J report at startup and after refresh callbacks.
+- [x] Refresh evidence is derived from normal refresh outcomes plus before/after
+      accepted projections; rename/delete evidence is derived from source deltas.
+- [x] Fixture startup is visibly non-PASS; no parallel real-vault controller or
+      special source path is introduced.
+- [x] No raw handle/reader/session/controller/policy/store/provider/DOM authority
+      crosses inspection or global report seams; no absolute paths are emitted.
+- [x] Tests cover live revision evidence, rename/delete derivation, and existing
+      refresh degradation/recovery and stale-callback protections (Gate 6K, D34).
+- [ ] Native creator-vault selection and actual real-directory browser acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.
