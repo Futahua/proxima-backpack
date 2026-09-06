@@ -22,7 +22,7 @@ export interface RealVaultAcceptanceInput {
   session: { sourceMode: 'fixture' | 'external'; sourceGeneration: number; transitionState: 'stable' | 'switching' | 'failed' };
   projection: { generation: number; state: ProximaState; health: ReadOnlyProjectionHealth; revisions: Record<string, string>; problems: Array<{ code: string; path: string; detail: string }> };
   inspection: InspectionProjection;
-  refreshEvidence?: { outcome: 'changed' | 'deleted' | 'renamed' | 'unchanged'; changed: boolean; previousGeneration: number; currentGeneration: number; beforeRevision: string; afterRevision: string; beforeMarker: string; afterMarker: string };
+  refreshEvidence?: { outcome: 'changed' | 'deleted' | 'renamed' | 'unchanged' | 'unreadable' | 'malformed'; changed: boolean; previousGeneration: number; currentGeneration: number; beforeRevision: string; afterRevision: string; beforeMarker: string; afterMarker: string };
   renameDeleteEvidence?: { outcome: 'deleted' | 'renamed'; removedPath: string; addedPath?: string };
   writeInvariant: { writesAttempted: number; writerMethodsCalled: string[] };
   obsidianEvidence?: { passed: boolean };
