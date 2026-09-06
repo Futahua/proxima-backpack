@@ -1043,6 +1043,34 @@ blockers, all thirteen stages PASS. projects 15 scanned → 4 candidates → 4 l
 direct disk read exactly. 238 `warning:missing-project` remain as recorded evidence.
 Vault unmodified.
 
+### 6.1T Bridge presence propagation (Gate 6Q.1b)
+
+The bridge answered presence correctly and the loader consumed it correctly, but the
+capability reached the reader only because the harness patched it on after
+construction. A capability bolted on outside the adapter is one the browser path
+silently lacks, and one that can vanish without any test noticing.
+
+- [x] `createHttpPresenceProbe` queries `/api/vault/presence` and is loopback-checked
+      before any request.
+- [x] The probe travels as an `OpfsVaultOptions` field through
+      `createHttpDirectoryHandle` → `createExternalDirectoryVault` → `createOpfsVault`
+      and appears as `VaultReader.presence`.
+- [x] A source that cannot answer is never made to invent one: without a probe the
+      reader has no `presence` at all, and the loader fails closed on the silence.
+      Generic OPFS/FSA handles have only traversal, which cannot separate missing
+      from unreadable.
+- [x] Only `present` and `missing` are believed; an unrecognised value, a non-OK
+      response, or a transport error allanswer `unknown`.
+- [x] The zero-write witness records a presence call as a read.
+- [x] The harness no longer patches the reader; it passes the probe as an option.
+- [x] Regression exercises the real bridge-backed chain end to end: a vault holding
+      only events reports project and task `absent`, event `complete`, and passes.
+
+**Standing process requirement, at the reviewer's direction:** `npm test` builds
+first. Stale compiled modules were letting tests pass against old behaviour, so
+build-before-test is an invariant of this repository's acceptance work rather than a
+convenience.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

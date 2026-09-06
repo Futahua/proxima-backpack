@@ -311,7 +311,7 @@ async function readThroughWitness(port, options) {
     throw new Error(CODES.modulesUnavailable);
   }
   const [
-    { createHttpDirectoryHandle },
+    { createHttpDirectoryHandle, createHttpPresenceProbe },
     { createExternalDirectoryVault },
     { createZeroWriteWitness },
     { loadVaultState },
@@ -326,21 +326,12 @@ async function readThroughWitness(port, options) {
   ] = modules;
 
   const base = `http://127.0.0.1:${port}`;
-  const reader = createExternalDirectoryVault(createHttpDirectoryHandle(base));
-  // The loader fails closed on a directory whose presence it cannot establish, so
-  // give it a probe that can actually answer. Without one, a vault that simply has
-  // no tasks directory would be indistinguishable from one whose tasks directory
-  // could not be read.
-  reader.presence = async (directory) => {
-    try {
-      const response = await fetch(`${base}/api/vault/presence?path=${encodeURIComponent(directory)}`);
-      if (!response.ok) return 'unknown';
-      const body = await response.json();
-      return body.presence === 'present' || body.presence === 'missing' ? body.presence : 'unknown';
-    } catch {
-      return 'unknown';
-    }
-  };
+  // Presence comes through the adapter chain, not bolted on here: a capability the
+  // harness patches onto a reader is one the browser path silently lacks, and one
+  // that can disappear without any test noticing.
+  const reader = createExternalDirectoryVault(createHttpDirectoryHandle(base), {
+    presence: createHttpPresenceProbe(base),
+  });
   const witness = createZeroWriteWitness(reader);
   // The regression the reviewer asked for: when this hands over the unwrapped
   // reader, the witness records no reads and the run must not be able to pass.

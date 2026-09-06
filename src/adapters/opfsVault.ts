@@ -1,4 +1,4 @@
-import type { VaultEntry, VaultFile, VaultReader } from '../ports/vault.js';
+import type { DirectoryPresence, VaultEntry, VaultFile, VaultReader } from '../ports/vault.js';
 
 /** Minimal structural subset shared by browser OPFS and test doubles. */
 export interface OpfsFileHandleLike { kind: 'file'; getFile(): Promise<{ text(): Promise<string>; size: number; lastModified: number }> }
@@ -9,6 +9,16 @@ export interface OpfsVaultOptions {
   maxEntries?: number;
   maxDepth?: number;
   maxFileBytes?: number;
+  /**
+   * A source that can say definitively whether a directory exists.
+   *
+   * Optional because a generic OPFS or File System Access handle cannot answer it:
+   * traversal is all such a source has, and a failed traversal cannot separate
+   * "missing" from "unreadable". Those sources must stay silent rather than guess,
+   * and the loader fails closed on the silence. A transport that does know — the
+   * loopback bridge reads errno — supplies this so the answer is precise.
+   */
+  presence?(directory: string): Promise<DirectoryPresence>;
 }
 
 const DEFAULT_MAX_ENTRIES = 10_000;
@@ -71,7 +81,7 @@ export function createOpfsVault(root: OpfsDirectoryHandleLike, options: OpfsVaul
     }
     return files.sort();
   }
-  return {
+  const reader: VaultReader = {
     list,
     async walk(directory) { return walk(directory); },
     async exists(path) { try { await childFile(root, path); return true; } catch { try { await childDirectory(root, path); return true; } catch { return false; } } },
@@ -86,4 +96,9 @@ export function createOpfsVault(root: OpfsDirectoryHandleLike, options: OpfsVaul
       return { path: normalised, text, size: data.size, modifiedAt, revision: `${modifiedAt}:${data.size}:${hash(text)}` };
     },
   };
+  // Attached only when the source supplied one: an absent probe is the honest
+  // answer for a handle that cannot tell missing from unreadable, and the loader
+  // blocks on that rather than assuming absence.
+  if (options.presence) reader.presence = (directory) => options.presence!(directory);
+  return reader;
 }

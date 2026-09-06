@@ -1,4 +1,5 @@
 import type { OpfsDirectoryHandleLike, OpfsFileHandleLike, OpfsHandleLike } from './opfsVault.js';
+import type { DirectoryPresence } from '../ports/vault.js';
 
 interface BridgeEntry { path: string; kind: 'file' | 'directory' }
 interface BridgeFile { path: string; text: string; size: number; modifiedAt: string; revision: string }
@@ -27,6 +28,30 @@ function fileHandle(baseUrl: string, path: string): OpfsFileHandleLike {
 
 function directoryHandle(baseUrl: string, path: string, name?: string): OpfsDirectoryHandleLike {
   return { kind: 'directory', name, async *entries(): AsyncIterableIterator<[string, OpfsHandleLike]> { const result = await json<{ entries: BridgeEntry[] }>(bridgeUrl(baseUrl, 'list', path)); for (const entry of result.entries) { const entryName = entry.path.slice(entry.path.lastIndexOf('/') + 1); yield [entryName, entry.kind === 'directory' ? directoryHandle(baseUrl, entry.path, entryName) : fileHandle(baseUrl, entry.path)]; } } };
+}
+
+/**
+ * Ask the bridge whether a directory is definitively there.
+ *
+ * The bridge answers from errno, which is the only place that distinction actually
+ * exists: a traversal failure alone cannot separate "not there" from "there and
+ * unreadable", and treating the second as the first is how an unreadable record
+ * directory once passed as a legal empty one.
+ */
+export function createHttpPresenceProbe(baseUrl: string): (directory: string) => Promise<DirectoryPresence> {
+  const base = new URL(baseUrl);
+  assertLoopback(base);
+  const origin = base.toString().replace(/\/$/, '');
+  return async (directory: string) => {
+    try {
+      const response = await fetch(`${origin}/api/vault/presence?path=${encodeURIComponent(directory)}`, { method: 'GET', credentials: 'omit' });
+      if (!response.ok) return 'unknown';
+      const body = (await response.json()) as { presence?: unknown };
+      return body.presence === 'present' || body.presence === 'missing' ? body.presence : 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  };
 }
 
 /** Read-only structural directory handle backed by the loopback automation bridge. */
