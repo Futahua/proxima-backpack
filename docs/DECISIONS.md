@@ -432,3 +432,15 @@ permission/persistence failures, and the fixed-path reset utility.
 
 **Boundary:** this is evidence readiness only. It does not claim the clean-profile
 picker/read acceptance, creator-vault access, Obsidian coexistence, or write safety.
+
+## D22 — The browser surface emits the clean-profile verdict automatically
+
+**Decided:** every FSA probe result rendered by the browser surface is accompanied
+by the pure clean-profile acceptance projection and the current build identity. The
+native picker still supplies the only user gesture, but once a report exists the
+surface emits the bounded PASS/FAIL result and structured failure codes itself; no
+manual transcription or second inspection step is part of the acceptance path.
+
+**Boundary:** reports for the already-used core fixture intentionally fail the
+clean-profile handle/marker assertions. This is diagnostic separation, not a claim
+that the core fixture is the clean-profile fixture.

@@ -537,6 +537,8 @@ Inside the real `papers-backpack://` surface:
       fixed-path disposable-fixture reset helper (`src/app/fsaEvidence.ts`, D19).
 - [x] Clean-profile acceptance harness evaluates the captured report against the
       exact disposable fixture shape and emits structured failure codes (D21).
+- [x] Browser surface emits the harness result alongside each captured FSA report;
+      no manual evidence transcription is required (D22).
 - [ ] Clean-profile behavior recorded. _(deferred by explicit user decision; no PASS inferred)_
 
 Clean-profile acceptance preparation is complete but intentionally unexecuted: an
