@@ -635,6 +635,20 @@ Only then consider a project-scoped external read capability in Papers.
 - [x] Core policy tests use injected scheduling and no DOM/window/host authority.
 - [ ] Real-vault trigger acceptance or native watcher.
 
+### 6.1C Stale/degraded UI and inspection integration (Gate 6D)
+
+- [x] One bounded UI health model is derived from the accepted read-only projection.
+- [x] Stable C1 health surface exposes status, stale/degraded, source/application
+      generation, last successful refresh, last reason, and bounded problem codes.
+- [x] Projects, Board, Calendar, and inspection share the same health generation.
+- [x] Unreadable/malformed refresh retains last-good content and visibly marks stale or
+      degraded; no cards, projects, or events disappear just because refresh failed.
+- [x] Recovery clears health degradation and advances all surfaces atomically.
+- [x] UI/inspection details remain bounded and path-safe, with no controller/reader,
+      file handle, DOM object, or mutable internal authority exposed.
+- [x] Repeated failure, recovery, and health mutation-isolation tests are present.
+- [ ] Real-vault UI health acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

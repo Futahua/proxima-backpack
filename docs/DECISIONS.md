@@ -483,6 +483,23 @@ if needed, remains an outer adapter with injected callbacks.
 **Boundary:** Gate 6C remains fixture/disposable-reader only. H2 watcher capability,
 real-vault acceptance, and native picker handling stay deferred.
 
+## D27 — One bounded health model serves UI and inspection
+
+**Decided:** stale/degraded state is normalized by `createUiHealthModel` from the
+accepted read-only projection. The browser renders one stable C1 health surface with
+the source/application generation, status, last successful refresh, last reason, and
+bounded problem codes; inspection exposes the same copy-safe model. Board, Projects,
+and Calendar therefore cannot disagree about the generation or turn stale into an
+empty-data state.
+
+Unreadable or malformed refreshes retain the last-good domain content while the
+health surface changes visibly; recovery clears the indicator and advances the
+generation. UI and inspection never receive a reader, controller, file handle, DOM
+object, or absolute path authority.
+
+**Boundary:** Gate 6D is fixture-only. Real-vault UI, native FSA, and host lifecycle
+acceptance remain open.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure
