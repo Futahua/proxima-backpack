@@ -107,6 +107,67 @@ describe('Gate 6P bridge-backed acceptance harness', () => {
     expect(evaluateTreeDelta(before, new Map(before), []).ok).toBe(true);
   });
 
+  it('lets the hosted evaluators decide, and reports their verdicts', async () => {
+    const root = await disposableVault('proxima-6p-evaluators-');
+    try {
+      const report = await runAcceptance({ root });
+      expect(report.status).toBe('PASS');
+      expect(report.stages.acceptance6J).toBe('PASS');
+      expect(report.stages.runbook6L).toBe('PASS');
+      expect(report.verdicts?.runbook6L).toBe('READY');
+
+      // 6J's overall verdict stays FAIL because external-edit, rename/delete and
+      // Obsidian stages are OPEN for a single baseline read. The harness must not
+      // launder that into a pass, nor fail the run for it.
+      expect(report.verdicts?.acceptance6JBaseline).toBe('PASS');
+      expect(report.verdicts?.acceptance6JOverall).toBe('FAIL');
+
+      // The two blockers a loopback bridge cannot clear are named, not hidden.
+      expect(report.verdicts?.openBlockers).toEqual([
+        'coexistence-simulation-missing',
+        'host-capability-unresolved',
+      ]);
+      expect(report.verdicts?.preflightBlockers).toEqual([]);
+    } finally { await removeDiskFixture(root); }
+  }, 30_000);
+
+  it('cannot pass when the hosted evaluators reject the source', async () => {
+    // The regression the reviewer asked for, driven by a source that genuinely
+    // fails rather than by a test-only hook: a malformed vault loads, so the
+    // transport and witness stages pass, and only 6J/6L/6N block the run.
+    const root = await mkdtemp(join(tmpdir(), 'proxima-6p-evalfail-'));
+    try {
+      await copyFixtureToDisk(fixtureFiles('vault-malformed'), root);
+      const report = await runAcceptance({ root });
+      expect(report.stages.bridge).toBe('PASS');
+      expect(report.stages.zeroWriteWitness).toBe('PASS');
+      expect(report.status).not.toBe('PASS');
+      expect(report.blockerCodes).toContain('acceptance-6j-failed');
+      expect(report.verdicts?.baselineFailures.length).toBeGreaterThan(0);
+    } finally { await removeDiskFixture(root); }
+  }, 30_000);
+
+  it('detects the legacy layout without being told, and refuses to guess when both exist', async () => {
+    const legacy = await mkdtemp(join(tmpdir(), 'proxima-6p-legacy-'));
+    const both = await mkdtemp(join(tmpdir(), 'proxima-6p-both-'));
+    try {
+      await copyFixtureToDisk(fixtureFiles('vault-legacy'), legacy);
+      expect((await runAcceptance({ root: legacy })).layout).toBe('legacy');
+
+      // Two canonical roots present: reading either one silently would mean
+      // reporting half a vault as the whole of it.
+      await copyFixtureToDisk(fixtureFiles('vault-basic'), both);
+      await copyFixtureToDisk(fixtureFiles('vault-legacy'), both);
+      const ambiguous = await runAcceptance({ root: both });
+      expect(ambiguous.layout).toBe('ambiguous');
+      expect(ambiguous.status).toBe('ABORTED');
+      expect(ambiguous.blockerCodes).toContain('layout-ambiguous');
+    } finally {
+      await removeDiskFixture(legacy);
+      await removeDiskFixture(both);
+    }
+  }, 45_000);
+
   it('requires an explicitly supplied root and never discovers one', async () => {
     await expect(runAcceptance({})).rejects.toThrow(/root is required/i);
   });

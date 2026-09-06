@@ -902,13 +902,39 @@ no picker, no gesture, nobody at the screen.
 - [x] Regression required by the reviewer: a run with a deliberately unwired witness
       **cannot** PASS — it aborts with `zero-write-witness-unwired` and zero observed
       reads, even against a perfectly clean source.
+- [x] The real 6J → 6L → 6N evaluators decide the verdict. The harness loads the
+      compiled `realVaultAcceptance`, `realVaultRunbook` and `creatorVaultPreflight`
+      and reports what they said; it no longer constructs a verdict of its own.
+      They run **after** the zero-write and path-safety instruments report, so their
+      input is this run's observations rather than an assumption made before the
+      checks.
+- [x] 6J is judged on `stages.baselineRead`, not on `passed`: the overall verdict
+      folds in external-edit, rename/delete and Obsidian stages that a single
+      baseline read cannot observe and that stay OPEN by design. Both are reported.
+- [x] The two preflight blockers a loopback bridge cannot clear —
+      `coexistence-simulation-missing` and `host-capability-unresolved` — are an
+      explicit set, reported as `openBlockers` rather than excused silently. Any
+      other blocker fails the run.
+- [x] Regression: a source the evaluators reject cannot PASS even when transport and
+      witness stages are green, driven by a genuinely malformed vault rather than a
+      test-only hook.
+- [x] Layout resolved by a narrow read-only probe of exactly the two canonical roots.
+      Both present ⇒ `ambiguous` ⇒ ABORTED, never a silent choice: preferring one
+      would mean reporting half a vault as the whole of it. No recursive search.
+- [x] Module loading fails closed. The dynamic-import fallback is gone, because it
+      would reintroduce the runner-graph ambiguity the `require()` path exists to
+      remove, and 6P wants certainty about which artifact executed.
 - [ ] Run against the actual creator vault. Not yet performed; this gate covers the
       harness being source-tested, not the real baseline it makes possible.
 
-**Not yet supported:** the harness reads the preferred `Proxima/` layout. A legacy
-`-Hide/Proxima` vault currently reports `source-empty` rather than loading, because
-the layout override is not plumbed through to the CLI. Honest failure, but it means
-the first real run must target a preferred-layout root or gain that flag first.
+**Open question for the reviewer, raised by the legacy fixture.**
+`realVaultAcceptance.ts:91` fails the baseline when `projection.problems.length > 0`,
+with no regard for severity. The legacy fixture trips it on a single warning-level
+`unexpected-type`. A real vault of any size will almost certainly carry at least one
+such warning, so as written the real-vault baseline is close to unreachable. This is
+an audited evaluator, so it has not been loosened here; the harness now reports the
+evaluator's own `baselineFailures` codes so the reason is visible rather than hidden
+behind `acceptance-6j-failed`.
 
 ### 6.2 Elastic board
 

@@ -64,3 +64,61 @@ export function directoryFor(layout: VaultLayout, kind: RecordKind): string {
 function trimSlashes(value: string): string {
   return value.split('\\').join('/').replace(/^\/+|\/+$/g, '');
 }
+
+/** What a read-only probe of the two canonical roots found. */
+export type LayoutKind = 'preferred' | 'legacy' | 'ambiguous' | 'none';
+
+export interface LayoutDetection {
+  kind: LayoutKind;
+  /** The layout to read with, or null when the caller must decide. */
+  layout: VaultLayout | null;
+  /** Which canonical roots actually had a readable record directory. */
+  found: Array<'preferred' | 'legacy'>;
+}
+
+/**
+ * Decide which canonical layout a source uses, without guessing.
+ *
+ * An unattended run cannot ask anyone which layout a vault has, and it must not
+ * search the tree for something that looks close enough — a recursive hunt through
+ * a creator's vault is exactly the behaviour this project refuses. So the probe is
+ * narrow: exactly the two roots Proxima already supports, checked read-only.
+ *
+ * Finding both is reported as `ambiguous` rather than resolved by precedence.
+ * Silently preferring one would mean reading half a vault and calling it the whole
+ * thing, and the caller cannot tell that happened from a successful-looking result.
+ */
+export async function detectLayout(vault: {
+  list(directory: string): Promise<Array<{ path: string; kind: 'file' | 'directory' }>>;
+}): Promise<LayoutDetection> {
+  const candidates: Array<{ name: 'preferred' | 'legacy'; layout: VaultLayout }> = [
+    { name: 'preferred', layout: PREFERRED_LAYOUT },
+    { name: 'legacy', layout: LEGACY_LAYOUT },
+  ];
+
+  const found: Array<'preferred' | 'legacy'> = [];
+  for (const candidate of candidates) {
+    if (await hasAnyRecordDirectory(vault, candidate.layout)) found.push(candidate.name);
+  }
+
+  if (found.length === 0) return { kind: 'none', layout: null, found };
+  if (found.length > 1) return { kind: 'ambiguous', layout: null, found };
+  const only = found[0] as 'preferred' | 'legacy';
+  return { kind: only, layout: only === 'preferred' ? PREFERRED_LAYOUT : LEGACY_LAYOUT, found };
+}
+
+/** A root counts as present when at least one of its record directories reads. */
+async function hasAnyRecordDirectory(
+  vault: { list(directory: string): Promise<unknown[]> },
+  layout: VaultLayout,
+): Promise<boolean> {
+  for (const directory of [layout.projects, layout.tasks, layout.events]) {
+    try {
+      await vault.list(directory);
+      return true;
+    } catch {
+      // A directory that does not exist is not an error here; it is the answer.
+    }
+  }
+  return false;
+}

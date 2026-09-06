@@ -34,6 +34,16 @@ declare module '*/agent-accept.mjs' {
     blockerCodes: string[];
     observedReads: number;
     counts: AcceptanceCounts | null;
+    layout: 'preferred' | 'legacy' | 'ambiguous' | 'none' | null;
+    verdicts: {
+      acceptance6JBaseline: string;
+      baselineFailures: string[];
+      acceptance6JOverall: string;
+      runbook6L: string;
+      preflight6N: string;
+      openBlockers: string[];
+      preflightBlockers: string[];
+    } | null;
     open: string[];
   }
 
@@ -46,6 +56,12 @@ declare module '*/agent-accept.mjs' {
     declaredPeerWrites?: string[];
     /** Regression hook: hand the unwrapped reader over so the witness sees nothing. */
     unwireWitness?: boolean;
+    /** Declared Gate 6M readiness. Never inferred by the harness. */
+    coexistence?: { passed?: boolean; zeroWrites?: boolean; sourceBoundsValid?: boolean; hostCapabilityResolved?: boolean };
+    /** Skip layout detection with an explicit choice. */
+    layout?: 'preferred' | 'legacy';
+    /** Refuse to run against a build other than this one. */
+    expectedBuildSha?: string;
     /** Supply an already-running bridge instead of spawning one. */
     spawnBridge?: (root: string, port: number) => Promise<{ child: unknown; port: number; output: string[] }>;
   }

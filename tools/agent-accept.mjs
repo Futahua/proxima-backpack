@@ -36,6 +36,12 @@ export const ACCEPTANCE_SCHEMA_VERSION = 1;
 const MAX_CODES = 20;
 const STARTUP_TIMEOUT_MS = 10_000;
 
+/**
+ * Preflight blockers a bridge-backed run cannot clear, and must not pretend to.
+ * Kept as an explicit set so adding one is a deliberate, reviewable act.
+ */
+const EXPECTED_OPEN_BLOCKERS = new Set(['coexistence-simulation-missing', 'host-capability-unresolved']);
+
 /** Every way this harness can end. Nothing else is ever printed. */
 const CODES = Object.freeze({
   bridgeStartFailed: 'bridge-start-failed',
@@ -50,6 +56,12 @@ const CODES = Object.freeze({
   pathLeak: 'unsafe-path-in-evidence',
   buildMismatch: 'build-mismatch',
   modulesUnavailable: 'acceptance-modules-unavailable',
+  layoutUnresolved: 'layout-unresolved',
+  layoutAmbiguous: 'layout-ambiguous',
+  acceptanceFailed: 'acceptance-6j-failed',
+  runbookNotReady: 'runbook-6l-not-ready',
+  preflightNotReady: 'preflight-6n-not-ready',
+  buildStale: 'build-identity-stale',
 });
 
 /**
@@ -98,9 +110,11 @@ export async function runAcceptance(options = {}) {
 
     const before = await fingerprint(root);
 
-    const { witness, load } = await readThroughWitness(port, options);
+    const read = await readThroughWitness(port, options);
+    const { witness, load } = read;
+    stages.layout = read.detection?.kind === 'preferred' || read.detection?.kind === 'legacy' ? 'PASS' : 'FAIL';
     stages.baselineRead = load.ok ? 'PASS' : 'FAIL';
-    if (!load.ok) fail(load.code ?? CODES.loadFailed);
+    if (!load.ok) fail(load.code ?? CODES.loadFailed, { abort: load.code === CODES.layoutAmbiguous });
 
     // Liveness, capability, then effect — in that order, because an unwired witness
     // would make the other two meaningless.
@@ -124,10 +138,63 @@ export async function runAcceptance(options = {}) {
 
     if (load.ok && (load.counts?.records ?? 0) === 0) fail(CODES.emptySource);
 
-    return result({ blockers, stages, aborted, counts: load.counts, reads: witness.reads.length });
+    // Only now, with the instruments having reported, run the evaluators the
+    // browser depends on. Two of the facts 6N needs are things this run genuinely
+    // observed — nothing was written, and no unsafe path appeared — so they are
+    // passed as observations. The two it did not observe, the peer-writer
+    // simulation and the host-capability question, stay whatever the caller
+    // declared, which for an ordinary run is nothing.
+    const observed = {
+      writesAttempted: witness.violations.length,
+      writerMethodsCalled: [...witness.violations],
+      coexistence: {
+        ...normaliseCoexistence(options.coexistence),
+        zeroWrites: stages.zeroWriteWitness === 'PASS' && stages.zeroWriteEffect === 'PASS',
+        sourceBoundsValid: stages.pathSafety === 'PASS',
+      },
+    };
+    const evaluators = read.evaluate ? read.evaluate(observed) : null;
+
+    if (evaluators) {
+      // 6J's overall `passed` folds in external-edit, rename/delete and Obsidian
+      // stages that a single baseline read cannot observe and that remain OPEN by
+      // design. The baseline condition is the one this run is entitled to assert.
+      const baseline = evaluators.acceptance.stages.baselineRead?.verdict;
+      stages.acceptance6J = baseline === 'PASS' ? 'PASS' : 'FAIL';
+      if (baseline !== 'PASS') fail(CODES.acceptanceFailed);
+
+      stages.runbook6L = evaluators.runbook.status === 'READY' ? 'PASS' : 'FAIL';
+      if (evaluators.runbook.status !== 'READY') fail(CODES.runbookNotReady, { abort: evaluators.runbook.status === 'ABORTED' });
+
+      // 6N is the gate for the *native* grant decision, which a loopback bridge
+      // cannot resolve by construction: it performs no peer-writer simulation and
+      // answers no host-capability question. Those two blockers are therefore
+      // expected rather than excused — they are reported in `openBlockers` so a
+      // reader sees exactly what was set aside, and anything else fails the run.
+      const unexpected = evaluators.preflight.blockerCodes.filter((code) => !EXPECTED_OPEN_BLOCKERS.has(code));
+      stages.preflight6N = unexpected.length === 0 ? 'PASS' : 'FAIL';
+      if (unexpected.length > 0) fail(CODES.preflightNotReady, { abort: evaluators.preflight.status === 'ABORTED' });
+
+      if (read.buildSha && options.expectedBuildSha && read.buildSha !== options.expectedBuildSha) {
+        stages.buildIdentity = 'FAIL';
+        fail(CODES.buildStale);
+      } else if (read.buildSha) {
+        stages.buildIdentity = 'PASS';
+      }
+    }
+
+    return result({
+      blockers,
+      stages,
+      aborted,
+      counts: load.counts,
+      reads: witness.reads.length,
+      layout: read.detection?.kind ?? null,
+      evaluators,
+    });
   } catch (error) {
     fail(codeFor(error));
-    return result({ blockers, stages, aborted, counts: null, reads: 0 });
+    return result({ blockers, stages, aborted, counts: null, reads: 0, layout: null, evaluators: null });
   } finally {
     // Terminate only what this run started, and wait for it to actually go.
     // Exiting while the child's stdio handles are still closing trips a libuv
@@ -195,29 +262,49 @@ async function probeDisclosure(port, root, output) {
  */
 const requireBuilt = createRequire(import.meta.url);
 
-async function loadBuiltModule(relative) {
-  const path = fileURLToPath(new URL(relative, BUILD));
-  try {
-    return requireBuilt(path);
-  } catch {
-    return import(/* @vite-ignore */ new URL(relative, BUILD).href);
-  }
+function loadBuiltModule(relative) {
+  // Fail closed rather than falling back to a dynamic import. Gate 6P wants
+  // certainty about which artifact executed more than portability to an older
+  // loader, and a fallback would reintroduce exactly the runner-graph ambiguity
+  // this exists to remove.
+  return requireBuilt(fileURLToPath(new URL(relative, BUILD)));
 }
 
 async function readThroughWitness(port, options) {
   let modules;
   try {
-    modules = await Promise.all([
+    modules = [
       loadBuiltModule('adapters/httpDirectory.js'),
       loadBuiltModule('adapters/externalDirectoryVault.js'),
       loadBuiltModule('app/zeroWriteWitness.js'),
       loadBuiltModule('app/vaultRepository.js'),
-    ]);
+      loadBuiltModule('app/vaultLayout.js'),
+      loadBuiltModule('app/readOnlyProjection.js'),
+      loadBuiltModule('app/actionProtocol.js'),
+      loadBuiltModule('app/inspection.js'),
+      loadBuiltModule('app/realVaultAcceptance.js'),
+      loadBuiltModule('app/realVaultRunbook.js'),
+      loadBuiltModule('app/creatorVaultPreflight.js'),
+      loadBuiltModule('browser/generated/buildIdentity.generated.js'),
+    ];
   } catch {
     // Never report a missing build as a transport failure; run `npm run build`.
     throw new Error(CODES.modulesUnavailable);
   }
-  const [{ createHttpDirectoryHandle }, { createExternalDirectoryVault }, { createZeroWriteWitness }, { loadVaultState }] = modules;
+  const [
+    { createHttpDirectoryHandle },
+    { createExternalDirectoryVault },
+    { createZeroWriteWitness },
+    { loadVaultState },
+    { detectLayout },
+    { createReadOnlyProjection },
+    { createActionDispatcher },
+    { createInspectionProjection },
+    { evaluateRealVaultAcceptance },
+    { evaluateRealVaultRunbook },
+    { evaluateCreatorVaultPreflight },
+    { BUILD_IDENTITY },
+  ] = modules;
 
   const reader = createExternalDirectoryVault(createHttpDirectoryHandle(`http://127.0.0.1:${port}`));
   const witness = createZeroWriteWitness(reader);
@@ -225,14 +312,70 @@ async function readThroughWitness(port, options) {
   // reader, the witness records no reads and the run must not be able to pass.
   const handedToProxima = options.unwireWitness ? reader : witness.reader;
 
+  // Which layout, decided by a narrow read-only probe of the two canonical roots.
+  // Never a search of the creator's tree, and never a silent choice when both exist.
+  const detection = options.layout
+    ? { kind: options.layout, layout: undefined, found: [options.layout] }
+    : await detectLayout(handedToProxima);
+  if (detection.kind === 'ambiguous') {
+    return { witness, load: { ok: false, code: CODES.layoutAmbiguous, paths: [], counts: null }, detection };
+  }
+  if (detection.kind === 'none') {
+    return { witness, load: { ok: false, code: CODES.layoutUnresolved, paths: [], counts: null }, detection };
+  }
+
   try {
-    const load = await loadVaultState(handedToProxima);
-    const paths = Object.keys(load.revisions ?? {});
+    const load = await loadVaultState(handedToProxima, detection.layout ? { layout: detection.layout } : {});
+
+    // Materials for the hosted evaluators. They are run by the caller, once the
+    // zero-write and path-safety instruments have actually reported, so their input
+    // is this run's observations rather than an assumption made before the checks.
+    const projection = createReadOnlyProjection({
+      sourceRevision: 1,
+      lastSuccessfulRefreshRevision: 1,
+      refreshState: 'idle',
+      stale: false,
+      lastRefreshReason: null,
+      lastRefreshProblemCode: null,
+      pendingRefreshCount: 0,
+      load,
+    });
+    const dispatcher = createActionDispatcher({
+      state: projection.state,
+      problems: projection.problems,
+      revisions: projection.revisions,
+      mode: 'live',
+      initialSourceRevision: projection.generation,
+    });
+    const inspection = createInspectionProjection(dispatcher.snapshot(), BUILD_IDENTITY, projection.health);
+
     return {
       witness,
+      detection,
+      buildSha: BUILD_IDENTITY.gitSha,
+      evaluate: (observations) => {
+        const acceptance = evaluateRealVaultAcceptance({
+          build: BUILD_IDENTITY,
+          // Bridge-backed: an external source, granted by the operator supplying the
+          // root, already bootstrapped. Reported as observed, never as aspiration.
+          startup: { startupSourceMode: 'external', restoredHandlePresent: true, bootstrapStatus: 'ready' },
+          session: { sourceMode: 'external', sourceGeneration: projection.generation, transitionState: 'stable' },
+          projection,
+          inspection,
+          writeInvariant: { writesAttempted: observations.writesAttempted, writerMethodsCalled: observations.writerMethodsCalled },
+        });
+        const runbook = evaluateRealVaultRunbook({ report: acceptance, expectedBuildSha: BUILD_IDENTITY.gitSha });
+        const preflight = evaluateCreatorVaultPreflight({
+          acceptance,
+          runbook,
+          coexistence: observations.coexistence,
+          expectedBuildSha: BUILD_IDENTITY.gitSha,
+        });
+        return { acceptance, runbook, preflight };
+      },
       load: {
         ok: true,
-        paths,
+        paths: Object.keys(load.revisions ?? {}),
         counts: {
           projects: load.state.projects.length,
           tasks: load.state.tasks.length,
@@ -243,8 +386,19 @@ async function readThroughWitness(port, options) {
       },
     };
   } catch {
-    return { witness, load: { ok: false, code: CODES.sourceUnreadable, paths: [], counts: null } };
+    return { witness, detection, load: { ok: false, code: CODES.sourceUnreadable, paths: [], counts: null } };
   }
+}
+
+/** Coexistence readiness is only ever what a caller declared, coerced strictly. */
+function normaliseCoexistence(declared) {
+  const value = declared ?? {};
+  return {
+    passed: value.passed === true,
+    zeroWrites: value.zeroWrites === true,
+    sourceBoundsValid: value.sourceBoundsValid === true,
+    hostCapabilityResolved: value.hostCapabilityResolved === true,
+  };
 }
 
 function safeRelative(path) {
@@ -257,7 +411,7 @@ function codeFor(error) {
   return Object.values(CODES).includes(message) ? message : CODES.bridgeUnreachable;
 }
 
-function result({ blockers, stages, aborted, counts, reads }) {
+function result({ blockers, stages, aborted, counts, reads, layout = null, evaluators = null }) {
   const codes = [...new Set(blockers)].slice(0, MAX_CODES);
   const status = codes.length === 0 ? 'PASS' : aborted ? 'ABORTED' : 'BLOCKED';
   return {
@@ -271,6 +425,26 @@ function result({ blockers, stages, aborted, counts, reads }) {
     blockerCodes: codes,
     observedReads: reads,
     counts: counts ?? null,
+    layout,
+    // The three hosted evaluators' own verdicts, so a reader can see that this run
+    // agreed with them rather than with a verdict this harness invented.
+    verdicts: evaluators
+      ? {
+          // The baseline condition this run is entitled to assert, kept separate
+          // from 6J's overall pass, which folds in stages a single read cannot see.
+          acceptance6JBaseline: evaluators.acceptance.stages.baselineRead?.verdict ?? 'FAIL',
+          // Why the baseline failed, in the evaluator's own codes. Without this the
+          // operator sees "acceptance-6j-failed" and has nowhere to go.
+          baselineFailures: (evaluators.acceptance.stages.baselineRead?.failureCodes ?? []).slice(0, MAX_CODES),
+          acceptance6JOverall: evaluators.acceptance.passed ? 'PASS' : 'FAIL',
+          runbook6L: evaluators.runbook.status,
+          preflight6N: evaluators.preflight.status,
+          // Blockers set aside because this transport cannot clear them, and the
+          // rest, which would fail the run.
+          openBlockers: evaluators.preflight.blockerCodes.filter((code) => EXPECTED_OPEN_BLOCKERS.has(code)),
+          preflightBlockers: evaluators.preflight.blockerCodes.filter((code) => !EXPECTED_OPEN_BLOCKERS.has(code)).slice(0, MAX_CODES),
+        }
+      : null,
     open: ['native-fsa-grant', 'clean-profile-picker', 'real-obsidian-coexistence', 'write-concurrency'],
   };
 }
