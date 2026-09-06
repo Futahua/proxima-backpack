@@ -418,3 +418,17 @@ run. Keeping the items open preserves the audit boundary and avoids claiming evi
 that was not collected.
 
 **Reverses if:** the user explicitly resumes Gate 5 with a new acceptance run.
+
+## D21 — Clean-profile acceptance is evaluated from captured evidence
+
+**Decided:** before the one remaining native picker action, Proxima now has a pure
+clean-profile acceptance harness. It consumes the actual FSA report through the
+bounded validator, requires the exact disposable handle and four-entry shape,
+checks the initial marker, granted permission, and persisted handle, and emits
+bounded build identity, observed paths, and structured failure codes. It never calls
+browser, filesystem, Papers, or IndexedDB APIs. Tests cover missing/extra/duplicate
+entries, absolute-path leakage, malformed fields, wrong handle, missing marker,
+permission/persistence failures, and the fixed-path reset utility.
+
+**Boundary:** this is evidence readiness only. It does not claim the clean-profile
+picker/read acceptance, creator-vault access, Obsidian coexistence, or write safety.

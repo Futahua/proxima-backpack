@@ -5,9 +5,45 @@ const MAX_TEXT = 400;
 const MAX_HANDLE_NAME = 128;
 const MAX_REVISION = 200;
 
+export const CLEAN_PROFILE_EXPECTED_HANDLE = 'gate5-fsa-clean-fixture';
+export const CLEAN_PROFILE_EXPECTED_MARKER = 'clean-profile-root-v1';
+export const CLEAN_PROFILE_EXPECTED_ENTRIES = [
+  { path: 'nested', kind: 'directory' },
+  { path: 'nested/child-note.txt', kind: 'file' },
+  { path: 'README.md', kind: 'file' },
+  { path: 'root-note.txt', kind: 'file' },
+] as const;
+
 export interface FsaEvidenceValidation {
   ok: boolean;
   errors: string[];
+}
+
+export interface CleanProfileBuildIdentity {
+  proximaVersion: string;
+  gitSha: string;
+  buildMode: string;
+  fixtureHash: string;
+}
+
+export type CleanProfileFailureCode =
+  | 'invalid-report'
+  | 'report-error'
+  | 'wrong-handle'
+  | 'missing-entry'
+  | 'unexpected-entry'
+  | 'wrong-entry-kind'
+  | 'missing-marker'
+  | 'permission-not-granted'
+  | 'persistence-not-proven';
+
+export interface CleanProfileAcceptance {
+  schemaVersion: 1;
+  scenarioId: 'gate5-clean-profile';
+  build: CleanProfileBuildIdentity;
+  passed: boolean;
+  validation: { passed: boolean; failureCodes: CleanProfileFailureCode[]; details: string[] };
+  observed: { handleName: string | null; permission: string | null; persisted: boolean | null; entryPaths: string[] };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -70,4 +106,52 @@ export function validateFsaEvidence(value: unknown): FsaEvidenceValidation {
 
 export function isFsaEvidence(value: unknown): value is FsaProbeReport {
   return validateFsaEvidence(value).ok;
+}
+
+function boundedIdentity(identity: CleanProfileBuildIdentity): CleanProfileBuildIdentity {
+  return {
+    proximaVersion: identity.proximaVersion.slice(0, MAX_TEXT),
+    gitSha: identity.gitSha.slice(0, MAX_TEXT),
+    buildMode: identity.buildMode.slice(0, MAX_TEXT),
+    fixtureHash: identity.fixtureHash.slice(0, MAX_TEXT),
+  };
+}
+
+/** Evaluate a captured clean-profile report without invoking browser or filesystem APIs. */
+export function evaluateCleanProfileAcceptance(report: unknown, build: CleanProfileBuildIdentity): CleanProfileAcceptance {
+  const validation = validateFsaEvidence(report);
+  const failureCodes: CleanProfileFailureCode[] = [];
+  const details = validation.errors.slice(0, 20);
+  const candidate = isRecord(report) ? report : {};
+  const entries = Array.isArray(candidate.entries) ? candidate.entries.filter(isRecord) : [];
+  const observedPaths = entries.filter((entry): entry is Record<string, unknown> => typeof entry.path === 'string').map((entry) => entry.path as string).sort();
+  const handleName = typeof candidate.handleName === 'string' ? candidate.handleName.slice(0, MAX_HANDLE_NAME) : null;
+  const permission = typeof candidate.permission === 'string' ? candidate.permission : null;
+  const persisted = typeof candidate.persisted === 'boolean' ? candidate.persisted : null;
+
+  if (!validation.ok) failureCodes.push('invalid-report');
+  if (typeof candidate.error === 'string' && candidate.error.length > 0) failureCodes.push('report-error');
+  if (handleName !== CLEAN_PROFILE_EXPECTED_HANDLE) failureCodes.push('wrong-handle');
+  const expected = new Map<string, 'file' | 'directory'>(CLEAN_PROFILE_EXPECTED_ENTRIES.map((entry) => [entry.path, entry.kind]));
+  const observed = new Map<string, string>();
+  for (const entry of entries) if (typeof entry.path === 'string' && typeof entry.kind === 'string') observed.set(entry.path, entry.kind);
+  for (const [path, kind] of expected) {
+    if (!observed.has(path)) failureCodes.push('missing-entry');
+    else if (observed.get(path) !== kind) failureCodes.push('wrong-entry-kind');
+  }
+  if ([...observed.keys()].some((path) => !expected.has(path))) failureCodes.push('unexpected-entry');
+  const root = entries.find((entry) => entry.path === 'root-note.txt');
+  if (typeof root?.textMarker !== 'string' || !root.textMarker.includes(CLEAN_PROFILE_EXPECTED_MARKER)) failureCodes.push('missing-marker');
+  if (permission !== 'granted') failureCodes.push('permission-not-granted');
+  if (persisted !== true) failureCodes.push('persistence-not-proven');
+
+  const uniqueCodes = [...new Set(failureCodes)];
+  return {
+    schemaVersion: 1,
+    scenarioId: 'gate5-clean-profile',
+    build: boundedIdentity(build),
+    passed: uniqueCodes.length === 0,
+    validation: { passed: uniqueCodes.length === 0, failureCodes: uniqueCodes, details },
+    observed: { handleName, permission, persisted, entryPaths: observedPaths.slice(0, MAX_ENTRIES) },
+  };
 }

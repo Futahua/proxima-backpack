@@ -535,6 +535,8 @@ Inside the real `papers-backpack://` surface:
 - [x] Foreground `requestPermission()` behavior recorded (`prompt` → `granted`).
 - [x] Acceptance report is validated as bounded, relative-only evidence, with a
       fixed-path disposable-fixture reset helper (`src/app/fsaEvidence.ts`, D19).
+- [x] Clean-profile acceptance harness evaluates the captured report against the
+      exact disposable fixture shape and emits structured failure codes (D21).
 - [ ] Clean-profile behavior recorded. _(deferred by explicit user decision; no PASS inferred)_
 
 Clean-profile acceptance preparation is complete but intentionally unexecuted: an
