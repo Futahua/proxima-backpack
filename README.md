@@ -104,15 +104,21 @@ npm run build
 
 ## Papers binding
 
-Not bound yet. Papers mints a Backpack identity (`bp-<uuid>`) in the app, and a
-machine-local `PapersData/backpack-projects.json` entry maps that id to this folder.
-`project.json` — carrying `schemaVersion`, the matching `backpackId` and a `public/`
-entry — is deliberately absent until a real Backpack identity exists, rather than
-committed with a placeholder id that would silently fail to match.
+The acceptance machine has a real Papers Backpack identity and a machine-local
+`PapersData/backpack-projects.json` entry mapping that id to this folder. The matching
+`project.json` carries `schemaVersion`, the local `backpackId` and a `public/` entry.
+The UUID is intentionally not a portable product identity; another machine must mint
+and bind its own Backpack rather than copying this registration state.
+
+The browser surface is fixture-only and read-only. Its project-owned action dispatcher
+and inspection projection live in `src/app/actionProtocol.ts` and
+`src/app/inspection.ts`; Papers remains an opaque host and does not interpret these
+contracts.
 
 ## Status
 
-Early. The domain layer, the vault seam, the fixture vaults and the test suite exist,
-and both the preferred and legacy vault layouts load. The screen does not run yet.
+Early. The domain layer, vault seam, fixture vaults, deterministic browser surface,
+semantic action dispatcher, inspection projection and test suite exist. Both the
+preferred and legacy vault layouts load; real-vault writes remain disabled.
 
 Progress is tracked gate by gate in `docs/AUDIT-CHECKLIST.md`.

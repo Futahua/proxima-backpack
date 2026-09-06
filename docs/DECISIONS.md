@@ -240,3 +240,27 @@ injected timezone before the live surface is built.
 
 **Reverses if:** creator acceptance requires the same event to land on identical date
 keys regardless of viewer timezone.
+
+---
+
+## D11 — Actions and inspection are project-owned, versioned seams
+
+**Decided:** Proxima owns a small versioned semantic action catalog and a separate
+read-only inspection projection in `src/app`. The browser delegates human interactions
+to that dispatcher; tests call the same dispatcher. The projection contains bounded
+domain summaries and safe source revisions, not renderer/store objects.
+
+**Why:** an agent must be able to drive and inspect Proxima without learning the
+implementation details of a UI framework or asking Papers to understand Proxima
+concepts. Stable action names, validated inputs/outputs and machine-readable error
+codes make the seam reproducible. Keeping it above `src/domain` preserves the domain
+boundary while keeping host capabilities out of the protocol.
+
+**Safety:** Gate 3A actions are read/navigation/reset operations only. `fixture.reset`
+is rejected in live mode, and no action writes creator files. Live inspection omits
+source paths; fixture inspection may include fixture-relative paths. Event sequencing,
+settling and evidence transcripts remain separate Gate 3B work.
+
+**Reverses if:** a later gate proves the catalog needs a different versioning or
+transport model, in which case the existing action names and error codes remain
+compatibility aliases for one migration window.

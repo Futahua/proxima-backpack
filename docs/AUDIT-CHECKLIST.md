@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 2B — first visible deterministic fixture surface |
+| Current slice | Gate 3A — semantic actions and read-only inspection projection |
 | Branch | `codex/gate-1b-correction` (local acceptance worktree) |
-| Last audited SHA | `3b5a391` — Gate 2A PASS; local Papers identity acceptance reported separately. |
+| Last audited SHA | `c21cb95` — Gate 2B PASS; source-only candidate with local Papers acceptance evidence. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -336,46 +336,46 @@ Exists before UI behavior becomes large.
 
 ### 3.1 Semantic action surface
 
-- [ ] Define versioned project-owned action catalog.
-- [ ] Actions express user/domain intent rather than UI mechanics.
-- [ ] Human UI uses the same action dispatcher.
-- [ ] Tests use the same action dispatcher.
-- [ ] No test-only direct Svelte/store mutation path.
-- [ ] Actions have stable machine-readable names.
-- [ ] Action inputs are schema-validated.
-- [ ] Action outputs are schema-validated.
-- [ ] Errors have stable codes, not only prose.
+- [x] Define versioned project-owned action catalog (`ACTION_SCHEMA_VERSION = 1`).
+- [x] Actions express user/domain intent rather than UI mechanics.
+- [x] Human UI uses the same action dispatcher.
+- [x] Tests use the same action dispatcher.
+- [x] No test-only direct Svelte/store mutation path.
+- [x] Actions have stable machine-readable names.
+- [x] Action inputs are schema-validated.
+- [x] Action outputs are schema-validated.
+- [x] Errors have stable codes, not only prose.
 
 Potential categories:
 
-- [ ] navigation/select project
-- [ ] board selection/filtering
-- [ ] calendar navigation
-- [ ] fixture reset/load
+- [x] navigation/select project
+- [x] board selection/filtering
+- [x] calendar navigation
+- [x] fixture reset/load
 - [ ] refresh/reload source
 - [ ] future canvas selection/open
-- [ ] mutation actions remain fixture-only while real vault is read-only
+- [x] mutation actions remain fixture-only while real vault is read-only
 
 ### 3.2 State-inspection seam
 
-- [ ] Define a versioned read-only inspection projection.
-- [ ] It is independent of Svelte/store implementation.
-- [ ] Includes:
-  - [ ] build identity
-  - [ ] mode: fixture/live
-  - [ ] application state revision
-  - [ ] current surface
-  - [ ] current selection
-  - [ ] project summaries
-  - [ ] board/task summaries
-  - [ ] calendar/event summaries
-  - [ ] load problems
-  - [ ] source revisions as safe logical metadata
-  - [ ] pending operations
-  - [ ] degraded/error state
-  - [ ] latest event sequence
-- [ ] Real-vault inspection redacts unnecessary machine information.
-- [ ] Fixture inspection may include fixture-relative paths where useful.
+- [x] Define a versioned read-only inspection projection (`INSPECTION_SCHEMA_VERSION = 1`).
+- [x] It is independent of Svelte/store implementation.
+- [x] Includes:
+  - [x] build identity
+  - [x] mode: fixture/live
+  - [x] application state revision
+  - [x] current surface
+  - [x] current selection
+  - [x] project summaries
+  - [x] board/task summaries
+  - [x] calendar/event summaries
+  - [x] load problems
+  - [x] source revisions as safe logical metadata
+  - [x] pending operations
+  - [x] degraded/error state
+  - [x] latest event sequence (reserved at `0` until Gate 3B event ring)
+- [x] Real-vault inspection redacts unnecessary machine information.
+- [x] Fixture inspection may include fixture-relative paths where useful.
 
 ### 3.3 Application revision and settling
 

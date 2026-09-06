@@ -1,4 +1,6 @@
 import { createMemoryVault } from '../adapters/memoryVault.js';
+import { createActionDispatcher, type ProximaActionDispatcher, type Surface } from '../app/actionProtocol.js';
+import { createInspectionProjection } from '../app/inspection.js';
 import { loadVaultState } from '../app/vaultRepository.js';
 import { calculateElasticTimeline, elasticCardHeights } from '../domain/elastic.js';
 import { fixedClock, sequentialIdGenerator } from '../domain/clock.js';
@@ -13,13 +15,12 @@ const FIXTURE_NAME = 'vault-basic';
 const FIXTURE_ROOT = FIXTURE_VAULTS[FIXTURE_NAME];
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
 const DETERMINISTIC_IDS = sequentialIdGenerator();
-type Surface = 'board' | 'calendar';
-
 let appState: ProximaState | null = null;
 let loadProblems: LoadProblem[] = [];
 let selection = ALL_PROJECTS;
 let surface: Surface = 'board';
 let calendarCursor = new Date(FIXED_CLOCK.now());
+let actionDispatcher: ProximaActionDispatcher | null = null;
 
 function element<T extends Element>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -129,7 +130,16 @@ function diagnosticsSurface(problems: LoadProblem[]): string {
 }
 
 function updateHydrationSummary(state: ProximaState, problems: LoadProblem[]): void {
-  setText('#hydration-summary', JSON.stringify({ mode: 'fixture', fixture: FIXTURE_NAME, hydrationRevision: `fixture:${BUILD_IDENTITY.fixtureHash.slice(0, 16)}:1`, surface, selection, projects: state.projects.length, tasks: state.tasks.length, events: state.events.length, problems: problems.length, fixedClock: BUILD_IDENTITY.fixedClock, deterministicIds: true }, null, 2));
+  setText('#hydration-summary', JSON.stringify({ mode: 'fixture', fixture: FIXTURE_NAME, hydrationRevision: `fixture:${BUILD_IDENTITY.fixtureHash.slice(0, 16)}:1`, applicationStateRevision: actionDispatcher?.snapshot().stateRevision ?? 0, surface, selection, projects: state.projects.length, tasks: state.tasks.length, events: state.events.length, problems: problems.length, fixedClock: BUILD_IDENTITY.fixedClock, deterministicIds: true }, null, 2));
+}
+
+function exposeInspection(): void {
+  if (!actionDispatcher) return;
+  const inspection = createInspectionProjection(actionDispatcher.snapshot(), BUILD_IDENTITY);
+  const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection };
+  target.__PROXIMA_INSPECTION__ = () => createInspectionProjection(actionDispatcher!.snapshot(), BUILD_IDENTITY);
+  const root = element<HTMLElement>('#proxima-app');
+  root.dataset.proximaStateRevision = String(inspection.applicationStateRevision);
 }
 
 function render(): void {
@@ -140,6 +150,21 @@ function render(): void {
   root.dataset.proximaSelection = selection;
   root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Fixture workspace</span></div></div><div class="header-state"><span class="read-only-badge">Read-only fixture</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span></div></header><div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre></details></div>`;
   updateHydrationSummary(appState, problems);
+  exposeInspection();
+}
+
+function dispatchAction(input: unknown): void {
+  if (!actionDispatcher) return;
+  const result = actionDispatcher.dispatch(input);
+  if (result.ok) {
+    const next = actionDispatcher.snapshot();
+    selection = next.selection;
+    surface = next.surface;
+    calendarCursor = new Date(`${next.calendarMonth}T00:00:00`);
+    render();
+  } else {
+    setText('#boot-status', `Action failed: ${result.error.code}`);
+  }
 }
 
 function bindInteractions(): void {
@@ -153,16 +178,12 @@ function bindInteractions(): void {
     if (action === 'switch-surface') {
       const next = button.dataset.surface as Surface;
       if (next !== 'board' && next !== 'calendar') return;
-      surface = next;
-      selection = reconcileSelection(appState.projects, selection, surface);
-      render();
+      dispatchAction({ type: 'surface.select', surface: next });
     } else if (action === 'select-project') {
-      selection = reconcileSelection(appState.projects, button.dataset.projectId ?? ALL_PROJECTS, surface);
-      render();
+      dispatchAction({ type: 'project.select', projectId: button.dataset.projectId ?? ALL_PROJECTS });
     } else if (action === 'calendar-shift') {
       const delta = Number(button.dataset.delta ?? 0);
-      if (Number.isFinite(delta)) calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + delta, 1);
-      render();
+      if (delta === -1 || delta === 1) dispatchAction({ type: 'calendar.shift-month', delta });
     }
   });
 }
@@ -173,6 +194,11 @@ async function boot(): Promise<void> {
   const loaded = await loadVaultState(vault);
   appState = loaded.state;
   loadProblems = loaded.problems;
+  actionDispatcher = createActionDispatcher({ state: appState, problems: loadProblems, revisions: loaded.revisions, mode: 'fixture', initialCalendarMonth: '2026-09-01' });
+  const initial = actionDispatcher.snapshot();
+  selection = initial.selection;
+  surface = initial.surface;
+  calendarCursor = new Date(`${initial.calendarMonth}T00:00:00`);
   const root = element<HTMLElement>('#proxima-app');
   root.dataset.proximaFixture = FIXTURE_NAME;
   root.dataset.proximaClock = new Date(FIXED_CLOCK.now()).toISOString();
