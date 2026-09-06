@@ -619,6 +619,22 @@ Only then consider a project-scoped external read capability in Papers.
       and mutation isolation (Gate 6B, D25).
 - [ ] Real-vault projection acceptance.
 
+### 6.1B Refresh trigger and policy wiring (Gate 6C)
+
+- [x] Policy layer sits above `RefreshController` and never reads the vault itself.
+- [x] Manual, focus, interval, and external-signal triggers converge through one
+      refresh(reason) path.
+- [x] Focus/external trigger storms are coalesced behind an in-flight refresh.
+- [x] Interval is bounded by a nonzero minimum and start is idempotent.
+- [x] Stop/disposal removes timers and prevents future refreshes.
+- [x] Hidden state suspends interval polling and returning visible issues one focus
+      refresh through the same path.
+- [x] Failed refreshes do not create tight automatic retry loops.
+- [x] Inspection state is bounded: enabled, interval, last reason, counters, timer,
+      and visibility.
+- [x] Core policy tests use injected scheduling and no DOM/window/host authority.
+- [ ] Real-vault trigger acceptance or native watcher.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

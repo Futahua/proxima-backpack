@@ -466,6 +466,23 @@ problem sink remain the existing domain functions.
 **Boundary:** Gate 6B is fixture/disposable-reader only. It does not claim real-vault,
 native FSA, Obsidian, polling, or Papers-host acceptance.
 
+## D26 — Gate 6C uses an adapter-driven pull-refresh policy
+
+**Decided:** trigger policy is a separate `RefreshPolicy` above the 6A controller.
+It accepts only `manual`, `focus`, `interval`, and `external-signal`, routes every
+trigger through `refreshSource(reason)`, clamps interval polling to a nonzero
+minimum, coalesces in-flight trigger storms, and makes start/stop/disposal
+idempotent and timer-safe. Visibility is supplied through `setVisible`; hidden
+interval polling is suspended and one focus refresh is issued on return.
+
+The policy exposes bounded inspection state and never imports or stores DOM/window,
+Papers, FSA, creator-vault, or watcher objects. Failed refreshes do not create tight
+retry loops; recovery requires a later legitimate trigger. Browser lifecycle wiring,
+if needed, remains an outer adapter with injected callbacks.
+
+**Boundary:** Gate 6C remains fixture/disposable-reader only. H2 watcher capability,
+real-vault acceptance, and native picker handling stay deferred.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure
