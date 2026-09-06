@@ -6,6 +6,8 @@ import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
 import type { ActionDispatcherState, Surface } from './actionProtocol.js';
 
 export const INSPECTION_SCHEMA_VERSION = 1 as const;
+export const MAX_INSPECTION_ITEMS = 500;
+export const MAX_INSPECTION_TEXT = 400;
 
 export interface BuildIdentityLike {
   proximaVersion: string;
@@ -36,11 +38,11 @@ export interface InspectionProjection {
   latestEventSequence: number;
 }
 
-function safeDetail(detail: string): string { return detail.slice(0, 400); }
+function safeText(value: string, limit = MAX_INSPECTION_TEXT): string { return value.slice(0, limit); }
 
 function safeProblem(problem: LoadProblem, mode: 'fixture' | 'live'): InspectionProjection['loadProblems'][number] {
-  const path = mode === 'fixture' ? problem.path.replaceAll('\\', '/') : undefined;
-  return { code: problem.code, severity: problem.severity, ...(problem.id ? { id: problem.id } : {}), ...(path ? { path } : {}), detail: safeDetail(problem.detail) };
+  const path = mode === 'fixture' ? safeText(problem.path.replaceAll('\\', '/'), 260) : undefined;
+  return { code: problem.code, severity: problem.severity, ...(problem.id ? { id: safeText(problem.id) } : {}), ...(path ? { path } : {}), detail: safeText(problem.detail) };
 }
 
 function taskDuration(task: Task): number | null {
@@ -59,7 +61,7 @@ function sourceRevisions(state: ProximaState, dispatcher: ActionDispatcherState)
     ...state.tasks.map((record) => ({ kind: 'task', id: record.id, source: record.source })),
     ...state.events.map((record) => ({ kind: 'event', id: record.id, source: record.source })),
   ];
-  return records.map(({ kind, id, source }) => ({ kind, id, revision: dispatcher.revisions[source.path] ?? source.revision, ...(dispatcher.mode === 'fixture' ? { path: source.path } : {}) }));
+  return records.slice(0, MAX_INSPECTION_ITEMS).map(({ kind, id, source }) => ({ kind, id: safeText(id), revision: safeText(dispatcher.revisions[source.path] ?? source.revision), ...(dispatcher.mode === 'fixture' ? { path: safeText(source.path.replaceAll('\\', '/'), 260) } : {}) }));
 }
 
 function eventSummary(event: CalendarEvent, byDay: Map<string, CalendarEvent[]>): InspectionProjection['calendar']['events'][number] {
@@ -91,10 +93,10 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     applicationStateRevision: dispatcher.stateRevision,
     surface: dispatcher.surface,
     selection: dispatcher.selection,
-    projects: dispatcher.state.projects.map((project) => ({ id: project.id, name: project.name, projectType: project.projectType, status: project.status })).sort((a, b) => a.id.localeCompare(b.id)),
-    board: { counts: { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length }, tasks: taskSummaries },
-    calendar: { cursorMonth: dispatcher.calendarMonth, events: calendarEvents.map((event) => eventSummary(event, byDay)).sort((a, b) => a.id.localeCompare(b.id)) },
-    loadProblems: problems.map((problem) => safeProblem(problem, dispatcher.mode)),
+    projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), projectType: project.projectType, status: project.status })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
+    board: { counts: { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length }, tasks: taskSummaries.slice(0, MAX_INSPECTION_ITEMS).map((task) => ({ ...task, id: safeText(task.id), name: safeText(task.name) })) },
+    calendar: { cursorMonth: dispatcher.calendarMonth, events: calendarEvents.map((event) => eventSummary(event, byDay)).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS).map((event) => ({ ...event, id: safeText(event.id), name: safeText(event.name) })) },
+    loadProblems: problems.slice(0, MAX_INSPECTION_ITEMS).map((problem) => safeProblem(problem, dispatcher.mode)),
     sourceRevisions: sourceRevisions(dispatcher.state, dispatcher),
     pendingOperations: [],
     degraded: { state: problems.some(isBlocking) ? 'degraded' : 'healthy', blockingProblemCount: problems.filter(isBlocking).length },
