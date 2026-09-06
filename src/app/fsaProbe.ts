@@ -32,6 +32,7 @@ export interface FsaProbeReport {
   permission: PermissionState | 'unknown';
   entries: FsaProbeEntry[];
   persisted: boolean;
+  error?: string;
 }
 
 function boundedText(text: string): string { return text.slice(0, MAX_TEXT); }
@@ -83,7 +84,8 @@ async function restore(): Promise<DirectoryHandleLike | null> {
 
 async function report(handle: DirectoryHandleLike, persisted: boolean): Promise<FsaProbeReport> {
   const permission = handle.queryPermission ? await handle.queryPermission({ mode: 'read' }).catch(() => 'unknown' as const) : 'unknown';
-  return { schemaVersion: FSA_PROBE_SCHEMA_VERSION, handleName: handle.name, permission, entries: await inspect(handle), persisted };
+  try { return { schemaVersion: FSA_PROBE_SCHEMA_VERSION, handleName: handle.name, permission, entries: await inspect(handle), persisted }; }
+  catch (error) { return { schemaVersion: FSA_PROBE_SCHEMA_VERSION, handleName: handle.name, permission, entries: [], persisted, error: error instanceof Error ? error.message : String(error) }; }
 }
 
 export async function pickAndProbeDirectory(): Promise<FsaProbeReport> {
@@ -101,5 +103,6 @@ export async function restoreAndProbeDirectory(): Promise<FsaProbeReport | null>
 }
 
 export async function rereadSelectedDirectory(): Promise<FsaProbeReport | null> {
+  if (activeHandle?.requestPermission) await activeHandle.requestPermission({ mode: 'read' });
   return activeHandle ? report(activeHandle, true) : null;
 }
