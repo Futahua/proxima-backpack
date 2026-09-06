@@ -12,11 +12,10 @@ export function createMemoryVault(files: Record<string, string>): VaultReader & 
   set(path: string, text: string): void;
   delete(path: string): void;
 } {
-  const store = new Map<string, string>(Object.entries(files));
+  const normalise = (p: string) => p.split(String.fromCharCode(92)).join('/').replace(/^[/]+|[/]+$/g, '');
+  const store = new Map<string, string>(Object.entries(files).map(([path, text]) => [normalise(path), text]));
   const revisions = new Map<string, number>();
   for (const path of store.keys()) revisions.set(path, 1);
-
-  const normalise = (p: string) => p.split(String.fromCharCode(92)).join('/').replace(/^[/]+|[/]+$/g, '');
 
   const fileOf = (path: string): VaultFile => {
     const text = store.get(path);

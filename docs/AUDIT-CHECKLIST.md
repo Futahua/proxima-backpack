@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 3B — revision, settling, event ring and evidence schema |
+| Current slice | Gate 4 — filesystem adapter conformance |
 | Branch | `codex/gate-1b-correction` (local acceptance worktree) |
-| Last audited SHA | `4e40e53` — Gate 3A PASS; source-only candidate with local Papers acceptance evidence. |
+| Last audited SHA | `dace91f` — Gate 3B PASS; source-only candidate with local Papers acceptance evidence. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -452,49 +452,56 @@ Potential categories:
 
 One common behavioral suite runs against every storage implementation.
 
-- [ ] list directory
-- [ ] recursive walk
-- [ ] read text
-- [ ] exists
-- [ ] revision changes after modification
-- [ ] path normalization
-- [ ] Unicode filenames
-- [ ] spaces/punctuation
-- [ ] nested directories
-- [ ] missing file
-- [ ] missing directory
+- [x] list directory
+- [x] recursive walk
+- [x] read text
+- [x] exists
+- [x] revision changes after modification
+- [x] path normalization
+- [x] Unicode filenames
+- [x] spaces/punctuation
+- [x] nested directories
+- [x] missing file
+- [x] missing directory
 - [ ] unreadable file behavior
-- [ ] deterministic ordering
-- [ ] large-but-reasonable file
-- [ ] no traversal outside granted root
+- [x] deterministic ordering
+- [x] large-but-reasonable file
+- [x] no traversal outside granted root
+
+The shared assertions live in `tests/adapterConformance.test.ts`. They run against
+the memory adapter, a disposable real disk fixture, and an OPFS-shaped handle.
 
 ### 4.2 Memory adapter
 
-- [ ] Clearly documented as an in-process adapter.
-- [ ] Does not claim to test Windows/FSA semantics.
-- [ ] Revision semantics are deterministic.
-- [ ] Delete/recreate changes revision appropriately.
-- [ ] Path normalization is covered.
+- [x] Clearly documented as an in-process adapter.
+- [x] Does not claim to test Windows/FSA semantics.
+- [x] Revision semantics are deterministic.
+- [x] Delete/recreate changes revision appropriately.
+- [x] Path normalization is covered.
 
 ### 4.3 Real disk fixture adapter for headless tests
 
-- [ ] Run against actual fixture directories on disk.
-- [ ] Real rename behavior.
-- [ ] Real delete/recreate.
-- [ ] Real mtime/content changes.
+- [x] Run against actual fixture directories on disk.
+- [x] Real rename behavior.
+- [x] Real delete/recreate.
+- [x] Real mtime/content changes.
 - [ ] External writer process can mutate fixture during test.
-- [ ] Never point automated mutation tests at creator's real vault.
+- [x] Never point automated mutation tests at creator's real vault.
 
 ### 4.4 Browser OPFS adapter
 
-- [ ] Same repository contract.
-- [ ] Same conformance suite where semantics overlap.
+- [x] Same repository contract.
+- [x] Same conformance suite where semantics overlap.
 - [ ] Browser-native `FileSystemDirectoryHandle` use tested without user picker.
-- [ ] Explicitly document what OPFS cannot prove:
-  - [ ] external Obsidian edits
-  - [ ] Windows absolute paths
-  - [ ] cross-process contention
-  - [ ] user-granted external directory persistence
+- [x] Explicitly document what the OPFS-shaped adapter cannot prove:
+  - [x] external Obsidian edits
+  - [x] Windows absolute paths
+  - [x] cross-process contention
+  - [x] user-granted external directory persistence
+
+The current OPFS test uses the structural subset of a directory/file handle and does
+not claim native browser permission or persistence behaviour. Those claims belong to
+the real FSA spike in Gate 5.
 
 ### 4.5 Gate 4 exit
 
@@ -1212,10 +1219,10 @@ Each pushed SHA is sent for audit approximately in this order.
 2. [x] Gate 1B — frontmatter failure visibility + validation edge cases
        _(pushed, awaiting audit)_
 3. [x] Gate 1C — Elastic/calendar edge-test closure
-4. [ ] Gate 2A — actual build + real Backpack identity + fixture boot
-5. [ ] Gate 2B — first visible board/projects/calendar + C1 keys
-6. [ ] Gate 3A — action dispatcher + inspection projection
-7. [ ] Gate 3B — revision/settling + event ring + evidence schema
+4. [x] Gate 2A — actual build + real Backpack identity + fixture boot
+5. [x] Gate 2B — first visible board/projects/calendar + C1 keys
+6. [x] Gate 3A — action dispatcher + inspection projection
+7. [x] Gate 3B — revision/settling + event ring + evidence schema
 8. [ ] Gate 4 — adapter conformance: disk + OPFS
 9. [ ] Gate 5 — real Papers FSA spike
 10. [ ] Gate 6 — read-only creator vault

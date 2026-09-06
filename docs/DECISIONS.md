@@ -289,3 +289,26 @@ identity and capture artifacts are optional evidence fields supplied by acceptan
 **Reverses if:** a later multi-surface gate requires durable cross-process event
 storage, in which case the in-memory ring remains the local contract and gains an
 explicit transport adapter rather than moving semantics into Papers.
+
+## D13 — Repository adapters share a read-only conformance boundary
+
+**Decided:** repository access remains behind the existing `VaultReader` port. Gate 4
+adds a deterministic in-process memory adapter, a disposable real-disk adapter for
+headless tests, and a browser-facing OPFS adapter over the structural directory/file
+handle subset. A common conformance suite covers listing, recursive walking, reads,
+existence, normalization, ordering, revisions, Unicode/punctuation, missing paths,
+large reasonable text, and traversal rejection.
+
+The disk tests create a temporary directory, mutate or rename only files under that
+directory, and remove it in `finally`; they never point mutation tests at a creator
+vault. Disk revisions combine mtime, size, and a content hash. Memory revisions are
+deterministic counters and intentionally do not claim Windows or browser semantics.
+
+The OPFS adapter intentionally does not invoke a picker or claim native
+`FileSystemDirectoryHandle` permission, persistence, external-process contention, or
+Windows absolute-path behaviour. Those facts require the disposable real-browser
+FSA work in Gate 5. No Papers host capability is introduced by this gate.
+
+**Reverses if:** a Gate 5 acceptance test demonstrates that the structural OPFS
+contract is insufficient for a required read-only scenario; the missing capability
+must then be named and justified before changing Papers.
