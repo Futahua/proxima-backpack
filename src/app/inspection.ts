@@ -5,6 +5,7 @@ import { localDateKey } from '../domain/time.js';
 import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
 import type { ActionDispatcherState, Surface } from './actionProtocol.js';
 import { sourceProvenance, type ReadOnlyProjectionHealth, type RecordProvenance } from './readOnlyProjection.js';
+import { createUiHealthModel, type UiHealthModel } from './uiHealth.js';
 
 export const INSPECTION_SCHEMA_VERSION = 1 as const;
 export const MAX_INSPECTION_ITEMS = 500;
@@ -36,7 +37,7 @@ export interface InspectionProjection {
   sourceRevisions: Array<{ kind: string; id: string; revision: string; path?: string }>;
   pendingOperations: string[];
   degraded: { state: 'healthy' | 'degraded'; blockingProblemCount: number };
-  sourceHealth: ReadOnlyProjectionHealth;
+  sourceHealth: UiHealthModel;
   latestEventSequence: number;
   settled: { state: 'settled' | 'busy'; revision: number };
 }
@@ -89,7 +90,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
   const calendarProblems: LoadProblem[] = [];
   const byDay = eventsByDay(calendarEvents, calendarProblems);
   const problems = [...dispatcher.problems, ...calendarProblems];
-  const health = sourceHealth ?? {
+  const health = createUiHealthModel(sourceHealth ?? {
     sourceRevision: 1,
     applicationRevision: dispatcher.stateRevision,
     stale: false,
@@ -97,7 +98,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     lastSuccessfulRefreshRevision: 1,
     lastRefreshReason: null,
     problemCodes: [...new Set(problems.map((problem) => problem.code))].slice(0, 20),
-  };
+  });
   return {
     schemaVersion: INSPECTION_SCHEMA_VERSION,
     build,
@@ -112,10 +113,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     sourceRevisions: sourceRevisions(dispatcher.state, dispatcher),
     pendingOperations: [],
     degraded: { state: problems.some(isBlocking) || health.degraded ? 'degraded' : 'healthy', blockingProblemCount: problems.filter(isBlocking).length },
-    sourceHealth: {
-      ...health,
-      problemCodes: health.problemCodes.slice(0, 20).map((code) => safeText(code, 100)),
-    },
+    sourceHealth: health,
     latestEventSequence: dispatcher.latestEventSequence,
     settled: { state: dispatcher.settled ? 'settled' : 'busy', revision: dispatcher.settledRevision },
   };

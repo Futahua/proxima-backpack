@@ -3,6 +3,7 @@ import { createActionDispatcher, type ProximaActionDispatcher, type Surface } fr
 import { createInspectionProjection } from '../app/inspection.js';
 import { createReadOnlyProjection, type ReadOnlyProjection } from '../app/readOnlyProjection.js';
 import { createRefreshController, type RefreshController } from '../app/refreshController.js';
+import { createUiHealthModel, type UiHealthModel } from '../app/uiHealth.js';
 import { evaluateCleanProfileAcceptance } from '../app/fsaEvidence.js';
 import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
 import { loadVaultState } from '../app/vaultRepository.js';
@@ -135,17 +136,27 @@ function diagnosticsSurface(problems: LoadProblem[]): string {
   return `<section class="diagnostics" data-c1-key="diagnostics" aria-label="Diagnostics"><header><strong>Diagnostics</strong><span>${problems.length}</span></header><ul>${problems.map((problem) => `<li data-c1-key="diagnostic-${escapeHtml(problem.code)}-${escapeHtml(problem.id ?? problem.path)}"><span class="severity ${problem.severity}">${escapeHtml(problem.severity)}</span><span><strong>${escapeHtml(problem.code)}</strong><small>${escapeHtml(problem.detail)}</small></span></li>`).join('')}</ul></section>`;
 }
 
+function currentUiHealth(): UiHealthModel {
+  return createUiHealthModel(sourceProjection?.health);
+}
+
+function healthSurface(health: UiHealthModel): string {
+  const label = health.status === 'healthy' ? 'Source current' : health.status === 'stale' ? 'Source stale' : 'Source degraded';
+  return `<section class="refresh-health ${health.status}" data-c1-key="refresh-health" aria-label="Source refresh health" data-health-generation="${health.sourceRevision}"><strong>${label}</strong><span>Generation ${health.sourceRevision} · app ${health.applicationRevision}</span><span>Last successful ${health.lastSuccessfulRefreshRevision} · ${health.lastRefreshReason ?? 'initial'}</span>${health.problemCodes.length > 0 ? `<code>${escapeHtml(health.problemCodes.join(', '))}</code>` : ''}</section>`;
+}
+
 function updateHydrationSummary(state: ProximaState, problems: LoadProblem[]): void {
-  setText('#hydration-summary', JSON.stringify({ mode: 'fixture', fixture: FIXTURE_NAME, hydrationRevision: `fixture:${BUILD_IDENTITY.fixtureHash.slice(0, 16)}:1`, applicationStateRevision: actionDispatcher?.snapshot().stateRevision ?? 0, surface, selection, projects: state.projects.length, tasks: state.tasks.length, events: state.events.length, problems: problems.length, fixedClock: BUILD_IDENTITY.fixedClock, deterministicIds: true }, null, 2));
+  setText('#hydration-summary', JSON.stringify({ mode: 'fixture', fixture: FIXTURE_NAME, hydrationRevision: `fixture:${BUILD_IDENTITY.fixtureHash.slice(0, 16)}:1`, applicationStateRevision: actionDispatcher?.snapshot().stateRevision ?? 0, sourceHealth: currentUiHealth(), surface, selection, projects: state.projects.length, tasks: state.tasks.length, events: state.events.length, problems: problems.length, fixedClock: BUILD_IDENTITY.fixedClock, deterministicIds: true }, null, 2));
 }
 
 function exposeInspection(): void {
   if (!actionDispatcher) return;
-  const inspection = createInspectionProjection(actionDispatcher.snapshot(), BUILD_IDENTITY, sourceProjection?.health);
+  const inspection = createInspectionProjection(actionDispatcher.snapshot(), BUILD_IDENTITY, currentUiHealth());
   const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection };
-  target.__PROXIMA_INSPECTION__ = () => createInspectionProjection(actionDispatcher!.snapshot(), BUILD_IDENTITY, sourceProjection?.health);
+  target.__PROXIMA_INSPECTION__ = () => createInspectionProjection(actionDispatcher!.snapshot(), BUILD_IDENTITY, currentUiHealth());
   const root = element<HTMLElement>('#proxima-app');
   root.dataset.proximaStateRevision = String(inspection.applicationStateRevision);
+  root.dataset.proximaHealthGeneration = String(inspection.sourceHealth.sourceRevision);
 }
 
 function renderFsaProbe(report: unknown): void {
@@ -169,7 +180,9 @@ function render(): void {
   const problems = visibleProblems([...loadProblems]);
   root.dataset.proximaSurface = surface;
   root.dataset.proximaSelection = selection;
-  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Fixture workspace</span></div></div><div class="header-state"><span class="read-only-badge">Read-only fixture</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header><div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre></details></div>`;
+  const health = currentUiHealth();
+  root.dataset.proximaHealthGeneration = String(health.sourceRevision);
+  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Fixture workspace</span></div></div><div class="header-state"><span class="read-only-badge">Read-only fixture</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre></details></div>`;
   updateHydrationSummary(appState, problems);
   exposeInspection();
 }
