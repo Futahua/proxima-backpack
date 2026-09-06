@@ -9,7 +9,11 @@
     "exactOptionalPropertyTypes": false,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    // src/ compiles with no ambient Node types on purpose. Proxima runs in a page with
+    // no filesystem and no Node, so an import of node:fs is a boundary violation and
+    // must fail here rather than at runtime. Tests get Node types via tsconfig.tests.json.
+    "types": []
   },
-  "include": ["src", "tests"]
+  "include": ["src"]
 }

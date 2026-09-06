@@ -33,15 +33,28 @@ about protecting real creator data, not a limitation to route around.
 One Markdown file per record, under a configurable root (default `Proxima`):
 
 ```
-<root>/projects/*.md
-<root>/tasks/*.md
-<root>/events/*.md
+<root>/projects/{id}.md      or  <root>/projects/{id}/index.md
+<root>/tasks/{id}.md
+<root>/events/{id}.md
 ```
 
-Each file carries frontmatter Proxima interprets and a body it leaves alone. A file
-with no `id` is identified by its path, so nothing has to be rewritten to be readable.
-The frontmatter parser handles a documented subset — scalars, quoted strings, inline
-and block lists — which is why the fixtures are real files rather than assumed YAML.
+The plugin's own default — `-Hide/Proxima/projects | tasks | events` — is read too, in
+place, with no migration and no writes. Each of the three directories is configured
+separately, so a vault someone rearranged by hand stays readable.
+
+Each file carries frontmatter Proxima interprets and a body it leaves alone. A record's
+logical id is what it declares in `id:`, or failing that its own filename — never its
+path, so moving a file does not silently create a different record. Every record keeps a
+reference back to the file, revision and rule that produced it, and two records claiming
+the same id is a reported error rather than a tiebreak.
+
+The frontmatter parser handles a documented subset — scalars, quoted strings, inline and
+block lists — which is why the fixtures are real files rather than assumed YAML.
+
+**`docs/VAULT-FORMATS.md`** is the full specification: both layouts, the discovery
+rules, identity semantics and every problem code. **`docs/DECISIONS.md`** records the
+choices behind them, and **`docs/AUDIT-CHECKLIST.md`** is the project agenda and the
+contract each pushed commit is audited against.
 
 ## The Elastic board
 
@@ -60,18 +73,23 @@ deadline and every card resizes.
 src/domain/      pure model — no host, no filesystem, no framework
 src/ports/       the seam that replaces Obsidian's App/Vault
 src/adapters/    implementations of that seam
-src/app/         reads Proxima state out of vault files
+src/app/         layout, discovery, and reading Proxima state out of vault files
 fixtures/        real vault files, used by tests and by the page
+docs/            formats, decisions and the audit checklist
 public/          the static build Papers serves
 ```
 
-The dependency rule is one-directional: `domain` imports nothing outside itself.
+The dependency rule is one-directional: `domain` imports nothing outside itself. That
+is enforced, not just documented — `tests/boundaries.test.ts` fails on a host,
+framework or filesystem import in the domain, and `src/` typechecks with no ambient
+Node types, so `node:fs` cannot compile there at all.
 
 ## Running it
 
 ```bash
 npm install
-npm test
+npm test        # vitest, over the real fixture vaults
+npm run typecheck
 npm run build
 ```
 
@@ -85,5 +103,7 @@ committed with a placeholder id that would silently fail to match.
 
 ## Status
 
-Early. The domain layer, the vault seam, the fixture vault and the test suite exist.
-The screen does not run yet.
+Early. The domain layer, the vault seam, the fixture vaults and the test suite exist,
+and both the preferred and legacy vault layouts load. The screen does not run yet.
+
+Progress is tracked gate by gate in `docs/AUDIT-CHECKLIST.md`.

@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Proxima Backpack for Papers \u2014 Elastic board, calendar and projects over an Obsidian vault",
+  "description": "Proxima Backpack for Papers — Elastic board, calendar and projects over an Obsidian vault",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tests.json",
     "build": "node tools/build-fixture-module.mjs && tsc -p tsconfig.build.json"
   },
   "devDependencies": {
+    "@types/node": "^22.20.1",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   }

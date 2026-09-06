@@ -6,9 +6,11 @@ import {
   DEFAULT_STATUSES,
 } from '../src/domain/elastic.js';
 import type { Task } from '../src/domain/types.js';
+import { sourceRef } from './fixtures.js';
 
 function task(overrides: Partial<Task> & { id: string }): Task {
   return {
+    source: sourceRef('task', overrides.id),
     name: overrides.id,
     description: '',
     projectId: null,

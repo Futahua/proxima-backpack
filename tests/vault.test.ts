@@ -1,30 +1,12 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createMemoryVault } from '../src/adapters/memoryVault.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
 import { parseDocument, parseFrontmatter } from '../src/domain/frontmatter.js';
 import { elasticBoard, eventsByDay, reconcileSelection } from '../src/domain/selectors.js';
 import { localDateKey } from '../src/domain/time.js';
 import { DEFAULT_STATUSES } from '../src/domain/elastic.js';
+import { fixtureVault, sourceRef } from './fixtures.js';
 
-/** Loads the real fixture files from disk — these are actual bytes, not a mock. */
-function loadFixtureFiles(root: string): Record<string, string> {
-  const files: Record<string, string> = {};
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) walk(full);
-      else files[relative(root, full).split(sep).join('/')] = readFileSync(full, 'utf8');
-    }
-  };
-  walk(root);
-  return files;
-}
-
-const fixtureRoot = fileURLToPath(new URL('../fixtures/vault-basic', import.meta.url));
-const vault = createMemoryVault(loadFixtureFiles(fixtureRoot));
+const vault = fixtureVault('vault-basic');
 
 describe('frontmatter', () => {
   it('reads scalars, quoted strings, inline and block lists', () => {
@@ -55,10 +37,12 @@ describe('loadVaultState over the real fixture vault', () => {
     expect(state.events).toHaveLength(3);
   });
 
-  it('falls back to the file path for a record with no id', async () => {
+  it('falls back to the filename — not the path — for a record with no id', async () => {
     const { state } = await loadVaultState(vault);
     const loose = state.tasks.find((t) => t.name === 'Untitled loose task');
-    expect(loose?.id).toBe('Proxima/tasks/Untitled loose task');
+    expect(loose?.id).toBe('Untitled loose task');
+    expect(loose?.source.path).toBe('Proxima/tasks/Untitled loose task.md');
+    expect(loose?.source.idOrigin).toBe('filename');
   });
 
   it('reads the elastic fields the board depends on', async () => {
@@ -92,6 +76,7 @@ describe('calendar and selection', () => {
     const byDay = eventsByDay([
       {
         id: 'e',
+        source: sourceRef('event', 'e'),
         name: 'Studio week',
         description: '',
         projectId: null,

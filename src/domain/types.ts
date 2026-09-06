@@ -6,6 +6,8 @@
  * whatever a host happens to support.
  */
 
+import type { SourceRef } from './records.js';
+
 export type TaskStatusId = string;
 export type ProjectStatus = 'active' | 'archived';
 
@@ -42,7 +44,9 @@ export interface PropertySchema {
 }
 
 export interface Project {
+  /** Logical identity. Never the file path — see `SourceRef` for where it came from. */
   id: string;
+  source: SourceRef;
   name: string;
   description: string;
   createdAt: string;
@@ -63,6 +67,7 @@ export interface LinkedFolder {
 
 export interface Task {
   id: string;
+  source: SourceRef;
   name: string;
   description: string;
   projectId: string | null;
@@ -84,6 +89,7 @@ export interface Task {
 
 export interface CalendarEvent {
   id: string;
+  source: SourceRef;
   name: string;
   description: string;
   projectId: string | null;

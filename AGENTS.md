@@ -12,12 +12,22 @@ supported. Do not repeat that with a different host.
 
 - `src/domain/` imports nothing outside itself. No Obsidian, no Papers, no filesystem,
   no framework. If something needs a host, it belongs above the domain, behind a port.
+  This is checked, not trusted: `tests/boundaries.test.ts` fails on such an import, and
+  `src/` typechecks with `"types": []` so `node:fs` cannot compile there.
 - Papers may be asked for capabilities — read this granted file, open that path — never
   for meaning. A host operation named after a Proxima concept (`readProximaProject`,
   `saveExcalidraw`) is the failure mode, not the goal.
 - Obsidian is a peer program that edits the same files. It is not an API to model
   against, and a compatibility shim that recreates `App`/`Vault`/`WorkspaceLeaf` is
   explicitly rejected.
+
+## Where the current truth lives
+
+- `docs/AUDIT-CHECKLIST.md` — the project agenda, gate by gate, and the contract each
+  pushed SHA is audited against. Update it in the same commit as the work it describes.
+- `docs/VAULT-FORMATS.md` — both supported vault layouts, discovery rules, identity
+  semantics, problem codes.
+- `docs/DECISIONS.md` — choices made explicitly, with what would reverse them.
 
 ## Vault safety
 
@@ -35,7 +45,10 @@ This project is expected to be driven by coding agents, so determinism is a feat
 
 - time and identity are injected (`src/domain/clock.ts`); nothing calls `Date.now()` or
   generates an id in a component;
-- fixtures are real files with fixed ids and dates;
+- fixtures are real files with fixed ids and dates, and a record's identity is what it
+  declares or what its filename says — never its path, never its position in an array;
+- a duplicate logical id is a reported error, not a tiebreak, because an aliased id is
+  how a later write reaches a file nobody chose;
 - `data-papers-visual-key` attributes are stable semantic names, keyed by domain id and
   never by list position. A refactor renames a key only when the meaning changes.
 
