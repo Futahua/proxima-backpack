@@ -1,6 +1,6 @@
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
-import type { VaultEntry, VaultFile, VaultReader } from '../src/ports/vault.js';
+import type { DirectoryPresence, VaultEntry, VaultFile, VaultReader } from '../src/ports/vault.js';
 
 export interface DiskVaultOptions {
   /** Test-only hook for deterministic permission-denied coverage on Windows/CI. */
@@ -46,6 +46,18 @@ export function createDiskVault(root: string, options: DiskVaultOptions = {}): V
     },
     async exists(path) {
       try { await stat(within(root, path)); return true; } catch { return false; }
+    },
+    /** Precise enough to separate genuine absence from an unreadable directory. */
+    async presence(directory): Promise<DirectoryPresence> {
+      try {
+        await lstat(within(root, directory));
+        return 'present';
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException)?.code;
+        if (code === 'ENOENT' || code === 'ENOTDIR') return 'missing';
+        if (code === 'EACCES' || code === 'EPERM') return 'present';
+        return 'unknown';
+      }
     },
     async read(path): Promise<VaultFile> {
       const relativePath = normalise(path);

@@ -1007,6 +1007,42 @@ disk read exactly. The 238 `warning:missing-project` problems are real vault sta
 events referencing project folders that hold no `index.md` — recorded as evidence and
 not tuned around. The creator's vault was not modified.
 
+### 6.1S Candidate outcomes and definitive absence (Gate 6Q.1a)
+
+Two holes the audit found in the first accounting attempt, both able to recreate the
+false-PASS class.
+
+- [x] Rejections are counted where the candidate's outcome is decided, not from a
+      problem-array snapshot taken afterwards. `unreadable` and the project
+      `unexpected-type` veto are both raised during the scan, so a post-scan slice
+      missed them and reported a phantom unaccounted candidate — reproduced, then
+      fixed. Broadening the slice was rejected as the repair: unrelated later problems
+      would then be miscounted as candidate rejections.
+- [x] All three rejection classes reconcile: discovery veto, unreadable candidate,
+      and post-scan identity collision.
+- [x] A warning on a record that did load is still not a rejection.
+- [x] Absence is proved, never inferred. `VaultReader.presence` is an optional probe
+      answering `present | missing | unknown`; a reader without one answers `unknown`,
+      which blocks. Inferring absence from a second failed directory operation — the
+      previous implementation — made a permission-denied directory indistinguishable
+      from one that was not there.
+- [x] Present-but-unreadable ⇒ `failed`, error severity, blocking. Genuinely missing
+      ⇒ `absent`, warning, legal. Unknown ⇒ `failed`.
+- [x] The bridge answers presence from errno: `ENOENT`/`ENOTDIR` ⇒ missing,
+      `EACCES`/`EPERM` ⇒ present, anything else ⇒ unknown.
+- [x] `presence` is part of the zero-write read surface. Omitting it did not make the
+      witness stricter, it made it wrong: the probe was refused, so every missing
+      directory became an unreadable one.
+- [x] `npm test` now builds first. Two tests had been passing against stale compiled
+      modules, which is how a fix could look verified while the harness exercised
+      older code.
+
+**Real-vault run against the corrected build:** status PASS, layout `legacy`, zero
+blockers, all thirteen stages PASS. projects 15 scanned → 4 candidates → 4 loaded →
+0 unaccounted; tasks complete and genuinely empty; events 271 → 271 → 271. Matches a
+direct disk read exactly. 238 `warning:missing-project` remain as recorded evidence.
+Vault unmodified.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

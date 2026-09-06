@@ -26,6 +26,16 @@ export interface VaultEntry {
   kind: 'file' | 'directory';
 }
 
+/**
+ * What a reader can say about a directory after a traversal failed.
+ *
+ * `unknown` is a real answer and the safe default: a reader that cannot separate
+ * "not there" from "there but unreadable" must say so rather than pick, because
+ * treating an unreadable directory as absent turns a hole in the evidence into a
+ * warning. Callers fail closed on it.
+ */
+export type DirectoryPresence = 'present' | 'missing' | 'unknown';
+
 export interface VaultReader {
   /** Entries directly under a vault-relative directory ('' is the vault root). */
   list(directory: string): Promise<VaultEntry[]>;
@@ -33,6 +43,13 @@ export interface VaultReader {
   exists(path: string): Promise<boolean>;
   /** Every file under a directory, recursively. */
   walk(directory: string): Promise<string[]>;
+  /**
+   * Optional precise presence probe, used only to classify a traversal failure.
+   * A reader that omits it is treated as `unknown`, which blocks rather than
+   * excuses — so adding it can only ever make a verdict more precise, never more
+   * permissive.
+   */
+  presence?(directory: string): Promise<DirectoryPresence>;
 }
 
 /**

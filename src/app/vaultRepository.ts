@@ -31,7 +31,7 @@ import {
   type FieldIssue,
 } from '../domain/validation.js';
 import type { IdOrigin, RecordKind, SourceRef } from '../domain/records.js';
-import type { VaultReader } from '../ports/vault.js';
+import type { DirectoryPresence, VaultReader } from '../ports/vault.js';
 import type {
   CalendarEvent,
   LinkedFolder,
@@ -107,9 +107,11 @@ function census(
   rejections: LoadProblem[],
   kind: RecordKind,
 ): KindCensus {
-  const explicitlyRejected = rejections.filter(
-    (problem) => problem.kind === kind && REJECTING_CODES.has(problem.code),
-  ).length;
+  // Two phases produce rejections: discovery/read inside the scan, and identity
+  // collisions when records are built. Both are candidate outcomes, so both count.
+  const explicitlyRejected =
+    scan.rejectedDuringScan +
+    rejections.filter((problem) => problem.kind === kind && REJECTING_CODES.has(problem.code)).length;
   return {
     status: scan.status,
     scannedFiles: scan.scannedFiles,
@@ -178,15 +180,18 @@ async function readKind(
     // exists but could not be traversed is a hole in the evidence, and severity has
     // to say so: reporting it as a warning is how a whole record class once
     // vanished into a passing baseline.
-    const present = await directoryPresent(vault, directory);
+    const presence = await directoryPresence(vault, directory);
     problems.push({
       code: 'directory-unreadable',
-      severity: present ? 'error' : 'warning',
+      severity: presence === 'missing' ? 'warning' : 'error',
       path: directory,
       kind,
       detail: error instanceof Error ? error.message : String(error),
     });
-    return { documents: [], scan: { status: present ? 'failed' : 'absent', scannedFiles: 0, recordCandidates: 0 } };
+    return {
+      documents: [],
+      scan: { status: presence === 'missing' ? 'absent' : 'failed', scannedFiles: 0, recordCandidates: 0, rejectedDuringScan: 0 },
+    };
   }
 
   const discovery =
@@ -194,7 +199,13 @@ async function readKind(
       ? discoverProjects(paths, directory)
       : discoverFlatRecords(paths, directory, kind);
   problems.push(...discovery.problems);
-  const scan: KindScan = { status: 'complete', scannedFiles: paths.length, recordCandidates: discovery.candidates.length };
+  // Discovery's own vetoes are candidate outcomes, so they are accounted here.
+  const scan: KindScan = {
+    status: 'complete',
+    scannedFiles: paths.length,
+    recordCandidates: discovery.candidates.length,
+    rejectedDuringScan: discovery.problems.filter((problem) => REJECTING_CODES.has(problem.code)).length,
+  };
 
   const documents: SourcedDocument[] = [];
   for (const candidate of discovery.candidates) {
@@ -212,6 +223,7 @@ async function readKind(
         kind,
         detail: error instanceof Error ? error.message : String(error),
       });
+      scan.rejectedDuringScan += 1;
       continue;
     }
 
@@ -243,6 +255,11 @@ async function readKind(
         kind,
         detail: `frontmatter says type: ${declaredType}, so it is not read as a project.`,
       });
+      // A vetoed candidate never becomes a record, so it is accounted for here.
+      // Counting it later from the shared problem array cannot work: this is pushed
+      // before any post-scan snapshot, which is how it became a phantom
+      // unaccounted candidate.
+      scan.rejectedDuringScan += 1;
       continue;
     }
 
@@ -269,21 +286,32 @@ interface KindScan {
   status: 'complete' | 'absent' | 'failed';
   scannedFiles: number;
   recordCandidates: number;
+  /**
+   * Candidates this scan already accounted for — a file that could not be read, or
+   * one discovery vetoed. Counted here rather than recovered later from the shared
+   * problem array: those problems are pushed before any later snapshot, so a global
+   * slice misses them and reports a phantom unaccounted candidate.
+   */
+  rejectedDuringScan: number;
 }
 
 /**
- * Whether a directory is there at all.
+ * Tell "definitively not there" from "there but unreadable", after a traversal
+ * failed — and refuse to guess when it cannot.
  *
- * Used only to tell "not present" from "present but unreadable" after a traversal
- * failed. Listing is the probe because it is the one operation every adapter
- * implements the same way for a directory.
+ * Inferring absence from a second failed directory operation is what produced the
+ * original false PASS in miniature: a permission-denied directory fails both `walk`
+ * and `list`, and calling that "absent" downgrades a hole in the evidence to a
+ * warning. So a reader that cannot answer precisely gets `unknown`, which the caller
+ * treats as failed. Absence has to be proved, not assumed from silence.
  */
-async function directoryPresent(vault: VaultReader, directory: string): Promise<boolean> {
+async function directoryPresence(vault: VaultReader, directory: string): Promise<DirectoryPresence> {
+  const probe = (vault as VaultReader & { presence?: (path: string) => Promise<DirectoryPresence> }).presence;
+  if (typeof probe !== 'function') return 'unknown';
   try {
-    await vault.list(directory);
-    return true;
+    return await probe.call(vault, directory);
   } catch {
-    return false;
+    return 'unknown';
   }
 }
 

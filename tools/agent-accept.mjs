@@ -325,7 +325,22 @@ async function readThroughWitness(port, options) {
     { BUILD_IDENTITY },
   ] = modules;
 
-  const reader = createExternalDirectoryVault(createHttpDirectoryHandle(`http://127.0.0.1:${port}`));
+  const base = `http://127.0.0.1:${port}`;
+  const reader = createExternalDirectoryVault(createHttpDirectoryHandle(base));
+  // The loader fails closed on a directory whose presence it cannot establish, so
+  // give it a probe that can actually answer. Without one, a vault that simply has
+  // no tasks directory would be indistinguishable from one whose tasks directory
+  // could not be read.
+  reader.presence = async (directory) => {
+    try {
+      const response = await fetch(`${base}/api/vault/presence?path=${encodeURIComponent(directory)}`);
+      if (!response.ok) return 'unknown';
+      const body = await response.json();
+      return body.presence === 'present' || body.presence === 'missing' ? body.presence : 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  };
   const witness = createZeroWriteWitness(reader);
   // The regression the reviewer asked for: when this hands over the unwrapped
   // reader, the witness records no reads and the run must not be able to pass.

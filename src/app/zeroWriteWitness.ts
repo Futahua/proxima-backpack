@@ -17,8 +17,15 @@ import type { VaultReader } from '../ports/vault.js';
  * assertion that could not fail.
  */
 
-/** The complete read surface. Anything else is a write attempt or an escape hatch. */
-export const READ_SURFACE: ReadonlySet<string> = new Set(['list', 'read', 'exists', 'walk']);
+/**
+ * The complete read surface. Anything else is a write attempt or an escape hatch.
+ *
+ * `presence` belongs here: it asks whether a directory is there, which is a read.
+ * Leaving it out did not make the witness stricter, it made it wrong — the probe
+ * was refused, the loader could not establish absence, and every missing directory
+ * became an unreadable one.
+ */
+export const READ_SURFACE: ReadonlySet<string> = new Set(['list', 'read', 'exists', 'walk', 'presence']);
 
 export interface ZeroWriteWitness {
   /** Hand this to the code under test, never the underlying reader. */

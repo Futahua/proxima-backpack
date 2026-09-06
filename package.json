@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Proxima Backpack for Papers \u2014 Elastic board, calendar and projects over an Obsidian vault",
   "scripts": {
-    "test": "vitest run",
+    "test": "npm run build && vitest run",
     "test:watch": "vitest",
     "typecheck": "node tools/build-fixture-module.mjs && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tests.json",
     "build": "node tools/build-fixture-module.mjs && tsc -p tsconfig.build.json",

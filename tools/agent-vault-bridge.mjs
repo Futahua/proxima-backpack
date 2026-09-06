@@ -171,6 +171,23 @@ const server = createServer(async (request, response) => {
     const path = url.searchParams.get('path') ?? '';
     if (operation === 'list') return send(response, 200, await list(path), origin);
     if (operation === 'walk') return send(response, 200, await walk(path), origin);
+    if (operation === 'presence') {
+      // Absence must be provable, not inferred from a failed listing. ENOENT and
+      // ENOTDIR say the directory is genuinely not there; a permission or I/O
+      // failure says it is there and unreadable, which is a different fact; and
+      // anything unrecognised stays 'unknown' so the caller fails closed.
+      try {
+        const target = absolute(path);
+        await lstat(target);
+        return send(response, 200, { presence: 'present' }, origin);
+      } catch (error) {
+        const errno = error && typeof error === 'object' ? error.code : undefined;
+        if (error instanceof BridgeError) return send(response, 200, { presence: 'unknown' }, origin);
+        if (errno === 'ENOENT' || errno === 'ENOTDIR') return send(response, 200, { presence: 'missing' }, origin);
+        if (errno === 'EACCES' || errno === 'EPERM') return send(response, 200, { presence: 'present' }, origin);
+        return send(response, 200, { presence: 'unknown' }, origin);
+      }
+    }
     if (operation === 'exists') { try { const target = absolute(path); const metadata = await lstat(target); return send(response, 200, { exists: !metadata.isSymbolicLink() }, origin); } catch { return send(response, 200, { exists: false }, origin); } }
     if (operation === 'read') { const target = absolute(path); const linkMetadata = await lstat(target); if (linkMetadata.isSymbolicLink()) throw new BridgeError(BRIDGE_CODES.symlink); const metadata = await stat(target); if (!metadata.isFile()) throw new BridgeError(BRIDGE_CODES.notADirectory); if (metadata.size > MAX_FILE_BYTES) throw new BridgeError(BRIDGE_CODES.fileBound); const text = await readFile(target, 'utf8'); if (Buffer.byteLength(text, 'utf8') > MAX_FILE_BYTES) throw new BridgeError(BRIDGE_CODES.fileBound); return send(response, 200, { path: relativePath(relative(root, target).split(sep).join('/')), text, size: metadata.size, modifiedAt: metadata.mtime.toISOString(), revision: revision(text, metadata) }, origin); }
     return send(response, 404, { error: BRIDGE_CODES.unknownOperation }, origin);

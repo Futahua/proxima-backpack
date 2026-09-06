@@ -51,7 +51,16 @@ export function createMemoryVault(files: Record<string, string>): VaultReader & 
       return fileOf(normalise(path));
     },
     async exists(path) {
-      return store.has(normalise(path));
+      const key = normalise(path);
+      // A directory exists when something lives under it; the store holds files only.
+      return store.has(key) || [...store.keys()].some((candidate) => candidate.startsWith(`${key}/`));
+    },
+    async presence(directory) {
+      // In-memory: absence is knowable exactly, so this never answers 'unknown'.
+      const key = normalise(directory);
+      return store.has(key) || [...store.keys()].some((candidate) => candidate.startsWith(`${key}/`))
+        ? 'present'
+        : 'missing';
     },
     async walk(directory) {
       const prefix = normalise(directory);
