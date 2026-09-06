@@ -29,7 +29,7 @@ against, so it must travel with the code rather than living in a conversation.
 | --- | --- |
 | Current slice | Gate 5 — real File System Access spike in Papers |
 | Branch | `codex/gate-1b-correction` (local acceptance worktree) |
-| Last audited SHA | `31d7da6` — Gate 5 core FSA viability PASS in the real Papers surface; follow-up truths remain explicitly open. |
+| Last audited SHA | `faccdcd` — Gate 5 disposable FSA core and full-process lifecycle PASS; clean-profile and real-vault follow-ups remain open. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -1240,8 +1240,8 @@ Each pushed SHA is sent for audit approximately in this order.
 6. [x] Gate 3A — action dispatcher + inspection projection
 7. [x] Gate 3B — revision/settling + event ring + evidence schema
 8. [x] Gate 4 — adapter conformance: disk + OPFS
-9. [x] Gate 5 — real Papers FSA spike (core viability; full-restart and real-vault
-       follow-ups remain open)
+9. [x] Gate 5 — real Papers FSA spike (core viability and full-process lifecycle PASS;
+       clean-profile and real-vault follow-ups remain open)
 10. [ ] Gate 6 — read-only creator vault
 11. [ ] Gate 7 — Excalidraw display
 12. [ ] Gate 8 — arbitrary-file canvas
