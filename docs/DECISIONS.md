@@ -430,6 +430,24 @@ that boundary.
 **Boundary:** no deferred or open item is promoted to PASS without its required
 runtime evidence.
 
+## D24 — Gate 6A starts with pull-based read-only refresh
+
+**Decided:** source refresh is owned by a Proxima `RefreshController` over the
+existing `VaultReader` seam. `refreshSource(reason)` accepts only the closed reasons
+`manual`, `focus`, `interval`, or `external-signal`; rereads and parses a fresh
+snapshot, compares revisions and logical identities, serializes concurrent calls,
+and publishes a new source revision only when observable state changes. Unreadable or
+malformed refreshes preserve the last good state while exposing bounded degraded,
+stale, and problem-code fields. The controller has no writer, migration, autofix,
+filesystem, Papers, or creator-vault authority.
+
+Manual refresh is the correctness baseline. Focus-triggered, interval, and external
+signals may reuse the same controller; no watcher or Papers host capability is
+justified until measured evidence shows pull refresh is insufficient.
+
+**Boundary:** Gate 6A is fixture/disk-adapter only and does not claim real-vault
+acceptance or advance the native FSA boundary.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

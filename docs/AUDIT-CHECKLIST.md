@@ -590,7 +590,11 @@ Only then consider a project-scoped external read capability in Papers.
 
 ### 6.1 Source refresh model
 
-- [ ] Manual refresh exists.
+- [x] Read-only pull refresh controller exists over `VaultReader` (Gate 6A, D24).
+- [x] Manual/focus/interval/external-signal reasons are a closed enum.
+- [x] Source revisions, stale/degraded state, last-good preservation, bounded
+      diagnostics, and serialized refresh state are explicit and tested.
+- [ ] Manual refresh exists in the real-vault UI.
 - [ ] Refresh-on-focus considered/tested.
 - [ ] Bounded polling considered/tested if needed.
 - [ ] External edit produces new source revision.
