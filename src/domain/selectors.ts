@@ -98,8 +98,9 @@ function daysCovered(event: CalendarEvent): string[] {
   const keys: string[] = [];
   const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-  // Guard against a pathological range producing an unbounded list.
-  for (let i = 0; cursor <= last && i < 3660; i += 1) {
+  // Date validation happens before this selector. Derive the complete finite range;
+  // silently truncating a long creator event would invent an earlier end date.
+  while (cursor <= last) {
     keys.push(localDateKey(cursor));
     cursor.setDate(cursor.getDate() + 1);
   }

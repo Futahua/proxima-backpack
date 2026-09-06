@@ -216,4 +216,22 @@ describe('calendar and selection', () => {
     expect([...byDay.values()].every((events) => events[0]?.id === 'dst')).toBe(true);
     expect([...byDay.keys()]).toHaveLength(3);
   });
+
+  it('does not silently truncate a long multi-year event', () => {
+    const byDay = eventsByDay([
+      {
+        id: 'long',
+        source: sourceRef('event', 'long'),
+        name: 'Long event',
+        description: '',
+        projectId: null,
+        createdAt: '',
+        startDate: '2010-01-01T12:00:00.000Z',
+        deadline: '2021-01-01T12:00:00.000Z',
+        isCompleted: false,
+        properties: {},
+      },
+    ]);
+    expect(byDay.has(localDateKey('2021-01-01T12:00:00.000Z'))).toBe(true);
+  });
 });
