@@ -665,6 +665,23 @@ plugin runtime is introduced.
 **Boundary:** the disposable writer is test-only; no creator vault, native picker,
 Papers bridge, watcher capability, or write authority is added.
 
+## D37 — Native-grant readiness is one deterministic final preflight
+
+**Decided:** `evaluateCreatorVaultPreflight` composes only bounded 6J acceptance,
+6L runbook, and 6M coexistence-readiness outputs. It emits one copy-safe
+`READY_FOR_NATIVE_GRANT`, `BLOCKED`, or `ABORTED` decision with exact blocker codes,
+read-only/zero-write invariants, forbidden upcoming operations, and the sole allowed
+next native action: select/grant the creator vault read-only directory. Clean-profile
+FSA selection and real Obsidian coexistence remain explicitly `OPEN`; disposable
+simulation is the only readiness evidence counted.
+
+The evaluator is deterministic and side-effect free. It calls no picker, permission,
+filesystem, Papers, reader, session, controller, or writer API and never echoes unsafe
+paths or authority objects.
+
+**Boundary:** Gate 6N is final preflight only. It does not perform native selection,
+claim creator-vault behavior, or enable writes.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

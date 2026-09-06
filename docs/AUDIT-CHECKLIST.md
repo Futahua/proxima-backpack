@@ -802,6 +802,21 @@ Only then consider a project-scoped external read capability in Papers.
       capability is introduced (Gate 6M, D36).
 - [ ] Actual Obsidian/creator-vault coexistence acceptance.
 
+### 6.1M Final creator-vault native-grant preflight composition (Gate 6N)
+
+- [x] Pure `evaluateCreatorVaultPreflight` composes bounded 6J, 6L, and 6M
+      readiness outputs without source or native authority.
+- [x] `READY_FOR_NATIVE_GRANT`, `BLOCKED`, and `ABORTED` are distinct; blocker
+      codes identify build, runbook, write, coexistence, path, and host failures.
+- [x] Ready requires expected build, valid 6J evidence, READY runbook, zero writes,
+      safe bounds, disposable simulation PASS, resolved capabilities, and no path
+      leakage; clean-profile FSA and real Obsidian remain OPEN.
+- [x] Output is copy-safe, authority-free, deterministic, and explicitly forbids
+      writes, migration, autofix, watcher assumptions, and Papers changes.
+- [x] Browser renders one stable C1 preflight surface/global; tests cover ready,
+      blocked, aborted, unsafe-path, and deterministic outputs (Gate 6N, D37).
+- [ ] Native creator-vault select/grant action.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

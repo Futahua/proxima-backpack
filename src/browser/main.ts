@@ -2,6 +2,8 @@ import { createActionDispatcher, type ProximaActionDispatcher, type Surface } fr
 import { createInspectionProjection } from '../app/inspection.js';
 import type { ReadOnlyProjection } from '../app/readOnlyProjection.js';
 import { evaluateRealVaultAcceptance, isRealVaultAcceptanceReport, type RealVaultAcceptanceReport } from '../app/realVaultAcceptance.js';
+import { evaluateCreatorVaultPreflight, isCreatorVaultPreflightReport, type CreatorVaultPreflightReport } from '../app/creatorVaultPreflight.js';
+import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
 import type { SourceSession } from '../app/sourceSession.js';
 import { createUiHealthModel, type UiHealthModel } from '../app/uiHealth.js';
@@ -167,13 +169,17 @@ function exposeInspection(): void {
     renameDeleteEvidence: lastRenameDeleteEvidence,
     writeInvariant: { writesAttempted: 0, writerMethodsCalled: [] },
   });
-  const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection; __PROXIMA_REAL_VAULT_ACCEPTANCE__?: (report: unknown) => void };
+  const runbook = evaluateRealVaultRunbook({ report, expectedBuildSha: BUILD_IDENTITY.gitSha });
+  const preflight = evaluateCreatorVaultPreflight({ acceptance: report, runbook, coexistence: { passed: false, zeroWrites: true, sourceBoundsValid: true, hostCapabilityResolved: true }, expectedBuildSha: BUILD_IDENTITY.gitSha });
+  const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection; __PROXIMA_REAL_VAULT_ACCEPTANCE__?: (report: unknown) => void; __PROXIMA_CREATOR_VAULT_PREFLIGHT__?: (report: unknown) => void };
   target.__PROXIMA_INSPECTION__ = () => createInspectionProjection(actionDispatcher!.snapshot(), BUILD_IDENTITY, currentUiHealth());
   target.__PROXIMA_REAL_VAULT_ACCEPTANCE__ = (report) => { if (isRealVaultAcceptanceReport(report)) renderRealVaultAcceptance(report); };
+  target.__PROXIMA_CREATOR_VAULT_PREFLIGHT__ = (report) => { if (isCreatorVaultPreflightReport(report)) renderCreatorVaultPreflight(report); };
   const root = element<HTMLElement>('#proxima-app');
   root.dataset.proximaStateRevision = String(inspection.applicationStateRevision);
   root.dataset.proximaHealthGeneration = String(inspection.sourceHealth.sourceRevision);
   renderRealVaultAcceptance(report);
+  renderCreatorVaultPreflight(preflight);
 }
 
 function renderFsaProbe(report: unknown): void {
@@ -190,6 +196,10 @@ function renderRealVaultAcceptance(report: RealVaultAcceptanceReport): void {
   if (isRealVaultAcceptanceReport(report)) setText('#real-vault-acceptance-status', JSON.stringify(report, null, 2));
 }
 
+function renderCreatorVaultPreflight(report: CreatorVaultPreflightReport): void {
+  if (isCreatorVaultPreflightReport(report)) setText('#creator-vault-preflight-status', JSON.stringify(report, null, 2));
+}
+
 async function runFsaProbe(): Promise<void> {
   try { renderFsaProbe(await pickAndProbeDirectory()); }
   catch (error) { renderFsaProbe({ error: error instanceof Error ? error.message : String(error) }); }
@@ -204,7 +214,7 @@ function render(): void {
   const health = currentUiHealth();
   root.dataset.proximaHealthGeneration = String(health.sourceRevision);
   const sourceLabel = sourceSession?.snapshot().sourceMode === 'external' ? 'Read-only external source' : 'Read-only fixture';
-  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre></details></div>`;
+  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
   updateHydrationSummary(appState, problems);
   exposeInspection();
 }
