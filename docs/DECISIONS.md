@@ -555,6 +555,25 @@ source. Persistence remains an injected repository concern.
 **Boundary:** Gate 6G uses mocked structural handles only. Native acquisition,
 creator-vault selection, permission prompts, and Papers/host changes remain open.
 
+## D31 — Source-mode transitions are serialized and authority-dropping
+
+**Decided:** `SourceSession` is the sole source-mode state machine above source
+creation/bootstrap. Its modes are closed to `fixture` and `external`; transitions
+are generation-tagged and serialized, and active policies are disposed before a
+switch. Only an already-authorized `VaultReader` plus its loaded snapshot may be
+activated. The state machine never acquires permission, calls a picker, touches
+IndexedDB/filesystem APIs, or retains raw handles.
+
+Successful switches replace one complete projection generation. Failed external
+activation keeps the previous stable source and reports a bounded failure state.
+Late refresh completions from a detached source are ignored; switching back to the
+fixture drops external authority references. Active policy timers/triggers bind only
+to the current source, while dispatcher/selection/settled semantics remain owned by
+the existing atomic source replacement seam.
+
+**Boundary:** Gate 6H is code-only with injected readers and mocked scheduling.
+Native acquisition, creator-vault use, and real-source acceptance stay open.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

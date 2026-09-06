@@ -701,6 +701,24 @@ Only then consider a project-scoped external read capability in Papers.
       no write-capable or permission-request authority (Gate 6G, D30).
 - [ ] Native restored-handle/creator-vault acceptance.
 
+### 6.1G Source-mode transition state machine (Gate 6H)
+
+- [x] Explicit fixture/external source session with stable/switching/failed states.
+- [x] Source transitions are serialized and generation-tagged.
+- [x] Late old-source refresh completions cannot overwrite the active source.
+- [x] Active policy timers/triggers are disposed and rebound without duplication.
+- [x] External activation accepts only an already-authorized `VaultReader` + snapshot;
+      no picker, permission request, IndexedDB, filesystem, or host API is called.
+- [x] Failed external activation preserves one coherent previous source and reports a
+      bounded failure; fixture fallback/return drops external authority references.
+- [x] Board/Projects/Calendar/inspection/health receive one complete accepted
+      generation; selection reconciliation and dispatcher settled/event semantics stay
+      coherent.
+- [x] Transition tests cover fixture→external, external→fixture, failure, rapid/late
+      completion, policy disposal/rebind, generation agreement, and no authority leak
+      (Gate 6H, D31).
+- [ ] Native source-mode transition acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.
