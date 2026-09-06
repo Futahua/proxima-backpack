@@ -955,6 +955,58 @@ one error fails, warning+error fails with warnings still reported, unclassified
 severity fails, warning codes stay bounded, and the other stages stay OPEN rather
 than quietly passing.
 
+### 6.1R Transport completeness and candidate accounting (Gate 6Q.1)
+
+The first Gate 6Q execution against the creator's real vault was a **false PASS**:
+every stage green while all four projects silently failed to load. Two independent
+defects, both now closed.
+
+**Symlink traversal.** One project folder held a dangling link — `Corn`, created by
+Proxima's own `linkedFolder` feature — and the bridge threw on any symlink while
+listing, so one bad entry failed the entire recursive walk and erased all 31 project
+folders. Events, containing no links, were unaffected.
+
+- [x] `list` omits symlinks and returns a bounded `skippedSymlinks` count; `walk`
+      recurses ordinary directories only and aggregates the count.
+- [x] A link never causes sibling entries or its containing directory to disappear.
+- [x] Link targets are never returned, and never resolved: internal and external
+      targets are not distinguished, because distinguishing them means following.
+- [x] A direct `read` of a path that *is* a symlink still fails closed.
+- [x] Verified against the real vault: `walk` of the projects directory returned 15
+      files, `skippedSymlinks: 1`, and all 4 `index.md` — matching a direct disk read.
+
+**Completeness and accounting.** Nothing noticed that a record class had gone,
+because `source-empty` only fires when *total* records are zero and 271 events kept
+it quiet. "Some records exist" is not evidence that the source was read.
+
+- [x] Per-kind scan status: `complete`, `absent`, or `failed`. A failed canonical
+      scan blocks the baseline — "I could not look" is a different claim from
+      "I looked and found nothing".
+- [x] `directory-unreadable` is now **error** severity when the directory exists but
+      could not be traversed, and warning only when it is genuinely absent. Reporting
+      traversal failure as a warning is precisely how a whole class vanished into a
+      passing baseline.
+- [x] Per-kind census: scanned files, record candidates, loaded, explicitly rejected,
+      unaccounted. `recordCandidates === loadedRecords + explicitlyRejected`, and any
+      unaccounted candidate aborts the run.
+- [x] Only a candidate that never became a record counts as rejected. A warning on a
+      loaded record — defaulted enum, missing relationship — does not.
+- [x] Zero records for a class whose complete scan genuinely found zero candidates
+      remains legal.
+- [x] Regressions in `tests/transportCompleteness.test.ts`: a dangling link beside a
+      real `index.md` loads both projects (0 before the fix), bridge and direct disk
+      reads agree, duplicate ids reconcile as 2 candidates → 1 loaded + 1 rejected,
+      and absent directories stay legal while unreadable ones block. Windows junctions
+      stand in for symlinks, which need a privilege an ordinary process lacks; Node
+      reports both through `isSymbolicLink()`, so the traversal path is identical.
+
+**Re-run against the real vault, after both fixes:** layout `legacy`, all three scans
+`complete`, projects 15 scanned → 4 candidates → 4 loaded → 0 unaccounted, tasks
+genuinely empty, events 271 → 271 → 271, zero blockers. This now matches the direct
+disk read exactly. The 238 `warning:missing-project` problems are real vault state —
+events referencing project folders that hold no `index.md` — recorded as evidence and
+not tuned around. The creator's vault was not modified.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

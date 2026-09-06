@@ -57,6 +57,67 @@ export interface LoadResult {
   revisions: Record<string, string>;
   /** The layout actually used, so a caller can report what it read. */
   layout: VaultLayout;
+  /**
+   * What the transport actually saw, per record kind, and what became of it.
+   *
+   * A real run once reported PASS while every project silently vanished: the
+   * transport failed to traverse one directory, 271 events from another kind kept
+   * the total non-zero, and nothing anywhere noticed that a whole record class had
+   * gone. Counting records is not enough — the question is whether the scan was
+   * complete, and whether every candidate it found is accounted for.
+   */
+  census: Record<RecordKind, KindCensus>;
+}
+
+export interface KindCensus {
+  /**
+   * `complete` — the directory was traversed.
+   * `absent` — it definitively is not there, which the layout contract permits.
+   * `failed` — traversal did not finish, so what is in it is unknown. Blocking:
+   *   "I could not look" is a different claim from "I looked and found nothing".
+   */
+  status: 'complete' | 'absent' | 'failed';
+  /** Every file the scan returned, before discovery rules were applied. */
+  scannedFiles: number;
+  /** Files the discovery rules accepted as record-shaped. */
+  recordCandidates: number;
+  /** Candidates that became records. */
+  loadedRecords: number;
+  /** Candidates a reported problem explicitly accounts for. */
+  explicitlyRejected: number;
+  /**
+   * Candidates that neither loaded nor were rejected for a stated reason. Any
+   * non-zero value means a record disappeared without anyone saying why.
+   */
+  unaccountedCandidates: number;
+}
+
+/**
+ * Problem codes that explain a candidate's absence from state.
+ *
+ * A warning on a record that did load — a defaulted enum, a missing relationship —
+ * is not a rejection: that record is already counted as loaded. Only a candidate
+ * that never became a record belongs here.
+ */
+const REJECTING_CODES = new Set(['unreadable', 'duplicate-id', 'unexpected-type']);
+
+function census(
+  scan: KindScan,
+  loadedRecords: number,
+  rejections: LoadProblem[],
+  kind: RecordKind,
+): KindCensus {
+  const explicitlyRejected = rejections.filter(
+    (problem) => problem.kind === kind && REJECTING_CODES.has(problem.code),
+  ).length;
+  return {
+    status: scan.status,
+    scannedFiles: scan.scannedFiles,
+    recordCandidates: scan.recordCandidates,
+    loadedRecords,
+    explicitlyRejected,
+    unaccountedCandidates: Math.max(0, scan.recordCandidates - loadedRecords - explicitlyRejected),
+  };
 }
 
 /** One file, parsed, before it becomes a domain record. */
@@ -74,13 +135,15 @@ export async function loadVaultState(
   const problems: LoadProblem[] = [];
   const revisions: Record<string, string> = {};
 
-  const projectDocs = await readKind(vault, layout, 'project', problems, revisions);
-  const taskDocs = await readKind(vault, layout, 'task', problems, revisions);
-  const eventDocs = await readKind(vault, layout, 'event', problems, revisions);
+  const projectRead = await readKind(vault, layout, 'project', problems, revisions);
+  const taskRead = await readKind(vault, layout, 'task', problems, revisions);
+  const eventRead = await readKind(vault, layout, 'event', problems, revisions);
 
-  const projects = collect(projectDocs, problems, toProject);
-  const tasks = collect(taskDocs, problems, toTask);
-  const events = collect(eventDocs, problems, toEvent);
+  const before = problems.length;
+  const projects = collect(projectRead.documents, problems, toProject);
+  const tasks = collect(taskRead.documents, problems, toTask);
+  const events = collect(eventRead.documents, problems, toEvent);
+  const rejections = problems.slice(before);
 
   reportMissingProjects(projects, tasks, events, problems);
 
@@ -89,6 +152,11 @@ export async function loadVaultState(
     problems,
     revisions,
     layout,
+    census: {
+      project: census(projectRead.scan, projects.length, rejections, 'project'),
+      task: census(taskRead.scan, tasks.length, rejections, 'task'),
+      event: census(eventRead.scan, events.length, rejections, 'event'),
+    },
   };
 }
 
@@ -99,21 +167,26 @@ async function readKind(
   kind: RecordKind,
   problems: LoadProblem[],
   revisions: Record<string, string>,
-): Promise<SourcedDocument[]> {
+): Promise<{ documents: SourcedDocument[]; scan: KindScan }> {
   const directory = directoryFor(layout, kind);
 
   let paths: string[];
   try {
     paths = await vault.walk(directory);
   } catch (error) {
+    // A directory that is simply not there is a legal shape for a vault. One that
+    // exists but could not be traversed is a hole in the evidence, and severity has
+    // to say so: reporting it as a warning is how a whole record class once
+    // vanished into a passing baseline.
+    const present = await directoryPresent(vault, directory);
     problems.push({
       code: 'directory-unreadable',
-      severity: 'warning',
+      severity: present ? 'error' : 'warning',
       path: directory,
       kind,
       detail: error instanceof Error ? error.message : String(error),
     });
-    return [];
+    return { documents: [], scan: { status: present ? 'failed' : 'absent', scannedFiles: 0, recordCandidates: 0 } };
   }
 
   const discovery =
@@ -121,6 +194,7 @@ async function readKind(
       ? discoverProjects(paths, directory)
       : discoverFlatRecords(paths, directory, kind);
   problems.push(...discovery.problems);
+  const scan: KindScan = { status: 'complete', scannedFiles: paths.length, recordCandidates: discovery.candidates.length };
 
   const documents: SourcedDocument[] = [];
   for (const candidate of discovery.candidates) {
@@ -187,7 +261,30 @@ async function readKind(
     });
   }
 
-  return documents;
+  return { documents, scan };
+}
+
+/** Scan facts readKind knows before the records are built. */
+interface KindScan {
+  status: 'complete' | 'absent' | 'failed';
+  scannedFiles: number;
+  recordCandidates: number;
+}
+
+/**
+ * Whether a directory is there at all.
+ *
+ * Used only to tell "not present" from "present but unreadable" after a traversal
+ * failed. Listing is the probe because it is the one operation every adapter
+ * implements the same way for a directory.
+ */
+async function directoryPresent(vault: VaultReader, directory: string): Promise<boolean> {
+  try {
+    await vault.list(directory);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

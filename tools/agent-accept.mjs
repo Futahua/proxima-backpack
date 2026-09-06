@@ -62,6 +62,8 @@ const CODES = Object.freeze({
   runbookNotReady: 'runbook-6l-not-ready',
   preflightNotReady: 'preflight-6n-not-ready',
   buildStale: 'build-identity-stale',
+  scanIncomplete: 'record-scan-incomplete',
+  unaccounted: 'unaccounted-record-candidates',
 });
 
 /**
@@ -138,6 +140,22 @@ export async function runAcceptance(options = {}) {
 
     if (load.ok && (load.counts?.records ?? 0) === 0) fail(CODES.emptySource);
 
+    // Completeness before verdicts. Counting records is not enough: a run once
+    // passed while every project vanished, because a different kind's 271 records
+    // kept the total non-zero. A scan that did not finish means the contents are
+    // unknown, which is a different claim from "looked, found nothing" — and a
+    // candidate that neither loaded nor was explicitly rejected is a record that
+    // disappeared with nobody saying why.
+    const census = read.census;
+    if (census) {
+      const failedScans = Object.entries(census).filter(([, kind]) => kind.status === 'failed').map(([name]) => name);
+      const unaccounted = Object.entries(census).filter(([, kind]) => kind.unaccountedCandidates > 0).map(([name]) => name);
+      stages.scanCompleteness = failedScans.length === 0 ? 'PASS' : 'FAIL';
+      stages.candidateAccounting = unaccounted.length === 0 ? 'PASS' : 'FAIL';
+      if (failedScans.length > 0) fail(CODES.scanIncomplete, { abort: true });
+      if (unaccounted.length > 0) fail(CODES.unaccounted, { abort: true });
+    }
+
     // Only now, with the instruments having reported, run the evaluators the
     // browser depends on. Two of the facts 6N needs are things this run genuinely
     // observed — nothing was written, and no unsafe path appeared — so they are
@@ -191,10 +209,11 @@ export async function runAcceptance(options = {}) {
       reads: witness.reads.length,
       layout: read.detection?.kind ?? null,
       evaluators,
+      census: read.census ?? null,
     });
   } catch (error) {
     fail(codeFor(error));
-    return result({ blockers, stages, aborted, counts: null, reads: 0, layout: null, evaluators: null });
+    return result({ blockers, stages, aborted, counts: null, reads: 0, layout: null, evaluators: null, census: null });
   } finally {
     // Terminate only what this run started, and wait for it to actually go.
     // Exiting while the child's stdio handles are still closing trips a libuv
@@ -373,6 +392,7 @@ async function readThroughWitness(port, options) {
         });
         return { acceptance, runbook, preflight };
       },
+      census: load.census ?? null,
       load: {
         ok: true,
         paths: Object.keys(load.revisions ?? {}),
@@ -411,7 +431,7 @@ function codeFor(error) {
   return Object.values(CODES).includes(message) ? message : CODES.bridgeUnreachable;
 }
 
-function result({ blockers, stages, aborted, counts, reads, layout = null, evaluators = null }) {
+function result({ blockers, stages, aborted, counts, reads, layout = null, evaluators = null, census = null }) {
   const codes = [...new Set(blockers)].slice(0, MAX_CODES);
   const status = codes.length === 0 ? 'PASS' : aborted ? 'ABORTED' : 'BLOCKED';
   return {
@@ -426,6 +446,9 @@ function result({ blockers, stages, aborted, counts, reads, layout = null, evalu
     observedReads: reads,
     counts: counts ?? null,
     layout,
+    // Per-kind scan status and candidate accounting: what the transport saw, and
+    // what became of every record-shaped file it found.
+    census,
     // The three hosted evaluators' own verdicts, so a reader can see that this run
     // agreed with them rather than with a verdict this harness invented.
     verdicts: evaluators

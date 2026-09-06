@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 
 /**
@@ -13,18 +13,69 @@ import { join, relative, sep } from 'node:path';
  * "what changed", not two that can disagree.
  */
 
-/** Content hash plus size for every file under root, keyed by root-relative path. */
-export async function fingerprint(root) {
+/**
+ * The regions whose bytes are worth hashing: the record directories Proxima reads.
+ * Everything else in a vault — attachments, plugin folders, node_modules — is
+ * fingerprinted by size and mtime instead.
+ *
+ * A real vault is around a gigabyte and several thousand files, most of them
+ * binaries. Reading all of it as UTF-8 to hash it is slow, memory-hostile and
+ * mangles the binaries on the way through, while adding nothing: the point of the
+ * whole-tree sweep is to notice that a file moved, and size plus mtime notices that.
+ * The directories Proxima actually parses still get content hashes, because there a
+ * same-size same-timestamp edit is exactly the change worth catching.
+ */
+const CONTENT_HASHED_ROOTS = ['Proxima', '-Hide/Proxima'];
+
+/**
+ * Fingerprint a tree.
+ *
+ * Files under a content-hashed root carry `size:hash`; everything else carries
+ * `size:mtime`. Both change when the file changes, so `changedPaths` works the same
+ * either way — only the cost and the sensitivity differ.
+ */
+export async function fingerprint(root, options = {}) {
+  const contentRoots = options.contentRoots ?? CONTENT_HASHED_ROOTS;
   const result = new Map();
   async function walk(directory) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
         await walk(absolute);
         continue;
       }
-      const [text, metadata] = await Promise.all([readFile(absolute, 'utf8'), stat(absolute)]);
-      result.set(relative(root, absolute).split(sep).join('/'), `${metadata.size}:${hash(text)}`);
+      const relativePath = relative(root, absolute).split(sep).join('/');
+
+      // lstat, never stat: a real vault contains symlinks, and some of them dangle.
+      // Following one either crashes the sweep on a broken link or fingerprints a
+      // tree outside the root as though it were inside. The link itself is what
+      // lives here, so the link itself is what gets recorded.
+      let metadata;
+      try {
+        metadata = await lstat(absolute);
+      } catch (error) {
+        // An entry that readdir listed but lstat cannot resolve is a fact about the
+        // tree, not a reason to abandon the sweep. Record it so it still counts as
+        // a change if it appears or disappears.
+        result.set(relativePath, `unstattable:${error?.code ?? 'unknown'}`);
+        continue;
+      }
+
+      if (metadata.isSymbolicLink()) {
+        result.set(relativePath, `symlink:${metadata.size}:${metadata.mtimeMs}`);
+        continue;
+      }
+
+      if (contentRoots.some((prefix) => relativePath === prefix || relativePath.startsWith(`${prefix}/`))) {
+        try {
+          const text = await readFile(absolute, 'utf8');
+          result.set(relativePath, `${metadata.size}:${hash(text)}`);
+        } catch (error) {
+          result.set(relativePath, `unreadable:${metadata.size}:${error?.code ?? 'unknown'}`);
+        }
+      } else {
+        result.set(relativePath, `${metadata.size}:${metadata.mtimeMs}`);
+      }
     }
   }
   await walk(root);

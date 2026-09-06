@@ -44,7 +44,7 @@ function boundedProblems(problems: LoadProblem[]): LoadProblem[] {
 }
 
 function boundedLoad(load: LoadResult): LoadResult {
-  return { state: load.state, problems: boundedProblems(load.problems), revisions: { ...load.revisions }, layout: load.layout };
+  return { state: load.state, problems: boundedProblems(load.problems), revisions: { ...load.revisions }, layout: load.layout, census: load.census };
 }
 
 function revisionMap(load: LoadResult): Map<string, string> {

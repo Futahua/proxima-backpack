@@ -74,8 +74,44 @@ function absolute(input) {
   return target;
 }
 function revision(text, metadata) { return `${metadata.mtime.toISOString()}:${metadata.size}:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`; }
-async function list(path) { const directory = absolute(path); const entries = (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name)); if (entries.length > MAX_ENTRIES) throw new BridgeError(BRIDGE_CODES.entryBound); return entries.map((entry) => { if (entry.isSymbolicLink()) throw new BridgeError(BRIDGE_CODES.symlink); return { path: path ? `${path}/${entry.name}` : entry.name, kind: entry.isDirectory() ? 'directory' : 'file' }; }); }
-async function walk(path, depth = 0, budget = { count: 0 }) { if (depth > MAX_DEPTH) throw new BridgeError(BRIDGE_CODES.depthBound); const entries = await list(path); const files = []; for (const entry of entries) { budget.count += 1; if (budget.count > MAX_ENTRIES) throw new BridgeError(BRIDGE_CODES.entryBound); if (entry.kind === 'file') files.push(entry.path); else files.push(...await walk(entry.path, depth + 1, budget)); } return files.sort(); }
+/**
+ * List a directory, omitting symlinks rather than refusing the whole listing.
+ *
+ * Rejecting the directory was the wrong granularity: a creator's project folder
+ * legitimately contains a linked-folder symlink beside its index.md — that link is
+ * Proxima's own feature — and one dangling link erased all 31 project folders from
+ * a real vault. Skipping keeps the traversal no more permissive, since nothing is
+ * ever read through a link, while letting the ordinary files beside it survive.
+ *
+ * The count travels with the answer so the omission is visible rather than silent.
+ * Target paths never do.
+ */
+async function list(path) {
+  const directory = absolute(path);
+  const entries = (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+  if (entries.length > MAX_ENTRIES) throw new BridgeError(BRIDGE_CODES.entryBound);
+  let skippedSymlinks = 0;
+  const kept = [];
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) { skippedSymlinks += 1; continue; }
+    kept.push({ path: path ? `${path}/${entry.name}` : entry.name, kind: entry.isDirectory() ? 'directory' : 'file' });
+  }
+  return { entries: kept, skippedSymlinks };
+}
+/** Recurse ordinary directories only, aggregating what was skipped on the way. */
+async function walk(path, depth = 0, budget = { count: 0, skippedSymlinks: 0 }) {
+  if (depth > MAX_DEPTH) throw new BridgeError(BRIDGE_CODES.depthBound);
+  const listing = await list(path);
+  budget.skippedSymlinks += listing.skippedSymlinks;
+  const files = [];
+  for (const entry of listing.entries) {
+    budget.count += 1;
+    if (budget.count > MAX_ENTRIES) throw new BridgeError(BRIDGE_CODES.entryBound);
+    if (entry.kind === 'file') files.push(entry.path);
+    else files.push(...(await walk(entry.path, depth + 1, budget)).files);
+  }
+  return { files: files.sort(), skippedSymlinks: budget.skippedSymlinks };
+}
 
 /**
  * Reflect only a loopback page's own origin.
@@ -133,8 +169,8 @@ const server = createServer(async (request, response) => {
     if (!url.pathname.startsWith('/api/vault/')) return send(response, 404, { error: BRIDGE_CODES.notFoundRoute }, origin);
     const operation = url.pathname.slice('/api/vault/'.length);
     const path = url.searchParams.get('path') ?? '';
-    if (operation === 'list') return send(response, 200, { entries: await list(path) }, origin);
-    if (operation === 'walk') return send(response, 200, { files: await walk(path) }, origin);
+    if (operation === 'list') return send(response, 200, await list(path), origin);
+    if (operation === 'walk') return send(response, 200, await walk(path), origin);
     if (operation === 'exists') { try { const target = absolute(path); const metadata = await lstat(target); return send(response, 200, { exists: !metadata.isSymbolicLink() }, origin); } catch { return send(response, 200, { exists: false }, origin); } }
     if (operation === 'read') { const target = absolute(path); const linkMetadata = await lstat(target); if (linkMetadata.isSymbolicLink()) throw new BridgeError(BRIDGE_CODES.symlink); const metadata = await stat(target); if (!metadata.isFile()) throw new BridgeError(BRIDGE_CODES.notADirectory); if (metadata.size > MAX_FILE_BYTES) throw new BridgeError(BRIDGE_CODES.fileBound); const text = await readFile(target, 'utf8'); if (Buffer.byteLength(text, 'utf8') > MAX_FILE_BYTES) throw new BridgeError(BRIDGE_CODES.fileBound); return send(response, 200, { path: relativePath(relative(root, target).split(sep).join('/')), text, size: metadata.size, modifiedAt: metadata.mtime.toISOString(), revision: revision(text, metadata) }, origin); }
     return send(response, 404, { error: BRIDGE_CODES.unknownOperation }, origin);

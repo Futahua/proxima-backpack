@@ -9,7 +9,7 @@
 
 declare module '*/tree-fingerprint.mjs' {
   export type TreeFingerprint = Map<string, string>;
-  export function fingerprint(root: string): Promise<TreeFingerprint>;
+  export function fingerprint(root: string, options?: { contentRoots?: string[] }): Promise<TreeFingerprint>;
   export function changedPaths(before: TreeFingerprint, after: TreeFingerprint): string[];
 }
 
@@ -35,6 +35,14 @@ declare module '*/agent-accept.mjs' {
     observedReads: number;
     counts: AcceptanceCounts | null;
     layout: 'preferred' | 'legacy' | 'ambiguous' | 'none' | null;
+    census: Record<'project' | 'task' | 'event', {
+      status: 'complete' | 'absent' | 'failed';
+      scannedFiles: number;
+      recordCandidates: number;
+      loadedRecords: number;
+      explicitlyRejected: number;
+      unaccountedCandidates: number;
+    }> | null;
     verdicts: {
       acceptance6JBaseline: string;
       baselineFailures: string[];
