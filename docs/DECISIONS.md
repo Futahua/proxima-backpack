@@ -240,3 +240,55 @@ injected timezone before the live surface is built.
 
 **Reverses if:** creator acceptance requires the same event to land on identical date
 keys regardless of viewer timezone.
+
+---
+
+## D11 — Build provenance records the working tree, not just the commit
+
+**Decided:** the build identity carries `gitSha` (the exact commit, for machines),
+`gitTreeState` (`clean` / `dirty` / `unknown`), `gitDirtyFileCount`, and `gitDescribe`
+— the SHA with `-dirty` appended when the tree was modified. Untracked files count as
+dirty. No git, or no repository, yields `unknown` rather than a build failure or an
+invented hash.
+
+**Why:** `git rev-parse HEAD` answers "what was the last commit", not "what did you
+build". The previous generator stamped a clean 40-character SHA onto a build made from
+a modified tree — demonstrated by editing a fixture without committing and watching
+`fixtureHash` change while `gitSha` stayed put. Since the audit protocol's unit of
+evidence is *"here is the exact pushed SHA"*, an identity that can name a commit it is
+not turns a piece of evidence into a confident false claim.
+
+**Why `gitDescribe` as well as a boolean:** a consumer reading only `gitSha` would
+still quote a clean hash for a dirty build. `gitDescribe` is the quotable form, and it
+cannot be misread.
+
+**Why untracked counts as dirty:** `fixtures/` is bundled into the page wholesale, so
+an uncommitted fixture file genuinely changes what was built even though git never
+tracked it.
+
+**Enforced by:** `tests/buildIdentity.test.ts` runs the real tool against throwaway
+repositories under the OS temp directory — clean, modified-tracked, untracked, and
+not-a-repository — and asserts the generated identity carries every provenance field.
+
+**Reverses if:** never; a release build should additionally *refuse* to publish
+evidence when `gitTreeState` is not `clean` (Gate 22).
+
+---
+
+## D12 — Calendar expansion returns its problems, never through an out-parameter
+
+**Decided:** `eventsByDay(events)` returns `{ byDay, problems }`. It does not take a
+`problems: LoadProblem[] = []` argument.
+
+**Why:** an optional out-parameter reads as a convenience and behaves as a trapdoor. A
+caller that forgets it receives a correct-looking map and loses the report entirely —
+silently dropping the one diagnostic the function exists to raise, which is precisely
+the failure mode Gate 1B was written to remove. Returning the problems makes ignoring
+them a visible act rather than an omission, and matches `LoadResult`, which already
+returns `{ state, problems, revisions, layout }`.
+
+**Still open, deliberately not changed here:** an event exceeding
+`MAX_CALENDAR_EVENT_DAYS` expands to no days at all, so it vanishes from the calendar.
+"Invisible" and "too long to expand" look identical to the creator. Placing it on its
+start day only may be the better failure mode; that is a product call, recorded here
+rather than decided quietly.

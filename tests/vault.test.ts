@@ -55,7 +55,7 @@ describe('loadVaultState over the real fixture vault', () => {
 
 describe('calendar and selection', () => {
   it('places a multi-day event on every local day it covers', () => {
-    const byDay = eventsByDay([
+    const { byDay } = eventsByDay([
       {
         id: 'e',
         source: sourceRef('event', 'e'),
@@ -88,7 +88,7 @@ describe('calendar and selection', () => {
   });
 
   it('covers month and year boundaries with inclusive local days', () => {
-    const month = eventsByDay([
+    const { byDay: month } = eventsByDay([
       {
         id: 'month',
         source: sourceRef('event', 'month'),
@@ -104,7 +104,7 @@ describe('calendar and selection', () => {
     ]);
     expect([...month.keys()]).toHaveLength(3);
 
-    const year = eventsByDay([
+    const { byDay: year } = eventsByDay([
       {
         id: 'year',
         source: sourceRef('event', 'year'),
@@ -123,7 +123,7 @@ describe('calendar and selection', () => {
 
   it('keeps reversed events on their start day and skips invalid starts', () => {
     const startDate = '2026-04-10T09:00:00.000Z';
-    const byDay = eventsByDay([
+    const { byDay } = eventsByDay([
       {
         id: 'reversed',
         source: sourceRef('event', 'reversed'),
@@ -154,7 +154,7 @@ describe('calendar and selection', () => {
   });
 
   it('does not place undated or deadline-only events, but start-only is one day', () => {
-    const byDay = eventsByDay([
+    const { byDay } = eventsByDay([
       {
         id: 'undated',
         source: sourceRef('event', 'undated'),
@@ -199,7 +199,7 @@ describe('calendar and selection', () => {
   });
 
   it('keeps day coverage stable across a DST-window-shaped range', () => {
-    const byDay = eventsByDay([
+    const { byDay } = eventsByDay([
       {
         id: 'dst',
         source: sourceRef('event', 'dst'),
@@ -218,7 +218,7 @@ describe('calendar and selection', () => {
   });
 
   it('does not silently truncate a long multi-year event', () => {
-    const byDay = eventsByDay([
+    const { byDay } = eventsByDay([
       {
         id: 'long',
         source: sourceRef('event', 'long'),
@@ -236,8 +236,7 @@ describe('calendar and selection', () => {
   });
 
   it('reports and omits an event beyond the bounded expansion span', () => {
-    const problems: import('../src/domain/problems.js').LoadProblem[] = [];
-    const byDay = eventsByDay(
+    const { byDay, problems } = eventsByDay(
       [
         {
           id: 'extreme',
@@ -252,7 +251,6 @@ describe('calendar and selection', () => {
           properties: {},
         },
       ],
-      problems,
     );
     expect(byDay).toEqual(new Map());
     expect(problems).toMatchObject([

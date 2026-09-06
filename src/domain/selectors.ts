@@ -77,12 +77,25 @@ export function columnCounts(board: ElasticBoard): Record<ElasticColumn, number>
   return { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length };
 }
 
+export interface CalendarDays {
+  byDay: Map<string, CalendarEvent[]>;
+  /** Events this expansion could not place, and why. Never silently empty. */
+  problems: LoadProblem[];
+}
+
 /**
  * Events grouped by the local calendar day they start on. Multi-day events appear
  * on every day they cover, which is what a month grid needs.
+ *
+ * Problems come back with the result rather than through an out-parameter. An
+ * optional `problems: LoadProblem[] = []` argument reads as convenience and behaves
+ * as a trapdoor: a caller that forgets it gets a correct-looking map and loses the
+ * report entirely — silently dropping the one diagnostic this function exists to
+ * raise. Returning them makes forgetting them a visible act rather than an omission.
  */
-export function eventsByDay(events: CalendarEvent[], problems: LoadProblem[] = []): Map<string, CalendarEvent[]> {
+export function eventsByDay(events: CalendarEvent[]): CalendarDays {
   const byDay = new Map<string, CalendarEvent[]>();
+  const problems: LoadProblem[] = [];
   for (const event of events) {
     for (const key of daysCovered(event, problems)) {
       const bucket = byDay.get(key);
@@ -90,7 +103,7 @@ export function eventsByDay(events: CalendarEvent[], problems: LoadProblem[] = [
       else byDay.set(key, [event]);
     }
   }
-  return byDay;
+  return { byDay, problems };
 }
 
 function daysCovered(event: CalendarEvent, problems: LoadProblem[]): string[] {

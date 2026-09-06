@@ -8,9 +8,9 @@
  */
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { join, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readGitState } from './gitState.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureRoot = join(here, '..', 'fixtures');
@@ -46,10 +46,17 @@ const lockfileHash = createHash('sha256')
   .update(readFileSync(join(here, '..', 'package-lock.json')))
   .digest('hex');
 const packageJson = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'));
-const gitSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: join(here, '..') }).toString().trim();
+const gitState = readGitState(join(here, '..'));
 const buildIdentity = {
   proximaVersion: packageJson.version,
-  gitSha,
+  /** The exact commit, for machines. */
+  gitSha: gitState.sha,
+  /** Whether those bytes are what was actually built. */
+  gitTreeState: gitState.treeState,
+  /** Files differing from the commit when this was built; 0 when clean. */
+  gitDirtyFileCount: gitState.dirtyFileCount,
+  /** The quotable provenance: the SHA, suffixed `-dirty` when the tree was modified. */
+  gitDescribe: gitState.describe,
   buildMode: 'fixture',
   domainSchemaVersion: '1',
   controlSchemaVersion: '0',

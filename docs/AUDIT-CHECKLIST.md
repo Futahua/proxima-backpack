@@ -263,6 +263,8 @@ Only when a real Papers Backpack is created:
 - [x] Build identity is generated and inspectable:
   - [x] Proxima version
   - [x] exact git SHA
+  - [x] working-tree state alongside the SHA, so a build from a modified tree cannot
+        report a clean commit it does not contain (`gitTreeState`, `gitDescribe`)
   - [x] build mode
   - [x] domain schema version
   - [x] control schema version

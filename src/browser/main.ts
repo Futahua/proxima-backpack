@@ -32,6 +32,11 @@ async function boot(): Promise<void> {
   const loaded = await loadVaultState(vault);
   const hydrationRevision = `fixture:${BUILD_IDENTITY.fixtureHash.slice(0, 16)}:1`;
 
+  // Provenance as data attributes, not only inside the JSON block: an agent asserting
+  // which build it drove should not have to parse a pretty-printed blob to find out,
+  // and a dirty build should be visible without reading past the commit hash.
+  element<HTMLElement>('#proxima-app').dataset.proximaBuild = BUILD_IDENTITY.gitDescribe;
+  element<HTMLElement>('#proxima-app').dataset.proximaTreeState = BUILD_IDENTITY.gitTreeState;
   element<HTMLElement>('#proxima-app').dataset.proximaFixture = FIXTURE_NAME;
   element<HTMLElement>('#proxima-app').dataset.proximaClock = new Date(FIXED_CLOCK.now()).toISOString();
   element<HTMLElement>('#proxima-app').dataset.proximaIdSeed = DETERMINISTIC_IDS.next('fixture');
