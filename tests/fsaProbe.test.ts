@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { pickAndProbeDirectory } from '../src/app/fsaProbe.js';
+import { pickAndProbeDirectory, rereadSelectedDirectory } from '../src/app/fsaProbe.js';
 
 const originalPicker = (globalThis as { showDirectoryPicker?: unknown }).showDirectoryPicker;
 
@@ -21,5 +21,6 @@ describe('Gate 5 FSA probe', () => {
     expect(result.entries.map((entry) => entry.path)).toEqual(['nested', 'nested/child.txt', 'root.txt']);
     expect(result.entries.find((entry) => entry.path === 'root.txt')?.textMarker).toBe('root-v1');
     expect(JSON.stringify(result)).not.toContain('C:');
+    expect((await rereadSelectedDirectory())?.entries[2]?.textMarker).toBe('root-v1');
   });
 });

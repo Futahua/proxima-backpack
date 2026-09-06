@@ -1,7 +1,7 @@
 import { createMemoryVault } from '../adapters/memoryVault.js';
 import { createActionDispatcher, type ProximaActionDispatcher, type Surface } from '../app/actionProtocol.js';
 import { createInspectionProjection } from '../app/inspection.js';
-import { pickAndProbeDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
+import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
 import { loadVaultState } from '../app/vaultRepository.js';
 import { calculateElasticTimeline, elasticCardHeights } from '../domain/elastic.js';
 import { fixedClock, sequentialIdGenerator } from '../domain/clock.js';
@@ -158,7 +158,7 @@ function render(): void {
   const problems = visibleProblems([...loadProblems]);
   root.dataset.proximaSurface = surface;
   root.dataset.proximaSelection = selection;
-  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Fixture workspace</span></div></div><div class="header-state"><span class="read-only-badge">Read-only fixture</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button></div></header><div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre></details></div>`;
+  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Fixture workspace</span></div></div><div class="header-state"><span class="read-only-badge">Read-only fixture</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header><div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre></details></div>`;
   updateHydrationSummary(appState, problems);
   exposeInspection();
 }
@@ -187,6 +187,8 @@ function bindInteractions(): void {
     const action = button.dataset.action;
     if (action === 'fsa-probe') {
       void runFsaProbe();
+    } else if (action === 'fsa-reread') {
+      void rereadSelectedDirectory().then((report) => renderFsaProbe(report ?? { error: 'No selected directory handle' }));
     } else if (action === 'switch-surface') {
       const next = button.dataset.surface as Surface;
       if (next !== 'board' && next !== 'calendar') return;

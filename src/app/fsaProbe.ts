@@ -4,6 +4,7 @@ const MAX_TEXT = 400;
 const DB_NAME = 'proxima-gate5-probe';
 const STORE_NAME = 'handles';
 const HANDLE_KEY = 'selected-directory';
+let activeHandle: DirectoryHandleLike | null = null;
 
 type FileLike = { text(): Promise<string>; size: number; lastModified: number };
 type FileHandleLike = { kind: 'file'; name: string; getFile(): Promise<FileLike> };
@@ -89,10 +90,16 @@ export async function pickAndProbeDirectory(): Promise<FsaProbeReport> {
   const picker = (globalThis as unknown as PickerWindow).showDirectoryPicker;
   if (!picker) throw new Error('showDirectoryPicker is unavailable in this surface');
   const handle = await picker({ mode: 'read' });
+  activeHandle = handle;
   return report(handle, await persist(handle));
 }
 
 export async function restoreAndProbeDirectory(): Promise<FsaProbeReport | null> {
   const handle = await restore();
+  activeHandle = handle;
   return handle ? report(handle, true) : null;
+}
+
+export async function rereadSelectedDirectory(): Promise<FsaProbeReport | null> {
+  return activeHandle ? report(activeHandle, true) : null;
 }
