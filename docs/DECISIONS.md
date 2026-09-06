@@ -223,7 +223,9 @@ calculation rather than merely in output order.
 event covers every inclusive local calendar day from `startDate` through `deadline`.
 If the deadline precedes the start, the event is shown on its start day only. An
 invalid or missing start is not placed; a start without a deadline is a one-day event,
-while a deadline without a start remains undated.
+while a deadline without a start remains undated. Expansion is bounded at 36,600 days
+(100 years); a larger finite span emits `event-span-too-large` and receives no calendar
+buckets rather than being silently truncated.
 
 **Why:** the original calendar is a local month grid, so a creator should see day
 boundaries in the machine timezone rather than UTC boundaries. `setDate()` advances
@@ -231,9 +233,10 @@ calendar dates across month, year, and DST transitions without assuming every da
 24 hours.
 
 **Determinism:** tests assert inclusive counts and derive boundary keys through the
-same `localDateKey` helper instead of hard-coding one developer's timezone. Any future
-cross-machine shared-calendar requirement must introduce an explicit injected timezone
-before the live surface is built.
+same `localDateKey` helper instead of hard-coding one developer's timezone. The explicit
+100-year bound prevents creator-controlled input from causing unbounded synchronous
+work. Any future cross-machine shared-calendar requirement must introduce an explicit
+injected timezone before the live surface is built.
 
 **Reverses if:** creator acceptance requires the same event to land on identical date
 keys regardless of viewer timezone.

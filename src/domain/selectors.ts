@@ -4,6 +4,7 @@
  */
 import { columnOf } from './elastic.js';
 import { localDateKey } from './time.js';
+import type { LoadProblem } from './problems.js';
 import type { CalendarEvent, ElasticColumn, Project, ProximaState, StatusDefinition, Task } from './types.js';
 
 /** Sentinel project selections used by the project picker. */
@@ -23,6 +24,9 @@ export function eventsForSelection(events: CalendarEvent[], selection: ProjectSe
   if (selection === UNCATEGORISED) return events.filter((e) => !e.projectId);
   return events.filter((e) => e.projectId === selection);
 }
+
+/** Maximum number of local calendar buckets one event may expand into. */
+export const MAX_CALENDAR_EVENT_DAYS = 36_600;
 
 export function activeProjects(projects: Project[]): Project[] {
   return projects.filter((p) => p.status === 'active');
@@ -77,10 +81,10 @@ export function columnCounts(board: ElasticBoard): Record<ElasticColumn, number>
  * Events grouped by the local calendar day they start on. Multi-day events appear
  * on every day they cover, which is what a month grid needs.
  */
-export function eventsByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
+export function eventsByDay(events: CalendarEvent[], problems: LoadProblem[] = []): Map<string, CalendarEvent[]> {
   const byDay = new Map<string, CalendarEvent[]>();
   for (const event of events) {
-    for (const key of daysCovered(event)) {
+    for (const key of daysCovered(event, problems)) {
       const bucket = byDay.get(key);
       if (bucket) bucket.push(event);
       else byDay.set(key, [event]);
@@ -89,7 +93,7 @@ export function eventsByDay(events: CalendarEvent[]): Map<string, CalendarEvent[
   return byDay;
 }
 
-function daysCovered(event: CalendarEvent): string[] {
+function daysCovered(event: CalendarEvent, problems: LoadProblem[]): string[] {
   const start = new Date(event.startDate);
   const end = new Date(event.deadline || event.startDate);
   if (Number.isNaN(start.getTime())) return [];
@@ -100,7 +104,18 @@ function daysCovered(event: CalendarEvent): string[] {
   const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
   // Date validation happens before this selector. Derive the complete finite range;
   // silently truncating a long creator event would invent an earlier end date.
-  while (cursor <= last) {
+  for (let day = 0; cursor <= last; day += 1) {
+    if (day >= MAX_CALENDAR_EVENT_DAYS) {
+      problems.push({
+        code: 'event-span-too-large',
+        severity: 'warning',
+        path: event.source.path,
+        kind: 'event',
+        id: event.id,
+        detail: `event spans more than ${MAX_CALENDAR_EVENT_DAYS} local calendar days; calendar expansion omitted.`,
+      });
+      return [];
+    }
     keys.push(localDateKey(cursor));
     cursor.setDate(cursor.getDate() + 1);
   }

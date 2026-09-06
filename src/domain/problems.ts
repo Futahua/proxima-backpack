@@ -41,7 +41,9 @@ export type ProblemCode =
   /** A closed-vocabulary field held a value outside its allowed set. */
   | 'invalid-enum'
   /** A record referenced a project id that no loaded project has. */
-  | 'missing-project';
+  | 'missing-project'
+  /** A finite calendar event span exceeds the bounded expansion contract. */
+  | 'event-span-too-large';
 
 export interface LoadProblem {
   code: ProblemCode;

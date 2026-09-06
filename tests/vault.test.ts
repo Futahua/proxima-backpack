@@ -234,4 +234,34 @@ describe('calendar and selection', () => {
     ]);
     expect(byDay.has(localDateKey('2021-01-01T12:00:00.000Z'))).toBe(true);
   });
+
+  it('reports and omits an event beyond the bounded expansion span', () => {
+    const problems: import('../src/domain/problems.js').LoadProblem[] = [];
+    const byDay = eventsByDay(
+      [
+        {
+          id: 'extreme',
+          source: sourceRef('event', 'extreme'),
+          name: 'Extreme event',
+          description: '',
+          projectId: null,
+          createdAt: '',
+          startDate: '2000-01-01T12:00:00.000Z',
+          deadline: '2201-01-01T12:00:00.000Z',
+          isCompleted: false,
+          properties: {},
+        },
+      ],
+      problems,
+    );
+    expect(byDay).toEqual(new Map());
+    expect(problems).toMatchObject([
+      {
+        code: 'event-span-too-large',
+        severity: 'warning',
+        id: 'extreme',
+        kind: 'event',
+      },
+    ]);
+  });
 });

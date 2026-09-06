@@ -220,6 +220,7 @@ Pin important behavior from old `calculateLiquidTimeline`.
 - [x] Month boundaries covered.
 - [x] Year boundaries covered.
 - [x] DST transition behavior covered if local-time semantics remain.
+- [x] Pathological finite event spans are bounded and reported rather than silently truncated.
 
 ### 1.10 Gate 1 exit criteria
 

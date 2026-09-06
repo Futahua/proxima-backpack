@@ -283,8 +283,10 @@ Events are grouped by inclusive machine-local calendar day. A deadline before th
 collapses to the start day. Invalid or missing starts are omitted; a start without a
 deadline is one day, and a deadline without a start is not placed. The local-day loop
 uses calendar date arithmetic, so month/year boundaries and DST-shaped ranges do not
-assume a 24-hour day. Cross-machine UTC-stable keys are deferred until an explicit
-timezone is introduced.
+assume a 24-hour day. Expansion is bounded at 36,600 local days (100 years): a larger
+finite span is omitted from calendar buckets and emits `event-span-too-large`; it is
+never silently truncated to an invented earlier deadline. Cross-machine UTC-stable keys
+are deferred until an explicit timezone is introduced.
 
 ## Problems
 
@@ -304,6 +306,7 @@ Nothing is dropped quietly. A record either enters state or a problem says why n
 | `invalid-status` | warning | a status field held no usable identifier |
 | `invalid-enum` | warning | a closed-vocabulary project field held an unsupported value |
 | `missing-project` | warning | a reference pointed at no loaded project |
+| `event-span-too-large` | warning | a finite calendar event exceeds the 100-year expansion bound and is omitted from day buckets |
 
 Codes are stable identifiers. The prose in `detail` may change freely; match on `code`.
 
