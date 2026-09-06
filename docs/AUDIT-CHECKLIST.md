@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 4 — filesystem adapter conformance |
+| Current slice | Gate 5 — real File System Access spike in Papers |
 | Branch | `codex/gate-1b-correction` (local acceptance worktree) |
-| Last audited SHA | `dace91f` — Gate 3B PASS; source-only candidate with local Papers acceptance evidence. |
+| Last audited SHA | `7981e39` — Gate 4 PASS; source-only candidate with local Papers acceptance evidence. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -506,9 +506,9 @@ the real FSA spike in Gate 5.
 
 ### 4.5 Gate 4 exit
 
-- [ ] Core repository contract is proven across at least memory + real fixture disk +
+- [x] Core repository contract is proven across at least memory + real fixture disk +
       OPFS.
-- [ ] No Papers host change required.
+- [x] No Papers host change required.
 
 ---
 
@@ -520,9 +520,10 @@ Disposable data only.
 
 Inside the real `papers-backpack://` surface:
 
-- [ ] `showDirectoryPicker({mode:'readwrite' or read as appropriate})` availability
-      proven.
-- [ ] User gesture requirement recorded.
+- [x] `showDirectoryPicker({mode:'readwrite' or read as appropriate})` availability
+      proven: the real Papers page reports a function in a secure context.
+- [x] User gesture requirement recorded: a deferred non-gesture call is rejected by
+      the real surface; selection still needs a foreground gesture acceptance run.
 - [ ] Selected directory can be enumerated.
 - [ ] Files can be read.
 - [ ] Current on-disk state is observed after external edits.
@@ -531,6 +532,12 @@ Inside the real `papers-backpack://` surface:
 - [ ] `queryPermission()` state after restart recorded.
 - [ ] `requestPermission()` behavior recorded.
 - [ ] Clean-profile behavior recorded.
+
+The same real Papers surface also completed a disposable OPFS write/read/delete
+round-trip and an IndexedDB write/read/delete round-trip. Those prove storage APIs
+exist in the origin, not external-directory selection or durable directory-handle
+permission. The remaining unchecked items require selecting a disposable external
+directory through the native picker.
 
 ### 5.2 Read-only real vault
 
@@ -1224,7 +1231,7 @@ Each pushed SHA is sent for audit approximately in this order.
 5. [x] Gate 2B — first visible board/projects/calendar + C1 keys
 6. [x] Gate 3A — action dispatcher + inspection projection
 7. [x] Gate 3B — revision/settling + event ring + evidence schema
-8. [ ] Gate 4 — adapter conformance: disk + OPFS
+8. [x] Gate 4 — adapter conformance: disk + OPFS
 9. [ ] Gate 5 — real Papers FSA spike
 10. [ ] Gate 6 — read-only creator vault
 11. [ ] Gate 7 — Excalidraw display

@@ -330,3 +330,17 @@ All mutation remains inside a temporary directory removed in `finally`.
 **Reverses if:** a platform-specific acceptance requirement needs the exact native
 permission or cross-process locking semantics; that requirement must be named before
 expanding the adapter or Papers host surface.
+
+## D15 — Gate 5 separates API availability from external grants
+
+**Decided:** the real Papers `papers-backpack://` surface is a secure context and
+exposes `showDirectoryPicker`, `showOpenFilePicker`, IndexedDB, and OPFS. A deferred
+picker call rejects in the real surface, so the user-gesture requirement is recorded.
+Disposable OPFS and IndexedDB round-trips are also proven and cleaned up. These facts
+do not count as an external-directory grant: enumeration, file reads, permission
+state, handle persistence, restart behaviour, and creator-vault read-only safety
+remain unchecked until a foreground picker selection can be exercised.
+
+No host capability or real-vault access is justified by API availability alone. If
+the native picker cannot complete a disposable external-directory read in Papers,
+that exact failed acceptance test becomes the only basis for a later host request.
