@@ -1,6 +1,8 @@
 import { ALL_PROJECTS, UNCATEGORISED, reconcileSelection } from '../domain/selectors.js';
+import { randomIdGenerator, systemClock, type Clock, type IdGenerator } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
 import type { ProximaState } from '../domain/types.js';
+import { createEventRing, type EventRing, type ProximaEvent } from './eventRing.js';
 
 /** The wire/schema version for project-owned semantic actions. */
 export const ACTION_SCHEMA_VERSION = 1 as const;
@@ -37,6 +39,7 @@ export interface ActionSuccess {
   actionType: ProximaAction['type'];
   changed: boolean;
   stateRevision: number;
+  requestId: string;
   snapshot: ActionSnapshot;
 }
 
@@ -45,6 +48,7 @@ export interface ActionFailure {
   ok: false;
   actionType: string;
   stateRevision: number;
+  requestId: string;
   error: ActionError;
 }
 
@@ -59,6 +63,9 @@ export interface ActionDispatcherState {
   selection: string;
   calendarMonth: string;
   stateRevision: number;
+  settledRevision: number;
+  settled: boolean;
+  latestEventSequence: number;
 }
 
 export interface ActionDispatcherOptions {
@@ -69,23 +76,28 @@ export interface ActionDispatcherOptions {
   initialSurface?: Surface;
   initialSelection?: string;
   initialCalendarMonth?: string;
+  clock?: Clock;
+  idGenerator?: IdGenerator;
+  eventCapacity?: number;
 }
 
 export interface ProximaActionDispatcher {
   dispatch(input: unknown): ActionResult;
   snapshot(): Readonly<ActionDispatcherState>;
+  events(afterSequence?: number): ProximaEvent[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function invalidAction(message: string, field?: string): ActionFailure {
+function invalidAction(message: string, field?: string, requestId = 'request-invalid'): ActionFailure {
   return {
     schemaVersion: ACTION_SCHEMA_VERSION,
     ok: false,
     actionType: 'unknown',
     stateRevision: 0,
+    requestId,
     error: { code: 'invalid-action', message, field },
   };
 }
@@ -118,19 +130,20 @@ function snapshot(state: ActionDispatcherState): ActionSnapshot {
   return { surface: state.surface, selection: state.selection, calendarMonth: state.calendarMonth };
 }
 
-function resultFor(state: ActionDispatcherState, actionType: string, changed: boolean): ActionSuccess {
+function resultFor(state: ActionDispatcherState, actionType: string, changed: boolean, requestId: string): ActionSuccess {
   return {
     schemaVersion: ACTION_SCHEMA_VERSION,
     ok: true,
     actionType: actionType as ProximaAction['type'],
     changed,
     stateRevision: state.stateRevision,
+    requestId,
     snapshot: snapshot(state),
   };
 }
 
-function failureFor(state: ActionDispatcherState, actionType: string, error: ActionError): ActionFailure {
-  return { schemaVersion: ACTION_SCHEMA_VERSION, ok: false, actionType, stateRevision: state.stateRevision, error };
+function failureFor(state: ActionDispatcherState, actionType: string, error: ActionError, requestId: string): ActionFailure {
+  return { schemaVersion: ACTION_SCHEMA_VERSION, ok: false, actionType, stateRevision: state.stateRevision, requestId, error };
 }
 
 function isValidCalendarMonth(value: string): boolean {
@@ -138,6 +151,9 @@ function isValidCalendarMonth(value: string): boolean {
 }
 
 export function createActionDispatcher(options: ActionDispatcherOptions): ProximaActionDispatcher {
+  const clock = options.clock ?? systemClock;
+  const ids = options.idGenerator ?? randomIdGenerator();
+  const ring = createEventRing({ clock, ids, capacity: options.eventCapacity });
   const state: ActionDispatcherState = {
     state: options.state,
     problems: [...(options.problems ?? [])],
@@ -147,52 +163,86 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     selection: options.initialSelection ?? ALL_PROJECTS,
     calendarMonth: options.initialCalendarMonth ?? '2026-09-01',
     stateRevision: 1,
+    settledRevision: 1,
+    settled: true,
+    latestEventSequence: 0,
   };
   if (!isValidCalendarMonth(state.calendarMonth)) state.calendarMonth = '2026-09-01';
   state.selection = reconcileSelection(state.state.projects, state.selection, state.surface);
 
   return {
     dispatch(input: unknown): ActionResult {
+      const requestId = ids.next('request');
       const parsed = parseAction(input);
-      if (!parsed.ok) return failureFor(state, isRecord(input) && typeof input.type === 'string' ? input.type : 'unknown', parsed.error);
+      if (!parsed.ok) {
+        const result = failureFor(state, isRecord(input) && typeof input.type === 'string' ? input.type : 'unknown', parsed.error, requestId);
+        ring.append({ kind: 'action.rejected', category: 'diagnostic', entityIds: [], requestId, actionType: result.actionType, stateRevision: state.stateRevision, errorCode: result.error.code });
+        state.latestEventSequence = ring.latestSequence();
+        return result;
+      }
       const action = parsed.action;
       if (action.type === 'project.select') {
         if (action.projectId !== ALL_PROJECTS && action.projectId !== UNCATEGORISED && !state.state.projects.some((project) => project.id === action.projectId)) {
-          return failureFor(state, action.type, { code: 'project-not-found', message: `project does not exist: ${action.projectId}`, field: 'projectId' });
+          const result = failureFor(state, action.type, { code: 'project-not-found', message: `project does not exist: ${action.projectId}`, field: 'projectId' }, requestId);
+          ring.append({ kind: 'action.rejected', category: 'diagnostic', entityIds: [action.projectId], requestId, actionType: action.type, stateRevision: state.stateRevision, errorCode: result.error.code });
+          state.latestEventSequence = ring.latestSequence();
+          return result;
         }
         const next = reconcileSelection(state.state.projects, action.projectId, state.surface);
         const changed = next !== state.selection;
         if (changed) { state.selection = next; state.stateRevision += 1; }
-        return resultFor(state, action.type, changed);
+        ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [action.projectId], requestId, actionType: action.type, stateRevision: state.stateRevision });
+        ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
+        state.settledRevision = state.stateRevision; state.settled = true;
+        state.latestEventSequence = ring.latestSequence();
+        return resultFor(state, action.type, changed, requestId);
       }
       if (action.type === 'surface.select') {
         const nextSelection = reconcileSelection(state.state.projects, state.selection, action.surface);
         const changed = state.surface !== action.surface || state.selection !== nextSelection;
         if (changed) { state.surface = action.surface; state.selection = nextSelection; state.stateRevision += 1; }
-        return resultFor(state, action.type, changed);
+        ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [action.surface], requestId, actionType: action.type, stateRevision: state.stateRevision });
+        ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
+        state.settledRevision = state.stateRevision; state.settled = true;
+        state.latestEventSequence = ring.latestSequence();
+        return resultFor(state, action.type, changed, requestId);
       }
       if (action.type === 'calendar.shift-month') {
         const current = new Date(`${state.calendarMonth}T00:00:00`);
         const next = new Date(current.getFullYear(), current.getMonth() + action.delta, 1);
         state.calendarMonth = `${next.getFullYear().toString().padStart(4, '0')}-${(next.getMonth() + 1).toString().padStart(2, '0')}-01`;
         state.stateRevision += 1;
-        return resultFor(state, action.type, true);
+        ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [state.calendarMonth], requestId, actionType: action.type, stateRevision: state.stateRevision });
+        ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
+        state.settledRevision = state.stateRevision; state.settled = true;
+        state.latestEventSequence = ring.latestSequence();
+        return resultFor(state, action.type, true, requestId);
       }
-      if (state.mode !== 'fixture') return failureFor(state, action.type, { code: 'action-not-available', message: 'fixture reset is only available in fixture mode' });
+      if (state.mode !== 'fixture') {
+        const result = failureFor(state, action.type, { code: 'action-not-available', message: 'fixture reset is only available in fixture mode' }, requestId);
+        ring.append({ kind: 'action.rejected', category: 'diagnostic', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision, errorCode: result.error.code });
+        state.latestEventSequence = ring.latestSequence();
+        return result;
+      }
       const changed = state.surface !== 'board' || state.selection !== ALL_PROJECTS || state.calendarMonth !== '2026-09-01';
       state.surface = 'board'; state.selection = ALL_PROJECTS; state.calendarMonth = '2026-09-01';
       if (changed) state.stateRevision += 1;
-      return resultFor(state, action.type, changed);
+      ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
+      ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
+      state.settledRevision = state.stateRevision; state.settled = true;
+      state.latestEventSequence = ring.latestSequence();
+      return resultFor(state, action.type, changed, requestId);
     },
     snapshot(): Readonly<ActionDispatcherState> {
       return { ...state, problems: [...state.problems], revisions: { ...state.revisions } };
     },
+    events(afterSequence = 0): ProximaEvent[] { return ring.read(afterSequence); },
   };
 }
 
 /** Keep invalid-result construction itself visible to tests and integrations. */
-export function invalidActionResult(message = 'invalid action'): ActionFailure {
-  return invalidAction(message);
+export function invalidActionResult(message = 'invalid action', requestId = 'request-invalid'): ActionFailure {
+  return invalidAction(message, undefined, requestId);
 }
 
 /** Runtime guard for action responses crossing an agent/UI boundary. */
@@ -200,8 +250,8 @@ export function isActionResult(value: unknown): value is ActionResult {
   if (!isRecord(value) || value.schemaVersion !== ACTION_SCHEMA_VERSION || typeof value.ok !== 'boolean' || typeof value.stateRevision !== 'number' || typeof value.actionType !== 'string') return false;
   if (value.ok) {
     const snapshot = value.snapshot;
-    return typeof value.changed === 'boolean' && isRecord(snapshot) && (snapshot.surface === 'board' || snapshot.surface === 'calendar') && typeof snapshot.selection === 'string' && typeof snapshot.calendarMonth === 'string';
+    return typeof value.changed === 'boolean' && typeof value.requestId === 'string' && isRecord(snapshot) && (snapshot.surface === 'board' || snapshot.surface === 'calendar') && typeof snapshot.selection === 'string' && typeof snapshot.calendarMonth === 'string';
   }
   const error = value.error;
-  return isRecord(error) && typeof error.code === 'string' && typeof error.message === 'string';
+  return typeof value.requestId === 'string' && isRecord(error) && typeof error.code === 'string' && typeof error.message === 'string';
 }

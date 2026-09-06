@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 3A — semantic actions and read-only inspection projection |
+| Current slice | Gate 3B — revision, settling, event ring and evidence schema |
 | Branch | `codex/gate-1b-correction` (local acceptance worktree) |
-| Last audited SHA | `c21cb95` — Gate 2B PASS; source-only candidate with local Papers acceptance evidence. |
+| Last audited SHA | `4e40e53` — Gate 3A PASS; source-only candidate with local Papers acceptance evidence. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -379,27 +379,27 @@ Potential categories:
 
 ### 3.3 Application revision and settling
 
-- [ ] Define application-state revision.
-- [ ] Revision changes deterministically when meaningful state changes.
-- [ ] Define "idle" / "settled" semantics.
-- [ ] Agent can tell when:
-  - [ ] source read completed
-  - [ ] derived state completed
-  - [ ] render updated
-- [ ] No tests rely on arbitrary sleeps.
+- [x] Define application-state revision.
+- [x] Revision changes deterministically when meaningful state changes.
+- [x] Define "idle" / "settled" semantics.
+- [x] Agent can tell when:
+  - [x] source read completed
+  - [x] derived state completed
+  - [x] render updated
+- [x] No tests rely on arbitrary sleeps.
 
 ### 3.4 Structured event ring
 
-- [ ] Versioned event envelope.
-- [ ] Monotonic sequence number.
-- [ ] Event kind.
-- [ ] Logical entity IDs.
-- [ ] Operation/request ID where relevant.
-- [ ] State revision after event where relevant.
-- [ ] Injected timestamp.
-- [ ] Bounded in-memory retention.
-- [ ] `events.read(afterSequence)` or equivalent query.
-- [ ] Events distinguish domain facts from diagnostic logs.
+- [x] Versioned event envelope.
+- [x] Monotonic sequence number.
+- [x] Event kind.
+- [x] Logical entity IDs.
+- [x] Operation/request ID where relevant.
+- [x] State revision after event where relevant.
+- [x] Injected timestamp.
+- [x] Bounded in-memory retention.
+- [x] `events.read(afterSequence)` or equivalent query.
+- [x] Events distinguish domain facts from diagnostic logs.
 
 ### 3.5 Structured diagnostics
 
@@ -417,24 +417,24 @@ Potential categories:
 
 ### 3.6 Evidence format
 
-- [ ] Machine-readable scenario result schema.
-- [ ] Includes:
-  - [ ] scenario ID
-  - [ ] Proxima build
-  - [ ] Papers build/process identity
-  - [ ] fixture hash
-  - [ ] deterministic clock seed/value
-  - [ ] ID seed/sequence configuration
-  - [ ] action transcript
-  - [ ] event transcript
-  - [ ] initial state revision
-  - [ ] final state revision
-  - [ ] domain assertions
-  - [ ] C1 visual assertions
-  - [ ] diagnostic/timeline excerpts
-  - [ ] capture artifact hashes/IDs
-  - [ ] pass/fail result
-- [ ] Evidence can be reproduced from a clean fixture run.
+- [x] Machine-readable scenario result schema.
+- [x] Includes:
+  - [x] scenario ID
+  - [x] Proxima build
+  - [x] Papers build/process identity (optional field, populated only by host acceptance)
+  - [x] fixture hash
+  - [x] deterministic clock seed/value
+  - [x] ID seed/sequence configuration
+  - [x] action transcript
+  - [x] event transcript
+  - [x] initial state revision
+  - [x] final state revision
+  - [x] domain assertions
+  - [x] C1 visual assertions
+  - [x] diagnostic/timeline excerpts
+  - [x] capture artifact hashes/IDs
+  - [x] pass/fail result
+- [x] Evidence can be reproduced from a clean fixture run.
 
 ### 3.7 Gate 3 exit
 

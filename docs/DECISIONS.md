@@ -264,3 +264,28 @@ settling and evidence transcripts remain separate Gate 3B work.
 **Reverses if:** a later gate proves the catalog needs a different versioning or
 transport model, in which case the existing action names and error codes remain
 compatibility aliases for one migration window.
+
+---
+
+## D12 — Settling, events and evidence are injected and bounded
+
+**Decided:** every accepted or rejected semantic action produces a versioned event
+with a monotonic sequence, logical IDs, request ID, post-action revision and an
+injected timestamp. Successful dispatches finish with a `state.settled` lifecycle
+event. The ring is bounded in memory and readable by sequence. Scenario evidence is
+versioned JSON with bounded transcripts and explicit build/fixture/revision/assertion
+fields.
+
+**Why:** agents need to know when a synchronous action has converged without sleeps,
+and they need a reproducible account of what was requested, what changed and what was
+observed. Injected clock/IDs keep fixture evidence stable; capacity and text limits
+prevent a pathological run from becoming an unbounded serialization or memory sink.
+Domain events and diagnostic rejections remain distinguishable by category.
+
+**Boundary:** the event ring and evidence schema are Proxima-owned. Papers process
+identity and capture artifacts are optional evidence fields supplied by acceptance
+ tooling; this gate does not create a Papers control relay.
+
+**Reverses if:** a later multi-surface gate requires durable cross-process event
+storage, in which case the in-memory ring remains the local contract and gains an
+explicit transport adapter rather than moving semantics into Papers.

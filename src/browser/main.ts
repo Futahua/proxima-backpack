@@ -194,7 +194,7 @@ async function boot(): Promise<void> {
   const loaded = await loadVaultState(vault);
   appState = loaded.state;
   loadProblems = loaded.problems;
-  actionDispatcher = createActionDispatcher({ state: appState, problems: loadProblems, revisions: loaded.revisions, mode: 'fixture', initialCalendarMonth: '2026-09-01' });
+  actionDispatcher = createActionDispatcher({ state: appState, problems: loadProblems, revisions: loaded.revisions, mode: 'fixture', initialCalendarMonth: '2026-09-01', clock: FIXED_CLOCK, idGenerator: DETERMINISTIC_IDS });
   const initial = actionDispatcher.snapshot();
   selection = initial.selection;
   surface = initial.surface;

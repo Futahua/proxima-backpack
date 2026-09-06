@@ -36,6 +36,7 @@ export interface InspectionProjection {
   pendingOperations: string[];
   degraded: { state: 'healthy' | 'degraded'; blockingProblemCount: number };
   latestEventSequence: number;
+  settled: { state: 'settled' | 'busy'; revision: number };
 }
 
 function safeText(value: string, limit = MAX_INSPECTION_TEXT): string { return value.slice(0, limit); }
@@ -100,7 +101,8 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     sourceRevisions: sourceRevisions(dispatcher.state, dispatcher),
     pendingOperations: [],
     degraded: { state: problems.some(isBlocking) ? 'degraded' : 'healthy', blockingProblemCount: problems.filter(isBlocking).length },
-    latestEventSequence: 0,
+    latestEventSequence: dispatcher.latestEventSequence,
+    settled: { state: dispatcher.settled ? 'settled' : 'busy', revision: dispatcher.settledRevision },
   };
 }
 

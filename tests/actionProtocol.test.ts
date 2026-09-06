@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createActionDispatcher, isActionResult, parseAction } from '../src/app/actionProtocol.js';
+import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
 import { fixtureVault } from './fixtures.js';
 
@@ -43,5 +44,17 @@ describe('Gate 3A semantic action protocol', () => {
     const fixture = await loadVaultState(fixtureVault('vault-basic'));
     const dispatcher = createActionDispatcher({ state: fixture.state, mode: 'live' });
     expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({ ok: false, error: { code: 'action-not-available' } });
+  });
+
+  it('settles synchronously and emits deterministic accepted/rejected events for the same actions', async () => {
+    const loaded = await loadVaultState(fixtureVault('vault-basic'));
+    const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, clock: fixedClock('2026-09-06T12:00:00.000Z'), idGenerator: sequentialIdGenerator(), eventCapacity: 8 });
+    const accepted = dispatcher.dispatch({ type: 'project.select', projectId: 'proj-backpack' });
+    const rejected = dispatcher.dispatch({ type: 'project.select', projectId: 'missing' });
+    expect(accepted).toMatchObject({ ok: true, requestId: 'request-0001', stateRevision: 2 });
+    expect(rejected).toMatchObject({ ok: false, requestId: 'request-0002', stateRevision: 2 });
+    expect(dispatcher.snapshot()).toMatchObject({ stateRevision: 2, settled: true, settledRevision: 2, latestEventSequence: 3 });
+    expect(dispatcher.events().map((event) => [event.sequence, event.kind, event.stateRevision])).toEqual([[1, 'action.accepted', 2], [2, 'state.settled', 2], [3, 'action.rejected', 2]]);
+    expect(dispatcher.events(2)[0]).toMatchObject({ sequence: 3, errorCode: 'project-not-found', timestamp: '2026-09-06T12:00:00.000Z' });
   });
 });
