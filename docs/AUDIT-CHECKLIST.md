@@ -528,21 +528,24 @@ Inside the real `papers-backpack://` surface:
 - [x] Files can be read with bounded relative-path/text evidence.
 - [x] Current on-disk state is observed after an external edit without reacquisition.
 - [x] Handle can be stored in IndexedDB and restored after an in-place Papers reload.
-- [ ] Full Papers process restart behavior tested.
-- [x] `queryPermission()` state after the in-place reload recorded (`prompt`).
+- [x] Full Papers process restart behavior tested with the same Papers profile and
+      disposable fixture.
+- [x] `queryPermission()` state recorded after the in-place reload (`prompt`) and
+      after the full process restart (`granted`).
 - [x] Foreground `requestPermission()` behavior recorded (`prompt` → `granted`).
 - [ ] Clean-profile behavior recorded.
 
 The same real Papers surface also completed a disposable OPFS write/read/delete
 round-trip and an IndexedDB write/read/delete round-trip. Those prove storage APIs
 exist in the origin, not external-directory selection or durable directory-handle
-permission. Gate 5 core evidence used `gate5-fsa-fixture`: the first foreground
+permission. Gate 5 evidence used `gate5-fsa-fixture`: the first foreground
 selection read `root-note.txt` and `nested/child-note.txt`; a separate Node process
 appended `external-fsa-edit-v1`; a cached-handle reread observed the changed bytes and
 revision; an in-place Papers reload restored the handle in `prompt`; and a second
 foreground read request restored `granted`. No absolute path was emitted and no
-creator-vault data was touched. Full process restart and clean-profile checks remain
-open.
+creator-vault data was touched. A normal full Papers exit/relaunch then restored the
+same persisted handle without a new picker; read permission was `granted`, and the
+restored read included the external marker. Clean-profile checks remain open.
 
 ### 5.2 Read-only real vault
 

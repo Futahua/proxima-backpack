@@ -359,3 +359,17 @@ This is a viability result, not the full product gate. Clean-profile behaviour, 
 Papers process restart, real creator-vault read-only acceptance, live Obsidian edits,
 and any write/concurrency semantics remain separate follow-ups. Until those are
 accepted, Proxima remains read-only and no Papers host bridge is justified.
+
+## D17 — Persisted disposable handle survives a full Papers lifecycle
+
+**Decided:** the Gate 5 full-process restart follow-up passes for the disposable
+fixture. After a normal Papers exit and relaunch using the same acceptance profile,
+Proxima restored the persisted `gate5-fsa-fixture` handle without a new picker.
+`queryPermission({mode:'read'})` was `granted`; the bounded relative projection
+contained the nested file tree, `persisted: true`, and `root-note.txt` still contained
+the independently appended `external-fsa-edit-v1` marker. No absolute path or creator
+vault data appeared.
+
+This closes the full-process lifecycle truth for the disposable folder only. Clean
+profile behavior, creator-vault read-only acceptance, Obsidian live edits, and
+write/concurrency semantics remain open and are not inferred from this result.
