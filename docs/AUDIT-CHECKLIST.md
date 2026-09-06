@@ -533,6 +533,8 @@ Inside the real `papers-backpack://` surface:
 - [x] `queryPermission()` state recorded after the in-place reload (`prompt`) and
       after the full process restart (`granted`).
 - [x] Foreground `requestPermission()` behavior recorded (`prompt` → `granted`).
+- [x] Acceptance report is validated as bounded, relative-only evidence, with a
+      fixed-path disposable-fixture reset helper (`src/app/fsaEvidence.ts`, D19).
 - [ ] Clean-profile behavior recorded.
 
 Clean-profile acceptance preparation is complete but intentionally unexecuted: an
