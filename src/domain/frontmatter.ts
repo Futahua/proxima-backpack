@@ -153,7 +153,9 @@ export function parseFrontmatter(raw: string): FrontmatterResult {
             quoteIssue,
             pendingKey,
             lineNumber,
-            'a quoted scalar did not close; the key is left unset rather than treating it as plain text.',
+            quoteIssue === 'unterminated-quote'
+              ? 'a quoted scalar did not close; the key is left unset rather than treating it as plain text.'
+              : 'a quoted scalar has trailing bytes after its closing quote; the key is left unset rather than treating it as plain text.',
           );
         }
         pendingPoisoned = true;

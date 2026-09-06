@@ -266,6 +266,26 @@ configure their own, and `columnOf` files anything unrecognised under running.
 `isFixedDuration: true` with no usable `fixedDuration` is reported separately, because
 the task silently stretches like any other and the flag suggests otherwise.
 
+## Elastic timeline semantics
+
+The calculation is pure and receives both instants explicitly. It reserves all usable
+fixed durations first, divides the remaining future window by positive task weight,
+applies each `maxDuration` independently, and does **not** redistribute time removed by
+a cap. Output slices keep task order. An expired/equal or invalid date yields no
+timeline; if fixed work exhausts the window, later elastic tasks receive zero minutes.
+An all-fixed list keeps its exact fixed durations even when their total is shorter or
+longer than the window. Repository loading validates numbers and refuses duplicate
+logical ids before this calculation runs.
+
+## Calendar semantics
+
+Events are grouped by inclusive machine-local calendar day. A deadline before the start
+collapses to the start day. Invalid or missing starts are omitted; a start without a
+deadline is one day, and a deadline without a start is not placed. The local-day loop
+uses calendar date arithmetic, so month/year boundaries and DST-shaped ranges do not
+assume a 24-hour day. Cross-machine UTC-stable keys are deferred until an explicit
+timezone is introduced.
+
 ## Problems
 
 Nothing is dropped quietly. A record either enters state or a problem says why not.
@@ -297,7 +317,7 @@ They are not fixtures *of* the format — they are the format.
 | `fixtures/vault-basic` | the preferred layout, explicit ids, a record with no id |
 | `fixtures/vault-legacy` | `-Hide/Proxima`, filename ids, flat and `index.md` projects, project-folder content, `type: project` on projects and unrelated `type:` on a task and an event, packed `linkedFolders`, a hand-renamed file with an explicit id |
 | `fixtures/vault-duplicates` | colliding ids across both project forms, a declared id colliding with a derived one, a task filed in a subfolder, a reference to a project that does not exist |
-| `fixtures/vault-malformed` | out-of-range and unreadable numbers, a boolean written as `yes`, an empty status, dates in prose, an event whose deadline precedes its start, and a nested mapping that would previously have rewritten its record's identity |
+| `fixtures/vault-malformed` | out-of-range and unreadable numbers, a boolean written as `yes`, an empty status, dates in prose, events with reversed/partial dates, malformed quoted identity bytes, and a nested mapping that would previously have rewritten its record's identity |
 
 `fixtures/vault-duplicates` and `fixtures/vault-malformed` are expected to produce
 problems. That is what they are for.

@@ -86,4 +86,134 @@ describe('calendar and selection', () => {
     expect(reconcileSelection(state.projects, 'proj-term', 'calendar')).toBe('proj-term');
     expect(reconcileSelection(state.projects, 'proj-studio', 'board')).toBe('proj-studio');
   });
+
+  it('covers month and year boundaries with inclusive local days', () => {
+    const month = eventsByDay([
+      {
+        id: 'month',
+        source: sourceRef('event', 'month'),
+        name: 'Month boundary',
+        description: '',
+        projectId: null,
+        createdAt: '',
+        startDate: '2026-01-31T12:00:00.000Z',
+        deadline: '2026-02-02T12:00:00.000Z',
+        isCompleted: false,
+        properties: {},
+      },
+    ]);
+    expect([...month.keys()]).toHaveLength(3);
+
+    const year = eventsByDay([
+      {
+        id: 'year',
+        source: sourceRef('event', 'year'),
+        name: 'Year boundary',
+        description: '',
+        projectId: null,
+        createdAt: '',
+        startDate: '2026-12-31T12:00:00.000Z',
+        deadline: '2027-01-02T12:00:00.000Z',
+        isCompleted: false,
+        properties: {},
+      },
+    ]);
+    expect([...year.keys()]).toHaveLength(3);
+  });
+
+  it('keeps reversed events on their start day and skips invalid starts', () => {
+    const startDate = '2026-04-10T09:00:00.000Z';
+    const byDay = eventsByDay([
+      {
+        id: 'reversed',
+        source: sourceRef('event', 'reversed'),
+        name: 'Reversed',
+        description: '',
+        projectId: null,
+        createdAt: '',
+        startDate,
+        deadline: '2026-04-08T09:00:00.000Z',
+        isCompleted: false,
+        properties: {},
+      },
+      {
+        id: 'invalid',
+        source: sourceRef('event', 'invalid'),
+        name: 'Invalid',
+        description: '',
+        projectId: null,
+        createdAt: '',
+        startDate: 'not-a-date',
+        deadline: '2026-04-11T09:00:00.000Z',
+        isCompleted: false,
+        properties: {},
+      },
+    ]);
+    expect([...byDay.keys()]).toEqual([localDateKey(startDate)]);
+    expect(byDay.get(localDateKey(startDate))?.map((event) => event.id)).toEqual(['reversed']);
+  });
+
+  it('does not place undated or deadline-only events, but start-only is one day', () => {
+    const byDay = eventsByDay([
+      {
+        id: 'undated',
+        source: sourceRef('event', 'undated'),
+        name: 'Undated',
+        description: '',
+        projectId: null,
+        createdAt: '',
+        startDate: '',
+        deadline: '',
+        isCompleted: false,
+        properties: {},
+      },
+      {
+        id: 'deadline-only',
+        source: sourceRef('event', 'deadline-only'),
+        name: 'Deadline only',
+        description: '',
+        projectId: null,
+        createdAt: '',
+        startDate: '',
+        deadline: '2026-04-12T09:00:00.000Z',
+        isCompleted: false,
+        properties: {},
+      },
+      {
+        id: 'start-only',
+        source: sourceRef('event', 'start-only'),
+        name: 'Start only',
+        description: '',
+        projectId: null,
+        createdAt: '',
+        startDate: '2026-04-13T09:00:00.000Z',
+        deadline: '',
+        isCompleted: false,
+        properties: {},
+      },
+    ]);
+    expect([...byDay.keys()]).toEqual([localDateKey('2026-04-13T09:00:00.000Z')]);
+    expect(byDay.get(localDateKey('2026-04-13T09:00:00.000Z'))?.map((event) => event.id)).toEqual([
+      'start-only',
+    ]);
+  });
+
+  it('keeps day coverage stable across a DST-window-shaped range', () => {
+    const byDay = eventsByDay([
+      {
+        id: 'dst',
+        source: sourceRef('event', 'dst'),
+        name: 'DST range',
+        description: '',
+        projectId: null,
+        createdAt: '',
+        startDate: '2026-03-08T12:00:00.000Z',
+        deadline: '2026-03-10T12:00:00.000Z',
+        isCompleted: false,
+        properties: {},
+      },
+    ]);
+    expect([...byDay.values()].every((events) => events[0]?.id === 'dst')).toBe(true);
+    expect([...byDay.keys()]).toHaveLength(3);
+  });
 });

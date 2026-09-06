@@ -6,8 +6,8 @@
  * out of the budget first; everything else divides what is left in proportion to
  * its weight, capped by maxDuration.
  *
- * Ported unchanged in behaviour from the Obsidian plugin's calculateLiquidTimeline.
- * Pure: no clock, no host, no I/O. The caller supplies both instants.
+ * The pinned contract is recorded in docs/DECISIONS.md (D9) and covered by the
+ * Gate 1C edge suite. Pure: no clock, no host, no I/O. The caller supplies both instants.
  */
 import type { ElasticColumn, StatusDefinition, Task, TimelineSlice } from './types.js';
 

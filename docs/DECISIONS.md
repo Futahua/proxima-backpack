@@ -191,3 +191,49 @@ would route creator data to the wrong product surface.
 
 **Reverses if:** a field turns out to have a legitimate use for a value this rejects,
 in which case the range widens and the reason is recorded here.
+
+---
+
+## D9 — Elastic timelines reserve fixed work and never redistribute caps
+
+**Decided:** the pure Elastic calculation first reserves every usable fixed duration,
+then divides the remaining window among elastic tasks by positive weight. Each
+`maxDuration` cap is applied independently; time removed by a cap is not redistributed.
+Slices retain the caller's task order. A non-future or invalid date produces no
+timeline, while an over-full fixed budget leaves later elastic slices at zero rather
+than moving the cursor backwards.
+
+**Why:** these rules preserve the old board's useful visual contract and make the
+timeline explainable. In particular, independent caps avoid a hidden second pass that
+would make one task's card change when an unrelated task becomes capped.
+
+**Boundary:** the repository validates numbers and rejects duplicate logical ids before
+calling the calculation. The pure function therefore assumes unique, finite,
+positive-weight tasks; callers that bypass ingestion are outside the vault contract.
+
+**Reverses if:** a verified old-plugin fixture or a creator requirement proves that
+capped remainder must be redistributed, or that fixed work should be interleaved in
+calculation rather than merely in output order.
+
+---
+
+## D10 — Calendar grouping uses the viewer's machine-local calendar
+
+**Decided:** calendar grouping uses JavaScript's machine-local date fields. A dated
+event covers every inclusive local calendar day from `startDate` through `deadline`.
+If the deadline precedes the start, the event is shown on its start day only. An
+invalid or missing start is not placed; a start without a deadline is a one-day event,
+while a deadline without a start remains undated.
+
+**Why:** the original calendar is a local month grid, so a creator should see day
+boundaries in the machine timezone rather than UTC boundaries. `setDate()` advances
+calendar dates across month, year, and DST transitions without assuming every day is
+24 hours.
+
+**Determinism:** tests assert inclusive counts and derive boundary keys through the
+same `localDateKey` helper instead of hard-coding one developer's timezone. Any future
+cross-machine shared-calendar requirement must introduce an explicit injected timezone
+before the live surface is built.
+
+**Reverses if:** creator acceptance requires the same event to land on identical date
+keys regardless of viewer timezone.

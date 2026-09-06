@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 1B correction — quoted-escape safety and routing-critical project validation |
+| Current slice | Gate 1C — Elastic/calendar edge-test closure |
 | Branch | `claude/proxima-audit-checklist-fqhxkf` |
-| Last audited SHA | `f81ef8c` — Gate 1B conditional fail; correcting unsupported quoted escapes and project routing-field validation before Gate 1C. |
+| Last audited SHA | `0a2ffda` — Gate 1B PASS; Gate 1C authorized. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -188,38 +188,38 @@ Ranges and reasoning: `docs/VAULT-FORMATS.md`; policy: `docs/DECISIONS.md#d8`.
 
 Pin important behavior from old `calculateLiquidTimeline`.
 
-- [ ] weighted allocation
-- [ ] fixed durations reserved first
-- [ ] caps applied independently
-- [ ] capped remainder is not redistributed
-- [ ] output preserves task order
-- [ ] expired/equal deadline returns no timeline
-- [ ] fixed total may exceed available window
-- [ ] elastic tasks become zero when fixed work exhausts window
-- [ ] empty task list
-- [ ] all-fixed tasks
-- [ ] fixed task interleaved with elastic tasks
-- [ ] `isFixedDuration=true` with null/zero duration
-- [ ] multiple capped tasks
-- [ ] invalid dates fail closed
-- [ ] duplicate-ID input cannot alias silently
-- [ ] malformed numeric inputs are rejected before the algorithm
-- [ ] Behavior differences from the old plugin are explicitly documented rather than
+- [x] weighted allocation
+- [x] fixed durations reserved first
+- [x] caps applied independently
+- [x] capped remainder is not redistributed
+- [x] output preserves task order
+- [x] expired/equal deadline returns no timeline
+- [x] fixed total may exceed available window
+- [x] elastic tasks become zero when fixed work exhausts window
+- [x] empty task list
+- [x] all-fixed tasks
+- [x] fixed task interleaved with elastic tasks
+- [x] `isFixedDuration=true` with null/zero duration
+- [x] multiple capped tasks
+- [x] invalid dates fail closed
+- [x] duplicate-ID input cannot alias silently
+- [x] malformed numeric inputs are rejected before the algorithm
+- [x] Behavior differences from the old plugin are explicitly documented rather than
       described as "unchanged."
 
 ### 1.9 Calendar semantics — **Gate 1C**
 
-- [ ] Multi-day event day coverage is specified.
-- [ ] Event whose deadline precedes start has specified behavior.
-- [ ] Invalid start dates are surfaced.
-- [ ] Undated/partially dated records have specified behavior.
-- [ ] Decide timezone semantics:
-  - [ ] machine-local timezone is intentional; or
+- [x] Multi-day event day coverage is specified.
+- [x] Event whose deadline precedes start has specified behavior.
+- [x] Invalid start dates are surfaced.
+- [x] Undated/partially dated records have specified behavior.
+- [x] Decide timezone semantics:
+  - [x] machine-local timezone is intentional; or
   - [ ] timezone becomes explicit/injected.
-- [ ] Tests are deterministic across CI/developer timezone differences.
-- [ ] Month boundaries covered.
-- [ ] Year boundaries covered.
-- [ ] DST transition behavior covered if local-time semantics remain.
+- [x] Tests are deterministic across CI/developer timezone differences.
+- [x] Month boundaries covered.
+- [x] Year boundaries covered.
+- [x] DST transition behavior covered if local-time semantics remain.
 
 ### 1.10 Gate 1 exit criteria
 
@@ -1208,7 +1208,7 @@ Each pushed SHA is sent for audit approximately in this order.
        _(signed off after the `type:` veto correction)_
 2. [x] Gate 1B — frontmatter failure visibility + validation edge cases
        _(pushed, awaiting audit)_
-3. [ ] Gate 1C — Elastic/calendar edge-test closure
+3. [x] Gate 1C — Elastic/calendar edge-test closure
 4. [ ] Gate 2A — actual build + real Backpack identity + fixture boot
 5. [ ] Gate 2B — first visible board/projects/calendar + C1 keys
 6. [ ] Gate 3A — action dispatcher + inspection projection

@@ -85,6 +85,69 @@ describe('calculateElasticTimeline', () => {
     expect(timeline[0]!.duration).toBe(600);
     expect(timeline[1]!.duration).toBe(0);
   });
+
+  it('handles an empty input and preserves order for all-fixed and interleaved tasks', () => {
+    expect(calculateElasticTimeline([], start, inFourHours)).toEqual([]);
+
+    const allFixed = calculateElasticTimeline(
+      [
+        task({ id: 'first', isFixedDuration: true, fixedDuration: 30 }),
+        task({ id: 'second', isFixedDuration: true, fixedDuration: 45 }),
+      ],
+      start,
+      inFourHours,
+    );
+    expect(allFixed.map((slice) => [slice.taskId, slice.duration])).toEqual([
+      ['first', 30],
+      ['second', 45],
+    ]);
+
+    const interleaved = calculateElasticTimeline(
+      [
+        task({ id: 'elastic-a', weight: 1 }),
+        task({ id: 'fixed', isFixedDuration: true, fixedDuration: 30 }),
+        task({ id: 'elastic-b', weight: 1 }),
+      ],
+      start,
+      inFourHours,
+    );
+    expect(interleaved.map((slice) => [slice.taskId, slice.duration])).toEqual([
+      ['elastic-a', 105],
+      ['fixed', 30],
+      ['elastic-b', 105],
+    ]);
+  });
+
+  it('treats a fixed flag without a positive duration as elastic', () => {
+    const timeline = calculateElasticTimeline(
+      [
+        task({ id: 'missing', isFixedDuration: true, fixedDuration: null }),
+        task({ id: 'zero', isFixedDuration: true, fixedDuration: 0 }),
+      ],
+      start,
+      inFourHours,
+    );
+    expect(timeline.map((slice) => slice.duration)).toEqual([120, 120]);
+  });
+
+  it('applies multiple caps independently without redistributing capped time', () => {
+    const timeline = calculateElasticTimeline(
+      [
+        task({ id: 'cap-a', maxDuration: 30 }),
+        task({ id: 'cap-b', maxDuration: 45 }),
+        task({ id: 'free' }),
+      ],
+      start,
+      inFourHours,
+    );
+    expect(timeline.map((slice) => slice.duration)).toEqual([30, 45, 80]);
+    expect(timeline.reduce((sum, slice) => sum + slice.duration, 0)).toBe(155);
+  });
+
+  it('fails closed for invalid date inputs', () => {
+    expect(calculateElasticTimeline([task({ id: 'a' })], new Date('invalid'), inFourHours)).toEqual([]);
+    expect(calculateElasticTimeline([task({ id: 'a' })], start, new Date('invalid'))).toEqual([]);
+  });
 });
 
 describe('columnOf', () => {
