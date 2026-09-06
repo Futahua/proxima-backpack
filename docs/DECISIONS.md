@@ -373,3 +373,16 @@ vault data appeared.
 This closes the full-process lifecycle truth for the disposable folder only. Clean
 profile behavior, creator-vault read-only acceptance, Obsidian live edits, and
 write/concurrency semantics remain open and are not inferred from this result.
+
+## D18 — Clean-profile acceptance is isolated and foreground-gated
+
+**Decided:** the next acceptance uses a genuinely separate Papers data directory
+containing only the Backpack registry/binding metadata needed to launch Proxima; no
+IndexedDB or inherited FSA handle is copied. Its external fixture is also distinct
+and disposable, with a fresh initial marker. The clean-profile result must begin with
+the expected no-handle state and may become a PASS only after a real foreground
+picker selection and the bounded read/edit/reload checks.
+
+No creator-vault data is part of this preparation. The clean profile does not prove
+cross-profile persistence; it proves that browser-native FSA works from a fresh
+profile after its own explicit grant.

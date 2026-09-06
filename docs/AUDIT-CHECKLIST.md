@@ -535,6 +535,13 @@ Inside the real `papers-backpack://` surface:
 - [x] Foreground `requestPermission()` behavior recorded (`prompt` → `granted`).
 - [ ] Clean-profile behavior recorded.
 
+Clean-profile acceptance preparation is complete but intentionally unexecuted: an
+isolated Papers data directory contains only copied Backpack registry/binding
+metadata (no IndexedDB/FSA state), and a fresh disposable fixture contains the same
+bounded three-file shape with a distinct initial marker. The native picker grant and
+all subsequent clean-profile observations remain unchecked until a foreground user
+gesture is performed.
+
 The same real Papers surface also completed a disposable OPFS write/read/delete
 round-trip and an IndexedDB write/read/delete round-trip. Those prove storage APIs
 exist in the origin, not external-directory selection or durable directory-handle
