@@ -1,4 +1,3 @@
-import { createMemoryVault } from '../adapters/memoryVault.js';
 import { createActionDispatcher, type ProximaActionDispatcher, type Surface } from '../app/actionProtocol.js';
 import { createInspectionProjection } from '../app/inspection.js';
 import { createReadOnlyProjection, type ReadOnlyProjection } from '../app/readOnlyProjection.js';
@@ -15,10 +14,9 @@ import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, eventsByDay, eventsForSelect
 import { localDateKey } from '../domain/time.js';
 import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
-import { FIXTURE_VAULTS } from './generated/fixtureVault.generated.js';
+import { createBrowserSource } from './sourceFactory.js';
 
 const FIXTURE_NAME = 'vault-basic';
-const FIXTURE_ROOT = FIXTURE_VAULTS[FIXTURE_NAME];
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
 const DETERMINISTIC_IDS = sequentialIdGenerator();
 let appState: ProximaState | null = null;
@@ -256,7 +254,8 @@ function bindInteractions(): void {
 
 async function boot(): Promise<void> {
   setBootState('loading');
-  const vault = createMemoryVault(FIXTURE_ROOT);
+  const source = createBrowserSource();
+  const vault = source.reader;
   const loaded = await loadVaultState(vault);
   refreshController = createRefreshController({ vault, initial: loaded });
   sourceProjection = createReadOnlyProjection(refreshController.snapshot());

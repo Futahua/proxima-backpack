@@ -5,6 +5,16 @@ export interface OpfsFileHandleLike { kind: 'file'; getFile(): Promise<{ text():
 export interface OpfsDirectoryHandleLike { kind: 'directory'; entries(): AsyncIterableIterator<[string, OpfsHandleLike]> }
 export type OpfsHandleLike = OpfsFileHandleLike | OpfsDirectoryHandleLike;
 
+export interface OpfsVaultOptions {
+  maxEntries?: number;
+  maxDepth?: number;
+  maxFileBytes?: number;
+}
+
+const DEFAULT_MAX_ENTRIES = 10_000;
+const DEFAULT_MAX_DEPTH = 64;
+const DEFAULT_MAX_FILE_BYTES = 4 * 1024 * 1024;
+
 function normalise(path: string): string {
   const value = path.replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
   if (value.split('/').some((part) => part === '..' || part === '.')) throw new Error('OPFS path traversal is not allowed');
@@ -37,17 +47,28 @@ async function childFile(root: OpfsDirectoryHandleLike, path: string): Promise<O
   throw new Error(`OPFS file not found: ${path}`);
 }
 
-export function createOpfsVault(root: OpfsDirectoryHandleLike): VaultReader {
+export function createOpfsVault(root: OpfsDirectoryHandleLike, options: OpfsVaultOptions = {}): VaultReader {
+  const maxEntries = Math.max(1, Math.floor(options.maxEntries ?? DEFAULT_MAX_ENTRIES));
+  const maxDepth = Math.max(1, Math.floor(options.maxDepth ?? DEFAULT_MAX_DEPTH));
+  const maxFileBytes = Math.max(1, Math.floor(options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES));
   async function list(directory: string): Promise<VaultEntry[]> {
     const handle = await childDirectory(root, directory);
     const entries: VaultEntry[] = [];
-    for await (const [name, child] of handle.entries()) entries.push({ path: `${normalise(directory) ? `${normalise(directory)}/` : ''}${name}`, kind: child.kind });
+    for await (const [name, child] of handle.entries()) {
+      if (entries.length >= maxEntries) throw new Error('OPFS directory entry limit exceeded');
+      entries.push({ path: `${normalise(directory) ? `${normalise(directory)}/` : ''}${name}`, kind: child.kind });
+    }
     return entries.sort((a, b) => a.path.localeCompare(b.path));
   }
-  async function walk(directory: string): Promise<string[]> {
+  async function walk(directory: string, depth = 0, budget = { count: 0 }): Promise<string[]> {
+    if (depth > maxDepth) throw new Error('OPFS directory depth limit exceeded');
     const entries = await list(directory);
     const files: string[] = [];
-    for (const entry of entries) if (entry.kind === 'file') files.push(entry.path); else files.push(...await walk(entry.path));
+    for (const entry of entries) {
+      budget.count += 1;
+      if (budget.count > maxEntries) throw new Error('OPFS recursive entry limit exceeded');
+      if (entry.kind === 'file') files.push(entry.path); else files.push(...await walk(entry.path, depth + 1, budget));
+    }
     return files.sort();
   }
   return {
@@ -58,8 +79,10 @@ export function createOpfsVault(root: OpfsDirectoryHandleLike): VaultReader {
       const normalised = normalise(path);
       const file = await childFile(root, normalised);
       const data = await file.getFile();
+      if (data.size > maxFileBytes) throw new Error('OPFS file size limit exceeded');
       const modifiedAt = new Date(data.lastModified || 0).toISOString();
       const text = await data.text();
+      if (text.length > maxFileBytes) throw new Error('OPFS file size limit exceeded');
       return { path: normalised, text, size: data.size, modifiedAt, revision: `${modifiedAt}:${data.size}:${hash(text)}` };
     },
   };

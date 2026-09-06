@@ -669,6 +669,22 @@ Only then consider a project-scoped external read capability in Papers.
       boundaries (Gate 6E, D28).
 - [ ] Real-vault/FSA end-to-end refresh acceptance.
 
+### 6.1E Injected external-directory reader integration (Gate 6F)
+
+- [x] Structural FileSystemDirectoryHandle-like input adapts to `VaultReader`.
+- [x] Browser source factory accepts injected reader/handle while fixture remains the
+      default.
+- [x] Raw handle does not enter domain, dispatcher, inspection, globals, or actions.
+- [x] Traversal is rejected; recursive enumeration is deterministic and bounded by
+      entry count, depth, and file size.
+- [x] Reads are read-only and do not request permission or obtain writable handles.
+- [x] External mutation is visible on later refresh through the existing stack.
+- [x] Deletion/rename and unreadable entries reuse 6A last-good/fail-visible semantics.
+- [x] Relative provenance is preserved without absolute-path leakage.
+- [x] Adapter tests cover structural boot, nested ordering, traversal, bounds,
+      mutation, deletion, failure, and no permission authority (Gate 6F, D29).
+- [ ] Native picker/creator-vault external-source acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

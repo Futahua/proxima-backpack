@@ -518,6 +518,25 @@ dispatcher records bounded lifecycle events and keeps pending operations empty.
 **Boundary:** Gate 6E uses only mutable in-memory fixture bytes. It does not touch FSA,
 the creator vault, Obsidian, Papers, native watchers, or any writer/migration path.
 
+## D29 — External directory handles stop at the reader adapter
+
+**Decided:** an injected structural `FileSystemDirectoryHandle`-like object is adapted
+by `createExternalDirectoryVault` into the existing `VaultReader` contract. The
+adapter reuses path normalization, rejects traversal, sorts deterministic results,
+and bounds recursive entries, depth, and file size. It performs only `getFile()` and
+text reads; permission requests, writable handles, remove/rename, and migration APIs
+are outside the adapter.
+
+The browser source factory accepts an injected reader or directory as an explicit test
+seam while fixture mode remains default. Once adapted, only `VaultReader` crosses into
+the refresh stack: raw handles never enter domain state, dispatcher, inspection,
+globals, or action results. External edits, deletion/rename, and read failures reuse
+the existing 6A–6E refresh, projection, health, and last-good semantics.
+
+**Boundary:** Gate 6F is injected-handle/fixture-only and does not select a native
+directory, request permission, persist handles, touch the creator vault, or change
+Papers/Obsidian.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure
