@@ -48,6 +48,14 @@ describe('Gate 5 clean-profile acceptance harness', () => {
     expect(result.validation.details.length).toBeGreaterThan(0);
   });
 
+  it('does not echo rejected absolute paths in the bounded acceptance projection', () => {
+    const result = evaluateCleanProfileAcceptance({ ...validReport, handleName: 'C:\\Users\\admin\\vault', entries: [{ path: 'C:\\Users\\admin\\secret.txt', kind: 'file', size: 1, textMarker: 'x', revision: 'r' }] }, build);
+    expect(result.passed).toBe(false);
+    expect(result.observed.handleName).toBeNull();
+    expect(result.observed.entryPaths).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain('C:\\Users\\admin');
+  });
+
   it('keeps the fixture reset utility fixed to the disposable path', () => {
     const source = readFileSync(new URL('../tools/reset-gate5-clean-fixture.mjs', import.meta.url), 'utf8');
     expect(source).toContain('C:/This is Minh/MatTroiSeConMoc/gate5-fsa-clean-fixture');

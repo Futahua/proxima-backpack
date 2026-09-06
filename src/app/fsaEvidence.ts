@@ -124,8 +124,8 @@ export function evaluateCleanProfileAcceptance(report: unknown, build: CleanProf
   const details = validation.errors.slice(0, 20);
   const candidate = isRecord(report) ? report : {};
   const entries = Array.isArray(candidate.entries) ? candidate.entries.filter(isRecord) : [];
-  const observedPaths = entries.filter((entry): entry is Record<string, unknown> => typeof entry.path === 'string').map((entry) => entry.path as string).sort();
-  const handleName = typeof candidate.handleName === 'string' ? candidate.handleName.slice(0, MAX_HANDLE_NAME) : null;
+  const observedPaths = entries.filter((entry): entry is Record<string, unknown> => typeof entry.path === 'string' && isRelativeFsaPath(entry.path as string)).map((entry) => entry.path as string).sort();
+  const handleName = typeof candidate.handleName === 'string' && !looksAbsolute(candidate.handleName) ? candidate.handleName.slice(0, MAX_HANDLE_NAME) : null;
   const permission = typeof candidate.permission === 'string' ? candidate.permission : null;
   const persisted = typeof candidate.persisted === 'boolean' ? candidate.persisted : null;
 
