@@ -593,6 +593,27 @@ state, and bounded problem codes.
 It does not persist handles, request permission, select a native directory, or touch
 creator-vault/Papers/host APIs.
 
+## D33 — Real-vault readiness is a staged, pure evidence contract
+
+**Decided:** real-vault readiness is evaluated by a bounded pure evaluator over
+startup/session/projection/health/inspection snapshots and explicit refresh evidence.
+It requires an external, granted, stable, healthy baseline with coherent generation
+and provenance samples, then reports separate baseline-read, external-edit,
+rename/delete, Obsidian-coexistence, and write-invariant stages. Missing later-stage
+evidence is `OPEN`, not inferred; an overall pass requires the required read/edit/
+rename/write stages. Absolute or traversal paths, mixed generations, stale/degraded
+state, missing provenance, unchanged edit claims, and any writer invocation fail
+closed without echoing sensitive paths.
+
+The browser surface accepts only the bounded report for display; the evaluator and
+render hook call no picker, filesystem, FSA, IndexedDB, Papers, controller, reader,
+or writer APIs. This is readiness evidence, not creator-vault selection or write
+authorization.
+
+**Boundary:** Gate 6J proves the report contract and fixture-level evaluator tests.
+Native creator-vault selection, real-directory integration, Obsidian coexistence,
+and any write capability remain open for later gates.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

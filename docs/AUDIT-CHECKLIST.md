@@ -739,6 +739,25 @@ Only then consider a project-scoped external read capability in Papers.
       duplicate prevention, and authority isolation (Gate 6I, D32).
 - [ ] Native restart/creator-vault restoration acceptance.
 
+### 6.1I Real-vault readiness/evidence contract (Gate 6J)
+
+- [x] Bounded `RealVaultAcceptanceReport` schema is derived only from startup,
+      session, projection, health, inspection, and explicit refresh evidence.
+- [x] Pure evaluator requires an external/granted/stable/healthy coherent baseline,
+      source revisions, and provenance samples for every present record kind.
+- [x] External-edit and rename/delete stages require changed revisions/content or
+      safe path evidence; missing evidence remains `OPEN` rather than inferred.
+- [x] Write-invariant stage fails on any writer method or attempted write; report
+      paths, text, codes, and build identity are bounded and absolute paths are
+      rejected without echo.
+- [x] Browser render seam accepts only a validated bounded report and exposes no
+      authority objects or source APIs.
+- [x] Tests cover healthy baseline, fixture/stale/mixed-generation rejection,
+      provenance/path/privacy bounds, unchanged edit claims, staged `OPEN`, and
+      write-authority failure (Gate 6J, D33).
+- [ ] Native creator-vault readiness, real-directory integration, and Obsidian
+      coexistence acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

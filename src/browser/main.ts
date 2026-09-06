@@ -4,6 +4,7 @@ import { createReadOnlyProjection, type ReadOnlyProjection } from '../app/readOn
 import { createRefreshController, type RefreshController, type RefreshResult } from '../app/refreshController.js';
 import { createRefreshPolicy, type RefreshPolicy } from '../app/refreshPolicy.js';
 import { createUiHealthModel, type UiHealthModel } from '../app/uiHealth.js';
+import { isRealVaultAcceptanceReport, type RealVaultAcceptanceReport } from '../app/realVaultAcceptance.js';
 import { evaluateCleanProfileAcceptance } from '../app/fsaEvidence.js';
 import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
 import { loadVaultState } from '../app/vaultRepository.js';
@@ -152,8 +153,9 @@ function updateHydrationSummary(state: ProximaState, problems: LoadProblem[]): v
 function exposeInspection(): void {
   if (!actionDispatcher) return;
   const inspection = createInspectionProjection(actionDispatcher.snapshot(), BUILD_IDENTITY, currentUiHealth());
-  const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection };
+  const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection; __PROXIMA_REAL_VAULT_ACCEPTANCE__?: (report: unknown) => void };
   target.__PROXIMA_INSPECTION__ = () => createInspectionProjection(actionDispatcher!.snapshot(), BUILD_IDENTITY, currentUiHealth());
+  target.__PROXIMA_REAL_VAULT_ACCEPTANCE__ = (report) => { if (isRealVaultAcceptanceReport(report)) renderRealVaultAcceptance(report); };
   const root = element<HTMLElement>('#proxima-app');
   root.dataset.proximaStateRevision = String(inspection.applicationStateRevision);
   root.dataset.proximaHealthGeneration = String(inspection.sourceHealth.sourceRevision);
@@ -169,6 +171,10 @@ function renderFsaProbe(report: unknown): void {
   }), null, 2));
 }
 
+function renderRealVaultAcceptance(report: RealVaultAcceptanceReport): void {
+  if (isRealVaultAcceptanceReport(report)) setText('#real-vault-acceptance-status', JSON.stringify(report, null, 2));
+}
+
 async function runFsaProbe(): Promise<void> {
   try { renderFsaProbe(await pickAndProbeDirectory()); }
   catch (error) { renderFsaProbe({ error: error instanceof Error ? error.message : String(error) }); }
@@ -182,7 +188,7 @@ function render(): void {
   root.dataset.proximaSelection = selection;
   const health = currentUiHealth();
   root.dataset.proximaHealthGeneration = String(health.sourceRevision);
-  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Fixture workspace</span></div></div><div class="header-state"><span class="read-only-badge">Read-only fixture</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre></details></div>`;
+  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Fixture workspace</span></div></div><div class="header-state"><span class="read-only-badge">Read-only fixture</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre></details></div>`;
   updateHydrationSummary(appState, problems);
   exposeInspection();
 }
