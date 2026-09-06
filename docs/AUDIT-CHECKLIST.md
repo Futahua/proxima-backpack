@@ -867,6 +867,49 @@ one gate and qualified two others. Therefore: **push the slice, confirm the SHA 
 on the remote, and only then request the audit.** A verdict on unreadable code records
 confidence, not review.
 
+### 6.1P Unattended bridge-backed acceptance harness (Gate 6P)
+
+`npm run agent:accept -- --root <root>` — one command, an explicitly supplied root,
+no picker, no gesture, nobody at the screen.
+
+- [x] Explicit root required; the harness never discovers, guesses or crawls for one.
+- [x] Ephemeral bridge port by default; the bridge reports the port it actually bound
+      rather than the one requested, which is what made `--port 0` usable at all.
+- [x] Drives the audited `d95fb43+` bridge and the same compiled adapter, domain and
+      repository modules the browser loads — not a second parser. The build output is
+      loaded through `require()` rather than `import()`, because a Vite-based runner
+      rewrites dynamic specifiers to its own graph and does not decode a
+      percent-encoded file URL, so a directory with a space in its name fails.
+- [x] Transport disclosure is a hard prerequisite, probed **before** any vault byte is
+      read: bounded codes only, and neither the bridge's startup output nor any failure
+      body may contain the root.
+- [x] Zero-write consumes `createZeroWriteWitness` — no second counter. Liveness,
+      capability and effect are checked in that order, since an unwired witness would
+      make the other two meaningless.
+- [x] Undeclared on-disk change ⇒ ABORTED. Attribution is path-specific: a rename must
+      declare both ends. The decision is an exported pure function so it is tested
+      directly rather than through a test-only hook.
+- [x] The supplied root never appears in stdout, stderr, the result, or an error, on
+      any outcome. Asserted over PASS and ABORTED runs.
+- [x] Bounded machine-readable result: `PASS | BLOCKED | ABORTED`, per-stage verdicts,
+      bounded blocker codes, observed read count, record counts.
+- [x] Result carries `transport: "loopback-agent-bridge"` and `papersHosted: false`;
+      native FSA, clean-profile picker, real Obsidian coexistence and write/concurrency
+      stay OPEN on the result itself even when the run passes.
+- [x] Cleanup terminates only the bridge this run started and waits for its handles to
+      close; the CLI sets an exit code rather than calling `process.exit()`, which was
+      aborting the process with a libuv assertion after a successful run.
+- [x] Regression required by the reviewer: a run with a deliberately unwired witness
+      **cannot** PASS — it aborts with `zero-write-witness-unwired` and zero observed
+      reads, even against a perfectly clean source.
+- [ ] Run against the actual creator vault. Not yet performed; this gate covers the
+      harness being source-tested, not the real baseline it makes possible.
+
+**Not yet supported:** the harness reads the preferred `Proxima/` layout. A legacy
+`-Hide/Proxima` vault currently reports `source-empty` rather than loading, because
+the layout override is not plumbed through to the CLI. Honest failure, but it means
+the first real run must target a preferred-layout root or gain that flag first.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.

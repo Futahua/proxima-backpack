@@ -140,5 +140,11 @@ const server = createServer(async (request, response) => {
     return send(response, 404, { error: BRIDGE_CODES.unknownOperation }, origin);
   } catch (error) { return send(response, 400, { error: codeOf(error) }, origin); }
 });
-server.listen(port, '127.0.0.1', () => console.log(`Proxima read-only automation bridge listening on 127.0.0.1:${port}`));
+// Report the port actually bound, not the one requested: --port 0 asks the OS to
+// choose, and echoing the request back left an ephemeral bridge unaddressable.
+server.listen(port, '127.0.0.1', () => {
+  const address = server.address();
+  const bound = typeof address === 'object' && address ? address.port : port;
+  console.log(`Proxima read-only automation bridge listening on 127.0.0.1:${bound}`);
+});
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => server.close(() => process.exit(0)));
