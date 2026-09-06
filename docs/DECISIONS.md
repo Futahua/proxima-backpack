@@ -121,3 +121,66 @@ creator. This turns a documented rule into a mechanical one.
 **Reverses if:** a real on-disk adapter is added for headless conformance tests
 (Gate 4.3). That adapter needs Node types and will get its own project reference —
 `src/domain` keeps none.
+
+---
+
+## D7 — Keep the hand-written parser for now; revisit before any writer exists
+
+**Decided:** Proxima keeps its own frontmatter parser over a documented subset, rather
+than adopting js-yaml or `yaml`. The parser must report everything it cannot represent,
+and the raw frontmatter text is preserved byte-for-byte beside the interpreted values.
+
+**Why not a real YAML parser today — the deciding fact:** the build is `tsc` alone.
+There is no bundler, so a bare `import ... from 'js-yaml'` emits a specifier no browser
+can resolve, and the page has no network and no Node to resolve it with. Adopting a
+YAML library is therefore not a parser decision at all right now; it is a build
+decision, and the build is Gate 2.2. Making it here would drag an unbuilt bundler into
+a gate about reading files.
+
+**Why the subset is defensible in the meantime:** the gate's requirement is not full
+YAML support but that unsupported syntax cannot silently become plausible-but-wrong
+domain data. That is now true, and it is the property that protects creator data.
+Coverage of exotic YAML is a convenience; fail-visibility is a safety property.
+
+**What this decision does not license.** A lossy parse must never be the source a
+writer serializes from. `ParsedDocument.lossy` marks exactly the documents where the
+interpreted values are not the whole truth, and `frontmatterRaw` is the lossless copy.
+
+**Reverses if — and this is a hard requirement, not a preference:**
+
+- **Before Gate 13 (the write model), unconditionally.** Round-tripping a file the
+  parser only partly understands is how a creator loses a key another plugin owns. The
+  parser question must be re-decided, with a bundler available, before any writer is
+  built.
+- Earlier, if a real creator vault turns out to use nested frontmatter routinely enough
+  that "reported but unset" is a product defect rather than a safety net.
+
+**Reversal is cheap by construction:** the parser is one module behind
+`parseDocument`, and `tests/frontmatter.test.ts` is written against behaviour rather
+than implementation. A YAML-backed replacement must pass the same suite — including
+the issue-reporting cases, which a library alone will not satisfy.
+
+---
+
+## D8 — Invalid fields are substituted *and* reported, never silently
+
+**Decided:** every domain field has a valid range. A value outside it is replaced with
+a safe default so nothing downstream has to defend against NaN, and a `LoadProblem` is
+always emitted saying which file, which field, and what was substituted.
+
+**Why not reject the whole record:** a task with one bad number is still a real task the
+creator can see in Obsidian. Dropping it would make Proxima disagree with the vault
+about what exists, which is worse than showing it with a defaulted weight and a
+warning.
+
+**Why not carry the bad value:** the Elastic board turns numbers into geometry. A
+negative `fixedDuration` runs the timeline cursor backwards over the previous task; a
+zero `weight` gives a card no time while it still occupies the column. These are not
+theoretical — they are what the unvalidated reader produced.
+
+**Specific ranges and their reasoning** are in `docs/VAULT-FORMATS.md`. The two worth
+repeating: `weight` must be `> 0`, and a duration must be `> 0` or absent — zero is
+indistinguishable from unset, which `null` already says.
+
+**Reverses if:** a field turns out to have a legitimate use for a value this rejects,
+in which case the range widens and the reason is recorded here.

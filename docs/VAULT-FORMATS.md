@@ -159,6 +159,100 @@ A record referencing a project that did not load is reported as `missing-project
 rather than being filed under "uncategorised" — a broken link and a deliberate absence
 of a project are different facts, and the creator should be able to tell them apart.
 
+## Frontmatter
+
+Proxima reads a documented subset of YAML, not all of it. What matters more than the
+size of the subset is that the parser **knows what it does not understand**: a construct
+outside the subset leaves its key unset and produces a problem naming the line. A
+missing field is something the reader can report; a wrong field is something nobody
+notices.
+
+### Supported
+
+| Form | Example | Read as |
+| --- | --- | --- |
+| plain scalar | `name: Studio` | `"Studio"` |
+| number | `weight: 3`, `offset: -2`, `ratio: 1.5` | number |
+| version/date-like token | `version: 1.2.3`, `day: 2026-09-06` | string, never a number |
+| boolean | `done: true`, `done: TRUE` | boolean |
+| null | `project: null`, `project: ~` | `null` |
+| quoted string | `colour: "#00b894"`, `name: 'Studio'` | unquoted, unescaped |
+| inline list | `tags: [a, b]`, `tags: ["a,b", c]` | array |
+| block list | `tags:`<br>`  - alpha` | array |
+| empty value | `description:` | `""` |
+| comment | `weight: 3 # note`, whole-line `# note` | stripped |
+
+`true` and `false` are booleans in any case. **`yes`, `no`, `on` and `off` stay
+strings** — js-yaml 4, which Obsidian reads these files with, treats them as strings,
+and agreeing with the peer application matters more than agreeing with YAML 1.1. A
+field that needs a boolean and gets `yes` is reported (see the validation table below).
+
+A `#` only starts a comment when whitespace precedes it, so `colour: "#00b894"` and
+`anchor: page#section` are untouched.
+
+A UTF-8 BOM before the opening fence is stripped. Left in place it hides the entire
+frontmatter block, and the record loads with every field defaulted and nothing to say
+why.
+
+### Not supported — reported, never guessed
+
+| Form | Issue code | What happens |
+| --- | --- | --- |
+| nested mapping / block mapping | `nested-mapping` | the parent key is left unset; **child keys are never hoisted** |
+| list of mappings | `list-of-mappings` | the key is left unset |
+| `|` or `>` multiline scalar | `block-scalar` | the key is left unset |
+| `{ ... }` flow mapping | `flow-mapping` | the key is left unset |
+| `&anchor` / `*alias` | `anchor-or-alias` | the key is left unset |
+| nested or unterminated inline list | `unterminated-list` | the key is left unset |
+| the same key twice | `duplicate-key` | the **first** wins, as with duplicate ids |
+| anything else non-blank | `unparsable-line` | the line is skipped |
+
+Parsing continues after an unsupported construct: one bad key does not cost the rest of
+the file.
+
+The hoisting case is the one that motivated this. Given
+
+```yaml
+id: task-nested
+meta:
+  id: task-hijacked
+  status: review
+```
+
+the previous parser produced `{ meta: [], id: task-hijacked, status: review }` — the
+nested keys replaced the record's own identity. Now `meta` is unset and reported, and
+`id` stays `task-nested`.
+
+### Raw text is preserved
+
+`ParsedDocument` carries `frontmatterRaw` byte-for-byte alongside the interpreted
+values, and `lossy` is true whenever the two differ in content. A key Proxima does not
+interpret survives untouched. **A writer must serialize from the raw text, never from
+the interpreted projection** — see `docs/DECISIONS.md#d7`.
+
+## Field validation
+
+Reading a field and trusting it are different things. Each field has a range, and a
+value outside it is replaced with something safe *and reported* — a card sized from a
+default nobody chose looks exactly like a card sized from a real number.
+
+| Field | Valid | Otherwise |
+| --- | --- | --- |
+| `weight` | finite, `> 0` | `1`, reported. Zero would claim no time while still occupying the board; negative would inflate every other card's share. |
+| `orderIndex` | any finite number | `0`, reported |
+| `fixedDuration` | absent, or finite `> 0` minutes | unset, reported. Negative would run the timeline cursor backwards over the previous task. |
+| `maxDuration` | absent, or finite `> 0` minutes | unset, reported |
+| `isFixedDuration`, `isCompleted` | `true` / `false` | the default, reported |
+| `status` | any non-empty identifier | `running`, reported |
+| `createdAt` | a readable date | epoch, reported |
+| `startDate`, `deadline` | absent, or a readable date | unset, reported |
+
+An unknown-but-well-formed status is **not** a problem: the plugin let creators
+configure their own, and `columnOf` files anything unrecognised under running.
+
+`isFixedDuration: true` with no usable `fixedDuration` is reported separately, because
+the task silently stretches like any other and the flag suggests otherwise.
+
 ## Problems
 
 Nothing is dropped quietly. A record either enters state or a problem says why not.
@@ -170,7 +264,11 @@ Nothing is dropped quietly. A record either enters state or a problem says why n
 | `duplicate-id` | error | a second record claimed an id already taken |
 | `ignored-file` | warning | Markdown sat where records are not read from |
 | `unexpected-type` | warning | a file in `projects/` declared it is not a project |
+| `unsupported-frontmatter` | warning | YAML outside the subset; the key was left unset |
 | `bad-date` | warning | a date field could not be interpreted |
+| `bad-number` | warning | a numeric field was unreadable or out of range |
+| `bad-boolean` | warning | a boolean field held something else |
+| `invalid-status` | warning | a status field held no usable identifier |
 | `missing-project` | warning | a reference pointed at no loaded project |
 
 Codes are stable identifiers. The prose in `detail` may change freely; match on `code`.
@@ -185,5 +283,7 @@ They are not fixtures *of* the format — they are the format.
 | `fixtures/vault-basic` | the preferred layout, explicit ids, a record with no id |
 | `fixtures/vault-legacy` | `-Hide/Proxima`, filename ids, flat and `index.md` projects, project-folder content, `type: project` on projects and unrelated `type:` on a task and an event, packed `linkedFolders`, a hand-renamed file with an explicit id |
 | `fixtures/vault-duplicates` | colliding ids across both project forms, a declared id colliding with a derived one, a task filed in a subfolder, a reference to a project that does not exist |
+| `fixtures/vault-malformed` | out-of-range and unreadable numbers, a boolean written as `yes`, an empty status, dates in prose, an event whose deadline precedes its start, and a nested mapping that would previously have rewritten its record's identity |
 
-`fixtures/vault-duplicates` is expected to produce errors. That is what it is for.
+`fixtures/vault-duplicates` and `fixtures/vault-malformed` are expected to produce
+problems. That is what they are for.

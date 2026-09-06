@@ -9,6 +9,7 @@
  * freely; a consumer matches on `code`.
  */
 import type { RecordKind } from './records.js';
+import type { FieldIssueCode } from './validation.js';
 
 export type ProblemSeverity =
   /** The record did not enter state. */
@@ -27,8 +28,16 @@ export type ProblemCode =
   | 'ignored-file'
   /** Frontmatter declared a `type` that contradicts the directory it sits in. */
   | 'unexpected-type'
+  /** Frontmatter used YAML outside the supported subset; the key was left unset. */
+  | 'unsupported-frontmatter'
   /** A date field could not be interpreted. */
   | 'bad-date'
+  /** A numeric field was unreadable or outside the range the field allows. */
+  | 'bad-number'
+  /** A boolean field held something that is not true or false. */
+  | 'bad-boolean'
+  /** A status field held something that is not a usable identifier. */
+  | 'invalid-status'
   /** A record referenced a project id that no loaded project has. */
   | 'missing-project';
 
@@ -46,6 +55,14 @@ export interface LoadProblem {
 
 export function isBlocking(problem: LoadProblem): boolean {
   return problem.severity === 'error';
+}
+
+/** The problem code a field-level validation issue reports as. */
+export function problemCodeForField(code: FieldIssueCode): ProblemCode {
+  if (code === 'invalid-date') return 'bad-date';
+  if (code === 'not-a-boolean') return 'bad-boolean';
+  if (code === 'invalid-status') return 'invalid-status';
+  return 'bad-number';
 }
 
 export function problemsFor(problems: LoadProblem[], code: ProblemCode): LoadProblem[] {

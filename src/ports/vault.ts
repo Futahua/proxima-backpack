@@ -35,7 +35,18 @@ export interface VaultReader {
   walk(directory: string): Promise<string[]>;
 }
 
-/** Marker for the day Proxima is allowed to write. Deliberately unimplemented in v1. */
+/**
+ * Marker for the day Proxima is allowed to write. Deliberately unimplemented in v1.
+ *
+ * Two conditions bind whoever implements this, both recorded in docs/DECISIONS.md:
+ *
+ *  - serialize from `ParsedDocument.frontmatterRaw`, never from the interpreted
+ *    values. The parser reads a subset; a document whose `lossy` flag is set has
+ *    content the interpreted view does not contain, and round-tripping through that
+ *    view would delete a key another plugin owns.
+ *  - re-decide the parser question first (D7). A partial parser is safe to read with
+ *    and unsafe to write from.
+ */
 export interface VaultWriter {
   /**
    * Write only if the file still has the revision we read. Anything else is a

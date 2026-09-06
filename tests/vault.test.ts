@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { loadVaultState } from '../src/app/vaultRepository.js';
-import { parseDocument, parseFrontmatter } from '../src/domain/frontmatter.js';
 import { elasticBoard, eventsByDay, reconcileSelection } from '../src/domain/selectors.js';
 import { localDateKey } from '../src/domain/time.js';
 import { DEFAULT_STATUSES } from '../src/domain/elastic.js';
@@ -8,25 +7,8 @@ import { fixtureVault, sourceRef } from './fixtures.js';
 
 const vault = fixtureVault('vault-basic');
 
-describe('frontmatter', () => {
-  it('reads scalars, quoted strings, inline and block lists', () => {
-    const fm = parseFrontmatter(
-      ['name: Studio', 'weight: 3', 'done: true', 'colour: "#00b894"', 'tags: [a, b]'].join('\n'),
-    );
-    expect(fm).toEqual({ name: 'Studio', weight: 3, done: true, colour: '#00b894', tags: ['a', 'b'] });
-  });
-
-  it('keeps a date as a string rather than coercing it to a number', () => {
-    expect(parseFrontmatter('deadline: 2026-09-08T18:00:00.000Z').deadline).toBe(
-      '2026-09-08T18:00:00.000Z',
-    );
-  });
-
-  it('separates body from frontmatter and tolerates a file with neither', () => {
-    expect(parseDocument('---\nname: X\n---\nbody text').body).toBe('body text');
-    expect(parseDocument('just a note').frontmatter).toEqual({});
-  });
-});
+// The frontmatter subset and its failure modes have their own suite:
+// tests/frontmatter.test.ts.
 
 describe('loadVaultState over the real fixture vault', () => {
   it('loads every project, task and event with no problems', async () => {

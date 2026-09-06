@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 1B — frontmatter failure visibility + validation edge cases |
+| Current slice | Gate 1C — Elastic/calendar edge-test closure |
 | Branch | `claude/proxima-audit-checklist-fqhxkf` |
-| Last audited SHA | `53f0558` — Gate 1A, conditional pass: the `type:` veto had been generalised beyond the legacy project-only behaviour. Corrected; see D4. |
+| Last audited SHA | `53f0558` — Gate 1A, conditional pass; the `type:` veto was corrected in `17eebea` (see D4). Gate 1B pushed for audit. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -135,50 +135,54 @@ new preferred layout.
       model.
 - [ ] UI does not care which storage layout produced a record. _(no UI yet — Gate 2)_
 
-### 1.6 Frontmatter safety — **Gate 1B**
+### 1.6 Frontmatter safety
 
-- [ ] Supported YAML/frontmatter subset is documented.
-- [ ] Unsupported syntax does not silently become plausible-but-wrong domain data.
-- [ ] Unsupported syntax produces structured problems where interpretation matters.
-- [ ] Raw original frontmatter is preserved independently from interpreted values.
-- [ ] Test:
-  - [ ] plain scalars
-  - [ ] numbers
-  - [ ] booleans
-  - [ ] null
-  - [ ] quoted strings
-  - [ ] inline lists
-  - [ ] block scalar lists
-  - [ ] dates/timestamps remain strings where intended
-- [ ] Test unsupported or dangerous forms:
-  - [ ] nested maps
-  - [ ] block mappings
-  - [ ] list-of-maps
-  - [ ] multiline `|` scalar
-  - [ ] multiline `>` scalar
-  - [ ] commas inside quoted inline-list values
-  - [ ] trailing YAML comments
-  - [ ] escaped quoted strings
-  - [ ] YAML aliases/anchors
-  - [ ] flow maps
-  - [ ] alternate boolean spellings
-  - [ ] UTF-8 BOM before frontmatter fence
-- [ ] Decide whether to retain a custom parser or adopt a real YAML parser.
-- [ ] No future writer serializes from a lossy parsed projection.
+- [x] Supported YAML/frontmatter subset is documented. → `docs/VAULT-FORMATS.md`
+- [x] Unsupported syntax does not silently become plausible-but-wrong domain data.
+- [x] Unsupported syntax produces structured problems where interpretation matters.
+- [x] Raw original frontmatter is preserved independently from interpreted values.
+- [x] Test:
+  - [x] plain scalars
+  - [x] numbers
+  - [x] booleans
+  - [x] null
+  - [x] quoted strings
+  - [x] inline lists
+  - [x] block scalar lists
+  - [x] dates/timestamps remain strings where intended
+- [x] Test unsupported or dangerous forms:
+  - [x] nested maps
+  - [x] block mappings
+  - [x] list-of-maps
+  - [x] multiline `|` scalar
+  - [x] multiline `>` scalar
+  - [x] commas inside quoted inline-list values
+  - [x] trailing YAML comments
+  - [x] escaped quoted strings
+  - [x] YAML aliases/anchors
+  - [x] flow maps
+  - [x] alternate boolean spellings
+  - [x] UTF-8 BOM before frontmatter fence
+- [x] Decide whether to retain a custom parser or adopt a real YAML parser.
+      → `docs/DECISIONS.md#d7`: retain, with a mandatory re-decision before Gate 13.
+- [x] No future writer serializes from a lossy parsed projection. `ParsedDocument.lossy`
+      marks such documents and the `VaultWriter` port carries the obligation.
 
-### 1.7 Numeric/domain validation — **Gate 1B**
+### 1.7 Numeric/domain validation
 
 Define valid ranges instead of letting malformed frontmatter poison calculations.
+Ranges and reasoning: `docs/VAULT-FORMATS.md`; policy: `docs/DECISIONS.md#d8`.
 
-- [ ] Task `weight` validation.
-- [ ] `weight <= 0` behavior specified.
-- [ ] `fixedDuration` validation.
-- [ ] `maxDuration` validation.
-- [ ] Negative duration behavior specified.
-- [ ] `orderIndex` validation.
-- [ ] Invalid task status behavior specified.
-- [ ] Invalid dates produce explicit structured problems.
-- [ ] Invalid records cannot generate NaN/negative Elastic geometry silently.
+- [x] Task `weight` validation.
+- [x] `weight <= 0` behavior specified. Rejected, defaulted to 1, reported.
+- [x] `fixedDuration` validation.
+- [x] `maxDuration` validation.
+- [x] Negative duration behavior specified. Rejected and unset, reported.
+- [x] `orderIndex` validation.
+- [x] Invalid task status behavior specified. Unusable → `running`, reported;
+      unknown-but-well-formed is legal and files under running.
+- [x] Invalid dates produce explicit structured problems.
+- [x] Invalid records cannot generate NaN/negative Elastic geometry silently.
 
 ### 1.8 Elastic behavior parity — **Gate 1C**
 
@@ -223,7 +227,7 @@ Pin important behavior from old `calculateLiquidTimeline`.
 - [x] Logical IDs are separate from source paths.
 - [x] Duplicate IDs fail visibly.
 - [x] No unrelated Markdown becomes a project/task/event accidentally.
-- [ ] Frontmatter limitations are fail-visible. _(Gate 1B)_
+- [x] Frontmatter limitations are fail-visible.
 - [ ] Elastic behavior is sufficiently pinned. _(Gate 1C)_
 - [x] All tests and typecheck pass.
 - [x] No Papers changes.
@@ -1132,7 +1136,7 @@ Current truth stays in-repo.
 - [x] exact supported vault formats — `docs/VAULT-FORMATS.md`
 - [x] legacy compatibility behavior — `docs/VAULT-FORMATS.md`
 - [x] preferred new format — `docs/VAULT-FORMATS.md`
-- [ ] frontmatter support/limitations _(Gate 1B)_
+- [x] frontmatter support/limitations — `docs/VAULT-FORMATS.md`
 - [x] domain IDs vs source references — `docs/VAULT-FORMATS.md`
 - [ ] Elastic algorithm semantics _(Gate 1C)_
 - [ ] timezone semantics _(Gate 1C)_
@@ -1202,7 +1206,8 @@ Each pushed SHA is sent for audit approximately in this order.
 
 1. [x] Gate 1A — legacy source discovery + logical/source identity correction
        _(signed off after the `type:` veto correction)_
-2. [ ] Gate 1B — frontmatter failure visibility + validation edge cases _(in progress)_
+2. [x] Gate 1B — frontmatter failure visibility + validation edge cases
+       _(pushed, awaiting audit)_
 3. [ ] Gate 1C — Elastic/calendar edge-test closure
 4. [ ] Gate 2A — actual build + real Backpack identity + fixture boot
 5. [ ] Gate 2B — first visible board/projects/calendar + C1 keys

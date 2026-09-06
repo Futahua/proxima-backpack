@@ -16,15 +16,19 @@
  *
  * Layouts and discovery rules live in `vaultLayout.ts` and `discovery.ts`.
  */
-import {
-  asBoolean,
-  asNumber,
-  asString,
-  asStringOrNull,
-  parseDocument,
-} from '../domain/frontmatter.js';
+import { asString, asStringOrNull, parseDocument } from '../domain/frontmatter.js';
 import { DEFAULT_STATUSES } from '../domain/elastic.js';
-import type { LoadProblem } from '../domain/problems.js';
+import { problemCodeForField, type LoadProblem } from '../domain/problems.js';
+import {
+  readBoolean,
+  readDate,
+  readDurationMinutes,
+  readOptionalDate,
+  readOrderIndex,
+  readStatus,
+  readWeight,
+  type FieldIssue,
+} from '../domain/validation.js';
 import type { IdOrigin, RecordKind, SourceRef } from '../domain/records.js';
 import type { VaultReader } from '../ports/vault.js';
 import type {
@@ -139,6 +143,19 @@ async function readKind(
     revisions[candidate.path] = revision;
     const parsed = parseDocument(text);
 
+    // Frontmatter the parser could not represent. The key is left unset rather than
+    // filled with a guess, so the record still loads — with the field missing and a
+    // problem saying which line made it missing.
+    for (const issue of parsed.issues) {
+      problems.push({
+        code: 'unsupported-frontmatter',
+        severity: 'warning',
+        path: candidate.path,
+        kind,
+        detail: `line ${issue.line}${issue.key ? ` ("${issue.key}")` : ''}: ${issue.detail}`,
+      });
+    }
+
     // Only projects are vetoed by `type:`. On a task or an event it is ordinary
     // frontmatter — the plugin's loaders never read it — and treating it as a
     // discriminator would drop legacy records that carry an unrelated type.
@@ -236,20 +253,23 @@ function projectReference(fm: Record<string, unknown>): string | null {
   return asStringOrNull(fm.project) ?? asStringOrNull(fm.projectId);
 }
 
-function toProject(doc: SourcedDocument, id: string): Project {
+function toProject(doc: SourcedDocument, id: string, problems: LoadProblem[]): Project {
   const { frontmatter: fm, body, source } = doc;
-  return {
+  const issues: FieldIssue[] = [];
+  const project: Project = {
     id,
     source,
     name: displayName(fm, id),
     description: asString(fm.description, body),
-    createdAt: asString(fm.createdAt, EPOCH),
+    createdAt: readDate(fm.createdAt, 'createdAt', EPOCH, issues),
     status: asString(fm.status, 'active') === 'archived' ? 'archived' : 'active',
     projectType: asString(fm.projectType, 'task') === 'schedule' ? 'schedule' : 'task',
     tabBgColor: asString(fm.tabBgColor, '') || undefined,
     tabTextColor: asString(fm.tabTextColor, '') || undefined,
     linkedFolders: toLinkedFolders(fm),
   };
+  reportFieldIssues(issues, source, id, problems);
+  return project;
 }
 
 /**
@@ -307,62 +327,86 @@ function leafOf(path: string): string {
 
 function toTask(doc: SourcedDocument, id: string, problems: LoadProblem[]): Task {
   const { frontmatter: fm, body, source } = doc;
-  const deadline = asStringOrNull(fm.deadline);
-  if (deadline && Number.isNaN(new Date(deadline).getTime())) {
-    problems.push({
-      code: 'bad-date',
-      severity: 'warning',
-      path: source.path,
-      kind: 'task',
-      id,
-      detail: `deadline: ${deadline}`,
+  const issues: FieldIssue[] = [];
+
+  const isFixedDuration = readBoolean(fm.isFixedDuration, 'isFixedDuration', false, issues);
+  const fixedDuration = readDurationMinutes(fm.fixedDuration, 'fixedDuration', issues);
+
+  // A task flagged fixed with no usable duration has nothing to reserve. It stretches
+  // like any other, which is what the timeline already does with it — but silently,
+  // so the flag is worth reporting rather than quietly ignoring.
+  if (isFixedDuration && fixedDuration === null) {
+    issues.push({
+      field: 'fixedDuration',
+      code: 'out-of-range',
+      detail: 'isFixedDuration is true but no usable fixedDuration is set; the task stretches.',
     });
   }
-  return {
+
+  const task: Task = {
     id,
     source,
     name: displayName(fm, id),
     description: asString(fm.description, body),
     projectId: projectReference(fm),
-    status: asString(fm.status, 'running'),
-    weight: asNumber(fm.weight, 1),
-    orderIndex: asNumber(fm.orderIndex, 0),
-    isFixedDuration: asBoolean(fm.isFixedDuration, false),
-    fixedDuration: fm.fixedDuration === undefined ? null : asNumber(fm.fixedDuration, 0) || null,
-    maxDuration: fm.maxDuration === undefined ? null : asNumber(fm.maxDuration, 0) || null,
-    isCompleted: asBoolean(fm.isCompleted, false),
-    createdAt: asString(fm.createdAt, EPOCH),
-    startDate: asStringOrNull(fm.startDate),
-    deadline,
+    status: readStatus(fm.status, 'running', issues),
+    weight: readWeight(fm.weight, issues),
+    orderIndex: readOrderIndex(fm.orderIndex, issues),
+    isFixedDuration,
+    fixedDuration,
+    maxDuration: readDurationMinutes(fm.maxDuration, 'maxDuration', issues),
+    isCompleted: readBoolean(fm.isCompleted, 'isCompleted', false, issues),
+    createdAt: readDate(fm.createdAt, 'createdAt', EPOCH, issues),
+    startDate: readOptionalDate(fm.startDate, 'startDate', issues),
+    deadline: readOptionalDate(fm.deadline, 'deadline', issues),
     properties: {},
   };
+
+  reportFieldIssues(issues, source, id, problems);
+  return task;
 }
 
 function toEvent(doc: SourcedDocument, id: string, problems: LoadProblem[]): CalendarEvent {
   const { frontmatter: fm, body, source } = doc;
-  const start = asString(fm.startDate, '');
-  if (start && Number.isNaN(new Date(start).getTime())) {
-    problems.push({
-      code: 'bad-date',
-      severity: 'warning',
-      path: source.path,
-      kind: 'event',
-      id,
-      detail: `startDate: ${start}`,
-    });
-  }
-  return {
+  const issues: FieldIssue[] = [];
+
+  const start = readOptionalDate(fm.startDate, 'startDate', issues);
+  const deadline = readOptionalDate(fm.deadline, 'deadline', issues);
+
+  const event: CalendarEvent = {
     id,
     source,
     name: displayName(fm, id),
     description: asString(fm.description, body),
     projectId: projectReference(fm),
-    createdAt: asString(fm.createdAt, EPOCH),
-    startDate: start,
-    deadline: asString(fm.deadline, start),
-    isCompleted: asBoolean(fm.isCompleted, false),
+    createdAt: readDate(fm.createdAt, 'createdAt', EPOCH, issues),
+    startDate: start ?? '',
+    deadline: deadline ?? start ?? '',
+    isCompleted: readBoolean(fm.isCompleted, 'isCompleted', false, issues),
     properties: {},
   };
+
+  reportFieldIssues(issues, source, id, problems);
+  return event;
+}
+
+/** Field-level validation issues become ordinary load problems, keyed to the record. */
+function reportFieldIssues(
+  issues: FieldIssue[],
+  source: SourceRef,
+  id: string,
+  problems: LoadProblem[],
+): void {
+  for (const issue of issues) {
+    problems.push({
+      code: problemCodeForField(issue.code),
+      severity: 'warning',
+      path: source.path,
+      kind: source.kind,
+      id,
+      detail: `${issue.field}: ${issue.detail}`,
+    });
+  }
 }
 
 /**
