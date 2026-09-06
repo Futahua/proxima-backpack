@@ -635,6 +635,36 @@ stale-source callback suppression remain covered by the existing session tests.
 invoke a native picker, request permission, select a creator vault, change Papers,
 or enable writes.
 
+## D35 — Creator-vault runbook is a pure preflight guard
+
+**Decided:** before any native creator-vault grant, `evaluateRealVaultRunbook`
+requires a bounded external/granted/stable/healthy Gate 6J baseline, matching build
+and optional root, provenance, and a hard zero-write invariant. It emits bounded
+`READY`, `BLOCKED`, or `ABORTED` status, explicit evidence stages, abort codes, and
+the one remaining native boundary (`select-and-grant` only when no authorized
+external source exists). Missing later edit/rename/Obsidian evidence is documented
+as capture work, never inferred as success; any writer invocation aborts.
+
+The guard has no picker, permission, filesystem, Papers, reader, controller, policy,
+or writer authority and never repairs or writes on abort. The report is suitable for
+copy-safe browser rendering without creator-vault paths or authority objects.
+
+**Boundary:** Gate 6L is a readiness/runbook contract only. It does not select a
+creator vault or claim real-vault behavior.
+
+## D36 — Peer-writer coexistence is tested on disposable disk only
+
+**Decided:** Gate 6M uses a temporary disk fixture and a separate child-process
+writer actor to simulate Obsidian-like edits. Proxima consumes the files only through
+the existing read-only `VaultReader`/`SourceSession` stack and observes changes after
+normal refresh. Tests cover edit, create, rename, delete/selection reconciliation,
+malformed intermediate state with last-good degradation, valid recovery, rapid peer
+changes, generation coherence, and a zero Proxima write count. No Obsidian API or
+plugin runtime is introduced.
+
+**Boundary:** the disposable writer is test-only; no creator vault, native picker,
+Papers bridge, watcher capability, or write authority is added.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

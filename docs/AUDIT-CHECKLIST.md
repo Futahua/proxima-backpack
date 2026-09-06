@@ -774,6 +774,34 @@ Only then consider a project-scoped external read capability in Papers.
       refresh degradation/recovery and stale-callback protections (Gate 6K, D34).
 - [ ] Native creator-vault selection and actual real-directory browser acceptance.
 
+### 6.1K Creator-vault read-only runbook/guard (Gate 6L)
+
+- [x] Hard `readOnly` preflight is represented by pure READY/BLOCKED/ABORTED
+      guard state, not a UI convention.
+- [x] Guard checks source/permission/session/health/build/root/provenance and zero
+      write invariants, with bounded abort codes and no repair/fallback writes.
+- [x] Evidence plan names baseline, edit, rename/delete, Obsidian, and write stages;
+      optional or missing stages remain OPEN and are not inferred.
+- [x] Native boundary is explicit and limited to select-and-grant when needed;
+      guard itself has no picker, filesystem, Papers, or writer authority.
+- [x] Tests cover safe readiness, wrong source/build, write abort, and authority-free
+      bounded output (Gate 6L, D35).
+- [ ] Native creator-vault preflight and selection.
+
+### 6.1L Disposable peer-writer/Obsidian-coexistence simulation (Gate 6M)
+
+- [x] A temporary disk fixture and separate child-process writer simulate a peer
+      editor without calling Proxima internals.
+- [x] Edit/create/rename/delete and rapid peer changes are observed only through
+      normal SourceSession refresh and source-delta evidence.
+- [x] Malformed intermediate bytes retain last-good UI and mark stale/degraded;
+      subsequent valid bytes recover without restart.
+- [x] Identity, selection reconciliation, generation coherence, and zero Proxima
+      writes remain explicit under peer changes.
+- [x] No Obsidian API/plugin runtime, creator vault, picker, Papers bridge, or watcher
+      capability is introduced (Gate 6M, D36).
+- [ ] Actual Obsidian/creator-vault coexistence acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.
