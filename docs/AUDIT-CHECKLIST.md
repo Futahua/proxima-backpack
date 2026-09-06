@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 1A — legacy discovery + logical/source identity |
+| Current slice | Gate 1B — frontmatter failure visibility + validation edge cases |
 | Branch | `claude/proxima-audit-checklist-fqhxkf` |
-| Last audited SHA | _none yet — Gate 1A pushed for audit_ |
+| Last audited SHA | `53f0558` — Gate 1A, conditional pass: the `type:` veto had been generalised beyond the legacy project-only behaviour. Corrected; see D4. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -115,6 +115,8 @@ new preferred layout.
 - [x] Extra Markdown inside a project subfolder does not become an extra project.
 - [x] Legacy `type: project` semantics are either supported or explicitly replaced with
       a documented discovery rule. → `docs/VAULT-FORMATS.md`
+  - [x] The veto is scoped to projects, the one kind the plugin discriminated on;
+        a legacy task or event carrying an unrelated `type:` still loads.
 - [x] Legacy linked-folder representation is tested:
   - [x] `linkedFolder`
   - [x] `linkedFolders: Name|path;Other|path`
@@ -1199,8 +1201,8 @@ here.**
 Each pushed SHA is sent for audit approximately in this order.
 
 1. [x] Gate 1A — legacy source discovery + logical/source identity correction
-       _(pushed, awaiting audit)_
-2. [ ] Gate 1B — frontmatter failure visibility + validation edge cases
+       _(signed off after the `type:` veto correction)_
+2. [ ] Gate 1B — frontmatter failure visibility + validation edge cases _(in progress)_
 3. [ ] Gate 1C — Elastic/calendar edge-test closure
 4. [ ] Gate 2A — actual build + real Backpack identity + fixture boot
 5. [ ] Gate 2B — first visible board/projects/calendar + C1 keys

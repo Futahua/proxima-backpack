@@ -69,16 +69,25 @@ Two consequences worth stating plainly:
   layout puts a task in a subfolder, so a file sitting there is more likely misplaced
   than deliberate, and a silently missing task is worse than a warning.
 
-### `type:` in frontmatter
+### `type:` in frontmatter — projects only
 
-The plugin marked project files with `type: project`. That marker is honoured, but it
-is not what discovery runs on. Its only remaining power is to **veto**:
+The plugin's project scan required `type: project`. Its task and event loaders never
+looked at `type` at all. The reader matches that, exactly:
 
-- absent, or matching the directory (`project` / `task` / `event`) → read normally;
-- any other value → not read as a record, reported as `unexpected-type`.
+| Directory | `type:` absent | `type: project` | any other value |
+| --- | --- | --- | --- |
+| `projects/` | read as a project | read as a project | **vetoed**, reported as `unexpected-type` |
+| `tasks/`, `events/` | read | read | read |
 
-So a note the creator left in the projects directory can opt out by saying what it is,
-and every legacy file that carries `type: project` keeps working unchanged.
+So the marker is honoured where it meant something and ignored where it never did. On a
+task or an event, `type:` is ordinary frontmatter — the creator's own field, or another
+plugin's — and is carried, not obeyed. A legacy task saying `type: todo` loads as a
+task; an event saying `type: meeting` loads as an event.
+
+For projects the marker survives only as a **veto**, never as a requirement: discovery
+is still positional, so `type: project` neither promotes a file the rules skipped nor is
+needed by a file they found. Its one job is to let a note the creator filed in
+`projects/` opt out by saying what it is.
 
 **Known boundary:** a stray note in `projects/` that declares no `type` *will* be read
 as a project. The flat legacy format is `projects/{id}.md` with no required marker, so
@@ -160,7 +169,7 @@ Nothing is dropped quietly. A record either enters state or a problem says why n
 | `directory-unreadable` | warning | a configured directory could not be listed |
 | `duplicate-id` | error | a second record claimed an id already taken |
 | `ignored-file` | warning | Markdown sat where records are not read from |
-| `unexpected-type` | warning | frontmatter vetoed the directory's reading |
+| `unexpected-type` | warning | a file in `projects/` declared it is not a project |
 | `bad-date` | warning | a date field could not be interpreted |
 | `missing-project` | warning | a reference pointed at no loaded project |
 
@@ -174,7 +183,7 @@ They are not fixtures *of* the format — they are the format.
 | Fixture | Covers |
 | --- | --- |
 | `fixtures/vault-basic` | the preferred layout, explicit ids, a record with no id |
-| `fixtures/vault-legacy` | `-Hide/Proxima`, filename ids, flat and `index.md` projects, project-folder content, legacy `type:` and packed `linkedFolders`, a hand-renamed file with an explicit id |
+| `fixtures/vault-legacy` | `-Hide/Proxima`, filename ids, flat and `index.md` projects, project-folder content, `type: project` on projects and unrelated `type:` on a task and an event, packed `linkedFolders`, a hand-renamed file with an explicit id |
 | `fixtures/vault-duplicates` | colliding ids across both project forms, a declared id colliding with a derived one, a task filed in a subfolder, a reference to a project that does not exist |
 
 `fixtures/vault-duplicates` is expected to produce errors. That is what it is for.

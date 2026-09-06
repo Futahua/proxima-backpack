@@ -61,20 +61,37 @@ kept stable forever.
 
 ---
 
-## D4 — Discovery is positional, with a frontmatter veto
+## D4 — Discovery is positional, with a project-only frontmatter veto
 
 **Decided:** a file's location decides whether it is a record. `type: project` is
-honoured but neither required nor promoting; its only power is to veto a file that says
-it is something else.
+honoured but neither required nor promoting; its only power is to veto a file **in the
+projects directory** that says it is something else. On a task or an event, `type:` is
+never read.
 
 **Why:** "any Markdown under the folder is a record" makes a vault fragile — a note
 dropped beside a project becomes a phantom project that cannot be deleted without
 deleting the note. Requiring `type:` instead would break every preferred-format file,
 none of which carries one.
 
+**Why project-only:** the plugin's project scan required `type: project`; its task and
+event loaders never looked at `type`. Generalising the marker into a universal
+`project`/`task`/`event` discriminator — which the first Gate 1A implementation did —
+is a compatibility regression, not a tightening: a legacy task written as `type: todo`,
+or an event carrying another application's `type:`, is a real record that would
+silently leave state with only a warning to show for it. Scope the veto to the one kind
+there is evidence for.
+
+**Enforced by:** `tests/identity.test.ts` loads a legacy task with `type: todo` and an
+event with `type: meeting` from real fixture bytes, and asserts neither produces a
+problem.
+
 **Known limitation, accepted and documented:** a stray note in `projects/` declaring no
 `type` is read as a project. The legacy flat format has no marker to distinguish them.
 See `docs/VAULT-FORMATS.md`.
+
+**Reverses if:** creator data turns up showing `type` was in fact a task or event
+discriminator, in which case the veto widens to the kinds that evidence covers — and
+only those.
 
 ---
 

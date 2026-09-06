@@ -34,7 +34,7 @@ import type {
   ProximaState,
   Task,
 } from '../domain/types.js';
-import { discoverFlatRecords, discoverProjects, typeMatchesKind } from './discovery.js';
+import { declaredTypeVetoesProject, discoverFlatRecords, discoverProjects } from './discovery.js';
 import { directoryFor, resolveLayout, type VaultLayout } from './vaultLayout.js';
 
 export interface LoadOptions {
@@ -139,14 +139,17 @@ async function readKind(
     revisions[candidate.path] = revision;
     const parsed = parseDocument(text);
 
+    // Only projects are vetoed by `type:`. On a task or an event it is ordinary
+    // frontmatter — the plugin's loaders never read it — and treating it as a
+    // discriminator would drop legacy records that carry an unrelated type.
     const declaredType = asString(parsed.frontmatter.type, '');
-    if (!typeMatchesKind(declaredType, kind)) {
+    if (kind === 'project' && declaredTypeVetoesProject(declaredType)) {
       problems.push({
         code: 'unexpected-type',
         severity: 'warning',
         path: candidate.path,
         kind,
-        detail: `frontmatter says type: ${declaredType}, so it is not read as a ${kind}.`,
+        detail: `frontmatter says type: ${declaredType}, so it is not read as a project.`,
       });
       continue;
     }

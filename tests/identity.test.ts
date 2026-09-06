@@ -8,7 +8,11 @@
 import { describe, expect, it } from 'vitest';
 import { createMemoryVault } from '../src/adapters/memoryVault.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
-import { discoverFlatRecords, discoverProjects } from '../src/app/discovery.js';
+import {
+  declaredTypeVetoesProject,
+  discoverFlatRecords,
+  discoverProjects,
+} from '../src/app/discovery.js';
 import {
   LEGACY_LAYOUT,
   LEGACY_ROOT,
@@ -93,6 +97,20 @@ describe('project discovery', () => {
   });
 });
 
+describe('the legacy type: marker', () => {
+  it('vetoes a project candidate that says it is something else', () => {
+    expect(declaredTypeVetoesProject('note')).toBe(true);
+    expect(declaredTypeVetoesProject('task')).toBe(true);
+  });
+
+  it('accepts a project candidate that says nothing, or says project', () => {
+    expect(declaredTypeVetoesProject('')).toBe(false);
+    expect(declaredTypeVetoesProject('   ')).toBe(false);
+    expect(declaredTypeVetoesProject('project')).toBe(false);
+    expect(declaredTypeVetoesProject('Project')).toBe(false);
+  });
+});
+
 describe('task and event discovery', () => {
   it('reads direct children only, and reports what it skipped', () => {
     const { candidates, problems } = discoverFlatRecords(
@@ -120,6 +138,36 @@ describe('the legacy creator vault', () => {
     const { state } = await loadLegacy();
     expect(state.projects.filter((p) => p.id.includes('Reference'))).toHaveLength(0);
     expect(state.projects).toHaveLength(3);
+  });
+
+  // Regression: the type: marker only ever discriminated projects. The plugin's task
+  // and event loaders never read it, so treating it as a universal discriminator
+  // silently drops legacy records that carry an unrelated type.
+  it('loads a legacy task carrying an unrelated type: field', async () => {
+    const { state, problems } = await loadLegacy();
+    const task = state.tasks.find((t) => t.id === 'task-1757001');
+    expect(task?.name).toBe('Extract domain layer');
+    expect(task?.projectId).toBe('proj-backpack');
+    expect(problems.filter((p) => p.path.endsWith('task-1757001.md'))).toEqual([]);
+  });
+
+  it('loads a legacy event carrying an unrelated type: field', async () => {
+    const { state, problems } = await loadLegacy();
+    const event = state.events.find((e) => e.id === 'evt-1757100');
+    expect(event?.name).toBe('Reviewer gate');
+    expect(event?.projectId).toBe('proj-term');
+    expect(problems.filter((p) => p.path.endsWith('evt-1757100.md'))).toEqual([]);
+  });
+
+  it('never vetoes a task or event on type:, whatever it says', async () => {
+    const vault = createMemoryVault({
+      'Proxima/tasks/task-a.md': '---\ntype: project\nname: Oddly typed task\n---\n',
+      'Proxima/events/evt-a.md': '---\ntype: task\nname: Oddly typed event\n---\n',
+    });
+    const { state, problems } = await loadVaultState(vault);
+    expect(state.tasks.map((t) => t.id)).toEqual(['task-a']);
+    expect(state.events.map((e) => e.id)).toEqual(['evt-a']);
+    expect(problemsFor(problems, 'unexpected-type')).toEqual([]);
   });
 
   it('leaves a file alone when its frontmatter says it is not a project', async () => {

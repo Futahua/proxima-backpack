@@ -100,15 +100,22 @@ export function discoverFlatRecords(
 }
 
 /**
- * A `type` in frontmatter is honoured as the legacy marker it was, but discovery is
- * positional: `type: project` neither promotes a file the rules skipped nor is
- * required by a file they found. Its only remaining power is to veto — a file that
- * says it is something other than what its directory reads as is left alone.
+ * The legacy `type:` marker, and the one record kind it ever discriminated.
+ *
+ * The plugin's project scan required `type: project`; its task and event loaders did
+ * not look at `type` at all. So `type` on a task or an event is ordinary frontmatter —
+ * a creator's own field, or another plugin's — and reading it as a discriminator would
+ * silently drop real records (`type: todo` on a task being the obvious case).
+ *
+ * For projects the marker survives, but only as a veto. Discovery stays positional:
+ * `type: project` neither promotes a file the rules skipped nor is required by a file
+ * they found. A file in the projects directory that says it is something else is left
+ * alone, which is the escape hatch for a note the creator filed there.
  */
-export function typeMatchesKind(declaredType: string, kind: RecordKind): boolean {
+export function declaredTypeVetoesProject(declaredType: string): boolean {
   const declared = declaredType.trim().toLowerCase();
-  if (declared === '') return true;
-  return declared === kind;
+  if (declared === '') return false;
+  return declared !== 'project';
 }
 
 function relativeTo(paths: string[], directory: string): { full: string; rest: string }[] {
