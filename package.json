@@ -7,7 +7,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tests.json",
+    "typecheck": "node tools/build-fixture-module.mjs && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tests.json",
     "build": "node tools/build-fixture-module.mjs && tsc -p tsconfig.build.json"
   },
   "devDependencies": {

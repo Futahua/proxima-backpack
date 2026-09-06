@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Proxima Backpack — Fixture</title>
+    <style>
+      :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; }
+      body { margin: 0; min-width: 320px; background: #111827; color: #e5e7eb; }
+      main { max-width: 780px; margin: 4rem auto; padding: 2rem; }
+      article { border: 1px solid #374151; border-radius: 14px; padding: 1.5rem; background: #1f2937; }
+      code, pre { font: 0.85rem/1.45 ui-monospace, monospace; }
+      pre { overflow: auto; padding: 1rem; border-radius: 8px; background: #111827; }
+      [data-proxima-boot-state="loading"] #boot-status { color: #fbbf24; }
+      [data-proxima-boot-state="ready"] #boot-status { color: #34d399; }
+      [data-proxima-boot-state="error"] #boot-status { color: #f87171; }
+    </style>
+  </head>
+  <body>
+    <main id="proxima-app" data-proxima-mode="fixture" data-proxima-hydrated="false" data-proxima-boot-state="loading">
+      <article>
+        <h1>Proxima Backpack</h1>
+        <p id="boot-mode">Starting fixture boot…</p>
+        <p id="boot-status" aria-live="polite">Loading</p>
+        <h2>Hydration summary</h2>
+        <pre id="hydration-summary">Waiting for the bundled fixture vault.</pre>
+        <h2>Build identity</h2>
+        <pre id="build-identity">Waiting for build identity.</pre>
+      </article>
+    </main>
+    <script type="module" src="./build/browser/main.js"></script>
+  </body>
+</html>

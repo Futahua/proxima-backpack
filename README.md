@@ -51,6 +51,15 @@ the same id is a reported error rather than a tiebreak.
 The frontmatter parser handles a documented subset — scalars, quoted strings, inline and
 block lists — which is why the fixtures are real files rather than assumed YAML.
 
+## Fixture browser build
+
+`npm run build` emits a self-contained static page at `public/index.html` and browser
+modules under `public/build/`. The page boots the real `vault-basic` fixture through the
+memory adapter and vault reader, with no FSA picker, Obsidian runtime, network request,
+or real-vault write authority. The page exposes the exact git SHA, fixture hash,
+lockfile hash, schema versions, fixed clock, hydration revision and record/problem
+counts so an acceptance run can identify exactly what it loaded.
+
 **`docs/VAULT-FORMATS.md`** is the full specification: both layouts, the discovery
 rules, identity semantics and every problem code. **`docs/DECISIONS.md`** records the
 choices behind them, and **`docs/AUDIT-CHECKLIST.md`** is the project agenda and the

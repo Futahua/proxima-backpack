@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 1C — Elastic/calendar edge-test closure |
+| Current slice | Gate 2A — static build and fixture-only browser boot |
 | Branch | `claude/proxima-audit-checklist-fqhxkf` |
-| Last audited SHA | `0a2ffda` — Gate 1B PASS; Gate 1C authorized. |
+| Last audited SHA | `01a277f` — Gate 1C PASS; Gate 2A authorized. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -239,6 +239,9 @@ Pin important behavior from old `calculateLiquidTimeline`.
 
 ### 2.1 Backpack identity
 
+No real Papers Backpack was created in Gate 2A, so these host-identity items remain
+unchecked. They become required only in the slice that creates an actual Backpack.
+
 Only when a real Papers Backpack is created:
 
 - [ ] Create actual Backpack in Papers.
@@ -250,30 +253,30 @@ Only when a real Papers Backpack is created:
 
 ### 2.2 Build system
 
-- [ ] Produce a real browser-runnable static build.
-- [ ] Build output lives under `public/`.
-- [ ] Build does not depend on Obsidian runtime.
-- [ ] Build does not depend on Node in the page.
-- [ ] Build does not require network access.
-- [ ] Asset URLs remain inside the Papers namespaced project path.
-- [ ] Clean checkout + install + build is reproducible.
-- [ ] Build identity is generated and inspectable:
-  - [ ] Proxima version
-  - [ ] exact git SHA
-  - [ ] build mode
-  - [ ] domain schema version
-  - [ ] control schema version
-  - [ ] fixture schema/hash
-  - [ ] lockfile/dependency fingerprint as appropriate
+- [x] Produce a real browser-runnable static build.
+- [x] Build output lives under `public/`.
+- [x] Build does not depend on Obsidian runtime.
+- [x] Build does not depend on Node in the page.
+- [x] Build does not require network access.
+- [x] Asset URLs remain inside the Papers namespaced project path.
+- [x] Clean checkout + install + build is reproducible.
+- [x] Build identity is generated and inspectable:
+  - [x] Proxima version
+  - [x] exact git SHA
+  - [x] build mode
+  - [x] domain schema version
+  - [x] control schema version
+  - [x] fixture schema/hash
+  - [x] lockfile/dependency fingerprint as appropriate
 
 ### 2.3 Fixture-only boot
 
-- [ ] Page boots using bundled fixture bytes.
-- [ ] No FSA picker required.
-- [ ] No real creator vault accessed.
-- [ ] Fixture mode is visibly/machine-readably distinguishable from live mode.
-- [ ] Fixed clock can be selected in fixture mode.
-- [ ] Deterministic IDs used in fixture mode.
+- [x] Page boots using bundled fixture bytes.
+- [x] No FSA picker required.
+- [x] No real creator vault accessed.
+- [x] Fixture mode is visibly/machine-readably distinguishable from live mode.
+- [x] Fixed clock can be selected in fixture mode.
+- [x] Deterministic IDs used in fixture mode.
 
 ### 2.4 First UI surface
 
