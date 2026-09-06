@@ -66,6 +66,7 @@ export interface ActionDispatcherState {
   settledRevision: number;
   settled: boolean;
   latestEventSequence: number;
+  sourceRevision: number;
 }
 
 export interface ActionDispatcherOptions {
@@ -79,10 +80,13 @@ export interface ActionDispatcherOptions {
   clock?: Clock;
   idGenerator?: IdGenerator;
   eventCapacity?: number;
+  initialSourceRevision?: number;
 }
 
 export interface ProximaActionDispatcher {
   dispatch(input: unknown): ActionResult;
+  /** Atomically replace the readable source generation; never writes to the source. */
+  replaceSource(input: { state: ProximaState; problems: LoadProblem[]; revisions: Record<string, string>; sourceRevision: number }): { changed: boolean; stateRevision: number };
   snapshot(): Readonly<ActionDispatcherState>;
   events(afterSequence?: number): ProximaEvent[];
 }
@@ -166,6 +170,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     settledRevision: 1,
     settled: true,
     latestEventSequence: 0,
+    sourceRevision: options.initialSourceRevision ?? 1,
   };
   if (!isValidCalendarMonth(state.calendarMonth)) state.calendarMonth = '2026-09-01';
   state.selection = reconcileSelection(state.state.projects, state.selection, state.surface);
@@ -232,6 +237,26 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
       state.settledRevision = state.stateRevision; state.settled = true;
       state.latestEventSequence = ring.latestSequence();
       return resultFor(state, action.type, changed, requestId);
+    },
+    replaceSource(input) {
+      const sourceChanged = input.sourceRevision !== state.sourceRevision;
+      const nextSelection = reconcileSelection(input.state.projects, state.selection, state.surface);
+      const selectionChanged = nextSelection !== state.selection;
+      state.state = input.state;
+      state.problems = [...input.problems];
+      state.revisions = { ...input.revisions };
+      state.sourceRevision = input.sourceRevision;
+      state.selection = nextSelection;
+      if (sourceChanged || selectionChanged) state.stateRevision += 1;
+      state.settledRevision = state.stateRevision;
+      state.settled = true;
+      if (sourceChanged || selectionChanged) {
+        const requestId = ids.next('refresh');
+        ring.append({ kind: 'action.accepted', category: 'lifecycle', entityIds: [], requestId, actionType: 'source.refresh', stateRevision: state.stateRevision });
+        ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: 'source.refresh', stateRevision: state.stateRevision });
+        state.latestEventSequence = ring.latestSequence();
+      }
+      return { changed: sourceChanged || selectionChanged, stateRevision: state.stateRevision };
     },
     snapshot(): Readonly<ActionDispatcherState> {
       return { ...state, problems: [...state.problems], revisions: { ...state.revisions } };

@@ -14,6 +14,7 @@ export interface RefreshPolicyOptions {
   intervalMs?: number;
   enabled?: boolean;
   scheduler?: RefreshScheduler;
+  onResult?: (result: RefreshResult) => void;
 }
 
 export interface RefreshPolicySnapshot {
@@ -76,7 +77,9 @@ export function createRefreshPolicy(options: RefreshPolicyOptions): RefreshPolic
 
   const run = async (reason: RefreshReason): Promise<RefreshResult | null> => {
     try {
-      return await options.controller.refreshSource(reason);
+      const result = await options.controller.refreshSource(reason);
+      try { options.onResult?.(result); } catch { /* observers cannot break refresh ordering */ }
+      return result;
     } finally {
       inFlight = null;
       const next = pendingReason;

@@ -500,6 +500,24 @@ object, or absolute path authority.
 **Boundary:** Gate 6D is fixture-only. Real-vault UI, native FSA, and host lifecycle
 acceptance remain open.
 
+## D28 — Fixture browser refreshes replace the source generation atomically
+
+**Decided:** the fixture browser bootstrap now instantiates the complete read-only
+chain: mutable fixture `VaultReader`, `RefreshController`, `RefreshPolicy`,
+`ReadOnlyProjection`, `UiHealthModel`, dispatcher, inspection, and UI. A stable
+`source-refresh` C1 control routes through policy `manual`; policy results are applied
+through the dispatcher's atomic `replaceSource` seam. Policy observers also apply
+interval/focus results, while DOM visibility/focus listeners remain an outer adapter.
+
+Unchanged refreshes do not advance source or application generation. Successful edits
+replace the dispatcher source in one settled generation; deletion reconciles selected
+projects and visible records. Failed refreshes update only the health projection and
+retain last-good UI content; recovery replaces the generation without reload. The
+dispatcher records bounded lifecycle events and keeps pending operations empty.
+
+**Boundary:** Gate 6E uses only mutable in-memory fixture bytes. It does not touch FSA,
+the creator vault, Obsidian, Papers, native watchers, or any writer/migration path.
+
 ## D21 — Clean-profile acceptance is evaluated from captured evidence
 
 **Decided:** before the one remaining native picker action, Proxima now has a pure

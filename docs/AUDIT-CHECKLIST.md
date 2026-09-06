@@ -649,6 +649,26 @@ Only then consider a project-scoped external read capability in Papers.
 - [x] Repeated failure, recovery, and health mutation-isolation tests are present.
 - [ ] Real-vault UI health acceptance.
 
+### 6.1D Fixture-mode end-to-end refresh wiring (Gate 6E)
+
+- [x] Browser fixture bootstrap instantiates the complete VaultReader → controller →
+      policy → projection → health → dispatcher/inspection/UI chain.
+- [x] Stable `source-refresh` C1 control routes through policy manual refresh.
+- [x] Policy results apply to the dispatcher atomically for manual, focus, and
+      interval paths; DOM lifecycle wiring remains an outer adapter.
+- [x] Unchanged refresh does not advance observable source/application generation.
+- [x] External edit updates Projects, Board, Calendar, provenance, health, and
+      inspection from one accepted generation.
+- [x] Deletion removes visible records and safely reconciles cross-surface selection.
+- [x] Failed refresh retains last-good UI content while health becomes degraded/stale.
+- [x] Recovery clears health and advances all visible surfaces without app reload.
+- [x] Dispatcher action revision, settled state, lifecycle events, and pending
+      operations remain coherent across refresh.
+- [x] End-to-end fixture tests cover boot, unchanged/edit/deletion/failure/recovery,
+      focus/manual policy routing, inspection/UI generation equality, and authority
+      boundaries (Gate 6E, D28).
+- [ ] Real-vault/FSA end-to-end refresh acceptance.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.
