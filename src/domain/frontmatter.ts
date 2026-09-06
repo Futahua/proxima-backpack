@@ -41,6 +41,8 @@ export type FrontmatterIssueCode =
   | 'unterminated-list'
   /** A double-quoted scalar used an escape this deliberately small subset cannot decode. */
   | 'unsupported-escape'
+  /** A quoted scalar never closed, so treating its bytes as a plain string would guess. */
+  | 'unterminated-quote'
   /** The same key given twice at the top level. */
   | 'duplicate-key'
   /** A line that is not blank, not a comment, not a list item and not `key: value`. */
@@ -142,6 +144,18 @@ export function parseFrontmatter(raw: string): FrontmatterResult {
         continue;
       }
       const content = item[1] ?? '';
+      if (hasUnterminatedQuotedScalar(content)) {
+        if (!pendingPoisoned) {
+          issue(
+            'unterminated-quote',
+            pendingKey,
+            lineNumber,
+            'a quoted scalar did not close; the key is left unset rather than treating it as plain text.',
+          );
+        }
+        pendingPoisoned = true;
+        continue;
+      }
       const unsupportedEscape = findUnsupportedDoubleQuotedEscape(content);
       if (unsupportedEscape) {
         if (!pendingPoisoned) {
@@ -222,6 +236,16 @@ export function parseFrontmatter(raw: string): FrontmatterResult {
       pendingList = [];
       pendingPoisoned = false;
       values[key] = '';
+      continue;
+    }
+
+    if (hasUnterminatedQuotedScalar(rest)) {
+      issue(
+        'unterminated-quote',
+        key,
+        lineNumber,
+        'a quoted scalar did not close; the key is left unset rather than treating it as plain text.',
+      );
       continue;
     }
 
@@ -418,6 +442,26 @@ function unescapeDouble(inner: string): string {
     else out += next;
   }
   return out;
+}
+
+/** Return true only for a scalar that starts quoted but never closes. */
+function hasUnterminatedQuotedScalar(text: string): boolean {
+  const value = text.trim();
+  if (value.length === 0 || (value[0] !== '"' && value[0] !== "'")) return false;
+
+  const quote = value[0];
+  for (let i = 1; i < value.length; i += 1) {
+    const char = value[i] as string;
+    if (quote === '"' && char === '\\') {
+      i += 1;
+      continue;
+    }
+    if (char === quote) return false;
+    if (quote === "'" && char === "'" && value[i + 1] === "'") {
+      i += 1;
+    }
+  }
+  return true;
 }
 
 /**

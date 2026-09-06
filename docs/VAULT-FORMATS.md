@@ -205,6 +205,7 @@ why.
 | `&anchor` / `*alias` | `anchor-or-alias` | the key is left unset |
 | nested or unterminated inline list | `unterminated-list` | the key is left unset |
 | unsupported double-quoted escape | `unsupported-escape` | the key is left unset; no backslash or following character is silently changed |
+| unterminated quoted scalar | `unterminated-quote` | the key is left unset; the token is never reinterpreted as plain text |
 | the same key twice | `duplicate-key` | the **first** wins, as with duplicate ids |
 | anything else non-blank | `unparsable-line` | the line is skipped |
 
@@ -214,7 +215,8 @@ the file.
 Double-quoted strings deliberately support only `\"`, `\\`, `\n`, and `\t`. YAML's
 Unicode/hex escapes and any invalid escape are reported rather than partly decoded.
 For example, `"caf\u00e9"`, `"bad\q"`, and `"C:\Users\Ana"` are left unset with an
-`unsupported-escape` issue. Full YAML escape handling remains part of the Gate 13 parser
+`unsupported-escape` issue. A quote that never closes is left unset with an
+`unterminated-quote` issue. Full YAML escape handling remains part of the Gate 13 parser
 re-evaluation; this read-only subset must never mutate text it cannot interpret.
 
 The hoisting case is the one that motivated this. Given

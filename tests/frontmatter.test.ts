@@ -141,6 +141,13 @@ describe('forms outside the subset are reported, not guessed', () => {
     }
   });
 
+  it('refuses unterminated quoted scalars instead of treating them as plain strings', () => {
+    expect(values('name: "unfinished')).toEqual({});
+    expect(codes('name: "unfinished')).toEqual(['unterminated-quote']);
+    expect(values('tags:\n  - "unfinished')).toEqual({});
+    expect(codes('tags:\n  - "unfinished')).toEqual(['unterminated-quote']);
+  });
+
   it('poisons a whole list when one quoted item has an unsupported escape', () => {
     expect(values('tags: [safe, "caf\\u00e9"]')).toEqual({});
     expect(codes('tags: [safe, "caf\\u00e9"]')).toEqual(['unsupported-escape']);
