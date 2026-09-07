@@ -2212,7 +2212,15 @@ Current truth stays in-repo.
       (`AGENTS.md`, `README.md`, `tests/agentVaultBridge.test.ts`,
       `tests/zeroWriteWitness.test.ts`, `tests/obsidianCoexistence.test.ts`). Any
       future write gate requires explicit approval and a separate conflict model.
-- [ ] no known data-loss path
+- [x] no known data-loss path in the defined read-only scope — candidate/Excalidraw
+      census equalities account for rejected, skipped and unavailable data; failed
+      refreshes preserve last-good state; stale selections are cleared rather than
+      rebound; preview failures retain owned prior URLs; and zero-write witnesses
+      reject source mutation (`tests/candidateAccounting.test.ts`,
+      `tests/excalidrawRender.test.ts`, `tests/refreshController.test.ts`,
+      `tests/refreshIntegration.test.ts`, `tests/canvasPreview.test.ts`,
+      `tests/zeroWriteWitness.test.ts`). Native open/reveal and any future write path
+      remain separate unchecked gates, so this row makes no native-write claim.
 - [ ] no test depends on arbitrary sleeps
 - [ ] no test succeeds only by bypassing the real application action path
 
