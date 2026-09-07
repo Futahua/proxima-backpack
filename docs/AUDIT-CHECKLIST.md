@@ -1884,8 +1884,10 @@ Only after fallback file cards are already first-class.
 
 ## Gate 18 — Performance and scale
 
-- [ ] 100 records
-- [ ] 1,000 records
+- [x] 100 records — deterministic headless baseline covers 100 projects, 100 tasks
+      and 100 events (300 total; Gate 18A, `0d01ba3`).
+- [x] 1,000 records — deterministic headless baseline covers 1,000 projects, 1,000
+      tasks and 1,000 events (3,000 total; Gate 18A, `0d01ba3`).
 - [ ] 10,000 records if plausible for creator use
 - [ ] deep project folders
 - [ ] large Markdown notes
@@ -1894,8 +1896,12 @@ Only after fallback file cards are already first-class.
 - [ ] many canvas nodes
 - [ ] large Excalidraw scene
 - [ ] many unsupported file cards
-- [ ] cold load measured
-- [ ] refresh measured
+- [x] cold load measured — in-memory headless load timing is guarded below five
+      seconds at both scales; this is a broad non-SLA regression guard (Gate 18A,
+      `0d01ba3`).
+- [x] refresh measured — unchanged and one-record-changed refresh timing is guarded
+      for the 1,000-per-kind source, with revision/content assertions (Gate 18A,
+      `0d01ba3`).
 - [ ] no unbounded polling
 - [ ] no unbounded event/log buffers
 - [ ] no quadratic operation accidentally tied to every render

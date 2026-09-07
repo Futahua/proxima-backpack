@@ -128,8 +128,12 @@ export function elasticCardHeights(
     return heights;
   }
 
+  // The timeline is keyed by task identity. Index it once so card rendering stays
+  // linear when a board has many running tasks; repeatedly scanning the slices here
+  // made the old path quadratic in the number of cards.
+  const sliceByTaskId = new Map(timeline.map((slice) => [slice.taskId, slice]));
   for (const task of running) {
-    const slice = timeline.find((s) => s.taskId === task.id);
+    const slice = sliceByTaskId.get(task.id);
     const duration = slice ? slice.duration : 0;
     heights[task.id] = Math.max(minimumHeight, (duration / total) * containerHeight);
   }

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createMemoryVault } from '../src/adapters/memoryVault.js';
 import { createRefreshController } from '../src/app/refreshController.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
+import { calculateElasticTimeline, elasticCardHeights } from '../src/domain/elastic.js';
+import type { Task } from '../src/domain/types.js';
+import { sourceRef } from './fixtures.js';
 
 function scaledVault(count: number) {
   const files: Record<string, string> = {};
@@ -12,6 +15,27 @@ function scaledVault(count: number) {
     files[`Proxima/events/event-${String(i).padStart(4, '0')}.md`] = `---\nid: event-${String(i).padStart(4, '0')}\nname: Event ${i}\nproject: ${id}\nstartDate: 2026-09-${String((i % 28) + 1).padStart(2, '0')}\ndeadline: 2026-09-${String((i % 28) + 1).padStart(2, '0')}\n---\nEvent body ${i}.\n`;
   }
   return createMemoryVault(files);
+}
+
+function runningTasks(count: number): Task[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `running-${i}`,
+    source: sourceRef('task', `running-${i}`),
+    name: `Running ${i}`,
+    description: '',
+    projectId: null,
+    status: 'running',
+    weight: (i % 5) + 1,
+    orderIndex: i,
+    isFixedDuration: false,
+    fixedDuration: null,
+    maxDuration: null,
+    isCompleted: false,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    startDate: null,
+    deadline: null,
+    properties: {},
+  }));
 }
 
 describe('Gate 18A deterministic load/refresh scale baseline', () => {
@@ -54,5 +78,19 @@ describe('Gate 18A deterministic load/refresh scale baseline', () => {
     expect(changed.snapshot.load.state.tasks.find((task) => task.id === 'task-0000')?.name).toBe('Edited at scale');
     expect(unchangedMs).toBeLessThan(5000);
     expect(changedMs).toBeLessThan(5000);
+  });
+
+  it('keeps the 1000-running-task Elastic hot path bounded and linear', () => {
+    const running = runningTasks(1000);
+    const started = performance.now();
+    const timeline = calculateElasticTimeline(running, new Date('2026-09-01T00:00:00.000Z'), new Date('2026-09-02T00:00:00.000Z'));
+    const heights = elasticCardHeights(running, timeline, 100_000, 1);
+    const elapsedMs = performance.now() - started;
+
+    expect(timeline).toHaveLength(1000);
+    expect(Object.keys(heights)).toHaveLength(1000);
+    expect(heights['running-0']).toBeGreaterThan(0);
+    expect(heights['running-999']).toBeGreaterThan(0);
+    expect(elapsedMs).toBeLessThan(5000);
   });
 });
