@@ -38,8 +38,14 @@ describe('Gate 17.1 multiple live Proxima surfaces', () => {
     vault.set('Proxima/projects/Backpack Port.md', fixtureFiles('vault-basic')['Proxima/projects/Backpack Port.md']!.replace('Move Proxima', 'Updated Proxima'));
     await left.refresh('manual');
     await right.refresh('manual');
+    leftActions.replaceSource({ state: left.projection().state, problems: left.projection().problems, revisions: left.projection().revisions, sourceRevision: left.projection().generation });
+    rightActions.replaceSource({ state: right.projection().state, problems: right.projection().problems, revisions: right.projection().revisions, sourceRevision: right.projection().generation });
     expect(left.snapshot().sourceGeneration).toBe(2);
     expect(right.snapshot().sourceGeneration).toBe(2);
+    expect(leftActions.snapshot().sourceRevision).toBe(2);
+    expect(rightActions.snapshot().sourceRevision).toBe(2);
+    expect(leftActions.snapshot().state.projects.find((project) => project.id === 'proj-backpack')?.description).toContain('Updated Proxima');
+    expect(rightActions.snapshot().state.projects.find((project) => project.id === 'proj-backpack')?.description).toContain('Updated Proxima');
     expect(left.projection().state.projects.find((project) => project.id === 'proj-backpack')?.description).toContain('Updated Proxima');
     expect(right.projection().state.projects.find((project) => project.id === 'proj-backpack')?.description).toContain('Updated Proxima');
     expect(leftActions.snapshot().selection).toBe('proj-backpack');
