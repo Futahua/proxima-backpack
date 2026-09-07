@@ -2117,21 +2117,40 @@ Current truth stays in-repo.
 - [x] preferred new format — `docs/VAULT-FORMATS.md`
 - [x] frontmatter support/limitations — `docs/VAULT-FORMATS.md`
 - [x] domain IDs vs source references — `docs/VAULT-FORMATS.md`
-- [ ] Elastic algorithm semantics _(Gate 1C)_
-- [ ] timezone semantics _(Gate 1C)_
+- [x] Elastic algorithm semantics _(Gate 1C)_ — fixed work reserves first,
+      weighted remainder is independently capped without redistribution, and
+      expired/invalid windows fail closed (`docs/VAULT-FORMATS.md`,
+      `tests/elastic.test.ts`).
+- [x] timezone semantics _(Gate 1C)_ — calendar grouping is inclusive in the
+      machine-local civil timezone with calendar-date arithmetic; UTC-stable keys
+      remain explicitly deferred (`docs/VAULT-FORMATS.md`, `tests/calendarGrid.test.ts`).
 - [x] fixture conventions — `docs/VAULT-FORMATS.md`
-- [ ] action protocol _(Gate 3)_
-- [ ] inspection protocol _(Gate 3)_
-- [ ] event protocol _(Gate 3)_
-- [ ] build identity format _(Gate 2)_
-- [ ] evidence format _(Gate 3)_
-- [ ] FSA limitations _(Gate 5)_
-- [ ] Papers capabilities actually required _(ledger below)_
+- [x] action protocol _(Gate 3)_ — semantic actions, rejection codes and state
+      revisions are defined in `src/app/actionProtocol.ts` and pinned by
+      `tests/actionProtocol.test.ts`.
+- [x] inspection protocol _(Gate 3)_ — renderer-independent bounded projections,
+      provenance and degraded/settled health are defined in
+      `src/app/inspection.ts` and pinned by `tests/inspection.test.ts`.
+- [x] event protocol _(Gate 3)_ — versioned bounded event-ring records and cursors
+      are defined in `src/app/eventRing.ts` and pinned by `tests/eventRing.test.ts`.
+- [x] build identity format _(Gate 2)_ — generated identity carries version, exact
+      SHA, schema versions, fixture/lock hashes and fixed clock
+      (`tools/build-fixture-module.mjs`, `tests/evidence.test.ts`).
+- [x] evidence format _(Gate 3)_ — schema-versioned, bounded, JSON-safe scenario
+      evidence and validation are defined in `src/app/evidence.ts` and pinned by
+      `tests/evidence.test.ts`.
+- [x] FSA limitations _(Gate 5)_ — clean-profile evidence is bounded and relative-only;
+      native grant/ownership and real-vault acceptance remain explicitly OPEN
+      (`docs/DECISIONS.md`, `tests/cleanProfileAcceptance.test.ts`).
+- [x] Papers capabilities actually required _(ledger below)_ — the ledger records
+      only justified triggers; no additional Papers capability is required by the
+      defined read-only scope (`docs/DECISIONS.md`, ledger below).
 - [x] rejected architectures — `README.md`, `docs/DECISIONS.md`
 - [x] Excalidraw compatibility level _(Gate 7 — direct-source display contract PASS)_
 - [x] current read/write authority — `AGENTS.md`, status table above
-- [ ] exact currently validated Papers SHA — baseline recorded above, but nothing has
-      been validated against a running Papers yet _(Gate 2)_
+- [ ] exact currently validated Papers SHA — OPEN: the repository records a machine-
+      local Papers baseline, but this run has no fresh exact running-Papers acceptance
+      artifact to promote to PASS _(Gate 2)_.
 - [x] exact test commands — `README.md`
 - [x] known deferred items — this document
 
