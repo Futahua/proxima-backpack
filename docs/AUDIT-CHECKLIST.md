@@ -2046,7 +2046,10 @@ Filesystem:
       adjacent records; link-dependent tests fail loudly when the host cannot create
       the required link
       (`tests/bridgeDisclosure.test.ts`, `tests/transportCompleteness.test.ts`).
-- [ ] revocation works
+- [x] revocation works — after an injected external-directory handle reads
+      successfully, a denied handle makes the next refresh fail closed with an
+      `unreadable` outcome and `stale` last-good state rather than silently
+      reacquiring authority (`tests/externalDirectoryVault.test.ts`).
 - [ ] grant ownership is exact Backpack identity
 - [ ] stale references fail closed
 
