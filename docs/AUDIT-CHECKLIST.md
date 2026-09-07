@@ -1964,7 +1964,7 @@ Each pushed SHA is sent for audit approximately in this order.
        clean-profile and real-vault follow-ups remain open)
 10. [ ] Gate 6 — read-only creator vault
 11. [ ] Gate 7 — Excalidraw display
-12. [ ] Gate 8 — arbitrary-file canvas
+12. [x] Gate 8 — arbitrary-file canvas (defined scope PASS; durable grants/directories, source SVG and PDF remain deferred)
 13. [ ] Gate 9 — native open/reveal if justified
 14. [ ] Gate 10 — Papers live semantic relay if justified
 15. [ ] Gate 11 — complete integrated agent harness
