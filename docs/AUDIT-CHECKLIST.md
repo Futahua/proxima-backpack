@@ -2150,6 +2150,38 @@ Fixture only initially.
       (`src/app/sourcePreservingMarkdown.ts`, `src/app/taskSourceMutation.ts`,
       `tests/taskSourceMutation.test.ts`).
 
+### 13.2G Source-preserving project scalar mutation
+
+#### Authority and provenance
+
+- [x] Project scalar writes expose a closed discriminated union for `name`, `status`,
+      `projectType`, `tabBgColor` and `tabTextColor`; runtime membership rejects
+      unknown fields before any source read or coordinator call.
+- [x] Observed provenance must be `source.kind: project`, bounded and normalized,
+      and confined to the configured projects directory. Flat `<id>.md` sources and
+      one-level `<folder>/index.md` sources are accepted; deeper, fabricated,
+      outside-root and mismatched caller paths refuse before I/O.
+
+#### Semantics and exact preservation
+
+- [x] Names are non-empty bounded strings; status is `active|archived`; project type
+      is `task|schedule`; tab colors are bounded non-control strings. Empty or
+      malformed values refuse without a write.
+- [x] Only the unique top-level scalar target is patched. BOM, LF/CRLF convention,
+      quote style, spacing, comments, linked folders, unsupported YAML, anchors,
+      block-scalar/body bytes and every non-target byte remain exact; parsed project
+      state is never serialized back to Markdown.
+
+#### CAS, recovery and read-back
+
+- [x] Updates use the observed revision through `createVaultMutationCoordinator`,
+      preserve peer bytes on stale edits, and retain durable recovery attribution;
+      no retry, merge or fallback destination is used.
+- [x] Flat and folder/index writes reload through `loadVaultState` with unchanged
+      project identity/source provenance and only the intended scalar changed;
+      adversarial provenance, validation, preservation and stale-race cases are
+      covered by `tests/projectSourceMutation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.

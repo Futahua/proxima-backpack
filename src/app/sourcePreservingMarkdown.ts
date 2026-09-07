@@ -17,9 +17,11 @@ export type TaskScalarField =
   | 'isFixedDuration' | 'fixedDuration' | 'maxDuration' | 'isCompleted'
   | 'startDate' | 'deadline';
 export type TaskOptionalField = 'project' | 'fixedDuration' | 'maxDuration' | 'startDate' | 'deadline';
+export type ProjectScalarField = 'name' | 'status' | 'projectType' | 'tabBgColor' | 'tabTextColor';
 
-type SourceScalarField = TaskScalarField | 'projectId';
+type SourceScalarField = TaskScalarField | ProjectScalarField | 'projectId';
 const TASK_SCALAR_FIELDS: readonly TaskScalarField[] = ['name', 'project', 'status', 'weight', 'orderIndex', 'isFixedDuration', 'fixedDuration', 'maxDuration', 'isCompleted', 'startDate', 'deadline'];
+const PROJECT_SCALAR_FIELDS: readonly ProjectScalarField[] = ['name', 'status', 'projectType', 'tabBgColor', 'tabTextColor'];
 
 export type SourcePatchResult =
   | { ok: true; bytes: Uint8Array; start: number; end: number }
@@ -127,6 +129,12 @@ export function planTaskProjectPatch(input: Uint8Array | string, value: string, 
   const legacy = planSourceScalarPatch(input, 'projectId', value, maxBytes);
   if (preferred.ok && legacy.ok) return { ok: false, reason: 'target-ambiguous' };
   return preferred.ok || preferred.reason !== 'target-missing' ? preferred : legacy;
+}
+
+/** Plan a byte-exact patch of one allowlisted existing project scalar. */
+export function planProjectScalarPatch(input: Uint8Array | string, field: ProjectScalarField, value: string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  if (!PROJECT_SCALAR_FIELDS.includes(field)) return { ok: false, reason: 'field-not-allowed' };
+  return planSourceScalarPatch(input, field, value, maxBytes);
 }
 
 function planSourceScalarPatch(input: Uint8Array | string, field: SourceScalarField, value: string | number | boolean, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
