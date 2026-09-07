@@ -2055,7 +2055,11 @@ Filesystem:
       the native Papers/FSA origin registry or prove that a persisted grant cannot be
       borrowed by another Backpack identity; the machine-local `project.json` binding
       is not substituted for that host acceptance (`tests/cleanProfileAcceptance.test.ts`).
-- [ ] stale references fail closed
+- [x] stale references fail closed — one-shot browser-file nodes retain their
+      Proxima identity but become `unavailable` after restart/read failure rather
+      than rebinding by filename, and deleted source records are removed from the
+      refreshed projection without a ghost selection (`tests/canvasFileAdmission.test.ts`,
+      `tests/refreshIntegration.test.ts`).
 
 Developer control:
 
