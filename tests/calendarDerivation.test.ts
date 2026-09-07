@@ -65,4 +65,12 @@ describe('Gate 6.3A Calendar derivation', () => {
     expect(loaded.problems).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'bad-date', kind: 'event', id: 'evt-snapshot' })]));
     expect(eventsByDay([invalid!])).toEqual(new Map());
   });
+
+  it('does not advance beyond the four-digit civil-date ceiling', () => {
+    const problems: Array<{ code: string }> = [];
+    expect([...eventsByDay([event('ceiling', null, '9999-12-31')], problems as never).keys()]).toEqual(['9999-12-31']);
+    const twoDays = eventsByDay([event('ceiling-range', null, '9999-12-30', '9999-12-31')], problems as never);
+    expect([...twoDays.keys()]).toEqual(['9999-12-30', '9999-12-31']);
+    expect(problems).toEqual([]);
+  });
 });

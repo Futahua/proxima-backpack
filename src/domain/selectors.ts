@@ -110,7 +110,8 @@ function daysCovered(event: CalendarEvent, problems: LoadProblem[]): string[] {
   const last = endCivil ?? parseCivilDate(endKey)!;
   // Date validation happens before this selector. Derive the complete finite range;
   // silently truncating a long creator event would invent an earlier end date.
-  for (let day = 0; civilDateKey(cursor) <= civilDateKey(last); day += 1) {
+  const lastKey = civilDateKey(last);
+  for (let day = 0; civilDateKey(cursor) <= lastKey; day += 1) {
     if (day >= MAX_CALENDAR_EVENT_DAYS) {
       problems.push({
         code: 'event-span-too-large',
@@ -123,6 +124,7 @@ function daysCovered(event: CalendarEvent, problems: LoadProblem[]): string[] {
       return [];
     }
     keys.push(civilDateKey(cursor));
+    if (civilDateKey(cursor) === lastKey) break;
     cursor = nextCivilDate(cursor);
   }
   return keys;
