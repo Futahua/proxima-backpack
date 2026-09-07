@@ -2173,7 +2173,10 @@ Current truth stays in-repo.
       load, refresh, calendar, scale and action scenarios pass in the full suite
       (`tests/fixtures.ts`, `tests/performanceScale.test.ts`, `tests/actionProtocol.test.ts`,
       `tests/calendarGrid.test.ts`).
-- [ ] C1 integrated scenarios pass
+- [ ] C1 integrated scenarios pass — OPEN: headless browser render and semantic-key
+      tests pass, but this run has no fresh exact capture/inspection artifact from
+      a running Papers C1 surface; standalone string assertions are not substituted
+      for host-integrated C1 acceptance.
 - [ ] real FSA read-only acceptance passes
 - [ ] representative real Obsidian vault acceptance passes
 - [ ] Excalidraw display acceptance passes if included
