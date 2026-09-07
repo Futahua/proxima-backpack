@@ -2189,7 +2189,14 @@ Current truth stays in-repo.
       creator-vault/Obsidian acceptance artifact tied to the current build and grant.
       Disposable peer-writer evidence is not substituted for that host-integrated
       acceptance (`Gate 6.1L`, `Gate 6.1U`, `docs/DECISIONS.md#d36`).
-- [ ] Excalidraw display acceptance passes if included
+- [x] Excalidraw display acceptance passes if included — Level A
+      display/reference fidelity is signed PASS at exact Gate 7 SHA
+      `a9f69ad7ebe6215a47437dca5e1dc8d6597f555e`: direct-source parse, bounded
+      scene validation, linked-asset resolution and pure SVG rendering cover the
+      accepted creator-vault subset (`tests/excalidraw.test.ts`,
+      `tests/excalidrawAssets.test.ts`, `tests/excalidrawRender.test.ts`). Editing,
+      round-trip writes, broad plugin compatibility and browser object-URL lifecycle
+      remain explicitly deferred/not claimed.
 - [ ] arbitrary-file fallback acceptance passes if included
 - [x] exact build provenance recorded — `npm run build` completed at exact SHA
       `d8431bfc26c96cce7c31b0023c93f9bd964032c2`; generated fixture build identity
