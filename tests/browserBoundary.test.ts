@@ -23,7 +23,7 @@ const nodeBuiltins = new Set(builtinModules.flatMap((name) => [name, name.starts
 function scan(text: string): string[] {
   const violations: string[] = [];
   const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
-  const importPattern = /(?:from\s+|import\s*\()\s*["']([^"']+)["']/g;
+  const importPattern = /(?:from\s+|import\s*(?:\(\s*)?)["']([^"']+)["']/g;
   for (const match of code.matchAll(importPattern)) {
     const specifier = match[1] as string;
     const bare = specifier.startsWith('node:') ? specifier.slice(5) : specifier;
@@ -39,6 +39,7 @@ describe('Gate 20B browser no-Node boundary', () => {
       'Node import: worker_threads',
       'Node runtime global',
     ]);
+    expect(scan("import 'node:fs';")).toEqual(['Node import: node:fs']);
   });
 
   it('keeps the production source graph free of Node imports and runtime globals', () => {
