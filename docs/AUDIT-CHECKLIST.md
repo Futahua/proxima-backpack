@@ -2093,7 +2093,10 @@ Developer control:
       injection, JavaScript URLs or event-handler sinks, with scanner self-tests
       covering each forbidden entry point (`tests/agentVaultBridge.test.ts`,
       `tests/browserBoundary.test.ts`).
-- [ ] no creator-vault mutation by default
+- [x] no creator-vault mutation by default — the enabled bridge is GET/OPTIONS-only;
+      POST/PUT/PATCH/DELETE and mutation-shaped routes fail closed, while the
+      read-only source/action layers expose no writer methods (`tests/agentVaultBridge.test.ts`,
+      `tests/zeroWriteWitness.test.ts`, `tests/obsidianCoexistence.test.ts`).
 - [ ] no secrets in evidence/logs
 
 ---

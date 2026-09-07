@@ -29,8 +29,16 @@ describe('loopback read-only automation bridge', () => {
       expect((await list.json()).entries).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'file' })]));
       const read = await fetch(`http://127.0.0.1:${port}/api/vault/read?path=${encodeURIComponent('Proxima/tasks/Write fixture vault.md')}`);
       expect(await read.json()).toMatchObject({ path: 'Proxima/tasks/Write fixture vault.md', revision: expect.any(String) });
-      const write = await fetch(`http://127.0.0.1:${port}/api/vault/read`, { method: 'POST' });
-      expect(write.status).toBe(405);
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+        const write = await fetch(`http://127.0.0.1:${port}/api/vault/read`, { method });
+        expect(write.status).toBe(405);
+        expect(await write.json()).toEqual({ error: 'read-only-bridge' });
+      }
+      for (const operation of ['write', 'create', 'delete', 'rename', 'move']) {
+        const mutation = await fetch(`http://127.0.0.1:${port}/api/vault/${operation}?path=Proxima%2Ftasks%2FWrite%20fixture%20vault.md`);
+        expect(mutation.status).toBe(404);
+        expect(await mutation.json()).toEqual({ error: 'unknown-operation' });
+      }
       const traversal = await fetch(`http://127.0.0.1:${port}/api/vault/read?path=${encodeURIComponent('../secret')}`);
       expect(traversal.status).toBe(400);
     } finally { child.kill(); await removeDiskFixture(root); }
