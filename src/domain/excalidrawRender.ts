@@ -132,7 +132,7 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
 
     const x = finite(element.x);
     const y = finite(element.y);
-    if (x === null || y === null) {
+    if (x === null || y === null || roundedFinite(x) === null || roundedFinite(y) === null) {
       census.skipped += 1;
       note('element-geometry-invalid', type);
       continue;
@@ -142,7 +142,11 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
       census.imageElements += 1;
       const width = finite(element.width);
       const height = finite(element.height);
-      if (width === null || height === null || width <= 0 || height <= 0 || round(width) <= 0 || round(height) <= 0) {
+      const right = width === null ? null : finite(x + width);
+      const bottom = height === null ? null : finite(y + height);
+      const roundedWidth = width === null ? null : roundedFinite(width);
+      const roundedHeight = height === null ? null : roundedFinite(height);
+      if (width === null || height === null || right === null || bottom === null || width <= 0 || height <= 0 || roundedWidth === null || roundedHeight === null || roundedWidth <= 0 || roundedHeight <= 0) {
         census.skipped += 1;
         note('element-geometry-invalid', type);
         continue;
@@ -227,12 +231,16 @@ interface ElementLike {
 function drawElement(type: string, element: ElementLike, x: number, y: number, bounds: Bounds): string | null {
   const stroke = colour(element.strokeColor, '#1e1e1e');
   const strokeWidth = finite(element.strokeWidth) ?? 1;
+  const roundedStrokeWidth = roundedFinite(strokeWidth);
   const opacity = typeof element.opacity === 'number' ? Math.max(0, Math.min(1, element.opacity / 100)) : 1;
 
   if (type === 'text') {
     const text = typeof element.text === 'string' ? element.text : '';
     const fontSize = finite(element.fontSize) ?? 16;
-    if (text.length === 0 || fontSize <= 0 || round(fontSize) <= 0) return null;
+    const baseline = finite(y + fontSize);
+    const extent = Math.max(fontSize * text.length * 0.6, 1);
+    const right = finite(x + extent);
+    if (text.length === 0 || fontSize <= 0 || roundedFinite(fontSize) === null || roundedFinite(fontSize)! <= 0 || baseline === null || right === null || roundedFinite(baseline) === null || roundedFinite(right) === null) return null;
     bounds.add(x, y);
     bounds.add(x + Math.max(fontSize * text.length * 0.6, 1), y + fontSize);
     // Baseline sits a line down from the element origin, matching Excalidraw's
@@ -242,12 +250,19 @@ function drawElement(type: string, element: ElementLike, x: number, y: number, b
 
   const points = readPoints(element.points);
   if (!points || points.length < 2) return null;
-  if ((type === 'line' || type === 'freedraw') && (strokeWidth <= 0 || round(strokeWidth) <= 0)) return null;
-  if ((type === 'line' || type === 'freedraw') && !hasDrawableSegment(points, x, y)) return null;
-  const path = points
-    .map(([px, py], index) => `${index === 0 ? 'M' : 'L'}${round(x + px)},${round(y + py)}`)
+  if (roundedStrokeWidth === null || (['line', 'freedraw', 'arrow'].includes(type) && (strokeWidth <= 0 || roundedStrokeWidth <= 0))) return null;
+  const absolutePoints: Array<[number, number]> = [];
+  for (const [px, py] of points) {
+    const absoluteX = finite(x + px);
+    const absoluteY = finite(y + py);
+    if (absoluteX === null || absoluteY === null || roundedFinite(absoluteX) === null || roundedFinite(absoluteY) === null) return null;
+    absolutePoints.push([absoluteX, absoluteY]);
+  }
+  if ((type === 'line' || type === 'freedraw') && !hasDrawableSegment(absolutePoints)) return null;
+  const path = absolutePoints
+    .map(([absoluteX, absoluteY], index) => `${index === 0 ? 'M' : 'L'}${round(absoluteX)},${round(absoluteY)}`)
     .join(' ');
-  for (const [px, py] of points) bounds.add(x + px, y + py);
+  for (const [absoluteX, absoluteY] of absolutePoints) bounds.add(absoluteX, absoluteY);
 
   if (type === 'freedraw') {
     return `<path d="${path}" fill="none" stroke="${escapeAttribute(stroke)}" stroke-width="${round(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" />`;
@@ -256,32 +271,39 @@ function drawElement(type: string, element: ElementLike, x: number, y: number, b
     return `<path d="${path}" fill="none" stroke="${escapeAttribute(stroke)}" stroke-width="${round(strokeWidth)}" opacity="${opacity}" />`;
   }
   // arrow: the head is what distinguishes it from a line.
-  const head = arrowHead(points, x, y, stroke, strokeWidth);
+  const head = arrowHead(absolutePoints, strokeWidth);
+  if (head === null) return null;
   return `<g opacity="${opacity}"><path d="${path}" fill="none" stroke="${escapeAttribute(stroke)}" stroke-width="${round(strokeWidth)}" /><path d="${head}" fill="${escapeAttribute(stroke)}" /></g>`;
 }
 
-function hasDrawableSegment(points: Array<[number, number]>, x: number, y: number): boolean {
+function hasDrawableSegment(points: Array<[number, number]>): boolean {
   for (let index = 1; index < points.length; index += 1) {
     const current = points[index] as [number, number];
     const previous = points[index - 1] as [number, number];
-    if (round(x + current[0]) !== round(x + previous[0]) || round(y + current[1]) !== round(y + previous[1])) return true;
+    if (round(current[0]) !== round(previous[0]) || round(current[1]) !== round(previous[1])) return true;
   }
   return false;
 }
 
-function arrowHead(points: Array<[number, number]>, x: number, y: number, _stroke: string, strokeWidth: number): string {
+function arrowHead(points: Array<[number, number]>, strokeWidth: number): string | null {
   const last = points[points.length - 1] as [number, number];
   const previous = (points[points.length - 2] ?? points[0]) as [number, number];
-  const endX = x + last[0];
-  const endY = y + last[1];
+  const endX = last[0];
+  const endY = last[1];
   const angle = Math.atan2(last[1] - previous[1], last[0] - previous[0]);
   const size = Math.max(8, strokeWidth * 4);
+  if (!Number.isFinite(size)) return null;
   const left = angle + Math.PI - Math.PI / 7;
   const right = angle + Math.PI + Math.PI / 7;
+  const leftX = finite(endX + Math.cos(left) * size);
+  const leftY = finite(endY + Math.sin(left) * size);
+  const rightX = finite(endX + Math.cos(right) * size);
+  const rightY = finite(endY + Math.sin(right) * size);
+  if (leftX === null || leftY === null || rightX === null || rightY === null || roundedFinite(leftX) === null || roundedFinite(leftY) === null || roundedFinite(rightX) === null || roundedFinite(rightY) === null) return null;
   return [
     `M${round(endX)},${round(endY)}`,
-    `L${round(endX + Math.cos(left) * size)},${round(endY + Math.sin(left) * size)}`,
-    `L${round(endX + Math.cos(right) * size)},${round(endY + Math.sin(right) * size)}`,
+    `L${round(leftX)},${round(leftY)}`,
+    `L${round(rightX)},${round(rightY)}`,
     'Z',
   ].join(' ');
 }
@@ -348,7 +370,17 @@ function colour(value: unknown, fallback: string): string {
 }
 
 function round(value: number): number {
+  // Multiplication by 100 overflows for large-but-finite inputs. At that
+  // magnitude there is no meaningful two-decimal precision to retain, so
+  // preserve the finite value rather than emitting Infinity.
+  if (Number.isFinite(value) && Math.abs(value) > Number.MAX_VALUE / 100) return value;
   return Math.round(value * 100) / 100;
+}
+
+function roundedFinite(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  const rounded = round(value);
+  return Number.isFinite(rounded) ? rounded : null;
 }
 
 function escapeText(value: string): string {

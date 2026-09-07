@@ -211,6 +211,24 @@ describe('images before asset resolution', () => {
       { code: 'element-geometry-invalid', elementType: 'text', count: 1 },
     ]);
   });
+
+  it('never emits Infinity for finite but extreme geometry', () => {
+    const huge = 1e308;
+    const result = renderExcalidrawSvg(scene([
+      { ...image, width: huge, height: 1 },
+      { ...line, x: huge, points: [[0, 0], [-huge, 0]] },
+      { ...line, id: 'overflowing-endpoint', x: huge, points: [[0, 0], [huge, 0]] },
+      { ...text, id: 'overflowing-text', fontSize: huge },
+    ]));
+    expect(result.svg).not.toContain('Infinity');
+    expect(result.census.rendered).toBe(2);
+    expect(result.census.skipped).toBe(2);
+    expect(result.problems).toEqual([
+      { code: 'image-asset-unresolved', elementType: 'image', count: 1 },
+      { code: 'element-geometry-invalid', elementType: 'line', count: 1 },
+      { code: 'element-geometry-invalid', elementType: 'text', count: 1 },
+    ]);
+  });
 });
 
 describe('the scene decides its own background', () => {
