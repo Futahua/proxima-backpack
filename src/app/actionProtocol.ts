@@ -119,7 +119,7 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
   if (input.type === 'surface.select') {
     return input.surface === 'board' || input.surface === 'calendar' || input.surface === 'canvas'
       ? { ok: true, action: { type: input.type, surface: input.surface } }
-      : { ok: false, error: { code: 'invalid-action-input', message: 'surface must be board or calendar', field: 'surface' } };
+      : { ok: false, error: { code: 'invalid-action-input', message: 'surface must be board, calendar or canvas', field: 'surface' } };
   }
   if (input.type === 'calendar.shift-month') {
     return input.delta === -1 || input.delta === 1

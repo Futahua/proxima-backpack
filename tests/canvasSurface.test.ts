@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sequentialIdGenerator } from '../src/domain/clock.js';
-import { admitCanvasDrop, MAX_CANVAS_DROP_FILES, renderCanvasSurface } from '../src/browser/canvasSurface.js';
+import { admitCanvasDrop, createCanvasDropQueue, MAX_CANVAS_DROP_FILES, renderCanvasSurface } from '../src/browser/canvasSurface.js';
 import type { BrowserFileLike } from '../src/browser/canvasFileAdmission.js';
 
 function file(name: string, bytes: Uint8Array): BrowserFileLike {
@@ -48,5 +48,18 @@ describe('Gate 8C visible passive canvas surface', () => {
     const second = await admitCanvasDrop([], first, sequentialIdGenerator());
     expect(second).toEqual(first);
     expect(JSON.stringify(second)).not.toContain('arrayBuffer');
+  });
+
+  it('serializes overlapping drop batches so neither completed batch is lost', async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const first = { ...file('first.bin', new Uint8Array([1])), arrayBuffer: async () => { await firstGate; return new ArrayBuffer(1); } };
+    const second = file('second.bin', new Uint8Array([2]));
+    const queue = createCanvasDropQueue(sequentialIdGenerator());
+    const a = queue.enqueue([first]);
+    const b = queue.enqueue([second]);
+    releaseFirst();
+    await Promise.all([a, b]);
+    expect(queue.snapshot().items.map((item) => item.selection.filename)).toEqual(['first.bin', 'second.bin']);
   });
 });

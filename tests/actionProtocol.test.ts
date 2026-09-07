@@ -15,7 +15,7 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'calendar.shift-month', delta: 2 })).toEqual({ ok: false, error: { code: 'invalid-action-input', message: 'delta must be -1 or 1', field: 'delta' } });
     expect(parseAction({ type: 'unknown.action' })).toMatchObject({ ok: false, error: { code: 'invalid-action' } });
     expect(parseAction({ type: 'surface.select', surface: 'canvas' })).toEqual({ ok: true, action: { type: 'surface.select', surface: 'canvas' } });
-    expect(parseAction({ type: 'surface.select', surface: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'surface' } });
+    expect(parseAction({ type: 'surface.select', surface: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', message: 'surface must be board, calendar or canvas', field: 'surface' } });
   });
 
   it('uses one dispatcher for project/surface/calendar intent and increments revision only when state changes', async () => {

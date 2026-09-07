@@ -21,7 +21,7 @@ import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
 import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
 import { createBrowserSource } from './sourceFactory.js';
-import { admitCanvasDrop, EMPTY_CANVAS_SURFACE, renderCanvasSurface, type CanvasSurfaceState } from './canvasSurface.js';
+import { createCanvasDropQueue, EMPTY_CANVAS_SURFACE, renderCanvasSurface, type CanvasSurfaceState } from './canvasSurface.js';
 import type { BrowserFileLike } from './canvasFileAdmission.js';
 
 const FIXTURE_NAME = 'vault-basic';
@@ -39,6 +39,7 @@ let sourceProjection: ReadOnlyProjection | null = null;
 let lastRefreshEvidence: Parameters<typeof evaluateRealVaultAcceptance>[0]['refreshEvidence'];
 let lastRenameDeleteEvidence: Parameters<typeof evaluateRealVaultAcceptance>[0]['renameDeleteEvidence'];
 let canvasState: CanvasSurfaceState = EMPTY_CANVAS_SURFACE;
+const canvasDropQueue = createCanvasDropQueue(DETERMINISTIC_IDS);
 
 function element<T extends Element>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -318,7 +319,7 @@ function bindInteractions(): void {
     if (!(event.target as HTMLElement).closest('[data-c1-key="canvas-drop-zone"]')) return;
     event.preventDefault();
     const files = Array.from(event.dataTransfer?.files ?? []) as unknown as BrowserFileLike[];
-    void admitCanvasDrop(files, canvasState, DETERMINISTIC_IDS).then((next) => { canvasState = next; render(); });
+    void canvasDropQueue.enqueue(files).then((next) => { canvasState = next; render(); });
   });
   window.addEventListener('focus', () => { void refreshFromSource('focus'); });
 }

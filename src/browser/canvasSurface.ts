@@ -1,6 +1,6 @@
 /** Capability-free visible canvas surface state and passive card rendering. */
 
-import { sequentialIdGenerator, type IdGenerator } from '../domain/clock.js';
+import type { IdGenerator } from '../domain/clock.js';
 import type { CanvasNode } from '../domain/canvas.js';
 import type { CanvasRepresentationSelection } from '../domain/canvasRenderer.js';
 import { admitCanvasFile, type BrowserFileLike, type CanvasFileAdmissionResult } from './canvasFileAdmission.js';
@@ -20,11 +20,30 @@ export interface CanvasSurfaceState {
 
 export const EMPTY_CANVAS_SURFACE: CanvasSurfaceState = { items: [], lastDropDiagnostic: null };
 
+export interface CanvasDropQueue {
+  enqueue(files: readonly BrowserFileLike[]): Promise<CanvasSurfaceState>;
+  snapshot(): CanvasSurfaceState;
+}
+
+/** Serialize batches so overlapping DOM drop events cannot overwrite each other. */
+export function createCanvasDropQueue(ids: IdGenerator, initial: CanvasSurfaceState = EMPTY_CANVAS_SURFACE): CanvasDropQueue {
+  let current = initial;
+  let tail: Promise<void> = Promise.resolve();
+  return {
+    enqueue(files) {
+      const job = tail.then(async () => { current = await admitCanvasDrop(files, current, ids); });
+      tail = job.then(() => undefined);
+      return job.then(() => current);
+    },
+    snapshot: () => current,
+  };
+}
+
 /** Admit a bounded drop sequentially; File capabilities never enter returned state. */
 export async function admitCanvasDrop(
   files: readonly BrowserFileLike[],
   state: CanvasSurfaceState = EMPTY_CANVAS_SURFACE,
-  ids: IdGenerator = sequentialIdGenerator(),
+  ids: IdGenerator,
 ): Promise<CanvasSurfaceState> {
   const nextItems = [...state.items];
   const admitted = Math.min(files.length, MAX_CANVAS_DROP_FILES);
