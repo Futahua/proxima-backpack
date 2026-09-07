@@ -1891,8 +1891,11 @@ Only after fallback file cards are already first-class.
 - [ ] 10,000 records if plausible for creator use
 - [ ] deep project folders
 - [ ] large Markdown notes
-- [ ] many events in one month
-- [ ] many running Elastic tasks
+- [x] many events in one month — 1,000 deterministic events concentrated in one
+      month are grouped with complete single-/multi-day coverage and a broad
+      non-SLA timing guard (Gate 18C, follow-up to `622953e`).
+- [x] many running Elastic tasks — 1,000-task headless timeline + card-height path
+      is covered after indexing the timeline lookup (Gate 18B, `622953e`).
 - [ ] many canvas nodes
 - [ ] large Excalidraw scene
 - [ ] many unsupported file cards

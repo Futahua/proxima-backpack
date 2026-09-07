@@ -5,6 +5,8 @@ import { loadVaultState } from '../src/app/vaultRepository.js';
 import { calculateElasticTimeline, elasticCardHeights } from '../src/domain/elastic.js';
 import type { Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
+import { eventsByDay } from '../src/domain/selectors.js';
+import type { CalendarEvent } from '../src/domain/types.js';
 
 function scaledVault(count: number) {
   const files: Record<string, string> = {};
@@ -36,6 +38,26 @@ function runningTasks(count: number): Task[] {
     deadline: null,
     properties: {},
   }));
+}
+
+function monthlyEvents(count: number): CalendarEvent[] {
+  return Array.from({ length: count }, (_, i) => {
+    const day = String((i % 27) + 1).padStart(2, '0');
+    const nextDay = String((i % 27) + 2).padStart(2, '0');
+    const startDate = `2026-09-${day}`;
+    return {
+      id: `monthly-${i}`,
+      source: sourceRef('event', `monthly-${i}`),
+      name: `Monthly ${i}`,
+      description: '',
+      projectId: null,
+      createdAt: startDate,
+      startDate,
+      deadline: i % 5 === 0 ? `2026-09-${nextDay}` : startDate,
+      isCompleted: false,
+      properties: {},
+    };
+  });
 }
 
 describe('Gate 18A deterministic load/refresh scale baseline', () => {
@@ -91,6 +113,21 @@ describe('Gate 18A deterministic load/refresh scale baseline', () => {
     expect(Object.keys(heights)).toHaveLength(1000);
     expect(heights['running-0']).toBeGreaterThan(0);
     expect(heights['running-999']).toBeGreaterThan(0);
+    expect(elapsedMs).toBeLessThan(5000);
+  });
+
+  it('groups 1000 events concentrated in one month with complete deterministic coverage', () => {
+    const events = monthlyEvents(1000);
+    const problems: never[] = [];
+    const started = performance.now();
+    const byDay = eventsByDay(events, problems);
+    const elapsedMs = performance.now() - started;
+    const grouped = [...byDay.values()].flat();
+
+    expect(problems).toEqual([]);
+    expect(byDay.size).toBe(28);
+    expect(grouped).toHaveLength(1200);
+    expect(new Set(grouped.map((event) => event.id))).toEqual(new Set(events.map((event) => event.id)));
     expect(elapsedMs).toBeLessThan(5000);
   });
 });
