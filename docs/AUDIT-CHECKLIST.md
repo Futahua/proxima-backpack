@@ -2181,7 +2181,14 @@ Current truth stays in-repo.
 - [ ] representative real Obsidian vault acceptance passes
 - [ ] Excalidraw display acceptance passes if included
 - [ ] arbitrary-file fallback acceptance passes if included
-- [ ] exact build provenance recorded
+- [x] exact build provenance recorded — `npm run build` completed at exact SHA
+      `d8431bfc26c96cce7c31b0023c93f9bd964032c2`; generated fixture build identity
+      reports Proxima `0.1.0`, `buildMode: fixture`, `agentBridgeEnabled: false`,
+      domain/control/fixture schema versions `1/0/1`, fixture hash
+      `ee92e5aec9093c2dcd22506d7b5cd86923b9fb8bb921441b712e5220f95565a0`, lockfile
+      hash `3b36fa84bbf4e663b0547c3d7ff8577fef889f4a2fd0d80fb598694776b4d626`, and
+      fixed clock `2026-09-06T12:00:00.000Z` (`tools/build-fixture-module.mjs`,
+      `src/browser/generated/buildIdentity.generated.ts`).
 - [ ] no stale placeholder project identity
 - [ ] no unnecessary Papers changes
 - [ ] every Papers change has a recorded specific missing truth and acceptance test
