@@ -3,7 +3,9 @@ import { eventsByDay, eventsForSelection, projectsFor, reconcileSelection, ALL_P
 import { MAX_CALENDAR_EVENT_DAYS } from '../src/domain/selectors.js';
 import type { CalendarEvent } from '../src/domain/types.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
-import { fixtureVault, sourceRef } from './fixtures.js';
+import { fixtureFiles, fixtureVault, sourceRef } from './fixtures.js';
+import { createMemoryVault } from '../src/adapters/memoryVault.js';
+import { localDateKey } from '../src/domain/time.js';
 
 function event(id: string, projectId: string | null, startDate: string, deadline = ''): CalendarEvent {
   return { id, source: sourceRef('event', id), name: id, description: '', projectId, createdAt: startDate, startDate, deadline, isCompleted: false, properties: {} };
@@ -48,5 +50,17 @@ describe('Gate 6.3A Calendar derivation', () => {
     const beyondProblems: Array<{ code: string }> = [];
     expect(eventsByDay([event('beyond', null, start.toISOString(), beyondEnd.toISOString())], beyondProblems as never)).toEqual(new Map());
     expect(beyondProblems.map((problem) => problem.code)).toEqual(['event-span-too-large']);
+  });
+
+  it('keeps date-only values on their civil date and surfaces invalid starts', async () => {
+    expect(localDateKey('2026-09-07')).toBe('2026-09-07');
+    const files = fixtureFiles('vault-basic');
+    const snapshotPath = 'Proxima/events/Vault snapshot.md';
+    files[snapshotPath] = files[snapshotPath]!.replace('startDate: 2026-09-06T21:00:00.000Z', 'startDate: not-a-date');
+    const loaded = await loadVaultState(createMemoryVault(files));
+    const invalid = loaded.state.events.find((item) => item.id === 'evt-snapshot');
+    expect(invalid?.startDate).toBe('');
+    expect(loaded.problems).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'bad-date', kind: 'event', id: 'evt-snapshot' })]));
+    expect(eventsByDay([invalid!])).toEqual(new Map());
   });
 });
