@@ -2419,6 +2419,22 @@ Fixture only initially.
       retry/merge/LWW. Focused singular/packed, no-op, malformed, duplicate and
       stale tests pass in `tests/projectLinkedFoldersPromotion.test.ts`.
 
+### 13.2 Semantic writer surface closeout
+
+- [x] Task, project and event canonical creation mappings are recorded by 13.2D,
+      13.2P and 13.2Q; existing scalar, optional, description and identity paths
+      are mapped across all three kinds by 13.2B–O.
+- [x] Preferred project linkedFolders mutation and explicit lossless legacy
+      promotion are mapped by 13.2R–S; no arbitrary frontmatter/YAML writer exists
+      or is implied.
+- [x] Task lifecycle remains carried from its signed 13.2E gate; project and event
+      lifecycle remain explicitly OPEN. `createdAt` mutation is not exposed and
+      requires a separate product decision and gate.
+- [x] Native FSA/check-to-commit atomicity and actual Obsidian coexistence remain
+      OPEN at Gate 13.3/13D2; disposable peer evidence is not substituted.
+- [x] Commits after 83692ff are local-only supplied evidence while GitHub connectivity
+      is unavailable; no connector verification is claimed for those SHAs.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
