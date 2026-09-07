@@ -1766,9 +1766,10 @@ to the creator's real vault. No UI interaction is required to drive it.
       serializes operations per root and emits bounded lifecycle events.
 - [x] Coordinator refuses stale/missing/occupied targets without automatic retries.
 - [x] Bounded in-memory recovery records are captured before destructive operations.
-- [ ] Disposable real-disk writer implements the same contract and measured race
+- [x] Disposable real-disk writer implements the same contract and measured race
       semantics.
-- [ ] Independent-writer race, recovery restore and Obsidian coexistence suites pass.
+- [x] Independent-writer race and conditional recovery-restore suites pass; Obsidian
+      coexistence remains a separate native integration gate.
 - [ ] Creator-vault/native-FSA mutation authority remains disabled.
 
 ### 13.B Adversarial commit and recovery status
@@ -1780,8 +1781,8 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Create remains exclusive under a competing creator.
 - [x] Mutation path/byte bounds and traversal rejection are enforced.
 - [x] Every attempted mutation has one request ID and one terminal bounded event.
-- [ ] Durable recovery journal survives process termination.
-- [ ] Crash injection and recovery restore are verified.
+- [x] Durable recovery journal survives process termination.
+- [x] Crash injection and conditional recovery restore are verified.
 - [ ] Independent Obsidian writer coexistence is verified for write operations.
 - [ ] Exact residual filesystem race semantics are documented for native/FSA adapters.
 
@@ -1791,9 +1792,9 @@ to the creator's real vault. No UI interaction is required to drive it.
       bounded prior bytes, with prepared/committed state support.
 - [x] A disk-backed journal survives process termination (child-process write/restart
       load test).
-- [ ] Process-kill injection classifies prepared, committing and committed states.
-- [ ] Interrupted update/delete/move recovery is conflict-aware and idempotent.
-- [ ] Recovery refuses to overwrite newer peer bytes or delete a peer destination.
+- [x] Process-kill injection classifies prepared, committing and committed states.
+- [x] Interrupted update/delete/move recovery is conflict-aware and idempotent.
+- [x] Recovery refuses to overwrite newer peer bytes or delete a peer destination.
 - [x] Journal retention and recovery payload limits remain bounded.
 
 ### 13.C2 Mutation-phase crash reconciliation
@@ -1802,7 +1803,7 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Update/delete/move committed-vs-unmodified states are classified without blind
       rollback; ambiguous peer changes become blocked.
 - [x] Reconciliation is idempotent and emits machine-readable outcomes.
-- [ ] Actual process-kill injection at each filesystem mutation phase is verified.
+- [x] Actual process-kill injection at each filesystem mutation phase is verified.
 - [ ] Automatic startup reconciliation is wired into the Papers runtime.
 
 ### 13.C2 prepared-record classification
@@ -1816,7 +1817,8 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Delete/update/move unreadable sources or destinations fail closed as conflict.
 - [x] Classification compares bounded exact bytes; fingerprints are advisory only.
 - [x] Durable reload preserves prior/intended byte evidence needed for classification.
-- [ ] Automatic startup reconciliation is wired into the Papers runtime.
+- [x] Host-neutral automatic startup reconciliation and conditional status transitions
+      are implemented and tested; runtime wiring remains open.
 
 ### 13.C2B Real process-death mutation phases
 
@@ -1829,7 +1831,25 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Crash before writer, after filesystem commit, and after durable
       `markCommitted` are exercised against the built mutation coordinator and
       disposable disk writer; the parent reloads and classifies each phase.
-- [ ] Automatic startup reconciliation is wired into the Papers runtime.
+- [x] Parent restart can reconcile effect-present, not-applied and conflict states
+      into durable committed/recovered/blocked statuses without touching vault bytes.
+- [ ] Runtime wiring into the Papers startup session remains open.
+
+### 13.C3 Autonomous startup recovery and conditional restore
+
+- [x] Startup loads the bounded durable journal before owner-mode mutation authority.
+- [x] Every prepared/recovery-required record is classified before authority is
+      available; effect-present commits, not-applied recovers/no-ops, and conflicts
+      block durably.
+- [x] Malformed/unreadable journal or source state fails closed and blocks authority.
+- [x] Repeated startup reconciliation is idempotent with bounded machine-readable
+      outcomes and no vault writes.
+- [x] Committed update/delete/move records have agent-callable conditional restore
+      using only CAS writer methods.
+- [x] Peer edits, peer recreation, destination changes and unreadable states refuse
+      restore; successful restore is durably marked recovered.
+- [ ] Papers runtime wires startup reconciliation before exposing owner-mode writes.
+- [ ] Native creator-vault/FSA restore and Obsidian coexistence remain open.
 
 Not enabled merely because a UI needs editing.
 
