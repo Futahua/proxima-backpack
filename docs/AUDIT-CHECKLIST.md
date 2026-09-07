@@ -1235,6 +1235,45 @@ Tests must prove that switching the underlying state cannot leave the descriptio
 stale or contradictory — in particular across fixture→external, external→fixture,
 external→degraded, external→recovered and external→deleted.
 
+### Signed gate ledger (as of 2026-09-07)
+
+| Gate | Status | SHA |
+| --- | --- | --- |
+| 6Q real creator-vault read-only baseline | PASS | `82c3f9a6` |
+| 6R Obsidian coexistence — create / modify / delete | PASS | `abf99364` |
+| 6R external **rename** | **OPEN** — not exercised | — |
+| 7A real Excalidraw discovery | PASS | `f5a3364` |
+| 7B structural recognition | PASS | `f5a3364` |
+| 7C compressed-json decoding | PASS | `11ddb084` |
+| 7C SVG rendering | PASS | `878240b8` |
+| 7D link resolution | PASS | `9ddb2db` |
+| 7D binary assets + real-artifact acceptance | PASS | `c074bf09` |
+| Object-URL lifecycle | deferred to the browser viewer | — |
+| Native FSA, clean-profile picker, Papers-hosted acceptance, write/concurrency | OPEN | — |
+
+The `Uint8Array` → data-URL choice was accepted over Blob/object URLs: the loader
+lives in `src/app`, which compiles with no DOM types, and acquiring a browser
+dependency there to satisfy a presentation preference would be the wrong trade.
+Presentation conversion belongs to the surface, and the URL lifecycle becomes real —
+and testable — only when a drawing viewer exists.
+
+### Gate 8 — arbitrary-file canvas (next)
+
+    any vault file → safe source read → canvas node → appropriate representation
+
+Excalidraw becomes one specialised representation among many: drawing, Markdown
+document card, image card, code card, and a fallback file card for the unknown. The
+browser drawing viewer is part of this surface work rather than a separate gate,
+because that is where the object-URL lifecycle finally becomes real — mount, create
+presentation URL, render, replace/unmount, revoke.
+
+**The binary capability must not widen here.** `readBinary` existing does not mean
+the canvas may load arbitrary files however it likes. The same policy holds:
+vault-relative paths only, no traversal, no symlink following, bounded bytes, an
+explicit media policy, provenance and source revision, per-node failure, and no
+filesystem authority in the UI or the domain. The canvas consumes the audited source
+abstraction exactly as Excalidraw does.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.
