@@ -126,7 +126,19 @@ describe('three independent bounds', () => {
     const vault = vaultWith({ 'Attachments/photo.png': big });
     const result = await loadDrawingAssets(vault, index, [embed('f1', 'photo.png')], { maxAssetBytes: 1000 });
     expect(result.loaded[0]?.outcome).toBe('too-large');
-    expect(result.totalBytes).toBe(0);
+    expect(result.totalBytes).toBe(big.length);
+  });
+
+  it('spends aggregate budget on unsupported bytes before continuing', async () => {
+    const vault = vaultWith({ 'Attachments/notes.txt': NOT_AN_IMAGE, 'Attachments/photo.png': PNG });
+    const result = await loadDrawingAssets(
+      vault,
+      index,
+      [embed('bad', 'notes.txt'), embed('good', 'photo.png')],
+      { maxAssetBytes: 1000, maxTotalBytes: NOT_AN_IMAGE.length },
+    );
+    expect(result.loaded.map((asset) => asset.outcome)).toEqual(['unsupported-media', 'budget-exhausted']);
+    expect(result.totalBytes).toBe(NOT_AN_IMAGE.length);
   });
 
   it('stops at the aggregate budget even when each asset is individually fine', async () => {

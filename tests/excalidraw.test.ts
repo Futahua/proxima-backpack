@@ -193,6 +193,13 @@ describe('compressed-json decoding', () => {
     expect(artifact.kind).toBe('obsidian-envelope');
   });
 
+  it('rejects an alphabet-invalid byte even when the payload length is intact', () => {
+    const corrupted = `${REAL_COMPRESSED_SCENE.slice(0, 20)}?${REAL_COMPRESSED_SCENE.slice(21)}`;
+    const artifact = recogniseExcalidraw(envelope(corrupted), 'a.excalidraw.md');
+    expect(artifact.scene).toBeNull();
+    expect(artifact.problems.map((problem) => problem.code)).toContain('decode-failed');
+  });
+
   it('still reads the envelope summary when the scene cannot be decoded', () => {
     // The text elements are what a canvas can still show for an undecodable drawing.
     const artifact = recogniseExcalidraw(envelope('!!!!'), 'a.excalidraw.md');

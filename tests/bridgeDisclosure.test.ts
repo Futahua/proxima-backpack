@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
@@ -122,5 +122,25 @@ describe('bridge disclosure bounds', () => {
       const honest = await rawGet(port, '/health', { host: `127.0.0.1:${port}` });
       expect(honest.status).toBe(200);
     } finally { child.kill(); await removeDiskFixture(root); }
+  });
+
+  it('refuses binary reads through an intermediate symlink component', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'proxima-intermediate-link-'));
+    const outside = await mkdtemp(join(tmpdir(), 'proxima-intermediate-outside-'));
+    const port = 4200;
+    const child = spawn(process.execPath, ['tools/agent-vault-bridge.mjs', '--root', root, '--port', String(port)], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      await mkdir(join(outside, 'attachments'), { recursive: true });
+      await writeFile(join(outside, 'attachments', 'secret.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      let linked = false;
+      for (const type of ['junction', 'dir'] as const) {
+        try { await symlink(join(outside, 'attachments'), join(root, 'inside-link'), type); linked = true; break; } catch { /* try the other Windows link flavour */ }
+      }
+      if (!linked) throw new Error('cannot create a directory link on this machine');
+      await listening(child);
+      const response = await fetch(`http://127.0.0.1:${port}/api/vault/read-binary?path=${encodeURIComponent('inside-link/secret.png')}&maxBytes=1000`);
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe('symlink-rejected');
+    } finally { child.kill(); await rm(root, { recursive: true, force: true }); await rm(outside, { recursive: true, force: true }); }
   });
 });

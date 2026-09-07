@@ -73,6 +73,16 @@ function absolute(input) {
   if (target !== root && !target.startsWith(prefix)) throw new BridgeError(BRIDGE_CODES.escapesRoot);
   return target;
 }
+/** Refuse symlinks at every path component, not only when the final object is a link. */
+async function assertNoSymlinkComponents(input) {
+  const path = relativePath(input);
+  let current = root;
+  for (const part of path.split('/')) {
+    current = resolve(current, part);
+    const metadata = await lstat(current);
+    if (metadata.isSymbolicLink()) throw new BridgeError(BRIDGE_CODES.symlink);
+  }
+}
 function revision(text, metadata) { return `${metadata.mtime.toISOString()}:${metadata.size}:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`; }
 /**
  * List a directory, omitting symlinks rather than refusing the whole listing.
@@ -176,8 +186,7 @@ const server = createServer(async (request, response) => {
       // containment, the same symlink refusal, the same bounds. Base64 only because
       // this is an HTTP boundary; the domain contract is bytes.
       const target = absolute(path);
-      const linkMetadata = await lstat(target);
-      if (linkMetadata.isSymbolicLink()) throw new BridgeError(BRIDGE_CODES.symlink);
+      await assertNoSymlinkComponents(path);
       const metadata = await stat(target);
       if (!metadata.isFile()) throw new BridgeError(BRIDGE_CODES.notADirectory);
       const requested = Number(url.searchParams.get('maxBytes') ?? MAX_FILE_BYTES);
@@ -210,7 +219,7 @@ const server = createServer(async (request, response) => {
       }
     }
     if (operation === 'exists') { try { const target = absolute(path); const metadata = await lstat(target); return send(response, 200, { exists: !metadata.isSymbolicLink() }, origin); } catch { return send(response, 200, { exists: false }, origin); } }
-    if (operation === 'read') { const target = absolute(path); const linkMetadata = await lstat(target); if (linkMetadata.isSymbolicLink()) throw new BridgeError(BRIDGE_CODES.symlink); const metadata = await stat(target); if (!metadata.isFile()) throw new BridgeError(BRIDGE_CODES.notADirectory); if (metadata.size > MAX_FILE_BYTES) throw new BridgeError(BRIDGE_CODES.fileBound); const text = await readFile(target, 'utf8'); if (Buffer.byteLength(text, 'utf8') > MAX_FILE_BYTES) throw new BridgeError(BRIDGE_CODES.fileBound); return send(response, 200, { path: relativePath(relative(root, target).split(sep).join('/')), text, size: metadata.size, modifiedAt: metadata.mtime.toISOString(), revision: revision(text, metadata) }, origin); }
+    if (operation === 'read') { const target = absolute(path); await assertNoSymlinkComponents(path); const metadata = await stat(target); if (!metadata.isFile()) throw new BridgeError(BRIDGE_CODES.notADirectory); if (metadata.size > MAX_FILE_BYTES) throw new BridgeError(BRIDGE_CODES.fileBound); const text = await readFile(target, 'utf8'); if (Buffer.byteLength(text, 'utf8') > MAX_FILE_BYTES) throw new BridgeError(BRIDGE_CODES.fileBound); return send(response, 200, { path: relativePath(relative(root, target).split(sep).join('/')), text, size: metadata.size, modifiedAt: metadata.mtime.toISOString(), revision: revision(text, metadata) }, origin); }
     return send(response, 404, { error: BRIDGE_CODES.unknownOperation }, origin);
   } catch (error) { return send(response, 400, { error: codeOf(error) }, origin); }
 });

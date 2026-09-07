@@ -47,6 +47,11 @@ function getBaseValue(alphabet: string, character: string): number {
  */
 export function decompressFromBase64(input: string): string | null {
   if (typeof input !== 'string' || input === '') return null;
+  // LZ-String's decoder is intentionally permissive: an unknown alphabet
+  // character becomes `undefined`, which JavaScript bitwise operations coerce to
+  // zero. Validate the transport alphabet before invoking it so corruption cannot
+  // silently collide with a valid zero-valued symbol.
+  if (!/^[A-Za-z0-9+/]*=*$/.test(input)) return null;
   try {
     const result = lzDecompress(input.length, 32, (index: number) => getBaseValue(KEY_STR_BASE64, input.charAt(index)));
     return typeof result === 'string' ? result : null;

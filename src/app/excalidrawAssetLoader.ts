@@ -129,11 +129,18 @@ export async function loadDrawingAssets(
       loaded.push({ ...located, outcome: 'unreadable' });
       continue;
     }
+    // Count every byte the source returned before judging its media. The
+    // aggregate ceiling is a read/buffering budget, not merely a sum of bytes
+    // that happened to be accepted as images. Unsupported media and oversized
+    // responses must spend the budget too, otherwise a drawing can stream an
+    // unbounded number of rejected payloads through the loader.
+    totalBytes += bytes.length;
+
     if (bytes.length > maxAssetBytes) {
       loaded.push({ ...located, outcome: 'too-large', bytes: bytes.length });
       continue;
     }
-    if (totalBytes + bytes.length > maxTotalBytes) {
+    if (totalBytes > maxTotalBytes) {
       loaded.push({ ...located, outcome: 'budget-exhausted', bytes: bytes.length });
       continue;
     }
@@ -146,7 +153,6 @@ export async function loadDrawingAssets(
       continue;
     }
 
-    totalBytes += bytes.length;
     const dataUrl = imageDataUrl(media.mediaType, bytes);
     assets[embed.key] = dataUrl;
     loaded.push({

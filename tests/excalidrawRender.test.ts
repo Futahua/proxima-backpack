@@ -98,6 +98,16 @@ describe('nothing disappears without a reason', () => {
     const result = renderExcalidrawSvg(scene([freedraw, freedraw, text, { id: 'x', type: 'ellipse', x: 0, y: 0 }]));
     expect(result.census.byType).toEqual({ freedraw: 2, text: 1, ellipse: 1 });
   });
+
+  it('accounts for elements beyond the render budget as explicitly skipped', () => {
+    const many = Array.from({ length: 5_001 }, (_, index) => ({ ...text, id: `t${index}` }));
+    const result = renderExcalidrawSvg(scene(many));
+    const { sceneElements, rendered, unsupported, deleted, skipped } = result.census;
+    expect(sceneElements).toBe(5_001);
+    expect(rendered + unsupported + deleted + skipped).toBe(sceneElements);
+    expect(skipped).toBe(1);
+    expect(result.problems).toContainEqual({ code: 'element-limit-exceeded', elementType: 'text', count: 1 });
+  });
 });
 
 describe('images before asset resolution', () => {

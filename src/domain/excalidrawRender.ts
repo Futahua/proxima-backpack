@@ -25,7 +25,9 @@ export type ExcalidrawRenderProblemCode =
   /** An image element whose asset was not resolved. */
   | 'image-asset-unresolved'
   /** An element whose geometry could not be read. */
-  | 'element-geometry-invalid';
+  | 'element-geometry-invalid'
+  /** Elements beyond the renderer's bounded scene-element budget. */
+  | 'element-limit-exceeded';
 
 export interface ExcalidrawRenderProblem {
   code: ExcalidrawRenderProblemCode;
@@ -86,9 +88,10 @@ const MAX_POINTS = 5_000;
 const PADDING = 20;
 
 export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: ResolvedAssets = {}): ExcalidrawRenderResult {
-  const elements = Array.isArray(scene?.elements) ? (scene.elements as ElementLike[]).slice(0, MAX_ELEMENTS) : [];
+  const allElements = Array.isArray(scene?.elements) ? (scene.elements as ElementLike[]) : [];
+  const elements = allElements.slice(0, MAX_ELEMENTS);
   const census: ExcalidrawRenderCensus = {
-    sceneElements: Array.isArray(scene?.elements) ? scene.elements.length : 0,
+    sceneElements: allElements.length,
     byType: {},
     rendered: 0,
     unsupported: 0,
@@ -161,6 +164,16 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
     }
     census.rendered += 1;
     body.push(drawn);
+  }
+
+  // The renderer is deliberately bounded, but a bound must never become silent
+  // omission. Account for every element beyond the drawing budget as skipped and
+  // retain its type in the census so the equality remains truthful.
+  for (const element of allElements.slice(MAX_ELEMENTS)) {
+    const type = typeof element?.type === 'string' ? element.type : 'unknown';
+    census.byType[type] = (census.byType[type] ?? 0) + 1;
+    census.skipped += 1;
+    note('element-limit-exceeded', type);
   }
 
   const viewBox = bounds.viewBox(PADDING);
