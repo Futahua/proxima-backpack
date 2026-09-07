@@ -1,4 +1,5 @@
 import type { TaskStatusId } from '../domain/types.js';
+import { findUnsupportedDoubleQuotedEscape } from '../domain/frontmatter.js';
 
 export type SourcePatchFailureReason =
   | 'no-frontmatter'
@@ -112,7 +113,7 @@ export function planTaskStatusPatch(input: Uint8Array | string, status: TaskStat
     let style: 'plain' | 'single' | 'double' = 'plain';
     if (valueText.startsWith('"')) style = 'double';
     else if (valueText.startsWith("'")) style = 'single';
-    if ((style !== 'plain' && !validQuoted(valueText, style === 'double' ? '"' : "'")) || (style === 'plain' && /^[\[\]{|>&*]/.test(valueText))) return { ok: false, reason: 'target-unsupported' };
+    if ((style !== 'plain' && !validQuoted(valueText, style === 'double' ? '"' : "'")) || (style === 'double' && findUnsupportedDoubleQuotedEscape(valueText) !== null) || (style === 'plain' && /^[\[\]{|>&*]/.test(valueText))) return { ok: false, reason: 'target-unsupported' };
     if (style === 'plain' && /[\t ]#/.test(valueText)) return { ok: false, reason: 'target-unsupported' };
     matches.push({ start: line.start + colon + 1 + leading, end: line.start + colon + 1 + withoutComment.length - trailing, style, value: valueText });
   }

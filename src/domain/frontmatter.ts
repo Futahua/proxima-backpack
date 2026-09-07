@@ -482,7 +482,7 @@ function quotedScalarIssue(text: string): 'unterminated-quote' | 'malformed-quot
  * `u00e9` and Windows paths such as `C:\Users` into different paths. Full YAML escape
  * support belongs to a real YAML parser; this reader instead fails visibly.
  */
-function findUnsupportedDoubleQuotedEscape(text: string): string | null {
+export function findUnsupportedDoubleQuotedEscape(text: string): string | null {
   let inDouble = false;
   for (let i = 0; i < text.length; i += 1) {
     const char = text[i] as string;

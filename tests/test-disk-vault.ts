@@ -1,4 +1,4 @@
-import { access, lstat, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, open, readFile, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import type { DirectoryPresence, VaultEntry, VaultFile, VaultReader, VaultWriter, VaultMutationResult } from '../src/ports/vault.js';
 
@@ -45,6 +45,24 @@ export function createDiskVault(root: string, options: DiskVaultOptions = {}): V
     const bytes = new Uint8Array(await readFile(absolutePath));
     return { absolutePath, relativePath, metadata, bytes, revision: `${metadata.mtime.toISOString()}:${metadata.size}:${hash(bytes)}` };
   };
+  const bounded = async (path: string, maxBytes: number) => {
+    const relativePath = normalise(path); const absolutePath = within(root, relativePath); const handle = await open(absolutePath, 'r');
+    try {
+      const metadata = await handle.stat();
+      if (!metadata.isFile()) throw new Error(`disk path is not a file: ${path}`);
+      if (metadata.size > maxBytes) throw new Error('disk vault byte size limit exceeded');
+      const buffer = new Uint8Array(Math.min(maxBytes, Number(metadata.size)) + 1);
+      let offset = 0;
+      while (offset < buffer.byteLength) {
+        const { bytesRead } = await handle.read(buffer, offset, buffer.byteLength - offset, null);
+        if (bytesRead === 0) break;
+        offset += bytesRead;
+      }
+      if (offset > maxBytes) throw new Error('disk vault byte size limit exceeded');
+      const bytes = buffer.slice(0, offset); const revision = `${metadata.mtime.toISOString()}:${metadata.size}:${hash(bytes)}`;
+      return { absolutePath, relativePath, metadata, bytes, revision };
+    } finally { await handle.close(); }
+  };
   return {
     list: entries,
     async walk(directory) {
@@ -67,7 +85,13 @@ export function createDiskVault(root: string, options: DiskVaultOptions = {}): V
         return 'unknown';
       }
     },
-    async read(path): Promise<VaultFile> {
+    async read(path, maxChars): Promise<VaultFile> {
+      if (maxChars !== undefined) {
+        const boundedFile = await bounded(path, maxChars);
+        const text = new TextDecoder().decode(boundedFile.bytes);
+        if (text.length > maxChars) throw new Error('disk vault text size limit exceeded');
+        return { path: boundedFile.relativePath, text, size: boundedFile.bytes.byteLength, modifiedAt: boundedFile.metadata.mtime.toISOString(), revision: boundedFile.revision };
+      }
       const relativePath = normalise(path);
       const absolutePath = within(root, relativePath);
       const metadata = await stat(absolutePath);
@@ -77,8 +101,7 @@ export function createDiskVault(root: string, options: DiskVaultOptions = {}): V
       return { path: relativePath, text, size: metadata.size, modifiedAt, revision: `${modifiedAt}:${metadata.size}:${hash(new TextEncoder().encode(text))}` };
     },
     async readBinary(path, maxBytes) {
-      const currentFile = await current(path);
-      if (currentFile.bytes.byteLength > maxBytes) throw new Error('disk vault byte size limit exceeded');
+      const currentFile = await bounded(path, maxBytes);
       return { path: currentFile.relativePath, bytes: new Uint8Array(currentFile.bytes), size: currentFile.bytes.byteLength, modifiedAt: currentFile.metadata.mtime.toISOString(), revision: currentFile.revision };
     },
     async createIfAbsent(path, bytes): Promise<VaultMutationResult> {

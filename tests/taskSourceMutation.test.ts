@@ -4,6 +4,10 @@ import { createVaultMutationCoordinator } from '../src/app/vaultMutation.js';
 import { createMemoryRecoveryStore } from '../src/app/vaultRecovery.js';
 import { planTaskStatusPatch } from '../src/app/sourcePreservingMarkdown.js';
 import { updateTaskStatus } from '../src/app/taskSourceMutation.js';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createDiskVault } from './test-disk-vault.js';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -50,6 +54,7 @@ describe('13.2A source-preserving task status mutation', () => {
     expect(planTaskStatusPatch('---\nmeta:\n  status: running\n---', 'done')).toMatchObject({ ok: false, reason: 'target-missing' });
     expect(planTaskStatusPatch('---\nstatus:\n  - running\n---', 'done')).toMatchObject({ ok: false, reason: 'target-unsupported' });
     expect(planTaskStatusPatch('---\nstatus: "running\n---', 'done')).toMatchObject({ ok: false, reason: 'target-unsupported' });
+    expect(planTaskStatusPatch('---\nstatus: "run\\q"\n---', 'done')).toMatchObject({ ok: false, reason: 'target-unsupported' });
     expect(planTaskStatusPatch('---\nstatus: running\n---', 'not safe')).toMatchObject({ ok: false, reason: 'invalid-value' });
     expect(planTaskStatusPatch(new Uint8Array([0xff, 0xfe]), 'done')).toMatchObject({ ok: false, reason: 'invalid-utf8' });
   });
@@ -66,5 +71,15 @@ describe('13.2A source-preserving task status mutation', () => {
     expect(result).toMatchObject({ ok: false, reason: 'stale' });
     expect((await vault.read('tasks/a.md')).text).toContain('status: peer');
     expect(recovery.list()[0]?.status).toBe('recovered');
+  });
+
+  it('rejects an over-limit disposable disk source before retaining the payload', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'proxima-status-bound-'));
+    try {
+      const limit = 4 * 1024 * 1024;
+      await writeFile(join(root, 'large.md'), Buffer.alloc(limit + 1, 97));
+      const vault = createDiskVault(root);
+      await expect(vault.readBinary!('large.md', limit)).rejects.toThrow('byte size limit');
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
