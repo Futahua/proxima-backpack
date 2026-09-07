@@ -74,7 +74,7 @@ export async function loadDrawingAssets(
   const maxAssets = options.maxAssets ?? MAX_ASSETS_PER_DRAWING;
   const maxTotalBytes = options.maxTotalBytes ?? MAX_DRAWING_ASSET_BYTES;
 
-  const assets: Record<string, string> = {};
+  const assets: Record<string, string> = Object.create(null) as Record<string, string>;
   const loaded: LoadedAsset[] = [];
   let totalBytes = 0;
 

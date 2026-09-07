@@ -94,6 +94,15 @@ describe('nothing disappears without a reason', () => {
     expect(result.problems).toEqual([{ code: 'unsupported-element', elementType: 'ellipse', count: 5 }]);
   });
 
+  it('keeps prototype-named element types in the type census', () => {
+    const result = renderExcalidrawSvg(scene([
+      { id: 'proto', type: '__proto__', x: 0, y: 0 },
+      { id: 'string', type: 'toString', x: 0, y: 0 },
+    ]));
+    expect(result.census.byType).toEqual(Object.fromEntries([['__proto__', 1], ['toString', 1]]));
+    expect(result.census.unsupported).toBe(2);
+  });
+
   it('records the type census whatever the types are', () => {
     const result = renderExcalidrawSvg(scene([freedraw, freedraw, text, { id: 'x', type: 'ellipse', x: 0, y: 0 }]));
     expect(result.census.byType).toEqual({ freedraw: 2, text: 1, ellipse: 1 });
@@ -136,6 +145,13 @@ describe('images before asset resolution', () => {
     expect(result.svg).toContain('<image');
     expect(result.svg).toContain('data:image/png;base64,AAAA');
     expect(result.problems).toEqual([]);
+  });
+
+  it('uses a placeholder for a missing prototype-named file id', () => {
+    const result = renderExcalidrawSvg(scene([{ ...image, fileId: 'toString' }]));
+    expect(result.census.imagesResolved).toBe(0);
+    expect(result.census.imagePlaceholders).toBe(1);
+    expect(result.svg).toContain('image unavailable');
   });
 
   it('reports non-drawable image dimensions instead of counting invisible geometry as rendered', () => {

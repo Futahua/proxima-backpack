@@ -92,6 +92,7 @@ const PADDING = 20;
 export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: ResolvedAssets = {}): ExcalidrawRenderResult {
   const allElements = Array.isArray(scene?.elements) ? (scene.elements as ElementLike[]) : [];
   const elements = allElements.slice(0, MAX_ELEMENTS);
+  const typeCounts = new Map<string, number>();
   const census: ExcalidrawRenderCensus = {
     sceneElements: allElements.length,
     byType: {},
@@ -111,12 +112,13 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
     else problemCounts.set(key, { code, elementType, count: 1 });
   };
 
+  const countType = (type: string) => typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
   const body: string[] = [];
   const bounds = new Bounds();
 
   for (const element of elements) {
     const type = typeof element?.type === 'string' ? element.type : 'unknown';
-    census.byType[type] = (census.byType[type] ?? 0) + 1;
+    countType(type);
 
     if (!SUPPORTED.has(type)) {
       census.unsupported += 1;
@@ -145,7 +147,9 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
         note('element-geometry-invalid', type);
         continue;
       }
-      const href = typeof element.fileId === 'string' ? assets[element.fileId] : undefined;
+      const href = typeof element.fileId === 'string' && Object.prototype.hasOwnProperty.call(assets, element.fileId) && typeof assets[element.fileId] === 'string'
+        ? assets[element.fileId]
+        : undefined;
       bounds.add(x, y);
       bounds.add(x + width, y + height);
       if (href) {
@@ -184,7 +188,7 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
   // retain its type in the census so the equality remains truthful.
   for (const element of allElements.slice(MAX_ELEMENTS)) {
     const type = typeof element?.type === 'string' ? element.type : 'unknown';
-    census.byType[type] = (census.byType[type] ?? 0) + 1;
+    countType(type);
     census.skipped += 1;
     note('element-limit-exceeded', type);
   }
@@ -199,6 +203,7 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
     '</svg>',
   ].join('');
 
+  census.byType = Object.fromEntries(typeCounts);
   return { svg, census, problems: [...problemCounts.values()], viewBox, background };
 }
 
