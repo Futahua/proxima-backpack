@@ -1,5 +1,5 @@
 import type { TaskStatusId } from '../domain/types.js';
-import { findUnsupportedDoubleQuotedEscape } from '../domain/frontmatter.js';
+import { coerceScalar, findUnsupportedDoubleQuotedEscape } from '../domain/frontmatter.js';
 
 export type SourcePatchFailureReason =
   | 'no-frontmatter'
@@ -8,13 +8,17 @@ export type SourcePatchFailureReason =
   | 'target-unsupported'
   | 'invalid-value'
   | 'invalid-utf8'
-  | 'source-too-large';
+  | 'source-too-large'
+  | 'field-not-allowed';
 
 /** Closed set of task fields that the semantic writer may ever target. */
 export type TaskScalarField =
-  | 'name' | 'project' | 'projectId' | 'status' | 'weight' | 'orderIndex'
+  | 'name' | 'project' | 'status' | 'weight' | 'orderIndex'
   | 'isFixedDuration' | 'fixedDuration' | 'maxDuration' | 'isCompleted'
   | 'startDate' | 'deadline';
+
+type SourceScalarField = TaskScalarField | 'projectId';
+const TASK_SCALAR_FIELDS: readonly TaskScalarField[] = ['name', 'project', 'status', 'weight', 'orderIndex', 'isFixedDuration', 'fixedDuration', 'maxDuration', 'isCompleted', 'startDate', 'deadline'];
 
 export type SourcePatchResult =
   | { ok: true; bytes: Uint8Array; start: number; end: number }
@@ -81,23 +85,23 @@ function validQuoted(value: string, quote: '"' | "'"): boolean {
 
 function encodeForStyle(value: string, style: 'plain' | 'single' | 'double', plainSafe = false): string | null {
   if (/[\u0000-\u001F\u007F\r\n]/u.test(value)) return null;
-  if (style === 'plain') return (plainSafe ? SAFE_PLAIN.test(value) : safePlain(value)) ? value : null;
+  if (style === 'plain') return (safePlain(value) && (!plainSafe || SAFE_PLAIN.test(value))) ? value : null;
   if (style === 'single') return `'${value.replaceAll("'", "''")}'`;
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 
 function safePlain(value: string): boolean {
   if (!value || /^[\-?:,\[\]{}#&*!|>'"%@`]/.test(value) || /[ \t]#/.test(value) || /:[ \t]/.test(value)) return false;
-  return !/[\u0000-\u001F\u007F\r\n]/u.test(value);
+  return !/[\u0000-\u001F\u007F\r\n]/u.test(value) && typeof coerceScalar(value) === 'string' && coerceScalar(value) === value;
 }
 
-function fieldMode(field: TaskScalarField): 'string' | 'number' | 'boolean' {
+function fieldMode(field: SourceScalarField): 'string' | 'number' | 'boolean' {
   if (field === 'weight' || field === 'orderIndex' || field === 'fixedDuration' || field === 'maxDuration') return 'number';
   if (field === 'isFixedDuration' || field === 'isCompleted') return 'boolean';
   return 'string';
 }
 
-function encodedValue(field: TaskScalarField, value: string | number | boolean, style: 'plain' | 'single' | 'double'): string | null {
+function encodedValue(field: SourceScalarField, value: string | number | boolean, style: 'plain' | 'single' | 'double'): string | null {
   const mode = fieldMode(field);
   if (mode === 'number') return typeof value === 'number' && Number.isFinite(value) ? String(value) : null;
   if (mode === 'boolean') return typeof value === 'boolean' ? String(value) : null;
@@ -112,6 +116,19 @@ export function planTaskStatusPatch(input: Uint8Array | string, status: TaskStat
 
 /** Plan a byte-exact patch of one allowlisted existing top-level task scalar. */
 export function planTaskScalarPatch(input: Uint8Array | string, field: TaskScalarField, value: string | number | boolean, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  if (!TASK_SCALAR_FIELDS.includes(field)) return { ok: false, reason: 'field-not-allowed' };
+  return planSourceScalarPatch(input, field, value, maxBytes);
+}
+
+/** Patch the one semantic project field, selecting preferred or legacy source spelling. */
+export function planTaskProjectPatch(input: Uint8Array | string, value: string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  const preferred = planTaskScalarPatch(input, 'project', value, maxBytes);
+  const legacy = planSourceScalarPatch(input, 'projectId', value, maxBytes);
+  if (preferred.ok && legacy.ok) return { ok: false, reason: 'target-ambiguous' };
+  return preferred.ok || preferred.reason !== 'target-missing' ? preferred : legacy;
+}
+
+function planSourceScalarPatch(input: Uint8Array | string, field: SourceScalarField, value: string | number | boolean, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
   const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
   if (bytes.byteLength > maxBytes) return { ok: false, reason: 'source-too-large' };
   let source: string;

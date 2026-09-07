@@ -1949,6 +1949,21 @@ Fixture only initially.
 - [x] Mutated files reload through `loadVaultState` with intended values while
       unrelated task fields remain unchanged (`tests/taskSourceMutation.test.ts`).
 
+### 13.2B-F Typed scalar authority correction
+
+- [x] Runtime field membership is enforced before source acquisition; unknown fields
+      return `field-not-allowed` with zero reader/coordinator/writer calls.
+- [x] `UpdateTaskScalarOptions` is a discriminated union, and the public semantic
+      surface exposes one `project` field rather than a subordinate `projectId`
+      mutation authority.
+- [x] Project writes select the existing preferred `project:` or sole legacy
+      `projectId:` spelling and refuse when both aliases are present.
+- [x] Plain string replacements are accepted only when the existing reader's scalar
+      interpretation remains the exact same string; plain `true`, `false`, `null`,
+      `~` and numeric-like values refuse, while quoted equivalents remain writable.
+- [x] Runtime authority, alias ambiguity, scalar round-trip and zero-read regressions
+      are covered in `tests/taskSourceMutation.test.ts`.
+
 ### 13.2A Source-preserving task status mutation
 
 - [x] D7 is explicitly re-decided for write-era source patching; the interpreted

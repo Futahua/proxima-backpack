@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMemoryVault } from '../src/adapters/memoryVault.js';
 import { createVaultMutationCoordinator } from '../src/app/vaultMutation.js';
 import { createMemoryRecoveryStore } from '../src/app/vaultRecovery.js';
-import { planTaskStatusPatch } from '../src/app/sourcePreservingMarkdown.js';
+import { planTaskScalarPatch, planTaskStatusPatch } from '../src/app/sourcePreservingMarkdown.js';
 import { updateTaskScalar, updateTaskStatus } from '../src/app/taskSourceMutation.js';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -129,5 +129,25 @@ describe('13.2A source-preserving task status mutation', () => {
     expect(await updateTaskScalar({ ...common, field: 'isCompleted', value: 'yes' as never })).toMatchObject({ ok: false, reason: 'invalid-value' });
     expect(await updateTaskScalar({ ...common, field: 'deadline', value: 'not-a-date' })).toMatchObject({ ok: false, reason: 'invalid-value' });
     expect(await updateTaskScalar({ ...common, field: 'status', value: 'bad\nstatus' })).toMatchObject({ ok: false, reason: 'invalid-value' });
+    expect(planTaskScalarPatch('---\nforeign: old\n---', 'foreign' as never, 'changed')).toMatchObject({ ok: false, reason: 'field-not-allowed' });
+
+    let binaryReads = 0;
+    const guardedReader = { ...reader, readBinary: async () => { binaryReads += 1; throw new Error('must not read'); } };
+    expect(await updateTaskScalar({ ...common, reader: guardedReader, field: 'foreign' as never, value: 'changed' as never })).toMatchObject({ ok: false, reason: 'field-not-allowed' });
+    expect(binaryReads).toBe(0);
+  });
+
+  it('requires plain string replacements to round-trip as strings and owns project aliases', async () => {
+    expect(planTaskScalarPatch('---\nstatus: running\n---', 'status', 'true')).toMatchObject({ ok: false, reason: 'invalid-value' });
+    expect(planTaskScalarPatch('---\nname: Old\n---', 'name', '01')).toMatchObject({ ok: false, reason: 'invalid-value' });
+    expect(planTaskScalarPatch('---\nstatus: "running"\n---', 'status', 'true')).toMatchObject({ ok: true });
+    expect(planTaskScalarPatch('---\nname: "Old"\n---', 'name', '01')).toMatchObject({ ok: true });
+
+    const source = '---\nproject: preferred\nprojectId: legacy\nstatus: running\n---\nbody';
+    const vault = createMemoryVault({ 'tasks/a.md': source });
+    const reader = { ...vault, readBinary: async (path: string, maxBytes: number) => { const file = await vault.read(path); return { ...file, bytes: enc.encode(file.text) }; } };
+    const coordinator = createVaultMutationCoordinator({ reader, writer: vault });
+    const observed = await reader.read('tasks/a.md');
+    expect(await updateTaskScalar({ path: 'tasks/a.md', expectedRevision: observed.revision, reader, coordinator, field: 'project', value: 'changed' })).toMatchObject({ ok: false, reason: 'target-ambiguous' });
   });
 });
