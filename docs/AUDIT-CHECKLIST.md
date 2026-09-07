@@ -1905,8 +1905,13 @@ Only after fallback file cards are already first-class.
 - [x] refresh measured — unchanged and one-record-changed refresh timing is guarded
       for the 1,000-per-kind source, with revision/content assertions (Gate 18A,
       `0d01ba3`).
-- [ ] no unbounded polling
-- [ ] no unbounded event/log buffers
+- [x] no unbounded polling — `RefreshPolicy` clamps intervals, owns one timer,
+      suspends while hidden, coalesces in-flight triggers, and disposes cleanly;
+      policy tests pin those bounds (Gate 18D, existing 6.1 evidence).
+- [x] no unbounded event/log buffers — the action transcript uses the bounded
+      `EventRing` (default capacity 128, configurable finite capacity) and evidence,
+      diagnostics and canvas registries have explicit bounds; ring eviction is pinned
+      by `tests/eventRing.test.ts` (Gate 18D).
 - [ ] no quadratic operation accidentally tied to every render
 
 Performance work must not move domain/file semantics into Papers.
