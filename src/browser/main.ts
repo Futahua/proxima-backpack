@@ -11,7 +11,6 @@ import { createUiHealthModel, type UiHealthModel } from '../app/uiHealth.js';
 import { evaluateCleanProfileAcceptance } from '../app/fsaEvidence.js';
 import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
 import { loadVaultState } from '../app/vaultRepository.js';
-import { calculateElasticTimeline, elasticCardHeights } from '../domain/elastic.js';
 import { fixedClock, sequentialIdGenerator } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
 import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, eventsByDay, eventsForSelection, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
@@ -27,6 +26,7 @@ import type { BrowserFileLike } from './canvasFileAdmission.js';
 import { createCanvasPreviewRegistry, disposeCanvasPreviewsOnPageHide } from './canvasPreview.js';
 import { createCanvasExcalidrawPreviewRegistry, disposeCanvasExcalidrawPreviewsOnPageHide } from './canvasExcalidrawPreview.js';
 import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } from './canvasTextPreview.js';
+import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -112,10 +112,11 @@ function surfaceSwitcher(): string {
   return `<div class="surface-switcher" data-c1-key="surface-switcher" role="tablist" aria-label="Proxima surfaces"><button type="button" class="surface-tab${surface === 'board' ? ' selected' : ''}" data-action="switch-surface" data-surface="board" role="tab" aria-selected="${surface === 'board'}" data-c1-key="surface-tab-board">Elastic board</button><button type="button" class="surface-tab${surface === 'calendar' ? ' selected' : ''}" data-action="switch-surface" data-surface="calendar" role="tab" aria-selected="${surface === 'calendar'}" data-c1-key="surface-tab-calendar">Calendar</button><button type="button" class="surface-tab${surface === 'canvas' ? ' selected' : ''}" data-action="switch-surface" data-surface="canvas" role="tab" aria-selected="${surface === 'canvas'}" data-c1-key="surface-tab-canvas">Canvas</button></div>`;
 }
 
-function taskCard(state: ProximaState, task: Task, height?: number): string {
+function taskCard(state: ProximaState, task: Task, height?: number, deadlineState?: DeadlineState): string {
   const deadline = task.deadline ? new Date(task.deadline).toLocaleDateString() : 'No deadline';
+  const deadlineText = deadlineState === 'expired' ? `Overdue · ${deadline}` : deadline;
   const style = height === undefined ? '' : ` style="min-height:${Math.round(height)}px"`;
-  return `<article class="task-card" data-c1-key="task-card-${escapeHtml(task.id)}"${style}><div class="task-card-top"><span class="task-status">${escapeHtml(task.status)}</span>${task.isCompleted ? '<span class="task-complete">Done</span>' : ''}</div><h3>${escapeHtml(task.name)}</h3><p>${escapeHtml(task.description || 'No description')}</p><footer><span>${escapeHtml(projectName(state, task.projectId))}</span><span>${escapeHtml(deadline)}</span></footer></article>`;
+  return `<article class="task-card" data-c1-key="task-card-${escapeHtml(task.id)}"${style}><div class="task-card-top"><span class="task-status">${escapeHtml(task.status)}</span>${task.isCompleted ? '<span class="task-complete">Done</span>' : ''}</div><h3>${escapeHtml(task.name)}</h3><p>${escapeHtml(task.description || 'No description')}</p><footer><span>${escapeHtml(projectName(state, task.projectId))}</span><span${deadlineState === 'expired' ? ' class="task-overdue"' : ''}>${escapeHtml(deadlineText)}</span></footer></article>`;
 }
 
 function boardSurface(state: ProximaState): string {
@@ -123,12 +124,9 @@ function boardSurface(state: ProximaState): string {
   const boardTasks = state.tasks.filter((task) => task.projectId === null || taskProjectIds.has(task.projectId));
   const selectedTasks = tasksForSelection(boardTasks, selection);
   const board = elasticBoard(selectedTasks, state.statuses);
-  const now = new Date(FIXED_CLOCK.now());
-  const futureDeadlines = board.running.map((task) => (task.deadline ? new Date(task.deadline) : null)).filter((date): date is Date => date !== null && Number.isFinite(date.getTime()) && date.getTime() > now.getTime()).sort((a, b) => a.getTime() - b.getTime());
-  const end = futureDeadlines[0] ?? new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  const heights = elasticCardHeights(board.running, calculateElasticTimeline(board.running, now, end), 460);
+  const presentation = boardElasticPresentation(board.running, new Date(FIXED_CLOCK.now()), 460);
   const columns: Array<{ id: 'backlog' | 'running' | 'finished'; label: string; tasks: Task[] }> = [{ id: 'backlog', label: 'Backlog', tasks: board.backlog }, { id: 'running', label: 'Running', tasks: board.running }, { id: 'finished', label: 'Finished', tasks: board.finished }];
-  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection))}</p><h2>Elastic board</h2><p class="surface-description">Running work expands by time remaining; status determines the column.</p></div><span class="surface-count">${selectedTasks.length} tasks</span></header><div class="board-grid">${columns.map((column) => `<section class="board-column" data-c1-key="board-column-${column.id}" aria-label="${column.label} column"><header><h3>${column.label}</h3><span>${column.tasks.length}</span></header><div class="column-cards">${column.tasks.length === 0 ? `<p class="empty-state" data-c1-key="board-empty-${column.id}">No tasks here.</p>` : column.tasks.map((task) => taskCard(state, task, column.id === 'running' ? heights[task.id] : undefined)).join('')}</div></section>`).join('')}</div></section>`;
+  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection))}</p><h2>Elastic board</h2><p class="surface-description">Running work expands by time remaining; status determines the column.</p></div><span class="surface-count">${selectedTasks.length} tasks</span></header><div class="board-grid">${columns.map((column) => `<section class="board-column" data-c1-key="board-column-${column.id}" aria-label="${column.label} column"><header><h3>${column.label}</h3><span>${column.tasks.length}</span></header><div class="column-cards">${column.tasks.length === 0 ? `<p class="empty-state" data-c1-key="board-empty-${column.id}">No tasks here.</p>` : column.tasks.map((task) => taskCard(state, task, column.id === 'running' ? presentation.heights[task.id] : undefined, column.id === 'running' ? presentation.deadlineState[task.id] : undefined)).join('')}</div></section>`).join('')}</div></section>`;
 }
 
 function monthTitle(date: Date): string { return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }); }
