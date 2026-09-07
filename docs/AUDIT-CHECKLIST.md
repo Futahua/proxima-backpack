@@ -594,15 +594,24 @@ Only then consider a project-scoped external read capability in Papers.
 - [x] Manual/focus/interval/external-signal reasons are a closed enum.
 - [x] Source revisions, stale/degraded state, last-good preservation, bounded
       diagnostics, and serialized refresh state are explicit and tested.
-- [ ] Manual refresh exists in the real-vault UI.
-- [ ] Refresh-on-focus considered/tested.
-- [ ] Bounded polling considered/tested if needed.
-- [ ] External edit produces new source revision.
-- [ ] Deleted source disappears or becomes explicit missing state.
+- [x] Manual refresh exists in the real-vault UI — the rendered `Refresh source`
+      control dispatches the normal `SourceSession.refresh('manual')` path; native
+      host acceptance remains covered separately by the OPEN rows below.
+- [x] Refresh-on-focus considered/tested — the browser focus handler uses the same
+      `SourceSession.refresh('focus')` path, with trigger-policy coalescing covered by
+      `tests/refreshPolicy.test.ts` and end-to-end failure/recovery coverage.
+- [x] Bounded polling considered/tested if needed — the policy uses one bounded,
+      visibility-aware timer with a nonzero minimum and idempotent disposal.
+- [x] External edit produces new source revision — refresh-controller and external
+      directory tests pin generation/revision advancement.
+- [x] Deleted source disappears or becomes explicit missing state — refresh
+      classification and selected-project cleanup are covered by the integration suite.
 - [x] Renamed source follows defined identity semantics — disposable external-directory
       acceptance in `tests/obsidianCoexistence.test.ts` (Gate 6R, `fff4fee`); this does
       not claim actual Obsidian/Papers-hosted rename acceptance.
-- [ ] UI never shows stale state as confirmed-current without indication.
+- [x] UI never shows stale state as confirmed-current without indication — failed
+      refreshes retain last-good content while the health surface labels stale or
+      degraded state; `tests/uiHealth.test.ts` and refresh integration cover this.
 
 ### 6.1A Provenance-aware product projection (Gate 6B)
 
