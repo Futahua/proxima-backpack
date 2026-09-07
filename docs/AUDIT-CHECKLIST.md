@@ -1805,6 +1805,16 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [ ] Actual process-kill injection at each filesystem mutation phase is verified.
 - [ ] Automatic startup reconciliation is wired into the Papers runtime.
 
+### 13.C2 prepared-record classification
+
+- [x] Prepared update/delete/move records are classified read-only as not-applied,
+      effect-present, conflict or already-committed.
+- [x] Intended update fingerprints and prior byte fingerprints are persisted.
+- [x] Binary-capable readers are used for exact-byte preimages when available.
+- [x] Reconciliation never restores or mutates source files.
+- [x] Ambiguous source/destination states fail closed as conflict.
+- [ ] Automatic startup reconciliation is wired into the Papers runtime.
+
 Not enabled merely because a UI needs editing.
 
 ### 13.1 Conflict model
