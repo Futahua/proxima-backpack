@@ -2205,7 +2205,13 @@ Current truth stays in-repo.
       fail-closed policy for any future change: an entry must name one falsifiable
       missing truth and its concrete acceptance test/artifact, plus the reviewed SHA
       and result, before implementation is authorized.
-- [ ] creator real-vault write state is clearly documented as enabled or disabled
+- [x] creator real-vault write state is clearly documented as enabled or disabled —
+      **Disabled** for this release: the browser, source/session pipeline and loopback
+      bridge are read-only; mutation-shaped bridge requests fail closed, and the
+      zero-write/coexistence witnesses assert no writer calls or source mutations
+      (`AGENTS.md`, `README.md`, `tests/agentVaultBridge.test.ts`,
+      `tests/zeroWriteWitness.test.ts`, `tests/obsidianCoexistence.test.ts`). Any
+      future write gate requires explicit approval and a separate conflict model.
 - [ ] no known data-loss path
 - [ ] no test depends on arbitrary sleeps
 - [ ] no test succeeds only by bypassing the real application action path
