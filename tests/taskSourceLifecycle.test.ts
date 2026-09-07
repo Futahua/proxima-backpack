@@ -31,6 +31,10 @@ describe('13.2E semantic task rename/delete', () => {
     expect(await renameTaskSource({ task: task(revision, 'filename'), newFileStem: 'renamed', coordinator })).toMatchObject({ ok: false, reason: 'rename-requires-explicit-id' });
     expect(await renameTaskSource({ task: task(revision), newFileStem: '../escape', coordinator })).toMatchObject({ ok: false, reason: 'invalid-name' });
     expect(await renameTaskSource({ task: { ...task(revision), source: { ...task(revision).source, kind: 'project' } as never }, newFileStem: 'renamed', coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
+    expect(await renameTaskSource({ task: { ...task(revision), source: { ...task(revision).source, path: 'Notes/creator.md' } }, newFileStem: 'renamed', coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
+    expect(await renameTaskSource({ task: { ...task(revision), source: { ...task(revision).source, path: 'Proxima/tasks/sub/task.md' } }, newFileStem: 'renamed', coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
+    expect(await renameTaskSource({ task: { ...task(revision), source: { ...task(revision).source, idOrigin: 'folder' } as never }, newFileStem: 'renamed', coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
+    expect(await renameTaskSource({ task: task(revision), newFileStem: 'CON', coordinator })).toMatchObject({ ok: false, reason: 'invalid-name' });
     expect(calls).toBe(0);
   });
 
@@ -59,5 +63,26 @@ describe('13.2E semantic task rename/delete', () => {
     expect(await vault.exists('Proxima/tasks/task-1.md')).toBe(false);
     expect(await vault.exists('Proxima/tasks/other.md')).toBe(true);
     expect((await loadVaultState(vault)).state.tasks.map((item) => item.id)).toEqual(['other']);
+  });
+
+  it('races independent renames without recreating the old source and isolates recovery attribution', async () => {
+    const vault = createMemoryVault({ 'Proxima/tasks/task-1.md': source });
+    const observed = await vault.read('Proxima/tasks/task-1.md');
+    const recoveryA = createMemoryRecoveryStore({ now: () => 0 }); const recoveryB = createMemoryRecoveryStore({ now: () => 0 });
+    const coordinatorA = createVaultMutationCoordinator({ reader: vault, writer: vault, recovery: recoveryA });
+    const coordinatorB = createVaultMutationCoordinator({ reader: vault, writer: vault, recovery: recoveryB });
+    const [a, b] = await Promise.all([
+      renameTaskSource({ task: task(observed.revision), newFileStem: 'one', coordinator: coordinatorA }),
+      renameTaskSource({ task: task(observed.revision), newFileStem: 'two', coordinator: coordinatorB }),
+    ]);
+    expect([a, b].filter((result) => result.ok)).toHaveLength(1);
+    expect([a, b].filter((result) => !result.ok && (result.reason === 'missing' || result.reason === 'stale'))).toHaveLength(1);
+    expect(await vault.exists('Proxima/tasks/task-1.md')).toBe(false);
+    const destinations = ['Proxima/tasks/one.md', 'Proxima/tasks/two.md'];
+    const existence = await Promise.all(destinations.map((path) => vault.exists(path)));
+    const winners = destinations.filter((_path, index) => existence[index]);
+    expect((await Promise.all(winners.map(async (path) => (await vault.read(path)).text)))).toEqual([source]);
+    expect([...recoveryA.list(), ...recoveryB.list()].filter((record) => record.status === 'committed')).toHaveLength(1);
+    expect([...recoveryA.list(), ...recoveryB.list()].every((record) => record.status === 'committed' || record.status === 'recovered')).toBe(true);
   });
 });

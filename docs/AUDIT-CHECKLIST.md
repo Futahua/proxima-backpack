@@ -2062,6 +2062,17 @@ Fixture only initially.
       independent coordinators produce at most one rename/delete winner and durable
       recovery attribution remains isolated (`tests/taskSourceLifecycle.test.ts`).
 
+### 13.2E-F Task-source authority and independent rename race
+
+- [x] Lifecycle operations are bound to the configured task directory and require an
+      immediate Markdown child; fabricated outside paths, nested paths and
+      `idOrigin: folder` refuse before coordinator calls.
+- [x] Portable reserved stems (`CON`, `PRN`, `AUX`, `NUL`, `COM1`…`LPT9`) are refused
+      alongside traversal/absolute names.
+- [x] Two independent coordinators racing the same observed rename yield one winner;
+      the old source is not recreated, the winner bytes remain exact, and each
+      recovery store remains attributable (loser is missing/stale or recovered no-op).
+
 ### 13.2A Source-preserving task status mutation
 
 - [x] D7 is explicitly re-decided for write-era source patching; the interpreted
