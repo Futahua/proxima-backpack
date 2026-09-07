@@ -2033,6 +2033,35 @@ Fixture only initially.
 - [x] Invalid ids/dates/numbers/booleans, unsafe paths and over-limit bodies refuse
       before writer calls (`tests/taskCreation.test.ts`).
 
+### 13.2E Semantic task rename/delete
+
+#### Authority and target identity
+
+- [x] Rename/delete accept observed task source provenance, verify `source.kind` at
+      runtime, and reject malformed provenance before coordinator calls.
+- [x] Rename requires explicit frontmatter identity; filename-derived legacy tasks are
+      refused rather than implicitly changing logical IDs. Delete supports either.
+- [x] No arbitrary generic filesystem move/delete path is exposed.
+
+#### Rename and identity
+
+- [x] Rename accepts only a bounded safe filename stem and deterministically derives a
+      same-directory `<stem>.md` destination; traversal, absolute and nested names
+      refuse.
+- [x] Rename travels through coordinator `move`, moves bytes byte-exactly, preserves
+      frontmatter/body/fields and explicit logical ID, and never overwrites or chooses
+      a fallback filename.
+- [x] Destination collisions preserve existing bytes; `loadVaultState` reports the
+      renamed task's updated source provenance.
+
+#### Delete and coexistence
+
+- [x] Delete travels through coordinator `delete`, removes only the selected task,
+      leaves unrelated files intact and performs no cascade/recreation.
+- [x] Stale peer edits and destination races refuse without overwriting peer bytes;
+      independent coordinators produce at most one rename/delete winner and durable
+      recovery attribution remains isolated (`tests/taskSourceLifecycle.test.ts`).
+
 ### 13.2A Source-preserving task status mutation
 
 - [x] D7 is explicitly re-decided for write-era source patching; the interpreted
