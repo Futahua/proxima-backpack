@@ -37,9 +37,15 @@ export async function reconcileOwnerRecoveryOnStartup(
 
   const outcomes: StartupRecoveryOutcome[] = [];
   let unresolved = 0;
+  let blockedAuthority = false;
   for (const record of store.list()) {
     if (record.status === 'committed') {
       if (outcomes.length < maxOutcomes) outcomes.push({ requestId: record.requestId, classification: 'already-committed', status: 'already-committed', reason: 'journal already committed' });
+      continue;
+    }
+    if (record.status === 'blocked') {
+      blockedAuthority = true;
+      if (outcomes.length < maxOutcomes) outcomes.push({ requestId: record.requestId, classification: 'conflict', status: 'blocked', reason: 'journal already blocked' });
       continue;
     }
     if (record.status !== undefined && record.status !== 'prepared' && record.status !== 'recovery-required') continue;
@@ -52,15 +58,14 @@ export async function reconcileOwnerRecoveryOnStartup(
     }
     try {
       if (!store.updateStatus) throw new Error('recovery status persistence unavailable');
-      if (classification === 'effect-present') await store.updateStatus(record.requestId, 'committed');
-      else if (classification === 'not-applied') await store.updateStatus(record.requestId, 'recovered');
-      else if (classification === 'conflict') await store.updateStatus(record.requestId, 'blocked');
+      if (classification === 'effect-present' && !(await store.updateStatus(record.requestId, 'committed'))) throw new Error('recovery record missing');
+      else if (classification === 'not-applied' && !(await store.updateStatus(record.requestId, 'recovered'))) throw new Error('recovery record missing');
+      else if (classification === 'conflict') { blockedAuthority = true; if (!(await store.updateStatus(record.requestId, 'blocked'))) throw new Error('recovery record missing'); }
       if (outcomes.length < maxOutcomes) outcomes.push({ requestId: record.requestId, classification, status: classification === 'effect-present' ? 'committed' : classification === 'not-applied' ? 'recovered' : classification === 'conflict' ? 'blocked' : 'already-committed', reason: classification });
     } catch (error) {
       if (outcomes.length < maxOutcomes) outcomes.push({ requestId: record.requestId, classification: 'error', status: 'error', reason: boundedReason(error) });
       return { mutationAuthority: 'blocked', outcomes, unresolved, reason: 'recovery status persistence failed' };
     }
   }
-  return { mutationAuthority: 'available', outcomes, unresolved };
+  return { mutationAuthority: blockedAuthority ? 'blocked' : 'available', outcomes, unresolved, ...(blockedAuthority ? { reason: 'blocked recovery record requires explicit resolution' } : {}) };
 }
-

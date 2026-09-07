@@ -119,7 +119,7 @@ export function createVaultMutationCoordinator(options: VaultMutationOptions): V
         return { ok: false, requestId, kind: mutation.kind, path, reason: result.reason, ...(result.actualRevision ? { actualRevision: result.actualRevision } : {}) };
       }
       if (mutation.kind !== 'create' && options.recovery?.markCommitted) {
-        try { await options.recovery.markCommitted(requestId); }
+        try { if (!(await options.recovery.markCommitted(requestId))) throw new Error('recovery record missing'); }
         catch {
           append({ requestId, kind: mutation.kind, path, outcome: 'rejected', reason: 'recovery-required' });
           return { ok: false, requestId, kind: mutation.kind, path, reason: 'recovery-required' };

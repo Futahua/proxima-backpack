@@ -2,7 +2,7 @@ import type { VaultWriter } from '../ports/vault.js';
 import type { RecoveryRecord, RecoveryStore } from './vaultRecovery.js';
 import type { RecoveryReadSource } from './vaultRecoveryReconcile.js';
 
-export type RecoveryRestoreOutcome = 'recovered' | 'already-recovered' | 'blocked' | 'not-eligible';
+export type RecoveryRestoreOutcome = 'recovered' | 'already-recovered' | 'blocked' | 'not-eligible' | 'recovery-required';
 export interface RecoveryRestoreResult { requestId: string; outcome: RecoveryRestoreOutcome; reason: string; }
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
@@ -31,15 +31,18 @@ export async function restoreCommittedRecovery(
   record: RecoveryRecord,
   reader: RecoveryReadSource,
   writer: VaultWriter,
-  store?: RecoveryStore,
+  store: RecoveryStore & { updateStatus(requestId: string, status: RecoveryRecord['status']): Promise<boolean> },
 ): Promise<RecoveryRestoreResult> {
+  const durable = store.list().find((candidate) => candidate.requestId === record.requestId);
+  if (!durable) return { requestId: record.requestId, outcome: 'not-eligible', reason: 'recovery record missing' };
+  record = durable;
   if (record.status === 'recovered') return { requestId: record.requestId, outcome: 'already-recovered', reason: 'journal already recovered' };
   if (record.status !== 'committed') return { requestId: record.requestId, outcome: 'not-eligible', reason: 'only committed records can be restored' };
   const prior = new Uint8Array(record.bytes);
   const source = await bytesAt(reader, record.path);
+  let mutationCommitted = false;
   const markRecovered = async () => {
-    if (!store?.updateStatus) throw new Error('recovery status persistence unavailable');
-    await store.updateStatus(record.requestId, 'recovered');
+    if (!(await store.updateStatus(record.requestId, 'recovered'))) throw new Error('recovery record missing');
   };
   try {
     if (record.operation === 'update') {
@@ -51,6 +54,7 @@ export async function restoreCommittedRecovery(
       if (!revision) return { requestId: record.requestId, outcome: 'blocked', reason: 'source revision unreadable' };
       const result = await writer.writeIfUnchanged(record.path, prior, revision);
       if (!result.ok) return { requestId: record.requestId, outcome: 'blocked', reason: result.reason };
+      mutationCommitted = true;
       await markRecovered();
       return { requestId: record.requestId, outcome: 'recovered', reason: 'conditional update restore committed' };
     }
@@ -62,6 +66,7 @@ export async function restoreCommittedRecovery(
       }
       const result = await writer.createIfAbsent(record.path, prior);
       if (!result.ok) return { requestId: record.requestId, outcome: 'blocked', reason: result.reason };
+      mutationCommitted = true;
       await markRecovered();
       return { requestId: record.requestId, outcome: 'recovered', reason: 'conditional delete restore committed' };
     }
@@ -77,9 +82,10 @@ export async function restoreCommittedRecovery(
     if (!revision) return { requestId: record.requestId, outcome: 'blocked', reason: 'destination revision unreadable' };
     const result = await writer.moveIfUnchanged(record.destination, record.path, revision);
     if (!result.ok) return { requestId: record.requestId, outcome: 'blocked', reason: result.reason };
+    mutationCommitted = true;
     await markRecovered();
     return { requestId: record.requestId, outcome: 'recovered', reason: 'conditional move restore committed' };
   } catch (error) {
-    return { requestId: record.requestId, outcome: 'blocked', reason: error instanceof Error ? error.message.slice(0, 200) : 'restore failed' };
+    return { requestId: record.requestId, outcome: mutationCommitted ? 'recovery-required' : 'blocked', reason: mutationCommitted ? 'vault mutation committed; recovery status persistence failed' : error instanceof Error ? error.message.slice(0, 200) : 'restore failed' };
   }
 }

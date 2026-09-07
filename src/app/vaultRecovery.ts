@@ -16,8 +16,8 @@ export interface RecoveryRecord {
 
 export interface RecoveryStore {
   save(record: RecoveryRecord): Promise<void>;
-  markCommitted?(requestId: string): Promise<void>;
-  updateStatus?(requestId: string, status: RecoveryRecord['status']): Promise<void>;
+  markCommitted?(requestId: string): Promise<boolean>;
+  updateStatus?(requestId: string, status: RecoveryRecord['status']): Promise<boolean>;
   list(): readonly RecoveryRecord[];
 }
 
@@ -68,8 +68,8 @@ export function createMemoryRecoveryStore(clock: Clock, capacity = 64): Recovery
       records.push({ ...record, status: record.status ?? 'prepared', bytes: new Uint8Array(record.bytes) });
       while (records.length > max) records.shift();
     },
-    async markCommitted(requestId) { const record = records.find((candidate) => candidate.requestId === requestId); if (record) record.status = 'committed'; },
-    async updateStatus(requestId, status) { const record = records.find((candidate) => candidate.requestId === requestId); if (record) record.status = status; },
+    async markCommitted(requestId) { const record = records.find((candidate) => candidate.requestId === requestId); if (!record) return false; record.status = 'committed'; return true; },
+    async updateStatus(requestId, status) { const record = records.find((candidate) => candidate.requestId === requestId); if (!record) return false; record.status = status; return true; },
     list() { return records.map((record) => ({ ...record, bytes: new Uint8Array(record.bytes), ...(record.nextBytes ? { nextBytes: new Uint8Array(record.nextBytes) } : {}) })); },
   };
 }
@@ -115,8 +115,8 @@ export function createDurableRecoveryStore(backend: RecoveryJournalBackend, capa
       }));
     },
     async save(record) { records.push({ ...record, status: record.status ?? 'prepared', bytes: new Uint8Array(record.bytes) }); while (records.length > maxRecords) records.shift(); await persist(); },
-    async markCommitted(requestId) { const record = records.find((candidate) => candidate.requestId === requestId); if (record) { record.status = 'committed'; await persist(); } },
-    async updateStatus(requestId, status) { const record = records.find((candidate) => candidate.requestId === requestId); if (record) { record.status = status; await persist(); } },
+    async markCommitted(requestId) { const record = records.find((candidate) => candidate.requestId === requestId); if (!record) return false; record.status = 'committed'; await persist(); return true; },
+    async updateStatus(requestId, status) { const record = records.find((candidate) => candidate.requestId === requestId); if (!record) return false; record.status = status; await persist(); return true; },
     list() { return records.map((record) => ({ ...record, bytes: new Uint8Array(record.bytes), ...(record.nextBytes ? { nextBytes: new Uint8Array(record.nextBytes) } : {}) })); },
   };
 }

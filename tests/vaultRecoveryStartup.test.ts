@@ -21,7 +21,7 @@ describe('Gate 13C3A autonomous startup recovery', () => {
     const vault = createMemoryVault({ 'effect.md': 'new', 'not-applied.md': 'old', 'peer.md': 'third-party', 'done.md': 'new' });
     const before = await vault.read('effect.md');
     const restarted = createDurableRecoveryStore(io.backend); const result = await reconcileOwnerRecoveryOnStartup(restarted, vault);
-    expect(result).toMatchObject({ mutationAuthority: 'available', unresolved: 3 });
+    expect(result).toMatchObject({ mutationAuthority: 'blocked', unresolved: 3 });
     expect(result.outcomes.map((item) => item.status)).toEqual(['committed', 'recovered', 'blocked', 'already-committed']);
     expect(restarted.list().map((item) => item.status)).toEqual(['committed', 'recovered', 'blocked', 'committed']);
     expect(await vault.read('effect.md')).toEqual(before);
