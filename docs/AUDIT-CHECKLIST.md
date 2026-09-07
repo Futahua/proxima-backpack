@@ -1940,30 +1940,57 @@ Performance work must not move domain/file semantics into Papers.
 
 ## Gate 19 — Error and recovery behavior
 
-- [ ] missing vault grant
-- [ ] revoked FSA permission
-- [ ] inaccessible directory
-- [ ] malformed record
-- [ ] duplicate ID
-- [ ] unsupported frontmatter
-- [ ] corrupted Excalidraw
-- [ ] missing linked file
-- [ ] moved/renamed file
-- [ ] deleted project
-- [ ] source changes during read
+- [x] missing vault grant — no-restored-handle fallback is explicit and does not
+      query permission (`tests/handleBootstrap.test.ts`).
+- [x] revoked FSA permission — prompt/denied permission and permission loss remain
+      explicit, avoid reads, degrade last-good state, and recover on restart
+      (`tests/handleBootstrap.test.ts`, `tests/startupSession.test.ts`).
+- [x] inaccessible directory — present-but-unreadable traversal is `failed`/error,
+      genuinely absent is `absent`/warning, and unknown presence fails closed
+      (`tests/candidateAccounting.test.ts`, `tests/transportCompleteness.test.ts`).
+- [x] malformed record — records remain visible with bounded validation problems and
+      malformed refresh preserves the last-good snapshot (`tests/validation.test.ts`,
+      `tests/refreshController.test.ts`).
+- [x] duplicate ID — the later candidate is rejected with a stable `duplicate-id`
+      error and deterministic winner (`tests/identity.test.ts`).
+- [x] unsupported frontmatter — unsupported syntax is reported without silently
+      rewriting or dropping the record (`tests/frontmatter.test.ts`,
+      `tests/validation.test.ts`).
+- [x] corrupted Excalidraw — decode/shape failures return bounded problems and no
+      partial scene (`tests/excalidraw.test.ts`).
+- [x] missing linked file — unresolved or unreadable embedded assets degrade to a
+      visible bounded outcome while other assets continue (`tests/excalidrawAssets.test.ts`).
+- [x] moved/renamed file — explicit identity survives a path move and refresh classifies
+      the change as `renamed` (`tests/identity.test.ts`, `tests/refreshController.test.ts`).
+- [x] deleted project — refresh removes the record and clears a stale selection with
+      no ghost events (`tests/refreshIntegration.test.ts`, `tests/externalDirectoryVault.test.ts`).
+- [x] source changes during read — concurrent refreshes serialize and a stale older
+      result cannot overwrite the newer source (`tests/refreshController.test.ts`).
 - [ ] renderer crash
-- [ ] failed refresh
-- [ ] failed thumbnail
+- [x] failed refresh — unreadable and malformed refreshes return structured outcomes,
+      preserve last-good data, and recover after repair (`tests/refreshController.test.ts`,
+      `tests/refreshIntegration.test.ts`).
+- [x] failed thumbnail — object-URL quota/invalid-URL failures keep the prior preview,
+      reject the new preview, and revoke only owned URLs (`tests/canvasPreview.test.ts`).
 - [ ] failed native open/reveal
 - [ ] stale write if writes exist
 
 For every error:
 
-- [ ] structured code
-- [ ] user-readable explanation
-- [ ] agent-readable state
-- [ ] no silent data loss
-- [ ] no automatic destructive repair
+- [x] structured code — failure paths use the documented problem/outcome vocabulary
+      and stable codes covered by the focused suites above.
+- [x] user-readable explanation — diagnostics retain bounded explanatory details while
+      surfaces render safe fallback/status text (`tests/inspection.test.ts`, focused
+      failure-surface suites above).
+- [x] agent-readable state — inspection and health projections expose bounded status,
+      problem codes, revisions and settled/degraded state (`tests/inspection.test.ts`,
+      `tests/readOnlyProjection.test.ts`).
+- [x] no silent data loss — candidate and Excalidraw census equalities plus last-good
+      refresh snapshots account for rejected, skipped and unavailable data
+      (`tests/candidateAccounting.test.ts`, `tests/excalidrawRender.test.ts`).
+- [x] no automatic destructive repair — v1 is read-only and failure handling never
+      writes or migrates source files (`tests/zeroWriteWitness.test.ts`,
+      `tests/obsidianCoexistence.test.ts`).
 
 ---
 
