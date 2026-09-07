@@ -106,7 +106,7 @@ describe('Gate 8B one-shot browser File admission', () => {
     expect(selected.preview?.kind).toBe('raster-image');
     if (selected.preview?.kind === 'raster-image') expect(selected.preview.mediaType).toBe('image/png');
     const text = await admitCanvasFileForPresentation(sequentialIdGenerator(), file('note.md', new TextEncoder().encode('hello')));
-    expect(text.preview).toBeNull();
+    expect(text.preview).toMatchObject({ kind: 'text', text: 'hello' });
   });
 
   it('transfers a decoded Excalidraw scene without rereading', async () => {
@@ -118,5 +118,15 @@ describe('Gate 8B one-shot browser File admission', () => {
     expect(selected.preview).toMatchObject({ kind: 'excalidraw', scene: { elements: [] } });
     const active = await admitCanvasFileForPresentation(sequentialIdGenerator(), file('page.svg', new Uint8Array([1]), { arrayBuffer: async () => { reads += 1; return new ArrayBuffer(1); } }));
     expect(active.preview).toBeNull();
+  });
+
+  it('transfers one literal text seed for supported text formats and preserves Excalidraw precedence', async () => {
+    let reads = 0;
+    const selected = await admitCanvasFileForPresentation(sequentialIdGenerator(), file('note.md', new TextEncoder().encode('<script>alert(1)</script>'), { arrayBuffer: async () => { reads += 1; return new TextEncoder().encode('<script>alert(1)</script>').buffer; } }));
+    expect(reads).toBe(1);
+    expect(selected.admission.selection.kind).toBe('text');
+    expect(selected.preview).toMatchObject({ kind: 'text', text: '<script>alert(1)</script>' });
+    const drawing = await admitCanvasFileForPresentation(sequentialIdGenerator(), file('drawing.md', new TextEncoder().encode(scene)));
+    expect(drawing.preview?.kind).toBe('excalidraw');
   });
 });

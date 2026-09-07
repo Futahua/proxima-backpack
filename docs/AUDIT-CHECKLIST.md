@@ -1430,7 +1430,7 @@ No speculative broadening of `connect-src`.
 ### 8.3 "Any file" contract
 
 - [x] Every admitted creator-selected browser file can exist as a canvas object (ephemeral one-shot source).
-- [ ] Only understood formats require inline preview.
+- [x] Only understood formats require inline preview (supported raster, Excalidraw scenes and literal text; SVG/PDF remain passive).
 - [x] Unsupported format gets a first-class fallback card, rendered visibly on Canvas.
 - [ ] Fallback card can show available:
   - [x] filename
@@ -1443,7 +1443,7 @@ No speculative broadening of `connect-src`.
 
 ### 8.4 Drag/drop
 
-- [x] Browser raster and decoded Excalidraw scene drops can be previewed one-shot from `File` (text/Markdown remain open).
+- [x] Browser raster, decoded Excalidraw scene and supported text/Markdown drops can be previewed one-shot from `File`.
 - [x] Source identity semantics after restart specified for ephemeral admission.
 - [x] Dropped path-like metadata does not become a vault locator or logical ID.
 - [x] Duplicate drops have defined behavior: each admission is independent.
@@ -1460,7 +1460,7 @@ No speculative broadening of `connect-src`.
 - [x] Missing binary capability and read failure become explicit fallback outcomes.
 - [x] Loader preserves Proxima-owned node identity and layout.
 - [x] Browser `File` one-shot admission is bounded and capability-free after acquisition.
-- [x] Inline browser raster rendering/object-URL lifecycle and scene-only Excalidraw SVG rendering (text/Markdown/SVG/PDF remain open).
+- [x] Inline browser raster/object-URL lifecycle, scene-only Excalidraw SVG rendering and escaped literal text rendering (SVG/PDF remain open).
 
 ---
 

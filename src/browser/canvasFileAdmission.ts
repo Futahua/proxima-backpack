@@ -52,9 +52,14 @@ export interface CanvasExcalidrawPreviewSeed {
   scene: ExcalidrawScene;
 }
 
+export interface CanvasTextPreviewSeed {
+  kind: 'text';
+  text: string;
+}
+
 export interface CanvasFilePresentationAdmission {
   admission: CanvasFileAdmissionResult;
-  preview: CanvasRasterPreviewSeed | CanvasExcalidrawPreviewSeed | null;
+  preview: CanvasRasterPreviewSeed | CanvasExcalidrawPreviewSeed | CanvasTextPreviewSeed | null;
 }
 
 /** Admit one browser File snapshot without retaining the File capability. */
@@ -64,6 +69,7 @@ export async function admitCanvasFile(
   layout?: CanvasLayout,
   rasterSink?: (seed: CanvasRasterPreviewSeed) => void,
   excalidrawSink?: (seed: CanvasExcalidrawPreviewSeed) => void,
+  textSink?: (seed: CanvasTextPreviewSeed) => void,
 ): Promise<CanvasFileAdmissionResult> {
   const filename = safeFilename(file.name);
   // Policy uses the complete original name; only the display copy is bounded.
@@ -117,6 +123,7 @@ export async function admitCanvasFile(
     return { node, selection: textSelection, status: 'selected' };
   }
   if (extension === 'md' || extension === 'markdown' || extension === 'txt' || extension === 'text' || extension === 'json' || extension === 'csv' || extension === 'tsv') {
+    if (textSelection.kind === 'text') textSink?.({ kind: 'text', text });
     return { node, selection: textSelection, status: 'selected' };
   }
   const selection = selectCanvasRepresentation(node.source, { kind: 'binary', bytes });
@@ -130,10 +137,11 @@ export async function admitCanvasFileForPresentation(
   file: BrowserFileLike,
   layout?: CanvasLayout,
 ): Promise<CanvasFilePresentationAdmission> {
-  let preview: CanvasRasterPreviewSeed | CanvasExcalidrawPreviewSeed | null = null;
+  let preview: CanvasRasterPreviewSeed | CanvasExcalidrawPreviewSeed | CanvasTextPreviewSeed | null = null;
   const admission = await admitCanvasFile(ids, file, layout,
     (seed) => { preview = { ...seed, bytes: new Uint8Array(seed.bytes) }; },
     (seed) => { preview = { kind: 'excalidraw', scene: seed.scene }; },
+    (seed) => { preview = { kind: 'text', text: seed.text }; },
   );
   return { admission, preview };
 }

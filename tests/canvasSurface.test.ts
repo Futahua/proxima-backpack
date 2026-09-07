@@ -4,6 +4,7 @@ import { admitCanvasDrop, createCanvasDropQueue, MAX_CANVAS_DROP_FILES, renderCa
 import type { BrowserFileLike } from '../src/browser/canvasFileAdmission.js';
 import { createCanvasPreviewRegistry } from '../src/browser/canvasPreview.js';
 import { createCanvasExcalidrawPreviewRegistry } from '../src/browser/canvasExcalidrawPreview.js';
+import { createCanvasTextPreviewRegistry } from '../src/browser/canvasTextPreview.js';
 
 function file(name: string, bytes: Uint8Array): BrowserFileLike {
   return { name, size: bytes.length, lastModified: 0, type: 'application/octet-stream', arrayBuffer: async () => new Uint8Array(bytes).buffer as ArrayBuffer };
@@ -85,5 +86,16 @@ describe('Gate 8C visible passive canvas surface', () => {
     expect(html).toContain('<svg');
     expect(html).not.toContain('arrayBuffer');
     expect(state.items[0]?.selection.kind).toBe('excalidraw');
+  });
+
+  it('mounts escaped literal text without creating HTML elements', async () => {
+    const textPreviews = createCanvasTextPreviewRegistry();
+    const state = await admitCanvasDrop([file('note.md', new TextEncoder().encode('<script>alert(1)</script><img src=x>'))], undefined, sequentialIdGenerator(), undefined, undefined, textPreviews);
+    const html = renderCanvasSurface(state, undefined, undefined, textPreviews.snapshot());
+    expect(html).toContain('text — inline preview mounted');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).toContain('<pre class="canvas-text-preview">');
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<img src=x>');
   });
 });

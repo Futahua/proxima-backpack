@@ -6,6 +6,7 @@ import type { CanvasRepresentationSelection } from '../domain/canvasRenderer.js'
 import { admitCanvasFile, admitCanvasFileForPresentation, type BrowserFileLike, type CanvasFileAdmissionResult } from './canvasFileAdmission.js';
 import type { CanvasPreviewRegistry } from './canvasPreview.js';
 import type { CanvasExcalidrawPreviewRegistry, CanvasExcalidrawPresentation } from './canvasExcalidrawPreview.js';
+import type { CanvasTextPreviewRegistry, CanvasTextPreviewSnapshot } from './canvasTextPreview.js';
 
 export const MAX_CANVAS_DROP_FILES = 32;
 
@@ -28,12 +29,12 @@ export interface CanvasDropQueue {
 }
 
 /** Serialize batches so overlapping DOM drop events cannot overwrite each other. */
-export function createCanvasDropQueue(ids: IdGenerator, initial: CanvasSurfaceState = EMPTY_CANVAS_SURFACE, previews?: CanvasPreviewRegistry, excalidrawPreviews?: CanvasExcalidrawPreviewRegistry): CanvasDropQueue {
+export function createCanvasDropQueue(ids: IdGenerator, initial: CanvasSurfaceState = EMPTY_CANVAS_SURFACE, previews?: CanvasPreviewRegistry, excalidrawPreviews?: CanvasExcalidrawPreviewRegistry, textPreviews?: CanvasTextPreviewRegistry): CanvasDropQueue {
   let current = initial;
   let tail: Promise<void> = Promise.resolve();
   return {
     enqueue(files) {
-      const job = tail.then(async () => { current = await admitCanvasDrop(files, current, ids, previews, excalidrawPreviews); });
+      const job = tail.then(async () => { current = await admitCanvasDrop(files, current, ids, previews, excalidrawPreviews, textPreviews); });
       tail = job.then(() => undefined);
       return job.then(() => current);
     },
@@ -48,16 +49,18 @@ export async function admitCanvasDrop(
   ids: IdGenerator,
   previews?: CanvasPreviewRegistry,
   excalidrawPreviews?: CanvasExcalidrawPreviewRegistry,
+  textPreviews?: CanvasTextPreviewRegistry,
 ): Promise<CanvasSurfaceState> {
   const nextItems = [...state.items];
   const admitted = Math.min(files.length, MAX_CANVAS_DROP_FILES);
   for (let index = 0; index < admitted; index += 1) {
     const file = files[index];
     if (!file) continue;
-    const resultWithPreview = previews || excalidrawPreviews ? await admitCanvasFileForPresentation(ids, file) : null;
+    const resultWithPreview = previews || excalidrawPreviews || textPreviews ? await admitCanvasFileForPresentation(ids, file) : null;
     const result = resultWithPreview?.admission ?? await admitCanvasFile(ids, file);
     if (resultWithPreview?.preview?.kind === 'raster-image' && previews) previews.install(result.node.id, resultWithPreview.preview);
     if (resultWithPreview?.preview?.kind === 'excalidraw' && excalidrawPreviews) excalidrawPreviews.install(result.node.id, resultWithPreview.preview);
+    if (resultWithPreview?.preview?.kind === 'text' && textPreviews) textPreviews.install(result.node.id, resultWithPreview.preview);
     nextItems.push({ node: result.node, selection: result.selection, status: result.status });
   }
   const diagnostic = files.length > MAX_CANVAS_DROP_FILES
@@ -67,26 +70,29 @@ export async function admitCanvasDrop(
 }
 
 /** Render escaped metadata plus an optional registry-owned raster URL. */
-export function renderCanvasSurface(state: CanvasSurfaceState, previews?: ReadonlyMap<string, { url: string; mediaType: string }>, excalidrawPreviews?: ReadonlyMap<string, CanvasExcalidrawPresentation>): string {
+export function renderCanvasSurface(state: CanvasSurfaceState, previews?: ReadonlyMap<string, { url: string; mediaType: string }>, excalidrawPreviews?: ReadonlyMap<string, CanvasExcalidrawPresentation>, textPreviews?: ReadonlyMap<string, CanvasTextPreviewSnapshot>): string {
   const diagnostic = state.lastDropDiagnostic
     ? `<p class="canvas-diagnostic" data-c1-key="canvas-drop-diagnostic">${escapeHtml(state.lastDropDiagnostic)}</p>`
     : '';
-  const cards = state.items.map((item, index) => canvasCard(item, index, previews, excalidrawPreviews)).join('');
+  const cards = state.items.map((item, index) => canvasCard(item, index, previews, excalidrawPreviews, textPreviews)).join('');
   return `<section class="surface canvas-surface" data-c1-key="canvas-region" aria-label="Canvas"><header class="surface-header"><div><p class="eyebrow">Workspace canvas</p><h2>Canvas</h2><p class="surface-description">Drop files to create passive, one-shot file cards.</p></div><span class="surface-count">${state.items.length} items</span></header><div class="canvas-drop-zone" data-c1-key="canvas-drop-zone" aria-label="Canvas drop zone">${cards || '<p class="empty-state">Drop a file here.</p>'}</div>${diagnostic}</section>`;
 }
 
-function canvasCard(item: CanvasSurfaceItem, index: number, previews?: ReadonlyMap<string, { url: string; mediaType: string }>, excalidrawPreviews?: ReadonlyMap<string, CanvasExcalidrawPresentation>): string {
+function canvasCard(item: CanvasSurfaceItem, index: number, previews?: ReadonlyMap<string, { url: string; mediaType: string }>, excalidrawPreviews?: ReadonlyMap<string, CanvasExcalidrawPresentation>, textPreviews?: ReadonlyMap<string, CanvasTextPreviewSnapshot>): string {
   const { selection, node } = item;
   const preview = selection.kind === 'raster-image' ? previews?.get(node.id) : undefined;
   const drawing = selection.kind === 'excalidraw' ? excalidrawPreviews?.get(node.id) : undefined;
-  const label = selection.kind === 'fallback' ? 'Fallback file' : selection.kind === 'raster-image' && preview ? 'raster-image — inline preview mounted' : selection.kind === 'excalidraw' && drawing ? 'excalidraw — inline preview mounted' : `${selection.kind} — inline preview not mounted`;
+  const textPreview = selection.kind === 'text' ? textPreviews?.get(node.id) : undefined;
+  const label = selection.kind === 'fallback' ? 'Fallback file' : selection.kind === 'raster-image' && preview ? 'raster-image — inline preview mounted' : selection.kind === 'excalidraw' && drawing ? 'excalidraw — inline preview mounted' : selection.kind === 'text' && textPreview?.presentation ? 'text — inline preview mounted' : `${selection.kind} — inline preview not mounted`;
   const reason = selection.reason ? ` · ${selection.reason.replaceAll('-', ' ')}` : '';
   const size = selection.size === null ? 'size unavailable' : `${selection.size} bytes`;
   const modified = selection.modifiedAt ?? 'modified time unavailable';
   const state = selection.sourceState;
   const image = preview && preview.url.startsWith('blob:') ? `<img src="${escapeHtml(preview.url)}" alt="${escapeHtml(selection.filename)}">` : '';
   const drawingSvg = drawing ? `<div class="canvas-excalidraw-preview" aria-label="Generated Excalidraw preview">${drawing.svg}</div><small>scene ${drawing.census.sceneElements} · rendered ${drawing.census.rendered} · problems ${drawing.problems.length}</small>` : '';
-  return `<article class="canvas-card" data-c1-key="canvas-card-${index}" data-canvas-node-id="${escapeHtml(node.id)}"><header><strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}</span></header>${image}${drawingSvg}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(state)}${escapeHtml(reason)}</span></footer></article>`;
+  const textMarkup = textPreview?.presentation ? `<pre class="canvas-text-preview">${escapeHtml(textPreview.presentation.text)}</pre>` : '';
+  const previewFailure = textPreview?.failure ? ` · ${textPreview.failure.replaceAll('-', ' ')}` : '';
+  return `<article class="canvas-card" data-c1-key="canvas-card-${index}" data-canvas-node-id="${escapeHtml(node.id)}"><header><strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}${escapeHtml(previewFailure)}</span></header>${image}${drawingSvg}${textMarkup}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(state)}${escapeHtml(reason)}</span></footer></article>`;
 }
 
 function escapeHtml(value: unknown): string {

@@ -824,6 +824,19 @@ directories, persistence, public browser-data actions and writes remain deferred
 This decision supersedes D44–D45 only for scene-only Excalidraw presentation; their
 raster, text, SVG/PDF and authority boundaries remain in force.
 
+## D47 — Text previews are literal, escaped and browser-owned
+
+**Decided:** supported text selections may transfer the already-decoded bounded
+string once into a browser-only text-preview registry. The Canvas surface renders
+only escaped literal `<pre>` content, with a stricter per-item, aggregate and item
+budget; oversize presentation remains a visible unavailable diagnostic with no
+silent truncation. Markdown is not parsed, and no links, images, HTML, network,
+object URLs or attachment resolution are introduced.
+
+**Boundary:** active content still exits before acquisition; Excalidraw precedence
+remains absolute; Canvas/domain/app state, action protocol, persistence, grants and
+writes remain unchanged. SVG and PDF remain passive/deferred.
+
 ## D44 — Canvas surface renders passive drop cards only
 
 **Decided:** the browser surface may accept a bounded `DataTransfer.files` batch and
