@@ -29,4 +29,13 @@ describe('Gate 6.2B board elastic presentation', () => {
     expect(result.heights.expired).toBe(230);
     expect(result.timelineEnd.getTime()).toBe(now.getTime());
   });
+
+  it('uses the fallback when expired/equal deadlines coexist with future work', () => {
+    const mixed = boardElasticPresentation([task({ id: 'expired', deadline: '2026-09-07T11:00:00.000Z' }), task({ id: 'future', deadline: '2026-09-07T16:00:00.000Z' })], now, 460);
+    expect(mixed.usedFallbackTimeline).toBe(true);
+    expect(mixed.timelineEnd.getTime()).toBe(now.getTime());
+    const equal = boardElasticPresentation([task({ id: 'equal', deadline: '2026-09-07T12:00:00.000Z' }), task({ id: 'future', deadline: '2026-09-07T16:00:00.000Z' })], now, 460);
+    expect(equal.usedFallbackTimeline).toBe(true);
+    expect(equal.timelineEnd.getTime()).toBe(now.getTime());
+  });
 });

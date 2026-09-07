@@ -23,7 +23,7 @@ export function boardElasticPresentation(running: Task[], now: Date, containerHe
     else { deadlineState[task.id] = 'expired'; hasExpired = true; }
   }
   futureDeadlines.sort((a, b) => a.getTime() - b.getTime());
-  const end = futureDeadlines[0] ?? (hasExpired ? new Date(now.getTime()) : new Date(now.getTime() + 8 * 60 * 60 * 1000));
+  const end = hasExpired ? new Date(now.getTime()) : (futureDeadlines[0] ?? new Date(now.getTime() + 8 * 60 * 60 * 1000));
   const timeline = calculateElasticTimeline(running, now, end);
   return { heights: elasticCardHeights(running, timeline, containerHeight), deadlineState, timelineEnd: end, usedFallbackTimeline: timeline.length === 0 };
 }
