@@ -2285,6 +2285,24 @@ Fixture only initially.
       fallback, no-op, authority and preservation tests pass in
       `tests/eventOptionalMutation.test.ts`.
 
+### 13.2M Legacy event identity promotion
+
+- [x] Promotion accepts only bounded immediate `source.kind: event` provenance in
+      the configured events directory; filename-origin events are promotable,
+      frontmatter-origin events no-op before reads, and other origins/paths refuse.
+- [x] The exact filename stem is the only accepted logical ID; callers cannot
+      replace or normalize it, and mismatches refuse before source access.
+- [x] Existing frontmatter is required; one reader-safe `id:` is inserted before
+      the closing fence while preserving BOM/line endings, project aliases, dates,
+      completion, body and every non-target byte. Malformed/duplicate/structured
+      targets refuse.
+- [x] Promotion uses coordinator update with CAS from `event.source.revision`,
+      durable recovery and stale-peer preservation; no move, retry, merge or generic
+      YAML insertion is exposed.
+- [x] Reload preserves logical ID/path and all event semantics while changing only
+      identity origin to frontmatter. Focused `01.md`/`null.md`, no-op, mismatch,
+      malformed, duplicate and stale tests pass in `tests/eventIdentityPromotion.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
