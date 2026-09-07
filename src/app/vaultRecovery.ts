@@ -102,15 +102,16 @@ export function createDurableRecoveryStore(backend: RecoveryJournalBackend, capa
         const validStatus = item.status === undefined || item.status === 'prepared' || item.status === 'committed' || item.status === 'recovery-required' || item.status === 'recovered' || item.status === 'blocked';
         const validBytes = Array.isArray(item.bytes) && item.bytes.every((byte) => typeof byte === 'number' && Number.isInteger(byte) && byte >= 0 && byte <= 255);
         const validNextBytes = item.nextBytes === undefined || (Array.isArray(item.nextBytes) && item.nextBytes.every((byte) => typeof byte === 'number' && Number.isInteger(byte) && byte >= 0 && byte <= 255));
+        const validFp = (value: unknown): value is { size: number; hash: string } => typeof value === 'object' && value !== null && typeof (value as { size?: unknown }).size === 'number' && Number.isInteger((value as { size: number }).size) && (value as { size: number }).size >= 0 && (value as { size: number }).size <= maxBytes && typeof (value as { hash?: unknown }).hash === 'string' && (value as { hash: string }).hash.length <= 32;
         const validStrings = typeof item.requestId === 'string' && item.requestId.length <= 200 && typeof item.path === 'string' && item.path.length <= 260 && typeof item.revision === 'string' && item.revision.length <= 400 && typeof item.createdAt === 'string' && item.createdAt.length <= 80 && (item.destination === undefined || (typeof item.destination === 'string' && item.destination.length <= 260));
-        if (!validOperation || !validStatus || !validStrings || !validBytes || !validNextBytes) throw new Error('invalid recovery record');
+        if (!validOperation || !validStatus || !validStrings || !validBytes || !validNextBytes || (item.priorFingerprint !== undefined && !validFp(item.priorFingerprint)) || (item.intendedFingerprint !== undefined && !validFp(item.intendedFingerprint))) throw new Error('invalid recovery record');
         const requestId = item.requestId as string;
         const operation = item.operation as RecoveryRecord['operation'];
         const path = item.path as string;
         const revision = item.revision as string;
         const createdAt = item.createdAt as string;
         const byteValues = item.bytes as number[];
-        return { requestId, operation, path, ...(typeof item.destination === 'string' ? { destination: item.destination } : {}), revision, bytes: new Uint8Array(byteValues), ...(Array.isArray(item.nextBytes) ? { nextBytes: new Uint8Array(item.nextBytes as number[]) } : {}), createdAt, status: (item.status ?? 'prepared') as RecoveryRecord['status'] };
+        return { requestId, operation, path, ...(typeof item.destination === 'string' ? { destination: item.destination } : {}), revision, bytes: new Uint8Array(byteValues), ...(Array.isArray(item.nextBytes) ? { nextBytes: new Uint8Array(item.nextBytes as number[]) } : {}), ...(validFp(item.priorFingerprint) ? { priorFingerprint: item.priorFingerprint } : {}), ...(validFp(item.intendedFingerprint) ? { intendedFingerprint: item.intendedFingerprint } : {}), createdAt, status: (item.status ?? 'prepared') as RecoveryRecord['status'] };
       }));
     },
     async save(record) { records.push({ ...record, status: record.status ?? 'prepared', bytes: new Uint8Array(record.bytes) }); while (records.length > maxRecords) records.shift(); await persist(); },

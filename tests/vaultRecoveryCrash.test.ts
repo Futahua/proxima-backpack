@@ -51,5 +51,10 @@ describe('Gate 13C crash-durable recovery journal', () => {
     expect(await classifyRecoveryRecord(deleted, vault)).toMatchObject({ classification: 'effect-present' });
     const move = { requestId: 'm', operation: 'move' as const, path: 'old.md', destination: 'destination.md', revision: 'old.md@1', bytes: new TextEncoder().encode('old'), createdAt: 'now' };
     expect(await classifyRecoveryRecord(move, vault)).toMatchObject({ classification: 'conflict' });
+    const unreadable = { exists: async () => true, read: async () => { throw new Error('permission denied'); } };
+    expect(await classifyRecoveryRecord(deleted, unreadable)).toMatchObject({ classification: 'conflict' });
+    const sameSizePeer = createMemoryVault({ 'peer.md': 'newer' });
+    const peerRecord = { requestId: 'p', operation: 'update' as const, path: 'peer.md', revision: 'peer.md@1', bytes: new TextEncoder().encode('old___'), nextBytes: new TextEncoder().encode('target'), createdAt: 'now' };
+    expect(await classifyRecoveryRecord(peerRecord, sameSizePeer)).toMatchObject({ classification: 'conflict' });
   });
 });
