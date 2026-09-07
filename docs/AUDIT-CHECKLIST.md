@@ -1900,7 +1900,9 @@ Only after fallback file cards are already first-class.
       headless string surface with complete node/card identity accounting and a
       broad non-SLA timing guard (Gate 18F, follow-up).
 - [ ] large Excalidraw scene
-- [ ] many unsupported file cards
+- [x] many unsupported file cards — 1,000 unknown-extension cards stay on the
+      passive fallback path with complete node accounting and no content/authority
+      leakage, under a broad non-SLA headless timing guard (Gate 18G, follow-up).
 - [x] cold load measured — in-memory headless load timing is guarded below five
       seconds at both scales; this is a broad non-SLA regression guard (Gate 18A,
       `0d01ba3`).

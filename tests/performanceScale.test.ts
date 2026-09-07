@@ -172,4 +172,21 @@ describe('Gate 18A deterministic load/refresh scale baseline', () => {
     expect(html).toContain('file-999.bin');
     expect(elapsedMs).toBeLessThan(5000);
   });
+
+  it('keeps 1000 unsupported file cards passive with complete fallback accounting', () => {
+    const ids = sequentialIdGenerator();
+    const items = Array.from({ length: 1000 }, (_, index) => {
+      const node = createCanvasNode(ids, { kind: 'browser-file', sourceId: `unsupported-${index}`, filename: `unknown-${index}.xyz`, extension: 'xyz', state: 'available', mimeType: 'application/octet-stream', size: 3, modifiedAt: null });
+      return { node, selection: selectCanvasRepresentation(node.source, null), status: 'selected' as const, presentationDiagnostic: null };
+    });
+    const started = performance.now();
+    const html = renderCanvasSurface({ items, lastDropDiagnostic: null });
+    const elapsedMs = performance.now() - started;
+
+    expect((html.match(/Fallback file/g) ?? []).length).toBe(1000);
+    expect((html.match(/data-canvas-node-id=/g) ?? []).length).toBe(1000);
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('arrayBuffer');
+    expect(elapsedMs).toBeLessThan(5000);
+  });
 });
