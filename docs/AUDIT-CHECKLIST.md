@@ -2077,7 +2077,11 @@ Developer control:
 - [ ] authenticated — OPEN: the explicitly enabled loopback bridge has origin/Host
       and build-opt-in defenses, but no bearer credential, shared secret or other
       caller authentication; loopback reachability is not treated as identity.
-- [ ] exact surface targeting
+- [ ] exact surface targeting — OPEN: no live developer-control relay or external
+      actuation endpoint exists in the defined scope, so there is no authenticated
+      target/session selector whose isolation can be accepted; the loopback bridge
+      is read-only source transport and internal action-dispatcher tests are not
+      substituted for cross-surface control evidence.
 - [ ] bounded data
 - [ ] no arbitrary renderer JS
 - [ ] no creator-vault mutation by default
