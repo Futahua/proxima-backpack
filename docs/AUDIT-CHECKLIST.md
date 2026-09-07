@@ -2448,7 +2448,8 @@ Fixture only initially.
 - [x] Rename/delete use coordinator move/delete with observed-revision CAS, stale
       peer preservation and collision/recovery attribution; no retry/merge/LWW.
 - [x] Focused project/event lifecycle coverage passes in
-      `tests/recordLifecycle.test.ts`; native FSA remains a separate OPEN gate.
+      `tests/recordLifecycle.test.ts`; native FSA write authority is resolved by
+      the explicit 13.3 safety boundary below.
 
 ### 13D2 Actual Obsidian-vs-Proxima write concurrency
 
@@ -2468,9 +2469,19 @@ Fixture only initially.
 
 ### 13.3 Decide whether FSA writes are safe enough
 
-- [ ] expected-revision check can be made meaningful.
-- [ ] check-to-replace race is acceptable or not.
-- [ ] Obsidian external writes cannot be silently overwritten.
+- [x] expected-revision checking is classified as **non-atomic** for native FSA:
+      `FileSystemFileHandle.createWritable()` provides no compare-and-swap or
+      conditional-replace primitive.
+- [x] The residual check-to-replace race is **unacceptable** for shared creator
+      files; the peer race is proven by 13D2 and cannot be eliminated by a second
+      JavaScript read.
+- [x] Native/FSA writes remain disabled, so an Obsidian external write cannot be
+      silently overwritten by Proxima. `evaluateFsaWriteBoundary()` emits the
+      bounded `BLOCKED / fsa-no-compare-and-swap` report and has focused tests in
+      `tests/fsaWriteBoundary.test.ts`.
+- [x] Gate 13.3 is therefore **CLOSED / NO-GO** for the current native capability:
+      read-only FSA is supported; enabling writes requires a future Papers/native
+      compare-and-swap transaction primitive and a new acceptance gate.
 
 If not, specific missing truth:
 

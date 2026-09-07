@@ -953,3 +953,16 @@ is intentionally programmatic and supports create, update, rename/move, delete a
 recovery after bounded authority, conflict, audit, native restoration and Obsidian
 coexistence gates pass. Initial enrollment may require one unavoidable OS/browser
 gesture, but acceptance and normal operation must not require recurring UI clicks.
+
+## D51 — Native FSA write authority is a fail-closed no-go
+
+**Decided:** browser File System Access has no compare-and-swap or conditional-replace
+primitive. A second JavaScript revision read cannot close the check-to-commit window
+against Obsidian or another writer, and the 13D2 race demonstrates that this window is
+observable. The native adapter therefore remains read-only; `evaluateFsaWriteBoundary()`
+returns a bounded `BLOCKED` report with reason `fsa-no-compare-and-swap`, and no FSA
+writer is exposed.
+
+**Boundary:** Gate 13.3 is closed as a safety decision, not as a claim that native
+writes are safe. Reopening it requires a Papers/native transaction capability that
+atomically validates the observed revision at commit, plus a fresh acceptance run.
