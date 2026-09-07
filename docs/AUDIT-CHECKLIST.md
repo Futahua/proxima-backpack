@@ -1352,11 +1352,23 @@ abstraction exactly as Excalidraw does.
 
 ### 6.4 Projects
 
-- [ ] Flat and subfolder legacy projects display correctly.
-- [ ] Project description/body reads correctly.
-- [ ] Linked folders display correctly.
-- [ ] Archived state displays correctly if retained.
-- [ ] Project source provenance available for diagnostics/opening later.
+- [x] Flat and subfolder legacy projects display correctly — ingestion and the
+      read-only project navigation are pinned by `tests/projectIngestion.test.ts`
+      and `tests/projectPresentation.test.ts` (Gate 6.4A/6.4B, `629c856` +
+      `97b09da`).
+- [x] Project description/body reads and displays correctly — absent description,
+      nonempty precedence and explicit-empty suppression are pinned at ingestion;
+      selected project details display the resulting value (Gate 6.4A/6.4B,
+      `629c856` + `97b09da`).
+- [x] Linked folders display correctly — singular, preferred array and packed legacy
+      forms with exact-path deduplication are pinned and rendered read-only (Gate
+      6.4A/6.4B, `629c856` + `97b09da`).
+- [x] Archived state displays correctly if retained — archived records remain in
+      state and are visibly labelled in the project inventory (Gate 6.4A/6.4B,
+      `629c856` + `97b09da`).
+- [x] Project source provenance available for diagnostics/opening later — source path
+      and ID origin are shown as read-only metadata; opening/reveal remains a future
+      capability (Gate 6.4A/6.4B, `629c856` + `97b09da`).
 
 ### 6.5 Real-vault safety
 
