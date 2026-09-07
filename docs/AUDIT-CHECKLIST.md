@@ -2034,7 +2034,13 @@ Backpack page:
 
 Filesystem:
 
-- [ ] all external access creator-granted or fixture-scoped
+- [x] all external access creator-granted or fixture-scoped — fixture bytes are the
+      default; external readers exist only through an explicitly injected directory/
+      reader or an already-restored handle whose read permission is queried. The
+      loopback bridge also requires an explicit base URL/root and is dev/agent-only;
+      no production path crawls or guesses a machine directory
+      (`src/browser/sourceFactory.ts`, `src/app/handleBootstrap.ts`,
+      `tests/handleBootstrap.test.ts`, `tests/httpDirectory.test.ts`).
 - [x] no traversal — OPFS/external-directory locators reject `..`/`.` traversal
       before handle lookup across list/walk/read/exists; bridge reads fail closed on
       traversal and resolved-root escapes, with symlink components rejected
