@@ -78,6 +78,16 @@ describe('Gate 8C visible passive canvas surface', () => {
     expect(html).not.toContain('data:');
   });
 
+  it('keeps raster preview installation failures visible and agent-readable', async () => {
+    const registry = createCanvasPreviewRegistry({ createObjectURL: () => { throw new Error('quota'); }, revokeObjectURL: () => undefined });
+    const state = await admitCanvasDrop([file('photo.png', new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]))], undefined, sequentialIdGenerator(), registry);
+    const html = renderCanvasSurface(state, registry.snapshot());
+    expect(state.items[0]?.presentationDiagnostic).toBe('preview-install-failed');
+    expect(html).toContain('preview install failed');
+    expect(html).toContain('inline preview not mounted');
+    expect(html).not.toContain('<img');
+  });
+
   it('mounts only generated Excalidraw SVG and leaves source text passive', async () => {
     const drawing = file('drawing.excalidraw', new TextEncoder().encode(JSON.stringify({ type: 'excalidraw', elements: [{ type: 'text', x: 0, y: 0, text: 'draw me', fontSize: 16 }] })));
     const previews = createCanvasExcalidrawPreviewRegistry();

@@ -25,6 +25,7 @@ import { createCanvasDropQueue, EMPTY_CANVAS_SURFACE, renderCanvasSurface, type 
 import type { BrowserFileLike } from './canvasFileAdmission.js';
 import { createCanvasPreviewRegistry, disposeCanvasPreviewsOnPageHide } from './canvasPreview.js';
 import { createCanvasExcalidrawPreviewRegistry, disposeCanvasExcalidrawPreviewsOnPageHide } from './canvasExcalidrawPreview.js';
+import { renderWithBoundary } from './renderBoundary.js';
 import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } from './canvasTextPreview.js';
 import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
 import { calendarGridDates } from './calendarGrid.js';
@@ -228,6 +229,7 @@ async function runFsaProbe(): Promise<void> {
 
 function render(): void {
   if (!appState) return;
+  const currentState = appState;
   const root = element<HTMLElement>('#proxima-app');
   const problems = visibleProblems([...loadProblems]);
   root.dataset.proximaSurface = surface;
@@ -236,7 +238,10 @@ function render(): void {
   const projectNames = createProjectNameLookup(appState);
   root.dataset.proximaHealthGeneration = String(health.sourceRevision);
   const sourceLabel = sourceSession?.snapshot().sourceMode === 'external' ? 'Read-only external source' : 'Read-only fixture';
-  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState, projectNames) : surface === 'calendar' ? calendarSurface(appState, problems, projectNames) : renderCanvasSurface(canvasState, canvasPreviewRegistry.snapshot(), canvasExcalidrawPreviewRegistry.snapshot(), canvasTextPreviewRegistry.snapshot())}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
+  const surfaceMarkup = renderWithBoundary(() => surface === 'board' ? boardSurface(currentState, projectNames) : surface === 'calendar' ? calendarSurface(currentState, problems, projectNames) : renderCanvasSurface(canvasState, canvasPreviewRegistry.snapshot(), canvasExcalidrawPreviewRegistry.snapshot(), canvasTextPreviewRegistry.snapshot()));
+  if (surfaceMarkup.failure) root.dataset.proximaRendererFailure = surfaceMarkup.failure.code;
+  else delete root.dataset.proximaRendererFailure;
+  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
   updateHydrationSummary(appState, problems);
   exposeInspection();
 }

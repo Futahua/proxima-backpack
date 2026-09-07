@@ -1959,7 +1959,8 @@ Performance work must not move domain/file semantics into Papers.
 - [x] corrupted Excalidraw — decode/shape failures return bounded problems and no
       partial scene (`tests/excalidraw.test.ts`).
 - [x] missing linked file — unresolved or unreadable embedded assets degrade to a
-      visible bounded outcome while other assets continue (`tests/excalidrawAssets.test.ts`).
+      visible bounded outcome while other assets continue (`tests/excalidrawAssets.test.ts`,
+      `tests/excalidrawRender.test.ts`).
 - [x] moved/renamed file — explicit identity survives a path move and refresh classifies
       the change as `renamed` (`tests/identity.test.ts`, `tests/refreshController.test.ts`).
 - [x] deleted project — refresh removes the record and clears a stale selection with
@@ -1975,16 +1976,18 @@ Performance work must not move domain/file semantics into Papers.
 - [ ] failed native open/reveal
 - [ ] stale write if writes exist
 
-For every error:
+For every defined read-only error above:
 
-- [x] structured code — failure paths use the documented problem/outcome vocabulary
-      and stable codes covered by the focused suites above.
+- [x] structured code — failure paths use the documented problem/outcome vocabulary,
+      including `preview-install-failed` and `renderer-failure`, with focused coverage
+      in `tests/canvasSurface.test.ts` and `tests/renderBoundary.test.ts`.
 - [x] user-readable explanation — diagnostics retain bounded explanatory details while
-      surfaces render safe fallback/status text (`tests/inspection.test.ts`, focused
-      failure-surface suites above).
-- [x] agent-readable state — inspection and health projections expose bounded status,
-      problem codes, revisions and settled/degraded state (`tests/inspection.test.ts`,
-      `tests/readOnlyProjection.test.ts`).
+      surfaces render safe fallback/status text (`tests/inspection.test.ts`,
+      `tests/canvasSurface.test.ts`, `tests/renderBoundary.test.ts`).
+- [x] agent-readable state — inspection/health projections and the renderer boundary
+      expose bounded status, problem codes and settled/degraded/failure state
+      (`tests/inspection.test.ts`, `tests/readOnlyProjection.test.ts`,
+      `tests/renderBoundary.test.ts`).
 - [x] no silent data loss — candidate and Excalidraw census equalities plus last-good
       refresh snapshots account for rejected, skipped and unavailable data
       (`tests/candidateAccounting.test.ts`, `tests/excalidrawRender.test.ts`).
