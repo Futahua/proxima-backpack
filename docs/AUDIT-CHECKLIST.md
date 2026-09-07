@@ -2448,8 +2448,23 @@ Fixture only initially.
 - [x] Rename/delete use coordinator move/delete with observed-revision CAS, stale
       peer preservation and collision/recovery attribution; no retry/merge/LWW.
 - [x] Focused project/event lifecycle coverage passes in
-      `tests/recordLifecycle.test.ts`; native FSA and actual Obsidian coexistence
-      remain separate OPEN gates.
+      `tests/recordLifecycle.test.ts`; native FSA remains a separate OPEN gate.
+
+### 13D2 Actual Obsidian-vs-Proxima write concurrency
+
+- [x] The registered real Obsidian application performs create, modify and delete
+      through `app.vault`; Proxima observes each transition with zero writes and
+      restores the plugin/configuration byte-for-byte.
+- [x] During the exact conditional-write window, Obsidian modifies the observed
+      probe through `app.vault.modify`; the built Proxima coordinator returns
+      `stale`, does not commit its bytes, and the Obsidian bytes remain exact.
+- [x] The bounded harness reports `obsidian:write-race: PASS`, `bytesPreserved: true`,
+      `proximaStatus: stale`, and `proximaWrites: 0` before the normal delete and
+      cleanup stages. This closes the actual Obsidian write-concurrency claim; it
+      does not claim Papers-hosted FSA access or atomic native writes.
+- [x] Evidence command: `npm run agent:coexist -- --root <registered-vault>
+      --obsidian <Obsidian.exe>` (run against the registered legacy-layout vault;
+      all stages PASS, including `obsidian:write-race`).
 
 ### 13.3 Decide whether FSA writes are safe enough
 

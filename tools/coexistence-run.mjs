@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAcceptance } from './agent-accept.mjs';
@@ -36,6 +37,7 @@ const PROBE_ID = 'proxima-coexistence-probe';
 const PROBE_RECORD = '-Hide/Proxima/events/proxima-6r-probe.md';
 const STEPS = ['create', 'modify', 'delete'];
 const STEP_TIMEOUT_MS = 120_000;
+const requireBuilt = createRequire(import.meta.url);
 
 export async function runCoexistence(options = {}) {
   const root = options.root;
@@ -97,6 +99,19 @@ export async function runCoexistence(options = {}) {
         eventCensus: observed.census?.event ?? null,
         zeroWrite: observed.stages?.zeroWriteWitness === 'PASS' && observed.stages?.zeroWriteEffect === 'PASS',
       });
+      if (step === 'modify') {
+        const race = await runObsidianWriteRace({ root, obsidian, probeDir });
+        stages['obsidian:write-race'] = race.ok ? 'PASS' : 'FAIL';
+        observations.push({
+          step: 'write-race',
+          pluginOutcome: race.peerOutcome,
+          proximaStatus: race.proximaOutcome,
+          probePresent: race.probePresent,
+          bytesPreserved: race.bytesPreserved,
+          zeroWrite: race.proximaWrites === 0,
+        });
+        if (!race.ok) return report({ stages, observations, blockers: [race.blocker ?? 'obsidian-write-race-failed'], baseline });
+      }
     }
   } finally {
     // 4. Cleanup is part of the gate. It runs even if a step failed.
@@ -156,6 +171,93 @@ async function enableProbe(enabledFile, backup) {
   }
   if (!list.includes(PROBE_ID)) list.push(PROBE_ID);
   await writeFile(enabledFile, `${JSON.stringify(list, null, 2)}\n`, 'utf8');
+}
+
+/**
+ * Race the real Obsidian writer against the built Proxima conditional coordinator.
+ * The peer is triggered only after Proxima has read the expected revision and
+ * before its second check, so a stale result is meaningful rather than sequential.
+ */
+async function runObsidianWriteRace({ root, obsidian, probeDir }) {
+  const dataFile = join(probeDir, 'data.json');
+  const priorData = await readJson(dataFile);
+  if (!priorData || priorData.step !== 2) return { ok: false, blocker: 'race-probe-not-ready', peerOutcome: 'not-ready', proximaOutcome: 'not-run', proximaWrites: 0 };
+  let launched = false;
+  try {
+    await writeFile(dataFile, `${JSON.stringify({ ...priorData, mode: 'race' })}\n`, 'utf8');
+    const child = spawn(obsidian, [], { detached: true, stdio: 'ignore' });
+    child.once('error', () => {});
+    child.unref(); launched = true;
+    if (!(await waitForPluginEntry(dataFile, 'race-ready')).ok) return { ok: false, blocker: 'race-plugin-not-ready', peerOutcome: 'not-ready', proximaOutcome: 'not-run', proximaWrites: 0 };
+
+    const observed = await currentFile(root, PROBE_RECORD);
+    const { createVaultMutationCoordinator } = requireBuilt(join(HERE, '../public/build/app/vaultMutation.js'));
+    const reader = {
+      read: async (path) => { const file = await currentFile(root, path); return { path, text: new TextDecoder().decode(file.bytes), size: file.bytes.byteLength, modifiedAt: file.modifiedAt, revision: file.revision }; },
+      readBinary: async (path) => { const file = await currentFile(root, path); return { path, bytes: file.bytes, size: file.bytes.byteLength, modifiedAt: file.modifiedAt, revision: file.revision }; },
+      exists: async (path) => { try { await currentFile(root, path); return true; } catch { return false; } },
+    };
+    const writer = {
+      async writeIfUnchanged(path, bytes, expectedRevision) {
+        const before = await currentFile(root, path);
+        if (before.revision !== expectedRevision) return { ok: false, reason: 'stale', actualRevision: before.revision };
+        const command = spawn(obsidian, ['command', `id=${PROBE_ID}:proxima-6r-race`], { stdio: 'ignore' });
+        command.once('error', () => {});
+        command.unref();
+        const peer = await waitForPluginEntry(dataFile, 'race', 'ok');
+        if (!peer.ok) return { ok: false, reason: 'peer-race-not-recorded' };
+        const checked = await currentFile(root, path);
+        if (checked.revision !== expectedRevision) return { ok: false, reason: 'stale', actualRevision: checked.revision };
+        await writeFile(checked.absolutePath, bytes);
+        const after = await currentFile(root, path);
+        return { ok: true, revision: after.revision };
+      },
+    };
+    const coordinator = createVaultMutationCoordinator({ reader, writer, ids: { next: () => 'mutation-obsidian-race' } });
+    const result = await coordinator.execute({ kind: 'update', path: PROBE_RECORD, bytes: new TextEncoder().encode('PROXIMA-MUST-NOT-LAND'), expectedRevision: observed.revision, requestId: 'mutation-obsidian-race' });
+    const after = await currentFile(root, PROBE_RECORD);
+    const peerBytesPreserved = new TextDecoder().decode(after.bytes).includes('actual Obsidian during a Proxima commit race');
+    return {
+      ok: result.ok === false && result.reason === 'stale' && peerBytesPreserved,
+      blocker: result.ok ? 'proxima-write-won-race' : peerBytesPreserved ? undefined : 'peer-bytes-not-preserved',
+      peerOutcome: 'ok',
+      proximaOutcome: result.ok ? 'accepted' : result.reason,
+      proximaWrites: result.ok ? 1 : 0,
+      probePresent: true,
+      bytesPreserved: peerBytesPreserved,
+    };
+  } catch (error) {
+    return { ok: false, blocker: 'race-harness-error', peerOutcome: 'error', proximaOutcome: String(error?.message ?? error).slice(0, 120), proximaWrites: 0 };
+  } finally {
+    if (launched) await stopObsidian();
+    if (priorData) await writeFile(dataFile, `${JSON.stringify(priorData)}\n`, 'utf8').catch(() => {});
+  }
+}
+
+async function waitForPluginEntry(dataFile, step, outcome) {
+  const deadline = Date.now() + STEP_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const data = await readJson(dataFile);
+    const entry = (data?.log ?? []).find((item) => item.step === step && (outcome === undefined || item.outcome === outcome));
+    if (entry) return { ok: true, entry };
+    await delay(250);
+  }
+  return { ok: false };
+}
+
+function hashBytes(bytes) {
+  let value = 2166136261;
+  for (const byte of bytes) value = Math.imul(value ^ byte, 16777619);
+  return (value >>> 0).toString(16).padStart(8, '0');
+}
+
+async function currentFile(root, relativePath) {
+  const relative = String(relativePath).replaceAll('\\', '/');
+  if (!relative || relative.startsWith('/') || /^[A-Za-z]:\//.test(relative) || relative.split('/').some((part) => !part || part === '.' || part === '..')) throw new Error('unsafe race path');
+  const absolutePath = join(root, ...relative.split('/'));
+  const metadata = await stat(absolutePath);
+  const bytes = new Uint8Array(await readFile(absolutePath));
+  return { absolutePath, bytes, modifiedAt: metadata.mtime.toISOString(), revision: `${metadata.mtime.toISOString()}:${metadata.size}:${hashBytes(bytes)}` };
 }
 
 /**
@@ -268,7 +370,7 @@ function report({ stages, observations, blockers, baseline }) {
     observations,
     blockerCodes: codes,
     baselineStatus: baseline?.status ?? 'PASS',
-    open: ['native-fsa-grant', 'clean-profile-picker', 'papers-hosted-acceptance', 'write-concurrency'],
+    open: ['native-fsa-grant', 'clean-profile-picker', 'papers-hosted-acceptance'],
   };
 }
 

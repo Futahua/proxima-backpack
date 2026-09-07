@@ -48,6 +48,10 @@ const MODIFIED_BODY = CREATED_BODY.replace(
   'Phase: created.',
   'Phase: modified by the peer editor.',
 ).replace('name: Proxima 6R coexistence probe', 'name: Proxima 6R coexistence probe (edited)');
+const RACE_BODY = MODIFIED_BODY.replace(
+  'Phase: modified by the peer editor.',
+  'Phase: modified by actual Obsidian during a Proxima commit race.',
+);
 
 /** create → modify → delete, one per load, then nothing. */
 const STEPS = ['create', 'modify', 'delete', 'done'];
@@ -62,13 +66,45 @@ module.exports = class ProximaCoexistenceProbe extends Plugin {
       name: 'Proxima 6R: perform the next probe mutation',
       callback: () => { void this.advance('command'); },
     });
+    this.addCommand({
+      id: 'proxima-6r-race',
+      name: 'Proxima 6R: perform the conditional-write race mutation',
+      callback: () => { void this.advanceRace('command'); },
+    });
 
     // Wait for the vault index before acting. At raw onload Obsidian has not
     // finished cataloguing the vault, so getAbstractFileByPath answers null for a
     // file that is plainly on disk — which sent the first real run down the create
     // path and straight into "File already exists." onLayoutReady is the ordinary
     // hook for "the vault is ready", not a watcher or a timer.
-    this.app.workspace.onLayoutReady(() => { void this.advance('load'); });
+    this.app.workspace.onLayoutReady(() => {
+      void this.loadData().then((data) => {
+        if (data?.mode === 'race') {
+          data.log = Array.isArray(data.log) ? data.log : [];
+          data.log.push({ step: 'race-ready', trigger: 'layout', outcome: 'ready', detail: '', at: new Date().toISOString() });
+          return this.saveData(data);
+        }
+        return this.advance('load');
+      });
+    });
+  }
+
+  /** Perform the one peer mutation used by the Proxima check-to-commit race. */
+  async advanceRace(trigger) {
+    const data = (await this.loadData()) || { step: 2, log: [] };
+    if (data.mode !== 'race') return;
+    const existing = this.app.vault.getAbstractFileByPath(PROBE_PATH);
+    try {
+      if (!(existing instanceof TFile)) throw new Error('probe record missing for race');
+      await this.app.vault.modify(existing, RACE_BODY);
+      data.log = Array.isArray(data.log) ? data.log : [];
+      data.log.push({ step: 'race', trigger, outcome: 'ok', detail: 'modified through app.vault.modify during Proxima conditional commit', at: new Date().toISOString() });
+      await this.saveData(data);
+    } catch (error) {
+      data.log = Array.isArray(data.log) ? data.log : [];
+      data.log.push({ step: 'race', trigger, outcome: 'error', detail: String((error && error.message) || error).slice(0, 200), at: new Date().toISOString() });
+      await this.saveData(data);
+    }
   }
 
   /** Perform exactly one vault mutation and record what happened. */
