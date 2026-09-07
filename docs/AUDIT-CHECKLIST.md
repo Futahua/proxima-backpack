@@ -1813,6 +1813,9 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Binary-capable readers are used for exact-byte preimages when available.
 - [x] Reconciliation never restores or mutates source files.
 - [x] Ambiguous source/destination states fail closed as conflict.
+- [x] Delete/update/move unreadable sources or destinations fail closed as conflict.
+- [x] Classification compares bounded exact bytes; fingerprints are advisory only.
+- [x] Durable reload preserves prior/intended byte evidence needed for classification.
 - [ ] Automatic startup reconciliation is wired into the Papers runtime.
 
 Not enabled merely because a UI needs editing.
