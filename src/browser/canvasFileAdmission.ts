@@ -21,6 +21,7 @@ import {
   selectCanvasRepresentation,
   type CanvasRepresentationSelection,
 } from '../domain/canvasRenderer.js';
+import { recogniseExcalidraw, type ExcalidrawScene } from '../domain/excalidraw.js';
 import type { SupportedImageMedia } from '../domain/imageMedia.js';
 import type { IdGenerator } from '../domain/clock.js';
 
@@ -46,9 +47,14 @@ export interface CanvasRasterPreviewSeed {
   bytes: Uint8Array;
 }
 
+export interface CanvasExcalidrawPreviewSeed {
+  kind: 'excalidraw';
+  scene: ExcalidrawScene;
+}
+
 export interface CanvasFilePresentationAdmission {
   admission: CanvasFileAdmissionResult;
-  preview: CanvasRasterPreviewSeed | null;
+  preview: CanvasRasterPreviewSeed | CanvasExcalidrawPreviewSeed | null;
 }
 
 /** Admit one browser File snapshot without retaining the File capability. */
@@ -57,6 +63,7 @@ export async function admitCanvasFile(
   file: BrowserFileLike,
   layout?: CanvasLayout,
   rasterSink?: (seed: CanvasRasterPreviewSeed) => void,
+  excalidrawSink?: (seed: CanvasExcalidrawPreviewSeed) => void,
 ): Promise<CanvasFileAdmissionResult> {
   const filename = safeFilename(file.name);
   // Policy uses the complete original name; only the display copy is bounded.
@@ -101,7 +108,15 @@ export async function admitCanvasFile(
   }
   const text = new TextDecoder().decode(bytes);
   const textSelection = selectCanvasRepresentation(node.source, { kind: 'text', text });
-  if (textSelection.kind === 'excalidraw' || extension === 'md' || extension === 'markdown' || extension === 'txt' || extension === 'text' || extension === 'json' || extension === 'csv' || extension === 'tsv') {
+  if (textSelection.kind === 'excalidraw') {
+    // Re-recognition is pure and reuses the already-acquired text. Only a decoded
+    // scene crosses into the browser presentation registry; envelopes and source
+    // text remain passive when decoding is unavailable.
+    const artifact = recogniseExcalidraw(text, file.name);
+    if (artifact.scene !== null) excalidrawSink?.({ kind: 'excalidraw', scene: artifact.scene });
+    return { node, selection: textSelection, status: 'selected' };
+  }
+  if (extension === 'md' || extension === 'markdown' || extension === 'txt' || extension === 'text' || extension === 'json' || extension === 'csv' || extension === 'tsv') {
     return { node, selection: textSelection, status: 'selected' };
   }
   const selection = selectCanvasRepresentation(node.source, { kind: 'binary', bytes });
@@ -115,8 +130,11 @@ export async function admitCanvasFileForPresentation(
   file: BrowserFileLike,
   layout?: CanvasLayout,
 ): Promise<CanvasFilePresentationAdmission> {
-  let preview: CanvasRasterPreviewSeed | null = null;
-  const admission = await admitCanvasFile(ids, file, layout, (seed) => { preview = { ...seed, bytes: new Uint8Array(seed.bytes) }; });
+  let preview: CanvasRasterPreviewSeed | CanvasExcalidrawPreviewSeed | null = null;
+  const admission = await admitCanvasFile(ids, file, layout,
+    (seed) => { preview = { ...seed, bytes: new Uint8Array(seed.bytes) }; },
+    (seed) => { preview = { kind: 'excalidraw', scene: seed.scene }; },
+  );
   return { admission, preview };
 }
 

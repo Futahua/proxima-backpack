@@ -103,8 +103,20 @@ describe('Gate 8B one-shot browser File admission', () => {
     const selected = await admitCanvasFileForPresentation(sequentialIdGenerator(), raster);
     expect(reads).toBe(1);
     expect(selected.admission.selection.kind).toBe('raster-image');
-    expect(selected.preview?.mediaType).toBe('image/png');
+    expect(selected.preview?.kind).toBe('raster-image');
+    if (selected.preview?.kind === 'raster-image') expect(selected.preview.mediaType).toBe('image/png');
     const text = await admitCanvasFileForPresentation(sequentialIdGenerator(), file('note.md', new TextEncoder().encode('hello')));
     expect(text.preview).toBeNull();
+  });
+
+  it('transfers a decoded Excalidraw scene without rereading', async () => {
+    let reads = 0;
+    const drawing = file('drawing.excalidraw', new TextEncoder().encode(scene), { arrayBuffer: async () => { reads += 1; return new TextEncoder().encode(scene).buffer; } });
+    const selected = await admitCanvasFileForPresentation(sequentialIdGenerator(), drawing);
+    expect(reads).toBe(1);
+    expect(selected.admission.selection.kind).toBe('excalidraw');
+    expect(selected.preview).toMatchObject({ kind: 'excalidraw', scene: { elements: [] } });
+    const active = await admitCanvasFileForPresentation(sequentialIdGenerator(), file('page.svg', new Uint8Array([1]), { arrayBuffer: async () => { reads += 1; return new ArrayBuffer(1); } }));
+    expect(active.preview).toBeNull();
   });
 });

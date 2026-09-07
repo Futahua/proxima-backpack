@@ -807,6 +807,20 @@ drag/move/resize, public browser-data actions and writes remain deferred.
 This decision supersedes D43–D44 only for the raster presentation exception; their
 non-raster and authority boundaries remain in force.
 
+## D46 — Excalidraw previews are scene-only and generated in the browser
+
+**Decided:** when one-shot browser admission structurally decodes an Excalidraw
+scene, it may transfer that scene once to a browser-only preview registry. The
+registry immediately calls the signed pure renderer with an empty asset map and
+retains only generated SVG, bounded census/problems and character length; it never
+retains source text, scene objects, File/Blob/bytes, vault readers or attachment
+authority. Generated SVG is bounded per item and in aggregate, and replacement,
+removal, page teardown and BFCache handling are explicit and idempotent.
+
+**Boundary:** unresolved image assets remain visible placeholders and diagnostics;
+no attachment reads or durable rebinding are implied. Text/Markdown, SVG, PDF,
+directories, persistence, public browser-data actions and writes remain deferred.
+
 ## D44 — Canvas surface renders passive drop cards only
 
 **Decided:** the browser surface may accept a bounded `DataTransfer.files` batch and

@@ -3,6 +3,7 @@ import { sequentialIdGenerator } from '../src/domain/clock.js';
 import { admitCanvasDrop, createCanvasDropQueue, MAX_CANVAS_DROP_FILES, renderCanvasSurface } from '../src/browser/canvasSurface.js';
 import type { BrowserFileLike } from '../src/browser/canvasFileAdmission.js';
 import { createCanvasPreviewRegistry } from '../src/browser/canvasPreview.js';
+import { createCanvasExcalidrawPreviewRegistry } from '../src/browser/canvasExcalidrawPreview.js';
 
 function file(name: string, bytes: Uint8Array): BrowserFileLike {
   return { name, size: bytes.length, lastModified: 0, type: 'application/octet-stream', arrayBuffer: async () => new Uint8Array(bytes).buffer as ArrayBuffer };
@@ -72,5 +73,17 @@ describe('Gate 8C visible passive canvas surface', () => {
     expect(item?.selection.kind).toBe('raster-image');
     expect(html).toContain('src="blob:preview-1"');
     expect(html).not.toContain('data:');
+  });
+
+  it('mounts only generated Excalidraw SVG and leaves source text passive', async () => {
+    const drawing = file('drawing.excalidraw', new TextEncoder().encode(JSON.stringify({ type: 'excalidraw', elements: [{ type: 'text', x: 0, y: 0, text: 'draw me', fontSize: 16 }] })));
+    const previews = createCanvasExcalidrawPreviewRegistry();
+    const state = await admitCanvasDrop([drawing], undefined, sequentialIdGenerator(), undefined, previews);
+    const html = renderCanvasSurface(state, undefined, previews.snapshot());
+    expect(html).toContain('inline preview mounted');
+    expect(html).toContain('draw me');
+    expect(html).toContain('<svg');
+    expect(html).not.toContain('arrayBuffer');
+    expect(state.items[0]?.selection.kind).toBe('excalidraw');
   });
 });
