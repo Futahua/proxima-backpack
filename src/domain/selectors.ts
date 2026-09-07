@@ -3,7 +3,7 @@
  * selectors serve the UI, the tests and the agent inspection projection.
  */
 import { columnOf } from './elastic.js';
-import { localDateKey } from './time.js';
+import { civilDateKey, localDateKey, nextCivilDate, parseCivilDate, type CivilDate } from './time.js';
 import type { LoadProblem } from './problems.js';
 import type { CalendarEvent, ElasticColumn, Project, ProximaState, StatusDefinition, Task } from './types.js';
 
@@ -94,17 +94,23 @@ export function eventsByDay(events: CalendarEvent[], problems: LoadProblem[] = [
 }
 
 function daysCovered(event: CalendarEvent, problems: LoadProblem[]): string[] {
-  const start = new Date(event.startDate);
-  const end = new Date(event.deadline || event.startDate);
-  if (Number.isNaN(start.getTime())) return [];
-  if (Number.isNaN(end.getTime()) || end < start) return [localDateKey(start)];
+  const startCivil = parseCivilDate(event.startDate);
+  const endValue = event.deadline || event.startDate;
+  const endCivil = parseCivilDate(endValue);
+  const startInstant = startCivil ? null : new Date(event.startDate);
+  if (!startCivil && Number.isNaN(startInstant!.getTime())) return [];
+  const startKey = startCivil ? civilDateKey(startCivil) : localDateKey(startInstant!);
+  const endInstant = endCivil ? null : new Date(endValue);
+  if (!endCivil && Number.isNaN(endInstant!.getTime())) return [startKey];
+  const endKey = endCivil ? civilDateKey(endCivil) : localDateKey(endInstant!);
+  if (endKey < startKey) return [startKey];
 
   const keys: string[] = [];
-  const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  let cursor: CivilDate = startCivil ?? parseCivilDate(startKey)!;
+  const last = endCivil ?? parseCivilDate(endKey)!;
   // Date validation happens before this selector. Derive the complete finite range;
   // silently truncating a long creator event would invent an earlier end date.
-  for (let day = 0; cursor <= last; day += 1) {
+  for (let day = 0; civilDateKey(cursor) <= civilDateKey(last); day += 1) {
     if (day >= MAX_CALENDAR_EVENT_DAYS) {
       problems.push({
         code: 'event-span-too-large',
@@ -116,8 +122,8 @@ function daysCovered(event: CalendarEvent, problems: LoadProblem[]): string[] {
       });
       return [];
     }
-    keys.push(localDateKey(cursor));
-    cursor.setDate(cursor.getDate() + 1);
+    keys.push(civilDateKey(cursor));
+    cursor = nextCivilDate(cursor);
   }
   return keys;
 }

@@ -46,6 +46,35 @@ export function formatDuration(minutes: number): string {
   return whole >= 60 ? `${Math.floor(whole / 60)}h ${whole % 60}m` : `${whole}m`;
 }
 
+export interface CivilDate { year: number; month: number; day: number; }
+
+/** Strict Gregorian parser for date-only creator values (YYYY-MM-DD). */
+export function parseCivilDate(value: string): CivilDate | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+  return { year, month, day };
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+export function civilDateKey(value: CivilDate): string {
+  return `${value.year.toString().padStart(4, '0')}-${value.month.toString().padStart(2, '0')}-${value.day.toString().padStart(2, '0')}`;
+}
+
+export function nextCivilDate(value: CivilDate): CivilDate {
+  const limit = daysInMonth(value.year, value.month);
+  if (value.day < limit) return { ...value, day: value.day + 1 };
+  if (value.month < 12) return { year: value.year, month: value.month + 1, day: 1 };
+  return { year: value.year + 1, month: 1, day: 1 };
+}
+
 /** Calendar date in the viewer's local zone, as YYYY-MM-DD. */
 export function localDateKey(value: string | number | Date): string {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;

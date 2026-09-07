@@ -13,6 +13,8 @@
  * is not.
  */
 
+import { parseCivilDate } from './time.js';
+
 export type FieldIssueCode =
   /** Present, but not a number in any readable form. */
   | 'not-a-number'
@@ -172,7 +174,7 @@ export function readOptionalDate(raw: unknown, field: string, issues: FieldIssue
     });
     return null;
   }
-  if (Number.isNaN(new Date(raw).getTime())) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw) ? parseCivilDate(raw) === null : Number.isNaN(new Date(raw).getTime())) {
     issues.push({ field, code: 'invalid-date', detail: `"${raw}" is not a readable date.` });
     return null;
   }

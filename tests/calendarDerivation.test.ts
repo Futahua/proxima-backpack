@@ -54,9 +54,11 @@ describe('Gate 6.3A Calendar derivation', () => {
 
   it('keeps date-only values on their civil date and surfaces invalid starts', async () => {
     expect(localDateKey('2026-09-07')).toBe('2026-09-07');
+    expect([...eventsByDay([event('civil', null, '2026-09-07')]).keys()]).toEqual(['2026-09-07']);
+    expect([...eventsByDay([event('civil-range', null, '2026-09-07', '2026-09-09')]).keys()]).toEqual(['2026-09-07', '2026-09-08', '2026-09-09']);
     const files = fixtureFiles('vault-basic');
     const snapshotPath = 'Proxima/events/Vault snapshot.md';
-    files[snapshotPath] = files[snapshotPath]!.replace('startDate: 2026-09-06T21:00:00.000Z', 'startDate: not-a-date');
+    files[snapshotPath] = files[snapshotPath]!.replace('startDate: 2026-09-06T21:00:00.000Z', 'startDate: 2026-02-31');
     const loaded = await loadVaultState(createMemoryVault(files));
     const invalid = loaded.state.events.find((item) => item.id === 'evt-snapshot');
     expect(invalid?.startDate).toBe('');
