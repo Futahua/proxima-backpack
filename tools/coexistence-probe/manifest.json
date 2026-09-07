@@ -1,0 +1,9 @@
+{
+  "id": "proxima-coexistence-probe",
+  "name": "Proxima Coexistence Probe",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Gate 6R only. Performs exactly one vault mutation per load, through Obsidian's own vault API, then stops. Removed after the run.",
+  "author": "Proxima Backpack",
+  "isDesktopOnly": true
+}

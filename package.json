@@ -10,7 +10,8 @@
     "typecheck": "node tools/build-fixture-module.mjs && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tests.json",
     "build": "node tools/build-fixture-module.mjs && tsc -p tsconfig.build.json",
     "agent:bridge": "node tools/agent-vault-bridge.mjs",
-    "agent:accept": "node tools/agent-accept.mjs"
+    "agent:accept": "node tools/agent-accept.mjs",
+    "agent:coexist": "node tools/coexistence-run.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
