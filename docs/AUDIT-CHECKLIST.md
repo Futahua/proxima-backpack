@@ -2303,6 +2303,25 @@ Fixture only initially.
       identity origin to frontmatter. Focused `01.md`/`null.md`, no-op, mismatch,
       malformed, duplicate and stale tests pass in `tests/eventIdentityPromotion.test.ts`.
 
+### 13.2N Event description override / body fallback
+
+- [x] Public event authority is explicit `set` versus `use-body`; runtime rejects
+      other kinds and empty/null sentinels before source reads.
+- [x] Signed immediate-event provenance and observed-revision CAS rules are reused
+      for flat event files; outside, nested and non-event sources refuse.
+- [x] Set patches an existing supported scalar or inserts a missing description with
+      bounded reader-safe encoding; replacement quote style, spacing and comments
+      remain exact and reload yields the requested description.
+- [x] `use-body` removes only one supported scalar override, leaves Markdown body
+      untouched, and deterministically exposes the reader's existing body fallback;
+      absent override is a no-op.
+- [x] Duplicate, nested, malformed and block-scalar descriptions refuse. ID,
+      project aliases, dates, completion, foreign YAML, BOM/line endings and all
+      unrelated bytes remain exact; no parsed CalendarEvent is serialized.
+- [x] Effective operations use coordinator update/recovery with stale-peer
+      preservation and no retry/merge/LWW. Focused set/use-body, insertion, fallback,
+      malformed and zero-read tests pass in `tests/eventDescriptionMutation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
