@@ -26,6 +26,12 @@ describe('Gate 8 source loader', () => {
     expect(result.node.source.size).toBe(nativeScene.length);
   });
 
+  it('keeps native and unknown-extension Excalidraw structural selection reachable', async () => {
+    const native = createMemoryVault({ 'Drawings/example.excalidraw': nativeScene, 'Drawings/example.data': nativeScene });
+    expect((await loadCanvasNode(native, node('Drawings/example.excalidraw'))).selection.kind).toBe('excalidraw');
+    expect((await loadCanvasNode(native, node('Drawings/example.data'))).selection.kind).toBe('excalidraw');
+  });
+
   it('passes the text bound to the source read seam', async () => {
     let bound: number | undefined;
     const base = createMemoryVault({ 'Notes/readme.md': '# hi' });

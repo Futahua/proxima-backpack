@@ -16,6 +16,7 @@ import {
   type CanvasSourceObservation,
 } from '../domain/canvas.js';
 import {
+  MAX_CANVAS_TEXT_CHARS,
   MAX_CANVAS_BINARY_BYTES,
   selectCanvasRepresentation,
   type CanvasPayload,
@@ -38,6 +39,7 @@ export interface CanvasLoadResult {
 }
 
 const TEXT_EXTENSIONS = new Set(['md', 'markdown', 'txt', 'text', 'json', 'csv', 'tsv']);
+const RASTER_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
 const ACTIVE_EXTENSIONS = new Set(['html', 'htm', 'svg', 'js', 'mjs', 'cjs', 'exe', 'com', 'bat', 'cmd', 'ps1', 'sh', 'wasm']);
 
 /**
@@ -61,38 +63,55 @@ export async function loadCanvasNode(
     return { node, selection: selectCanvasRepresentation(source, null), status: 'active-content-skipped' };
   }
 
-  if (TEXT_EXTENSIONS.has(extension)) {
-    try {
-      const file = await vault.read(path, 1_000_000);
-      if (file.path !== path) return unavailable(node, source);
-      const observed: CanvasSourceObservation = {
-        path,
-        state: 'available',
-        revision: file.revision,
-        size: file.size,
-        modifiedAt: file.modifiedAt,
-      };
-      const refreshed = reobserveCanvasNode(node, observed);
-      const payload: CanvasPayload = { kind: 'text', text: file.text };
-      return { node: refreshed, selection: selectCanvasRepresentation(refreshed.source, payload), status: 'selected' };
-    } catch {
-      return unavailable(node, source);
-    }
-  }
+  // Known raster extensions can go straight to the byte-signature branch. Native
+  // drawings and unknown extensions must be text-probed first, however: the
+  // structure detector is intentionally stronger than a filename allowlist.
+  if (RASTER_EXTENSIONS.has(extension)) return readBinary(node, source, vault);
 
+  const textResult = await readText(node, source, vault);
+  if (textResult && (TEXT_EXTENSIONS.has(extension) || extension === 'excalidraw' || textResult.selection.kind === 'excalidraw')) return textResult;
+  if (!textResult && (TEXT_EXTENSIONS.has(extension) || extension === 'excalidraw')) return unavailable(node, source);
+  if (textResult && typeof vault.readBinary !== 'function') return textResult;
   if (typeof vault.readBinary !== 'function') {
-    return {
-      node,
-      selection: selectCanvasRepresentation(source, null),
-      status: 'binary-capability-unavailable',
-    };
+    return { node, selection: selectCanvasRepresentation(source, null), status: 'binary-capability-unavailable' };
   }
 
+  // An unknown non-active file may still be a raster whose name is unhelpful. A
+  // text probe that did not find a drawing therefore falls through to bytes.
+  return readBinary(textResult?.node ?? node, textResult?.node.source ?? source, vault);
+}
+
+async function readText(node: CanvasNode, source: CanvasNode['source'], vault: VaultReader): Promise<CanvasLoadResult | null> {
   try {
-    const file = await vault.readBinary(path, MAX_CANVAS_BINARY_BYTES);
-    if (file.path !== path || !(file.bytes instanceof Uint8Array)) return unavailable(node, source);
+    const file = await vault.read(source.path, MAX_CANVAS_TEXT_CHARS);
+    if (file.path !== source.path) return unavailable(node, source);
     const observed: CanvasSourceObservation = {
-      path,
+      path: source.path,
+      state: 'available',
+      revision: file.revision,
+      size: file.size,
+      modifiedAt: file.modifiedAt,
+    };
+    const refreshed = reobserveCanvasNode(node, observed);
+    const payload: CanvasPayload = { kind: 'text', text: file.text };
+    return { node: refreshed, selection: selectCanvasRepresentation(refreshed.source, payload), status: 'selected' };
+  } catch {
+    return null;
+  }
+}
+
+async function readBinary(node: CanvasNode, source: CanvasNode['source'], vault: VaultReader): Promise<CanvasLoadResult> {
+  if (source.state !== 'available') {
+    return { node, selection: selectCanvasRepresentation(source, null), status: 'unreadable' };
+  }
+  if (typeof vault.readBinary !== 'function') {
+    return { node, selection: selectCanvasRepresentation(source, null), status: 'binary-capability-unavailable' };
+  }
+  try {
+    const file = await vault.readBinary(source.path, MAX_CANVAS_BINARY_BYTES);
+    if (file.path !== source.path || !(file.bytes instanceof Uint8Array)) return unavailable(node, source);
+    const observed: CanvasSourceObservation = {
+      path: source.path,
       state: 'available',
       revision: file.revision,
       size: file.size,
