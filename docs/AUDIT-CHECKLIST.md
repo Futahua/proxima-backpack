@@ -1182,7 +1182,34 @@ by filename.
 - [x] Both real drawings render: 117 elements all drawn, and 289 elements with 283
       drawn, 6 deleted, 0 unsupported. One image placeholder each.
 
-- [ ] 7D asset resolution — embeds are recorded as links and never resolved. The
+**7D asset resolution — resolver implemented, byte loading still open.**
+
+- [x] A narrow resolver, not Obsidian link semantics. Block and heading references,
+      aliases beyond the display half, metadata resolution, `.obsidian` config, URI
+      schemes, network URLs and external paths are all rejected rather than
+      implemented — implementing them speculatively is how a narrow adapter becomes
+      the compatibility layer this project exists to escape.
+- [x] Pure and index-driven. The vault index comes from the audited read-only source;
+      a resolver that searched the filesystem itself would recreate the semantics it
+      is meant to avoid.
+- [x] Four distinct answers: resolved, unresolved, ambiguous, rejected. Unresolved
+      and ambiguous are **not** collapsed — nothing matching is a different problem
+      from a reference too vague to identify one file, and they need different fixes.
+- [x] An ambiguous link selects nothing. Index order is not a decision about which
+      file the artist meant, and a confidently wrong image is worse than a visible gap.
+- [x] Verified against the real vault, index of 4,074 entries:
+      `[[Pasted Image 20260605223658_755.png]]` → resolved to
+      `-Hide/Attachments/Pasted Image 20260605223658_755.png`;
+      `[[Ôn sử đảng]]` → unresolved, zero matches.
+- [x] Two defects found by the tests and fixed: a caret check that only looked at the
+      start let `[[Note^block]]` through as an ordinary name, and `[[]]` fell out of
+      the wikilink pattern and survived as a literal target reported merely as
+      unresolved.
+- [ ] **Load the resolved bytes.** `VaultReader.read` returns text, and reading a PNG
+      as UTF-8 corrupts it, so turning a resolved attachment into an actual rendered
+      image needs a binary read on the port. Raised rather than worked around.
+
+- [ ] (superseded) 7D asset resolution — embeds are recorded as links. The
       vault supplies both cases naturally: one embed resolves to
       `-Hide/Attachments/Pasted Image 20260605223658_755.png`, and the other,
       `[[Ôn sử đảng]]`, is **dangling** — no such file exists anywhere in the vault.
