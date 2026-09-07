@@ -115,6 +115,14 @@ export function createVaultMutationCoordinator(options: VaultMutationOptions): V
         return { ok: false, requestId, kind: mutation.kind, path, reason };
       }
       if (!result.ok) {
+        if (mutation.kind !== 'create' && options.recovery) {
+          try {
+            if (!options.recovery.updateStatus || !(await options.recovery.updateStatus(requestId, 'recovered'))) throw new Error('recovery record missing');
+          } catch {
+            append({ requestId, kind: mutation.kind, path, outcome: 'rejected', reason: 'recovery-required' });
+            return { ok: false, requestId, kind: mutation.kind, path, reason: 'recovery-required' };
+          }
+        }
         append({ requestId, kind: mutation.kind, path, outcome: 'conflict', reason: result.reason });
         return { ok: false, requestId, kind: mutation.kind, path, reason: result.reason, ...(result.actualRevision ? { actualRevision: result.actualRevision } : {}) };
       }

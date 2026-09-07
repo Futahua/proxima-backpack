@@ -1878,6 +1878,15 @@ to the creator's real vault. No UI interaction is required to drive it.
       is required.
 - [ ] Native creator-vault/FSA authority and actual Obsidian application remain open.
 
+### 13.1P-F Non-mutating conflict finalization
+
+- [x] Structured stale/destination conflicts terminalize their prepared recovery
+      record as `recovered` (no-op complete), so normal races cannot poison restart.
+- [x] Restart after a stale loser reports mutation authority available while the
+      winner remains durably committed.
+- [x] Terminal-status persistence failure is fail-visible as `recovery-required`;
+      thrown/ambiguous writer failures are not falsely marked recovered.
+
 Not enabled merely because a UI needs editing.
 
 ### 13.1 Conflict model

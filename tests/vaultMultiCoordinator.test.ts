@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { createDiskVault } from './test-disk-vault.js';
 import { createDurableRecoveryStore } from '../src/app/vaultRecovery.js';
 import { createVaultMutationCoordinator } from '../src/app/vaultMutation.js';
+import { reconcileOwnerRecoveryOnStartup } from '../src/app/ownerRecoveryStartup.js';
 
 const enc = (value: string) => new TextEncoder().encode(value);
 function durableBackend(root: string, name: string) {
@@ -39,7 +40,11 @@ describe('Gate 13.1P / 17.2A independent Proxima writers', () => {
         expect(winnerResult.ok).toBe(true); expect(loserResult).toMatchObject({ ok: false, reason: 'stale' });
         expect(await readFile(join(root, 'task.md'), 'utf8')).toBe(`${winner}-bytes`);
         expect(first.recovery.list().find((record) => record.requestId === winnerResult.requestId)?.status).toBe('committed');
-        expect(second.recovery.list().find((record) => record.requestId === loserResult.requestId)?.status).toBe('prepared');
+        expect(second.recovery.list().find((record) => record.requestId === loserResult.requestId)?.status).toBe('recovered');
+        const restarted = createDurableRecoveryStore(durableBackend(root, `recovery-${winner === 'A' ? 'B' : 'A'}.json`));
+        const startup = await reconcileOwnerRecoveryOnStartup(restarted, createDiskVault(root));
+        expect(startup.mutationAuthority).toBe('available');
+        expect(restarted.list().find((record) => record.requestId === loserResult.requestId)?.status).toBe('recovered');
       } finally { await rm(root, { recursive: true, force: true }); }
     }
   });
@@ -88,4 +93,3 @@ describe('Gate 13.1P / 17.2A independent Proxima writers', () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
-
