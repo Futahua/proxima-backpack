@@ -6,25 +6,26 @@
  * things it cannot test — permissions, external writers, Windows paths — belong
  * to the browser and acceptance layers instead.
  */
-import type { VaultEntry, VaultFile, VaultReader } from '../ports/vault.js';
+import type { VaultEntry, VaultFile, VaultReader, VaultWriter, VaultMutationResult } from '../ports/vault.js';
 
-export function createMemoryVault(files: Record<string, string>): VaultReader & {
+export function createMemoryVault(files: Record<string, string>): VaultReader & VaultWriter & {
   set(path: string, text: string): void;
   delete(path: string): void;
 } {
   const normalise = (p: string) => p.split(String.fromCharCode(92)).join('/').replace(/^[/]+|[/]+$/g, '');
-  const store = new Map<string, string>(Object.entries(files).map(([path, text]) => [normalise(path), text]));
+  const store = new Map<string, Uint8Array>(Object.entries(files).map(([path, text]) => [normalise(path), new TextEncoder().encode(text)]));
   const revisions = new Map<string, number>();
   for (const path of store.keys()) revisions.set(path, 1);
 
   const fileOf = (path: string): VaultFile => {
-    const text = store.get(path);
-    if (text === undefined) throw new Error(`No such file in vault: ${path}`);
+    const bytes = store.get(path);
+    if (bytes === undefined) throw new Error(`No such file in vault: ${path}`);
+    const text = new TextDecoder().decode(bytes);
     return {
       path,
       text,
       revision: `${path}@${revisions.get(path) ?? 1}`,
-      size: text.length,
+      size: bytes.byteLength,
       modifiedAt: new Date(0).toISOString(),
     };
   };
@@ -71,11 +72,47 @@ export function createMemoryVault(files: Record<string, string>): VaultReader & 
     },
     set(path, text) {
       const key = normalise(path);
-      store.set(key, text);
+      store.set(key, new TextEncoder().encode(text));
       revisions.set(key, (revisions.get(key) ?? 0) + 1);
     },
     delete(path) {
       store.delete(normalise(path));
+    },
+    async createIfAbsent(path: string, bytes: Uint8Array): Promise<VaultMutationResult> {
+      const key = normalise(path);
+      if (store.has(key)) return { ok: false, reason: 'already-exists', actualRevision: `${key}@${revisions.get(key) ?? 1}` };
+      store.set(key, new Uint8Array(bytes));
+      revisions.set(key, (revisions.get(key) ?? 0) + 1);
+      return { ok: true, revision: `${key}@${revisions.get(key)}` };
+    },
+    async writeIfUnchanged(path: string, bytes: Uint8Array, expectedRevision: string): Promise<VaultMutationResult> {
+      const key = normalise(path);
+      const current = revisions.has(key) && store.has(key) ? `${key}@${revisions.get(key)}` : undefined;
+      if (!current) return { ok: false, reason: 'missing', actualRevision: `${key}@${revisions.get(key) ?? 0}` };
+      if (current !== expectedRevision) return { ok: false, reason: 'stale', actualRevision: current };
+      store.set(key, new Uint8Array(bytes));
+      revisions.set(key, (revisions.get(key) ?? 0) + 1);
+      return { ok: true, revision: `${key}@${revisions.get(key)}` };
+    },
+    async moveIfUnchanged(path: string, destination: string, expectedRevision: string): Promise<VaultMutationResult> {
+      const from = normalise(path); const to = normalise(destination);
+      const current = revisions.has(from) && store.has(from) ? `${from}@${revisions.get(from)}` : undefined;
+      if (!current) return { ok: false, reason: 'missing', actualRevision: `${from}@${revisions.get(from) ?? 0}` };
+      if (current !== expectedRevision) return { ok: false, reason: 'stale', actualRevision: current };
+      if (store.has(to)) return { ok: false, reason: 'destination-exists', actualRevision: `${to}@${revisions.get(to) ?? 1}` };
+      const bytes = store.get(from)!;
+      store.delete(from); store.set(to, new Uint8Array(bytes));
+      const next = (revisions.get(to) ?? 0) + 1;
+      revisions.set(to, next); revisions.set(from, (revisions.get(from) ?? 0) + 1);
+      return { ok: true, revision: `${to}@${next}` };
+    },
+    async deleteIfUnchanged(path: string, expectedRevision: string): Promise<VaultMutationResult> {
+      const key = normalise(path);
+      const current = revisions.has(key) && store.has(key) ? `${key}@${revisions.get(key)}` : undefined;
+      if (!current) return { ok: false, reason: 'missing', actualRevision: `${key}@${revisions.get(key) ?? 0}` };
+      if (current !== expectedRevision) return { ok: false, reason: 'stale', actualRevision: current };
+      store.delete(key); revisions.set(key, (revisions.get(key) ?? 0) + 1);
+      return { ok: true, revision: `${key}@${revisions.get(key)}` };
     },
   };
 }

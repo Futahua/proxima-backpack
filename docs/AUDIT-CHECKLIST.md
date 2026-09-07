@@ -23,6 +23,18 @@ against, so it must travel with the code rather than living in a conversation.
   dirty/user-owned files not to touch, known limitations, and the exact acceptance
   claim being audited.
 
+## Owner-mode automation rule
+
+The final product is an owner-authorized autonomous vault agent. After initial owner
+enrollment, no implementation or acceptance gate may require the creator to return to
+the UI to click a button, select a folder again, trigger refresh, approve an
+individual operation, or manually transcribe evidence. Initial enrollment may require
+one explicit creator action where the operating system makes that unavoidable; it is
+setup, not recurring operation. Durable authority must restore across normal
+Papers/app restarts, and all later tests must drive machine-readable programmatic
+contracts. A gate is never solved by instructing the creator to “click X and report
+back.”
+
 ## Current status
 
 | Field | Value |
@@ -32,7 +44,7 @@ against, so it must travel with the code rather than living in a conversation.
 | Last audited SHA | `57f1e20` — Gate 6.5A safety invariants PASS; native Papers-hosted and broader native-host acceptance remain OPEN. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
-| Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
+| Real-vault write authority | **Bootstrap-disabled.** The signed read-only release remains non-mutating. Final owner mode is intended to support creator-authorized create/edit/rename/move/delete after Gates 13–17 prove conditional commits, recovery, bounded authority and coexistence. |
 
 ## Baseline, unless deliberately changed later
 
@@ -40,8 +52,12 @@ against, so it must travel with the code rather than living in a conversation.
 - Proxima repo: `Futahua/proxima-backpack`
 - Obsidian remains a peer application.
 - The vault remains canonical creator data.
-- Proxima is read-only against the real vault until a separate write/conflict gate is
-  explicitly approved.
+- The current signed foundation is read-only against creator data; that is a bootstrap
+  safety milestone, not the terminal product scope.
+- Final owner mode is intended to support programmatic create, edit, rename/move and
+  delete anywhere inside an explicitly creator-granted vault.
+- Write authority is enabled only after the mutation engine, conflict, recovery,
+  bounded-authority, native and coexistence gates below pass.
 - KeToan is permanently out of scope.
 - Primary product surfaces: Elastic board, calendar, projects, then arbitrary-file /
   canvas work.
@@ -1736,7 +1752,49 @@ Possible missing truth:
 
 ---
 
-## Gate 13 — Write-model design, still disabled in production
+## Gate 13 — Owner-mode mutation engine (fixture/disposable only)
+
+This gate builds the complete programmatic mutation substrate without granting writes
+to the creator's real vault. No UI interaction is required to drive it.
+
+### 13.0 First implementation slice
+
+- [x] Byte-based conditional writer contract (`VaultWriter`) defines create, update,
+      move and delete operations with explicit revision/absence preconditions.
+- [x] Memory adapter implements deterministic conditional create/update/move/delete.
+- [x] Mutation coordinator canonicalizes vault-relative paths, enforces byte limits,
+      serializes operations per root and emits bounded lifecycle events.
+- [x] Coordinator refuses stale/missing/occupied targets without automatic retries.
+- [x] Bounded in-memory recovery records are captured before destructive operations.
+- [ ] Disposable real-disk writer implements the same contract and measured race
+      semantics.
+- [ ] Independent-writer race, recovery restore and Obsidian coexistence suites pass.
+- [ ] Creator-vault/native-FSA mutation authority remains disabled.
+
+### 13.B Adversarial commit and recovery status
+
+- [x] Forced external edit between revision check and update is refused without
+      overwriting peer bytes (disposable disk barrier test).
+- [x] Forced external edit between revision check and delete is refused.
+- [x] Forced external destination creation during move is refused.
+- [x] Create remains exclusive under a competing creator.
+- [x] Mutation path/byte bounds and traversal rejection are enforced.
+- [x] Every attempted mutation has one request ID and one terminal bounded event.
+- [ ] Durable recovery journal survives process termination.
+- [ ] Crash injection and recovery restore are verified.
+- [ ] Independent Obsidian writer coexistence is verified for write operations.
+- [ ] Exact residual filesystem race semantics are documented for native/FSA adapters.
+
+### 13.C Crash-durable recovery journal
+
+- [x] Recovery abstraction records request ID, operation, relative path, revision and
+      bounded prior bytes, with prepared/committed state support.
+- [x] A disk-backed journal survives process termination (child-process write/restart
+      load test).
+- [ ] Process-kill injection classifies prepared, committing and committed states.
+- [ ] Interrupted update/delete/move recovery is conflict-aware and idempotent.
+- [ ] Recovery refuses to overwrite newer peer bytes or delete a peer destination.
+- [x] Journal retention and recovery payload limits remain bounded.
 
 Not enabled merely because a UI needs editing.
 
@@ -1781,7 +1839,27 @@ If not, specific missing truth:
 
 ---
 
-## Gate 14 — First real-vault write
+## Gate 14 — Durable autonomous owner authority
+
+After one owner enrollment, the agent must regain the exact granted vault authority
+and operate through Papers across restarts without human UI intervention.
+
+- [ ] Owner authority is explicit and scoped to one exact vault/root.
+- [ ] Initial enrollment requirements are documented separately from normal operation.
+- [ ] No per-operation confirmation or repeat picker is part of normal startup.
+- [ ] Read and write authority restore programmatically after full Papers restart.
+- [ ] Revoked/prompt authority becomes a machine-readable blocked state.
+- [ ] Persisted browser FSA is tested; if it cannot restore unattended, the smallest
+      scoped Papers/native capability is implemented.
+
+### 14.1 Native acceptance is agent-driven
+
+- [ ] Agent launches an isolated acceptance profile and observes authority state.
+- [ ] Agent issues programmatic read/write operations and retrieves bounded evidence.
+- [ ] Agent starts independent peer writer/Obsidian where required.
+- [ ] Agent verifies exact build identity and tears down disposable resources.
+
+Separate approval gate for creator data. Do not jump directly to Excalidraw writing.
 
 Separate approval gate.
 

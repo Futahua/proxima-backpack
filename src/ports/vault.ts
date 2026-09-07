@@ -6,8 +6,9 @@
  * API, or a Papers capability if one is ever justified. The domain must never
  * learn which.
  *
- * v1 is read-only on purpose. Obsidian stays the only writer to the real vault
- * until conflict semantics are specified and tested.
+ * The reader remains the production boundary for the signed read-only release.
+ * Owner-mode writers are introduced only for explicitly granted/disposable roots
+ * until the native authority and coexistence gates are signed.
  */
 
 export interface VaultFile {
@@ -81,7 +82,8 @@ export interface VaultReader {
 }
 
 /**
- * Marker for the day Proxima is allowed to write. Deliberately unimplemented in v1.
+ * Conditional mutation seam for owner mode. Implementations must refuse stale
+ * observations rather than silently choosing last-writer-wins.
  *
  * Two conditions bind whoever implements this, both recorded in docs/DECISIONS.md:
  *
@@ -92,13 +94,22 @@ export interface VaultReader {
  *  - re-decide the parser question first (D7). A partial parser is safe to read with
  *    and unsafe to write from.
  */
+export type VaultMutationConflict = 'stale' | 'missing' | 'already-exists' | 'destination-exists';
+
+export type VaultMutationResult =
+  | { ok: true; revision: string }
+  | { ok: false; reason: VaultMutationConflict; actualRevision?: string };
+
 export interface VaultWriter {
+  createIfAbsent(path: string, bytes: Uint8Array): Promise<VaultMutationResult>;
   /**
    * Write only if the file still has the revision we read. Anything else is a
    * conflict, not a write — this is the guard against silently overwriting an
    * edit Obsidian made in the meantime.
    */
-  writeIfUnchanged(path: string, text: string, expectedRevision: string): Promise<
-    { ok: true; revision: string } | { ok: false; reason: 'stale'; actualRevision: string }
-  >;
+  writeIfUnchanged(path: string, bytes: Uint8Array, expectedRevision: string): Promise<VaultMutationResult>;
+
+  moveIfUnchanged(path: string, destination: string, expectedRevision: string): Promise<VaultMutationResult>;
+
+  deleteIfUnchanged(path: string, expectedRevision: string): Promise<VaultMutationResult>;
 }

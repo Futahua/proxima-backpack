@@ -924,3 +924,13 @@ require persistent permission, rebinding, recursive enumeration and containment
 semantics beyond the ephemeral one-shot browser File contract. Source SVG remains
 passive by policy because it is active-capable content, and PDF rendering remains
 optional/not added. These are deliberate boundaries, not implicit capabilities.
+
+## D50 — Owner mode is the product destination; read-only is the bootstrap
+
+The signed read-only release remains the safety substrate for the owner-authorized
+vault agent. Gate 13 now builds a generic byte-based conditional mutation engine over
+memory and disposable roots; it does not grant creator-vault writes. Final owner mode
+is intentionally programmatic and supports create, update, rename/move, delete and
+recovery after bounded authority, conflict, audit, native restoration and Obsidian
+coexistence gates pass. Initial enrollment may require one unavoidable OS/browser
+gesture, but acceptance and normal operation must not require recurring UI clicks.
