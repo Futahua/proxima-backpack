@@ -2189,7 +2189,12 @@ Current truth stays in-repo.
       hash `3b36fa84bbf4e663b0547c3d7ff8577fef889f4a2fd0d80fb598694776b4d626`, and
       fixed clock `2026-09-06T12:00:00.000Z` (`tools/build-fixture-module.mjs`,
       `src/browser/generated/buildIdentity.generated.ts`).
-- [ ] no stale placeholder project identity
+- [x] no stale placeholder project identity — committed `project.json` carries the
+      machine-minted Backpack id `bp-954ea2cd-6261-410d-baf8-0d1fbd8ca0b1`, points to
+      `public/index.html`, and matches the machine-local Papers registry binding
+      recorded in the Gate 2A acceptance note; the README explicitly treats this UUID
+      as non-portable machine-local state rather than a placeholder (`project.json`,
+      `README.md`, Gate 2.1).
 - [ ] no unnecessary Papers changes
 - [ ] every Papers change has a recorded specific missing truth and acceptance test
 - [ ] creator real-vault write state is clearly documented as enabled or disabled
