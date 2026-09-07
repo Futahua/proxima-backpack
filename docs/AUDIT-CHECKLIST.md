@@ -599,7 +599,9 @@ Only then consider a project-scoped external read capability in Papers.
 - [ ] Bounded polling considered/tested if needed.
 - [ ] External edit produces new source revision.
 - [ ] Deleted source disappears or becomes explicit missing state.
-- [ ] Renamed source follows defined identity semantics.
+- [x] Renamed source follows defined identity semantics — disposable external-directory
+      acceptance in `tests/obsidianCoexistence.test.ts` (Gate 6R, `fff4fee`); this does
+      not claim actual Obsidian/Papers-hosted rename acceptance.
 - [ ] UI never shows stale state as confirmed-current without indication.
 
 ### 6.1A Provenance-aware product projection (Gate 6B)
@@ -1078,7 +1080,7 @@ convenience.
 | substage | verdict |
 | --- | --- |
 | external edit, create, modify, delete | PASS |
-| **rename** | **OPEN — not exercised.** A delete is not evidence for rename identity/provenance behaviour |
+| **rename** | **PASS at `fff4fee`** — disposable external-directory peer rename preserves record identity/provenance and is zero-write; actual Obsidian/Papers-hosted rename remains unclaimed |
 | obsidianCoexistence | PASS for create/modify/delete |
 | Proxima zero-write | PASS |
 | cleanup | PASS |
@@ -1262,7 +1264,7 @@ Gates through 6R remain signed: those verdicts predate the reported switch.
 | --- | --- | --- |
 | 6Q real creator-vault read-only baseline | PASS | `82c3f9a6` |
 | 6R Obsidian coexistence — create / modify / delete | PASS | `abf99364` |
-| 6R external **rename** | **OPEN** — not exercised | — |
+| 6R external **rename** | PASS (disposable external-directory acceptance; host/Obsidian rename unclaimed) | `fff4fee` |
 | 7A real Excalidraw discovery | PASS | `a9f69ad7` |
 | 7B structural recognition | PASS | `a9f69ad7` |
 | 7C compressed-json decoding | PASS | `a9f69ad7` |
