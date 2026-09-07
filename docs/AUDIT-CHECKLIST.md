@@ -1429,7 +1429,7 @@ No speculative broadening of `connect-src`.
 
 ### 8.3 "Any file" contract
 
-- [ ] Every creator-selected file can exist as a canvas object.
+- [x] Every admitted creator-selected browser file can exist as a canvas object (ephemeral one-shot source).
 - [ ] Only understood formats require inline preview.
 - [x] Unsupported format gets first-class fallback card.
 - [ ] Fallback card can show available:
@@ -1444,11 +1444,11 @@ No speculative broadening of `connect-src`.
 ### 8.4 Drag/drop
 
 - [ ] Browser drop file can be previewed one-shot from `File`.
-- [ ] Source identity semantics after restart specified.
-- [ ] Dropped path does not become the only logical ID.
-- [ ] Duplicate drops have defined behavior.
-- [ ] Large file bounds exist.
-- [ ] Active/executable content remains passive unless explicitly trusted.
+- [x] Source identity semantics after restart specified for ephemeral admission.
+- [x] Dropped path-like metadata does not become a vault locator or logical ID.
+- [x] Duplicate drops have defined behavior: each admission is independent.
+- [x] Large file bounds exist before one-shot content acquisition.
+- [x] Active/executable content remains passive and is skipped before acquisition.
 
 ### 8.5 Bounded source loader
 
@@ -1459,7 +1459,7 @@ No speculative broadening of `connect-src`.
 - [x] Read-time path/revision/size/modified metadata reaches selection unchanged.
 - [x] Missing binary capability and read failure become explicit fallback outcomes.
 - [x] Loader preserves Proxima-owned node identity and layout.
-- [ ] Browser `File` one-shot drop acquisition.
+- [x] Browser `File` one-shot admission is bounded and capability-free after acquisition.
 - [ ] Inline browser rendering and object-URL lifecycle.
 
 ---

@@ -14,6 +14,7 @@ import {
   vaultFileExtension,
   type CanvasNode,
   type CanvasSourceObservation,
+  type CanvasVaultFileSource,
 } from '../domain/canvas.js';
 import {
   MAX_CANVAS_TEXT_CHARS,
@@ -51,8 +52,9 @@ export async function loadCanvasNode(
   vault: VaultReader,
   node: CanvasNode,
 ): Promise<CanvasLoadResult> {
+  if (node.source.kind !== 'vault-file') throw new Error('canvas loader accepts vault-file nodes only');
   const path = validateVaultRelativePath(node.source.path);
-  const source = { ...node.source, path };
+  const source: CanvasVaultFileSource = { ...node.source, path };
 
   if (source.state !== 'available') {
     return { node, selection: selectCanvasRepresentation(source, null), status: 'selected' };
@@ -84,10 +86,12 @@ export async function loadCanvasNode(
 
   // An unknown non-active file may still be a raster whose name is unhelpful. A
   // text probe that did not find a drawing therefore falls through to bytes.
-  return readBinary(textResult?.node ?? node, textResult?.node.source ?? source, vault);
+  const nextSource = textResult?.node.source;
+  const binarySource = nextSource?.kind === 'vault-file' ? nextSource : source;
+  return readBinary(textResult?.node ?? node, binarySource, vault);
 }
 
-async function readText(node: CanvasNode, source: CanvasNode['source'], vault: VaultReader): Promise<CanvasLoadResult | null> {
+async function readText(node: CanvasNode, source: CanvasVaultFileSource, vault: VaultReader): Promise<CanvasLoadResult | null> {
   try {
     const file = await vault.read(source.path, MAX_CANVAS_TEXT_CHARS);
     if (file.path !== source.path) return unavailable(node, source);
@@ -106,7 +110,7 @@ async function readText(node: CanvasNode, source: CanvasNode['source'], vault: V
   }
 }
 
-async function readBinary(node: CanvasNode, source: CanvasNode['source'], vault: VaultReader): Promise<CanvasLoadResult> {
+async function readBinary(node: CanvasNode, source: CanvasVaultFileSource, vault: VaultReader): Promise<CanvasLoadResult> {
   if (source.state !== 'available') {
     return { node, selection: selectCanvasRepresentation(source, null), status: 'unreadable' };
   }
@@ -131,7 +135,7 @@ async function readBinary(node: CanvasNode, source: CanvasNode['source'], vault:
   }
 }
 
-function unavailable(node: CanvasNode, source: CanvasNode['source']): CanvasLoadResult {
+function unavailable(node: CanvasNode, source: CanvasVaultFileSource): CanvasLoadResult {
   const unavailableSource = { ...source, state: 'unavailable' as const };
   return {
     node: reobserveCanvasNode(node, unavailableSource),

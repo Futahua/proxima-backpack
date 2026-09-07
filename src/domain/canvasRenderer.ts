@@ -13,8 +13,9 @@ import {
   validateVaultRelativePath,
   vaultFileExtension,
   vaultFileName,
+  fileExtension,
+  type CanvasSource,
   type CanvasSourceState,
-  type CanvasVaultFileSource,
 } from './canvas.js';
 
 export const MAX_CANVAS_TEXT_CHARS = 1_000_000;
@@ -25,7 +26,8 @@ export type CanvasRendererKind = (typeof CANVAS_RENDERER_ORDER)[number];
 
 export type CanvasPayload =
   | { kind: 'text'; text: string }
-  | { kind: 'binary'; bytes: Uint8Array };
+  | { kind: 'binary'; bytes: Uint8Array }
+  | { kind: 'too-large' };
 
 export type CanvasSelectionReason =
   | 'source-missing'
@@ -38,7 +40,9 @@ export type CanvasSelectionReason =
 
 export interface CanvasRepresentationSelection {
   kind: CanvasRendererKind;
-  sourcePath: string;
+  sourceKind: CanvasSource['kind'];
+  sourcePath: string | null;
+  sourceId: string | null;
   filename: string;
   extension: string;
   sourceState: CanvasSourceState;
@@ -54,18 +58,23 @@ const ACTIVE_EXTENSIONS = new Set(['html', 'htm', 'svg', 'js', 'mjs', 'cjs', 'ex
 
 /** Select a data-only representation; all unsupported cases remain fallback. */
 export function selectCanvasRepresentation(
-  source: CanvasVaultFileSource,
+  source: CanvasSource,
   payload: CanvasPayload | null,
 ): CanvasRepresentationSelection {
-  const path = validateVaultRelativePath(source.path);
-  const safeSource = { ...source, path };
+  const safeSource: CanvasSource = source.kind === 'vault-file'
+    ? { ...source, path: validateVaultRelativePath(source.path) }
+    : { ...source };
+  const filename = safeSource.kind === 'vault-file' ? vaultFileName(safeSource.path) : safeSource.filename;
+  const extension = safeSource.kind === 'vault-file' ? vaultFileExtension(safeSource.path) : fileExtension(filename);
   const base = (kind: CanvasRendererKind, reason: CanvasSelectionReason | null, mediaType: SupportedImageMedia | null = null): CanvasRepresentationSelection => ({
     kind,
-    sourcePath: path,
-    filename: vaultFileName(path),
-    extension: vaultFileExtension(path),
+    sourceKind: safeSource.kind,
+    sourcePath: safeSource.kind === 'vault-file' ? safeSource.path : null,
+    sourceId: safeSource.kind === 'browser-file' ? safeSource.sourceId : null,
+    filename,
+    extension,
     sourceState: safeSource.state,
-    revision: safeSource.revision,
+    revision: safeSource.kind === 'vault-file' ? safeSource.revision : null,
     size: safeSource.size,
     modifiedAt: safeSource.modifiedAt,
     mediaType,
@@ -74,14 +83,15 @@ export function selectCanvasRepresentation(
 
   if (safeSource.state === 'missing') return base('fallback', 'source-missing');
   if (safeSource.state === 'unavailable') return base('fallback', 'source-unavailable');
-  if (ACTIVE_EXTENSIONS.has(vaultFileExtension(path))) return base('fallback', 'active-content');
+  if (ACTIVE_EXTENSIONS.has(extension)) return base('fallback', 'active-content');
   if (payload === null) return base('fallback', 'payload-unavailable');
+  if (payload.kind === 'too-large') return base('fallback', 'payload-too-large');
 
   if (payload.kind === 'text') {
     if (payload.text.length > MAX_CANVAS_TEXT_CHARS) return base('fallback', 'payload-too-large');
-    const artifact = recogniseExcalidraw(payload.text, path);
+    const artifact = recogniseExcalidraw(payload.text, filename);
     if (artifact.kind !== 'not-excalidraw') return base('excalidraw', null);
-    if (TEXT_EXTENSIONS.has(vaultFileExtension(path))) return base('text', null);
+    if (TEXT_EXTENSIONS.has(extension)) return base('text', null);
     return base('fallback', 'unsupported-format');
   }
 

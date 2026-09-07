@@ -790,6 +790,21 @@ no reader, filesystem handle, URL, DOM, callback or execution authority. Binary
 acquisition, object-URL lifecycle and browser rendering remain later
 application/surface work.
 
+## D43 — Browser File admission is ephemeral and one-shot
+
+**Decided:** a browser `File` may be admitted once through the browser adapter as a
+second, explicitly non-vault source kind. Proxima generates separate node and source
+identities; filename, MIME, size, modified time and any path-like browser metadata
+never determine either id or become a vault locator. The adapter checks active-content
+and the 16 MiB byte ceiling before `arrayBuffer()`, performs at most one bounded
+acquisition, and reuses those inert bytes for structural/text and signature
+classification. Restart marks the source unavailable; no filename-based rebinding or
+durable handle is implied. Duplicate admissions remain independent nodes.
+
+**Boundary:** the `File` object never enters domain or retained canvas state. Visible
+drop handlers, browser rendering, object-URL lifecycle, external grants, directories,
+source rebinding, persistence and writes remain later work.
+
 ## D42 — Canvas source reads stay bounded and provenance-bearing
 
 **Decided:** the app-layer canvas loader is the only Gate 8 slice that spends source
