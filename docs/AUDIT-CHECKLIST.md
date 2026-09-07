@@ -2162,7 +2162,9 @@ Current truth stays in-repo.
 
 - [x] clean clone builds — a fresh local clone with no working-tree artifacts
       completed `npm ci` and `npm run build` successfully at the reviewed tree.
-- [ ] all tests pass
+- [x] all tests pass — `npm test` completed 65 test files / 475 tests successfully
+      on the current tree (including the real bridge, filesystem and browser-boundary
+      regressions).
 - [ ] typecheck passes
 - [ ] deterministic fixture scenarios pass
 - [ ] C1 integrated scenarios pass
