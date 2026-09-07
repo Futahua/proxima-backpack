@@ -154,7 +154,7 @@ function healthSurface(health: UiHealthModel): string {
 }
 
 function updateHydrationSummary(state: ProximaState, problems: LoadProblem[]): void {
-  setText('#hydration-summary', JSON.stringify({ mode: 'fixture', fixture: FIXTURE_NAME, hydrationRevision: `fixture:${BUILD_IDENTITY.fixtureHash.slice(0, 16)}:1`, applicationStateRevision: actionDispatcher?.snapshot().stateRevision ?? 0, sourceHealth: currentUiHealth(), surface, selection, projects: state.projects.length, tasks: state.tasks.length, events: state.events.length, problems: problems.length, fixedClock: BUILD_IDENTITY.fixedClock, deterministicIds: true }, null, 2));
+  setText('#hydration-summary', JSON.stringify({ mode: currentSourceMode(), fixture: currentSourceMode() === 'external' ? null : FIXTURE_NAME, hydrationRevision: currentSourceMode() === 'external' ? `external:${sourceProjection?.generation ?? 0}` : `fixture:${BUILD_IDENTITY.fixtureHash.slice(0, 16)}:1`, applicationStateRevision: actionDispatcher?.snapshot().stateRevision ?? 0, sourceHealth: currentUiHealth(), surface, selection, projects: state.projects.length, tasks: state.tasks.length, events: state.events.length, problems: problems.length, fixedClock: BUILD_IDENTITY.fixedClock, deterministicIds: true }, null, 2));
 }
 
 function exposeInspection(): void {
@@ -240,6 +240,18 @@ function dispatchAction(input: unknown): void {
   } else {
     setText('#boot-status', `Action failed: ${result.error.code}`);
   }
+}
+
+/**
+ * What this page is actually reading.
+ *
+ * The summary used to report `mode: fixture` unconditionally, so a page serving the
+ * creator's real vault described itself as bundled fixture bytes. That is exactly
+ * the machine-readable field an agent would trust to decide whether it is looking at
+ * disposable data, and it was wrong in the one direction that matters.
+ */
+function currentSourceMode(): 'fixture' | 'external' {
+  return sourceSession?.snapshot().sourceMode === 'external' ? 'external' : 'fixture';
 }
 
 function applyProjection(next: ReadOnlyProjection, mode: 'fixture' | 'external', result?: import('../app/refreshController.js').RefreshResult): void {

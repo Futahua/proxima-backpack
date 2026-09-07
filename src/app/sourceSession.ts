@@ -76,7 +76,16 @@ export function createSourceSession(options: SourceSessionOptions): SourceSessio
   }, previous?.health.applicationRevision ?? generation);
 
   const activate = (candidate: SourceCandidate, generation: number): ActiveSource => {
-    const controller = createRefreshController({ vault: candidate.reader, initial: candidate.initial });
+    // Refresh with the layout that produced this state, not the default. Without
+    // this a legacy vault read correctly at startup and then degraded on the first
+    // refresh, because the reload looked for the preferred directories and reported
+    // them unreadable — the surface said DEGRADED about a vault that had not
+    // changed at all.
+    const controller = createRefreshController({
+      vault: candidate.reader,
+      initial: candidate.initial,
+      loadOptions: { layout: candidate.initial.layout },
+    });
     const source: ActiveSource = { candidate, controller, policy: undefined as unknown as RefreshPolicy, projection: projectionFor(controller.snapshot(), generation) };
     source.policy = createRefreshPolicy({ controller, intervalMs: options.intervalMs, scheduler: options.scheduler, onResult(result) {
       if (disposed || active !== source) return;

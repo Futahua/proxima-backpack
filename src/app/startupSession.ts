@@ -1,6 +1,7 @@
 import { bootstrapRestoredHandle, type BootstrapInspection, type ReadPermissionProvider, type RestoredHandleStore } from './handleBootstrap.js';
 import { createSourceSession, type SourceCandidate, type SourceSession, type SourceSessionOptions } from './sourceSession.js';
 import { loadVaultState } from './vaultRepository.js';
+import { detectLayout } from './vaultLayout.js';
 
 export interface StartupSessionOptions extends Omit<SourceSessionOptions, 'initial'> {
   fixture: SourceCandidate;
@@ -59,9 +60,22 @@ export function createStartupSessionOrchestrator(options: StartupSessionOptions)
         let initial = options.fixture;
         let extraCodes: string[] = [];
         if (bootstrapResult.reader) {
-          const loaded = await loadVaultState(bootstrapResult.reader);
-          if (!activationFailed(loaded)) initial = { mode: 'external', reader: bootstrapResult.reader, initial: loaded };
-          else extraCodes = ['activation-failed'];
+          // Which layout, before reading. A restored source is a real creator vault
+          // and may use either supported layout; assuming the preferred one made a
+          // legacy vault look empty, fail activation, and fall back to fixture
+          // bytes without ever saying why. Ambiguity is not resolved by preference —
+          // the read is simply not attempted.
+          const detection = await detectLayout(bootstrapResult.reader);
+          if (detection.kind === 'ambiguous') {
+            extraCodes = ['layout-ambiguous'];
+          } else {
+            const loaded = await loadVaultState(
+              bootstrapResult.reader,
+              detection.layout ? { layout: detection.layout } : {},
+            );
+            if (!activationFailed(loaded)) initial = { mode: 'external', reader: bootstrapResult.reader, initial: loaded };
+            else extraCodes = ['activation-failed'];
+          }
         }
         const session = createSourceSession({ ...options, initial });
         result = { session, inspection: inspection(bootstrap, session, extraCodes) };

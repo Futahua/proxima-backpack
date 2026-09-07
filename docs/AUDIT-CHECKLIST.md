@@ -1071,6 +1071,61 @@ first. Stale compiled modules were letting tests pass against old behaviour, so
 build-before-test is an invariant of this repository's acceptance work rather than a
 convenience.
 
+### 6.1U Gate 6R — real Obsidian coexistence (signed)
+
+**Signed PASS at `abf99364`**, with substages split rather than bundled:
+
+| substage | verdict |
+| --- | --- |
+| external edit, create, modify, delete | PASS |
+| **rename** | **OPEN — not exercised.** A delete is not evidence for rename identity/provenance behaviour |
+| obsidianCoexistence | PASS for create/modify/delete |
+| Proxima zero-write | PASS |
+| cleanup | PASS |
+| human-authored edit | **not claimed** |
+| Papers-hosted coexistence | OPEN |
+
+Recorded caveats, neither blocking:
+
+- Obsidian was launched with no explicit vault argument; the root was prevalidated
+  against Obsidian's own registry requiring `open === true` and an exact normalised
+  match. The claim is *not* that the executable was instructed to open that root.
+- The vault has `remotely-save` installed, so the transient probe record was
+  potentially visible to another sync plugin during the run. It was not disabled,
+  because disabling it would itself modify the creator's environment and add a
+  variable. The gate therefore proves Obsidian-mediated mutation and Proxima
+  observation, **not** isolation from other installed vault software.
+- The probe's create step can recover from a create conflict by modifying. Future
+  probes should report `create-conflict-recovery` distinctly rather than folding it
+  into `create`.
+
+**Standing rule for any future gate that temporarily modifies the creator's
+environment:** a disposable dry run comes first, and it must exercise the failure
+paths that threaten cleanup — launcher missing, launcher dies immediately, plugin
+never loads, plugin loads but never completes, process hangs, mutation throws,
+observation throws, cleanup itself partially fails. The goal is not a happy path on
+a copy; it is proving that *every* failure path either leaves the creator vault
+untouched or reaches deterministic cleanup. An unhandled spawn error skipping the
+restore step is what made this rule necessary.
+
+### 6.1V Live surface against a legacy vault
+
+Found by pointing the built page at the real vault through the bridge, which no
+fixture had exercised:
+
+- [x] Startup activation detects the layout instead of assuming the preferred one.
+      A legacy vault previously looked empty, failed activation, and fell back to
+      fixture bytes without saying why.
+- [x] Refreshes reuse the layout that produced the state. Without it a legacy vault
+      read correctly at startup and then went `SOURCE DEGRADED` with
+      `directory-unreadable` on the first refresh, about a vault that had not changed.
+- [x] The hydration summary reports the true source mode. It previously said
+      `mode: fixture` unconditionally, so a page serving the creator's real vault
+      described itself as bundled fixture bytes — wrong in the one direction that
+      matters for an agent deciding whether data is disposable.
+- [x] `tools/serve-public.mjs` serves `public/` on loopback, GET only, confined to
+      that directory, so the built page can be looked at outside Papers.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.
