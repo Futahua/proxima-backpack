@@ -67,6 +67,19 @@ describe('Gate 6F injected external-directory reader', () => {
     expect('requestPermission' in reader).toBe(false);
   });
 
+  it('fails closed for traversal and root-shaped locators across every reader operation', async () => {
+    const root = mutableHandle({ 'nested/a.txt': 'a', 'outside.txt': 'outside' });
+    const reader = createExternalDirectoryVault(root, { maxEntries: 20, maxDepth: 8, maxFileBytes: 100 });
+    const unsafe = ['../outside.txt', 'nested/../outside.txt', 'nested/./a.txt', 'nested/../../outside.txt', 'C:\\temp\\secret.txt', '\\\\server\\share\\secret.txt', 'file:///outside.txt'];
+    for (const path of unsafe) {
+      await expect(reader.read(path)).rejects.toThrow();
+      await expect(reader.list(path)).rejects.toThrow();
+      await expect(reader.walk(path)).rejects.toThrow();
+      expect(await reader.exists(path)).toBe(false);
+    }
+    expect(await reader.read('nested/a.txt')).toMatchObject({ path: 'nested/a.txt', text: 'a' });
+  });
+
   it('feeds external mutation, deletion, and failure through the existing refresh stack', async () => {
     const root = mutableHandle(fixtureFiles('vault-basic'));
     const source = createBrowserSource({ directory: root });

@@ -2035,7 +2035,11 @@ Backpack page:
 Filesystem:
 
 - [ ] all external access creator-granted or fixture-scoped
-- [ ] no traversal
+- [x] no traversal — OPFS/external-directory locators reject `..`/`.` traversal
+      before handle lookup across list/walk/read/exists; bridge reads fail closed on
+      traversal and resolved-root escapes, with symlink components rejected
+      (`tests/externalDirectoryVault.test.ts`, `tests/agentVaultBridge.test.ts`,
+      `tests/bridgeDisclosure.test.ts`, `tests/canvas.test.ts`, `tests/fsaEvidence.test.ts`).
 - [ ] symlink/junction containment explicitly tested where host capability exists
 - [ ] revocation works
 - [ ] grant ownership is exact Backpack identity
