@@ -1912,7 +1912,11 @@ Only after fallback file cards are already first-class.
       `EventRing` (default capacity 128, configurable finite capacity) and evidence,
       diagnostics and canvas registries have explicit bounds; ring eviction is pinned
       by `tests/eventRing.test.ts` (Gate 18D).
-- [ ] no quadratic operation accidentally tied to every render
+- [x] no quadratic operation accidentally tied to every render — reachable read-only
+      Board/Calendar/Canvas/inspection paths are source-audited and the two concrete
+      nested scans were replaced by render-scoped indexes (`1b0a1bc` project labels;
+      `85b56a4` inspection event day keys). The claim is scoped to current paths and
+      does not include browser-DOM timing or unmeasured larger scales (Gate 18E).
 
 Performance work must not move domain/file semantics into Papers.
 
