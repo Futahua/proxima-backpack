@@ -10,6 +10,12 @@ export type SourcePatchFailureReason =
   | 'invalid-utf8'
   | 'source-too-large';
 
+/** Closed set of task fields that the semantic writer may ever target. */
+export type TaskScalarField =
+  | 'name' | 'project' | 'projectId' | 'status' | 'weight' | 'orderIndex'
+  | 'isFixedDuration' | 'fixedDuration' | 'maxDuration' | 'isCompleted'
+  | 'startDate' | 'deadline';
+
 export type SourcePatchResult =
   | { ok: true; bytes: Uint8Array; start: number; end: number }
   | { ok: false; reason: SourcePatchFailureReason };
@@ -73,21 +79,48 @@ function validQuoted(value: string, quote: '"' | "'"): boolean {
   return false;
 }
 
-function encodeForStyle(value: string, style: 'plain' | 'single' | 'double'): string | null {
+function encodeForStyle(value: string, style: 'plain' | 'single' | 'double', plainSafe = false): string | null {
   if (/[\u0000-\u001F\u007F\r\n]/u.test(value)) return null;
-  if (style === 'plain') return SAFE_PLAIN.test(value) ? value : null;
+  if (style === 'plain') return (plainSafe ? SAFE_PLAIN.test(value) : safePlain(value)) ? value : null;
   if (style === 'single') return `'${value.replaceAll("'", "''")}'`;
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 
+function safePlain(value: string): boolean {
+  if (!value || /^[\-?:,\[\]{}#&*!|>'"%@`]/.test(value) || /[ \t]#/.test(value) || /:[ \t]/.test(value)) return false;
+  return !/[\u0000-\u001F\u007F\r\n]/u.test(value);
+}
+
+function fieldMode(field: TaskScalarField): 'string' | 'number' | 'boolean' {
+  if (field === 'weight' || field === 'orderIndex' || field === 'fixedDuration' || field === 'maxDuration') return 'number';
+  if (field === 'isFixedDuration' || field === 'isCompleted') return 'boolean';
+  return 'string';
+}
+
+function encodedValue(field: TaskScalarField, value: string | number | boolean, style: 'plain' | 'single' | 'double'): string | null {
+  const mode = fieldMode(field);
+  if (mode === 'number') return typeof value === 'number' && Number.isFinite(value) ? String(value) : null;
+  if (mode === 'boolean') return typeof value === 'boolean' ? String(value) : null;
+  if (typeof value !== 'string') return null;
+  return encodeForStyle(field === 'status' ? value.trim() : value, style, field === 'status');
+}
+
 /** Plan a byte-exact patch of one unambiguous top-level `status:` scalar. */
 export function planTaskStatusPatch(input: Uint8Array | string, status: TaskStatusId, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  return planTaskScalarPatch(input, 'status', status, maxBytes);
+}
+
+/** Plan a byte-exact patch of one allowlisted existing top-level task scalar. */
+export function planTaskScalarPatch(input: Uint8Array | string, field: TaskScalarField, value: string | number | boolean, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
   const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
   if (bytes.byteLength > maxBytes) return { ok: false, reason: 'source-too-large' };
   let source: string;
   try { source = typeof input === 'string' ? input : new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
   catch { return { ok: false, reason: 'invalid-utf8' }; }
-  if (typeof status !== 'string' || /[\u0000-\u001F\u007F\r\n]/u.test(status)) return { ok: false, reason: 'invalid-value' };
+  if (fieldMode(field) === 'string' && (typeof value !== 'string' || /[\u0000-\u001F\u007F\r\n]/u.test(value))) return { ok: false, reason: 'invalid-value' };
+  if (field === 'status' && typeof value === 'string' && value.trim() === '') return { ok: false, reason: 'invalid-value' };
+  if (fieldMode(field) === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) return { ok: false, reason: 'invalid-value' };
+  if (fieldMode(field) === 'boolean' && typeof value !== 'boolean') return { ok: false, reason: 'invalid-value' };
 
   const lines = linesOf(source);
   const first = lines[0];
@@ -102,7 +135,7 @@ export function planTaskStatusPatch(input: Uint8Array | string, status: TaskStat
     const line = lines[i] as SourceLine;
     if (/^[ \t]/.test(line.content) || line.content.trim() === '' || /^[ \t]*#/.test(line.content)) continue;
     const colon = line.content.indexOf(':');
-    if (colon < 0 || line.content.slice(0, colon).trim() !== 'status') continue;
+    if (colon < 0 || line.content.slice(0, colon).trim() !== field) continue;
     const rest = line.content.slice(colon + 1);
     const comment = scalarEnd(rest);
     const withoutComment = rest.slice(0, comment);
@@ -120,7 +153,7 @@ export function planTaskStatusPatch(input: Uint8Array | string, status: TaskStat
   if (matches.length === 0) return { ok: false, reason: 'target-missing' };
   if (matches.length !== 1) return { ok: false, reason: 'target-ambiguous' };
   const match = matches[0] as (typeof matches)[number];
-  const replacement = encodeForStyle(status, match.style);
+  const replacement = encodedValue(field, value, match.style);
   if (replacement === null) return { ok: false, reason: 'invalid-value' };
   const patched = source.slice(0, match.start) + replacement + source.slice(match.end);
   const encoder = new TextEncoder();

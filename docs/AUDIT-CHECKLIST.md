@@ -1907,15 +1907,47 @@ Not enabled merely because a UI needs editing.
 
 Fixture only initially.
 
-- [ ] update ordinary task
-- [ ] preserve body
-- [ ] preserve unknown frontmatter
-- [ ] preserve unsupported YAML/source text
-- [ ] stale revision refuses
-- [ ] concurrent external change refuses
-- [ ] no accidental field reformatting beyond agreed scope
+- [x] update ordinary task (`tests/taskSourceMutation.test.ts`)
+- [x] preserve body (`tests/taskSourceMutation.test.ts`)
+- [x] preserve unknown frontmatter (`tests/taskSourceMutation.test.ts`)
+- [x] preserve unsupported YAML/source text (`tests/taskSourceMutation.test.ts`)
+- [x] stale revision refuses (`tests/taskSourceMutation.test.ts`)
+- [x] concurrent external change refuses (`tests/taskSourceMutation.test.ts`)
+- [x] no accidental field reformatting beyond agreed scope (`tests/taskSourceMutation.test.ts`)
 - [ ] Obsidian reopens resulting file normally
 - [ ] Excalidraw/plugin-specific sections preserved exactly where required
+
+### 13.2B Existing task scalar mutation surface
+
+#### Shared source patch engine
+
+- [x] Existing unique top-level scalar patching is field-generic internally.
+- [x] The application boundary accepts only a closed allowlist of task fields;
+      arbitrary frontmatter field names are not a write primitive.
+- [x] No interpreted frontmatter object is serialized; every non-target source byte
+      remains exact and missing-key insertion remains deferred.
+- [x] Duplicate, nested, structured and malformed targets refuse; supported string
+      quote style, comments and surrounding whitespace remain unchanged.
+
+#### Typed field semantics
+
+- [x] `name`, `project`/legacy `projectId` and `status` accept bounded non-control
+      strings; the source's project alias is preserved rather than renamed.
+- [x] `weight`, `orderIndex`, `fixedDuration` and `maxDuration` enforce the same
+      finite/positive ranges as reader validation.
+- [x] `isFixedDuration` and `isCompleted` emit real YAML booleans; dates use the
+      reader's valid date semantics; `createdAt`, null/removal and insertion remain
+      outside this slice.
+- [x] Numeric/boolean writes use canonical unquoted scalars while string writes
+      retain existing quote style; comments, spacing and foreign YAML remain exact.
+
+#### CAS / recovery and cross-check
+
+- [x] Every field update travels through `createVaultMutationCoordinator`, uses the
+      observed revision, commits durable recovery, and terminalizes stale no-ops as
+      `recovered`; no retry or merge occurs.
+- [x] Mutated files reload through `loadVaultState` with intended values while
+      unrelated task fields remain unchanged (`tests/taskSourceMutation.test.ts`).
 
 ### 13.2A Source-preserving task status mutation
 

@@ -3,11 +3,12 @@ import { createMemoryVault } from '../src/adapters/memoryVault.js';
 import { createVaultMutationCoordinator } from '../src/app/vaultMutation.js';
 import { createMemoryRecoveryStore } from '../src/app/vaultRecovery.js';
 import { planTaskStatusPatch } from '../src/app/sourcePreservingMarkdown.js';
-import { updateTaskStatus } from '../src/app/taskSourceMutation.js';
+import { updateTaskScalar, updateTaskStatus } from '../src/app/taskSourceMutation.js';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createDiskVault } from './test-disk-vault.js';
+import { loadVaultState } from '../src/app/vaultRepository.js';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -81,5 +82,52 @@ describe('13.2A source-preserving task status mutation', () => {
       const vault = createDiskVault(root);
       await expect(vault.readBinary!('large.md', limit)).rejects.toThrow('byte size limit');
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('updates the closed typed scalar surface and preserves the legacy projectId alias', async () => {
+    const source = '---\nname: Old Task\nprojectId: old-project\nstatus: running\nweight: 1\norderIndex: 0\nisFixedDuration: false\nfixedDuration: 30\nmaxDuration: 60\nisCompleted: false\nstartDate: 2026-09-08\ndeadline: 2026-09-10\nforeign:\n  owner: someone\n---\nbody\n';
+    const vault = createMemoryVault({ 'Proxima/tasks/a.md': source });
+    const reader = { ...vault, readBinary: async (path: string, maxBytes: number) => { const file = await vault.read(path); const bytes = enc.encode(file.text); if (bytes.byteLength > maxBytes) throw new Error('too large'); return { ...file, bytes }; } };
+    const recovery = createMemoryRecoveryStore({ now: () => 0 });
+    const coordinator = createVaultMutationCoordinator({ reader, writer: vault, recovery });
+    const mutations = [
+      { field: 'name', value: 'New Task' }, { field: 'project', value: 'new-project' }, { field: 'status', value: 'finished' },
+      { field: 'weight', value: 2.5 }, { field: 'orderIndex', value: -1 }, { field: 'isFixedDuration', value: true },
+      { field: 'fixedDuration', value: 45 }, { field: 'maxDuration', value: 90 }, { field: 'isCompleted', value: true },
+      { field: 'startDate', value: '2026-09-09' }, { field: 'deadline', value: '2026-09-11' },
+    ] as const;
+    for (const mutation of mutations) {
+      const observed = await reader.read('Proxima/tasks/a.md');
+      const result = await updateTaskScalar({ ...mutation, path: 'Proxima/tasks/a.md', expectedRevision: observed.revision, reader, coordinator });
+      expect(result).toMatchObject({ ok: true });
+    }
+    const final = (await reader.read('Proxima/tasks/a.md')).text;
+    expect(final).toContain('name: New Task');
+    expect(final).toContain('projectId: new-project');
+    expect(final).not.toContain('project: new-project');
+    expect(final).toContain('status: finished');
+    expect(final).toContain('weight: 2.5');
+    expect(final).toContain('orderIndex: -1');
+    expect(final).toContain('isFixedDuration: true');
+    expect(final).toContain('fixedDuration: 45');
+    expect(final).toContain('maxDuration: 90');
+    expect(final).toContain('isCompleted: true');
+    expect(final).toContain('startDate: 2026-09-09');
+    expect(final).toContain('deadline: 2026-09-11');
+    expect(final).toContain('foreign:\n  owner: someone');
+    const loaded = await loadVaultState(reader);
+    expect(loaded.state.tasks[0]).toMatchObject({ name: 'New Task', projectId: 'new-project', status: 'finished', weight: 2.5, orderIndex: -1, isFixedDuration: true, fixedDuration: 45, maxDuration: 90, isCompleted: true, startDate: '2026-09-09', deadline: '2026-09-11' });
+  });
+
+  it('refuses invalid typed values and arbitrary field names', async () => {
+    const vault = createMemoryVault({ 'tasks/a.md': '---\nstatus: running\nweight: 1\n---\nbody' });
+    const reader = { ...vault, readBinary: async (path: string, maxBytes: number) => { const file = await vault.read(path); return { ...file, bytes: enc.encode(file.text) }; } };
+    const coordinator = createVaultMutationCoordinator({ reader, writer: vault });
+    const common = { path: 'tasks/a.md', expectedRevision: (await reader.read('tasks/a.md')).revision, reader, coordinator };
+    expect(await updateTaskScalar({ ...common, field: 'weight', value: 0 })).toMatchObject({ ok: false, reason: 'invalid-value' });
+    expect(await updateTaskScalar({ ...common, field: 'fixedDuration', value: -1 })).toMatchObject({ ok: false, reason: 'invalid-value' });
+    expect(await updateTaskScalar({ ...common, field: 'isCompleted', value: 'yes' as never })).toMatchObject({ ok: false, reason: 'invalid-value' });
+    expect(await updateTaskScalar({ ...common, field: 'deadline', value: 'not-a-date' })).toMatchObject({ ok: false, reason: 'invalid-value' });
+    expect(await updateTaskScalar({ ...common, field: 'status', value: 'bad\nstatus' })).toMatchObject({ ok: false, reason: 'invalid-value' });
   });
 });
