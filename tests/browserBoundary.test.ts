@@ -33,6 +33,18 @@ function scan(text: string): string[] {
   return violations;
 }
 
+function scanExecutableEntrypoints(text: string): string[] {
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+  const rules: Array<[string, RegExp]> = [
+    ['eval', /\beval\s*\(/],
+    ['Function constructor', /\b(?:new\s+)?Function\s*\(/],
+    ['script element injection', /createElement\s*\(\s*["']script["']\s*\)/],
+    ['javascript URL', /\bjavascript\s*:/i],
+    ['event-handler attribute', /setAttribute\s*\(\s*["']on[a-z]+/i],
+  ];
+  return rules.filter(([, pattern]) => pattern.test(code)).map(([label]) => label);
+}
+
 describe('Gate 20B browser no-Node boundary', () => {
   it('recognizes the exhaustive builtin/global vocabulary', () => {
     expect(scan("import { Worker } from 'worker_threads'; const bytes = Buffer.from('x');" )).toEqual([
@@ -42,11 +54,18 @@ describe('Gate 20B browser no-Node boundary', () => {
     expect(scan("import 'node:fs';")).toEqual(['Node import: node:fs']);
   });
 
+  it('recognizes executable-code entry points in a synthetic hostile module', () => {
+    expect(scanExecutableEntrypoints(`eval('x'); new Function('return 1'); document.createElement('script'); location='javascript:alert(1)'; el.setAttribute('onclick', 'go()');`)).toEqual([
+      'eval', 'Function constructor', 'script element injection', 'javascript URL', 'event-handler attribute',
+    ]);
+  });
+
   it('keeps the production source graph free of Node imports and runtime globals', () => {
     const violations: string[] = [];
     for (const path of filesUnder(sourceRoot, '.ts')) {
       const text = readFileSync(path, 'utf8');
       for (const issue of scan(text)) violations.push(`${path}: ${issue}`);
+      for (const issue of scanExecutableEntrypoints(text)) violations.push(`${path}: executable entry point (${issue})`);
     }
     expect(violations).toEqual([]);
   });
@@ -56,6 +75,7 @@ describe('Gate 20B browser no-Node boundary', () => {
     for (const path of filesUnder(buildRoot, '.js')) {
       const text = readFileSync(path, 'utf8');
       for (const issue of scan(text)) violations.push(`${path}: ${issue}`);
+      for (const issue of scanExecutableEntrypoints(text)) violations.push(`${path}: executable entry point (${issue})`);
     }
     expect(violations).toEqual([]);
   });

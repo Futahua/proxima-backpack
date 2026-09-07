@@ -2007,7 +2007,10 @@ Backpack page:
 - [ ] still sandboxed
 - [x] no Node — the production source graph and emitted browser modules contain no
       Node builtin imports or Node runtime globals (`tests/browserBoundary.test.ts`).
-- [ ] no arbitrary code execution bridge
+- [x] no arbitrary code execution bridge — production source and emitted browser
+      modules contain no eval/Function construction, script-element injection,
+      JavaScript URLs or event-handler attribute sinks; the scanner self-test covers
+      each forbidden entry point (`tests/browserBoundary.test.ts`).
 - [ ] no unrestricted network
 - [ ] no unrestricted machine path access
 - [x] arbitrary HTML/JS dropped on canvas remains passive — active extensions are
