@@ -2168,7 +2168,11 @@ Current truth stays in-repo.
 - [x] typecheck passes — `npm run typecheck` regenerated fixture/build identity and
       passed both application and test TypeScript projects (`tsconfig.json` and
       `tsconfig.tests.json`) on the current tree.
-- [ ] deterministic fixture scenarios pass
+- [x] deterministic fixture scenarios pass — bundled fixture bytes are regenerated
+      from the checked-in fixtures with fixed clock/identity seeds, and deterministic
+      load, refresh, calendar, scale and action scenarios pass in the full suite
+      (`tests/fixtures.ts`, `tests/performanceScale.test.ts`, `tests/actionProtocol.test.ts`,
+      `tests/calendarGrid.test.ts`).
 - [ ] C1 integrated scenarios pass
 - [ ] real FSA read-only acceptance passes
 - [ ] representative real Obsidian vault acceptance passes
