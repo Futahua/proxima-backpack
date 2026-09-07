@@ -108,6 +108,7 @@ describe('each failure degrades one asset', () => {
     const vault = vaultWith({ 'Attachments/notes.txt': NOT_AN_IMAGE });
     const result = await loadDrawingAssets(vault, index, [embed('f1', 'notes.txt')]);
     expect(result.loaded[0]?.outcome).toBe('unsupported-media');
+    expect(result.loaded[0]?.sourceRevision).toBe('rev-Attachments/notes.txt');
     expect(result.assets).toEqual({});
   });
 

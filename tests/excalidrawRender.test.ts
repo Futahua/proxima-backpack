@@ -151,6 +151,20 @@ describe('images before asset resolution', () => {
     expect(result.census.skipped).toBe(1);
     expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'line', count: 1 });
   });
+
+  it('reports a zero-length line instead of counting invisible geometry as rendered', () => {
+    const result = renderExcalidrawSvg(scene([{ ...line, points: [[0, 0], [0, 0]] }]));
+    expect(result.census.rendered).toBe(0);
+    expect(result.census.skipped).toBe(1);
+    expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'line', count: 1 });
+  });
+
+  it('reports a zero-width stroke instead of counting an invisible stroke as rendered', () => {
+    const result = renderExcalidrawSvg(scene([{ ...line, strokeWidth: 0 }]));
+    expect(result.census.rendered).toBe(0);
+    expect(result.census.skipped).toBe(1);
+    expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'line', count: 1 });
+  });
 });
 
 describe('the scene decides its own background', () => {

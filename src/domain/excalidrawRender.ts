@@ -236,6 +236,8 @@ function drawElement(type: string, element: ElementLike, x: number, y: number, b
 
   const points = readPoints(element.points);
   if (!points || points.length < 2) return null;
+  if ((type === 'line' || type === 'freedraw') && strokeWidth <= 0) return null;
+  if ((type === 'line' || type === 'freedraw') && !hasDrawableSegment(points)) return null;
   const path = points
     .map(([px, py], index) => `${index === 0 ? 'M' : 'L'}${round(x + px)},${round(y + py)}`)
     .join(' ');
@@ -250,6 +252,15 @@ function drawElement(type: string, element: ElementLike, x: number, y: number, b
   // arrow: the head is what distinguishes it from a line.
   const head = arrowHead(points, x, y, stroke, strokeWidth);
   return `<g opacity="${opacity}"><path d="${path}" fill="none" stroke="${escapeAttribute(stroke)}" stroke-width="${round(strokeWidth)}" /><path d="${head}" fill="${escapeAttribute(stroke)}" /></g>`;
+}
+
+function hasDrawableSegment(points: Array<[number, number]>): boolean {
+  for (let index = 1; index < points.length; index += 1) {
+    const current = points[index] as [number, number];
+    const previous = points[index - 1] as [number, number];
+    if (current[0] !== previous[0] || current[1] !== previous[1]) return true;
+  }
+  return false;
 }
 
 function arrowHead(points: Array<[number, number]>, x: number, y: number, _stroke: string, strokeWidth: number): string {

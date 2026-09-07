@@ -135,13 +135,16 @@ export async function loadDrawingAssets(
     // responses must spend the budget too, otherwise a drawing can stream an
     // unbounded number of rejected payloads through the loader.
     totalBytes += bytes.length;
+    // Once bytes have been returned, every outcome must carry the revision at
+    // which those bytes were read, not merely the index revision.
+    const withByteRevision = { ...located, sourceRevision: file.revision ?? entry.sourceRevision };
 
     if (bytes.length > maxAssetBytes) {
-      loaded.push({ ...located, outcome: 'too-large', bytes: bytes.length });
+      loaded.push({ ...withByteRevision, outcome: 'too-large', bytes: bytes.length });
       continue;
     }
     if (totalBytes > maxTotalBytes) {
-      loaded.push({ ...located, outcome: 'budget-exhausted', bytes: bytes.length });
+      loaded.push({ ...withByteRevision, outcome: 'budget-exhausted', bytes: bytes.length });
       continue;
     }
 
@@ -149,18 +152,17 @@ export async function loadDrawingAssets(
     if (!media.supported) {
       // The bytes decide, not the extension. A file named .png that is not one has
       // no business reaching an image element.
-      loaded.push({ ...located, outcome: 'unsupported-media', bytes: bytes.length });
+      loaded.push({ ...withByteRevision, outcome: 'unsupported-media', bytes: bytes.length });
       continue;
     }
 
     const dataUrl = imageDataUrl(media.mediaType, bytes);
     assets[embed.key] = dataUrl;
     loaded.push({
-      ...located,
+      ...withByteRevision,
       outcome: 'resolved',
       dataUrl,
       mediaType: media.mediaType,
-      sourceRevision: file.revision ?? entry.sourceRevision,
       bytes: bytes.length,
     });
   }
