@@ -43,8 +43,8 @@ function isImmediateTaskSource(path: string, directory: string): boolean {
 }
 
 function portableStem(stem: string): boolean {
-  const upper = stem.toUpperCase();
-  return !['CON', 'PRN', 'AUX', 'NUL'].includes(upper) && !/^(COM|LPT)[1-9]$/.test(upper);
+  const deviceBase = (stem.split('.')[0] ?? '').toUpperCase();
+  return !['CON', 'PRN', 'AUX', 'NUL'].includes(deviceBase) && !/^(COM|LPT)[1-9]$/.test(deviceBase);
 }
 
 /** Rename an explicitly identified task within its current flat task directory. */

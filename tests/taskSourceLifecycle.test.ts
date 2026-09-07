@@ -35,7 +35,19 @@ describe('13.2E semantic task rename/delete', () => {
     expect(await renameTaskSource({ task: { ...task(revision), source: { ...task(revision).source, path: 'Proxima/tasks/sub/task.md' } }, newFileStem: 'renamed', coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
     expect(await renameTaskSource({ task: { ...task(revision), source: { ...task(revision).source, idOrigin: 'folder' } as never }, newFileStem: 'renamed', coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
     expect(await renameTaskSource({ task: task(revision), newFileStem: 'CON', coordinator })).toMatchObject({ ok: false, reason: 'invalid-name' });
+    expect(await renameTaskSource({ task: task(revision), newFileStem: 'CON.txt', coordinator })).toMatchObject({ ok: false, reason: 'invalid-name' });
+    expect(await renameTaskSource({ task: task(revision), newFileStem: 'NUL.backup', coordinator })).toMatchObject({ ok: false, reason: 'invalid-name' });
+    expect(await renameTaskSource({ task: task(revision), newFileStem: 'COM1.old', coordinator })).toMatchObject({ ok: false, reason: 'invalid-name' });
+    expect(await renameTaskSource({ task: task(revision), newFileStem: 'LPT9.foo', coordinator })).toMatchObject({ ok: false, reason: 'invalid-name' });
     expect(calls).toBe(0);
+  });
+
+  it('accepts an ordinary dotted portable filename stem', async () => {
+    const vault = createMemoryVault({ 'Proxima/tasks/task-1.md': source });
+    const coordinator = createVaultMutationCoordinator({ reader: vault, writer: vault });
+    const revision = (await vault.read('Proxima/tasks/task-1.md')).revision;
+    expect(await renameTaskSource({ task: task(revision), newFileStem: 'meeting.notes', coordinator })).toMatchObject({ ok: true });
+    expect(await vault.exists('Proxima/tasks/meeting.notes.md')).toBe(true);
   });
 
   it('refuses destination collisions and stale source edits without overwriting either side', async () => {

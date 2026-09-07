@@ -2068,7 +2068,8 @@ Fixture only initially.
       immediate Markdown child; fabricated outside paths, nested paths and
       `idOrigin: folder` refuse before coordinator calls.
 - [x] Portable reserved stems (`CON`, `PRN`, `AUX`, `NUL`, `COM1`…`LPT9`) are refused
-      alongside traversal/absolute names.
+      by device basename even with dotted suffixes, alongside traversal/absolute names;
+      ordinary dotted stems remain valid.
 - [x] Two independent coordinators racing the same observed rename yield one winner;
       the old source is not recreated, the winner bytes remain exact, and each
       recovery store remains attributable (loser is missing/stale or recovered no-op).
