@@ -37,6 +37,8 @@ export interface CanvasBrowserFileSource {
   /** Proxima-owned, ephemeral acquisition identity; never a filename or path. */
   sourceId: string;
   filename: string;
+  /** Bounded extension derived from the original filename for policy decisions. */
+  extension: string;
   state: CanvasSourceState;
   mimeType: string | null;
   /** Browser one-shot sources have no durable vault revision. */
@@ -81,6 +83,7 @@ export type CanvasSourceObservation = {
   kind: 'browser-file';
   sourceId: string;
   filename: string;
+  extension: string;
   state: CanvasSourceState;
   mimeType?: string | null;
   size?: number | null;
@@ -133,6 +136,7 @@ function sourceFromObservation(
       kind: 'browser-file',
       sourceId: observation.sourceId,
       filename: boundedFilename(observation.filename),
+      extension: boundedExtension(observation.extension),
       state: observation.state,
       mimeType: metadataValue(observation.mimeType, old?.mimeType ?? null),
       revision: null,
@@ -154,7 +158,7 @@ function metadataValue<T>(value: T | null | undefined, previous: T | null): T | 
 
 function fallbackFor(source: CanvasSource): CanvasFallbackRepresentation {
   const filename = source.kind === 'vault-file' ? vaultFileName(source.path) : source.filename;
-  const extension = source.kind === 'vault-file' ? vaultFileExtension(source.path) : fileExtension(filename);
+  const extension = source.kind === 'vault-file' ? vaultFileExtension(source.path) : source.extension;
   return {
     kind: 'fallback',
     sourceKind: source.kind,
@@ -184,6 +188,10 @@ export function fileExtension(filename: string): string {
 
 function boundedFilename(value: string): string {
   return typeof value === 'string' && value.length > 0 ? value.slice(0, 260) : 'unnamed';
+}
+
+function boundedExtension(value: string): string {
+  return typeof value === 'string' ? value.slice(0, 64).toLowerCase() : '';
 }
 
 /** Reject rather than normalise an unsafe locator. */

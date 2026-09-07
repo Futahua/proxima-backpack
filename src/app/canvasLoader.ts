@@ -11,7 +11,6 @@
 import {
   reobserveCanvasNode,
   validateVaultRelativePath,
-  vaultFileExtension,
   type CanvasNode,
   type CanvasSourceObservation,
   type CanvasVaultFileSource,
@@ -19,6 +18,7 @@ import {
 import {
   MAX_CANVAS_TEXT_CHARS,
   MAX_CANVAS_BINARY_BYTES,
+  canvasExtensionPolicy,
   selectCanvasRepresentation,
   type CanvasPayload,
   type CanvasRepresentationSelection,
@@ -39,10 +39,6 @@ export interface CanvasLoadResult {
   status: CanvasLoadStatus;
 }
 
-const TEXT_EXTENSIONS = new Set(['md', 'markdown', 'txt', 'text', 'json', 'csv', 'tsv']);
-const RASTER_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
-const ACTIVE_EXTENSIONS = new Set(['html', 'htm', 'svg', 'js', 'mjs', 'cjs', 'exe', 'com', 'bat', 'cmd', 'ps1', 'sh', 'wasm']);
-
 /**
  * Read and classify one canvas node. Active-content sources are never read merely
  * to discover that they cannot be rendered inline. Unknown files use the optional
@@ -60,19 +56,19 @@ export async function loadCanvasNode(
     return { node, selection: selectCanvasRepresentation(source, null), status: 'selected' };
   }
 
-  const extension = vaultFileExtension(path);
-  if (ACTIVE_EXTENSIONS.has(extension)) {
+  const policy = canvasExtensionPolicy(path);
+  if (policy === 'active') {
     return { node, selection: selectCanvasRepresentation(source, null), status: 'active-content-skipped' };
   }
 
   // Known raster extensions can go straight to the byte-signature branch. Native
   // drawings and unknown extensions must be text-probed first, however: the
   // structure detector is intentionally stronger than a filename allowlist.
-  if (RASTER_EXTENSIONS.has(extension)) return readBinary(node, source, vault);
+  if (policy === 'raster') return readBinary(node, source, vault);
 
   const textResult = await readText(node, source, vault);
-  if (textResult && (TEXT_EXTENSIONS.has(extension) || extension === 'excalidraw' || textResult.selection.kind === 'excalidraw')) return textResult;
-  if (!textResult && (TEXT_EXTENSIONS.has(extension) || extension === 'excalidraw')) return unavailable(node, source);
+  if (textResult && (policy === 'text' || textResult.selection.kind === 'excalidraw')) return textResult;
+  if (!textResult && policy === 'text') return unavailable(node, source);
   if (textResult && typeof vault.readBinary !== 'function') {
     return {
       node: textResult.node,

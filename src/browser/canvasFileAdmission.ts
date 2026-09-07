@@ -10,12 +10,14 @@
 import {
   createCanvasNode,
   fileExtension,
+  markCanvasNodeUnavailable,
   type CanvasLayout,
   type CanvasNode,
   type CanvasSourceObservation,
 } from '../domain/canvas.js';
 import {
   MAX_CANVAS_BINARY_BYTES,
+  canvasExtensionPolicy,
   selectCanvasRepresentation,
   type CanvasRepresentationSelection,
 } from '../domain/canvasRenderer.js';
@@ -37,9 +39,6 @@ export interface CanvasFileAdmissionResult {
   status: CanvasFileAdmissionStatus;
 }
 
-const ACTIVE_EXTENSIONS = new Set(['html', 'htm', 'svg', 'js', 'mjs', 'cjs', 'exe', 'com', 'bat', 'cmd', 'ps1', 'sh', 'wasm']);
-const RASTER_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
-
 /** Admit one browser File snapshot without retaining the File capability. */
 export async function admitCanvasFile(
   ids: IdGenerator,
@@ -47,7 +46,9 @@ export async function admitCanvasFile(
   layout?: CanvasLayout,
 ): Promise<CanvasFileAdmissionResult> {
   const filename = safeFilename(file.name);
-  const extension = fileExtension(filename);
+  // Policy uses the complete original name; only the display copy is bounded.
+  const extension = fileExtension(file.name);
+  const policy = canvasExtensionPolicy(file.name);
   const sourceId = ids.next('canvas-source');
   const size = safeSize(file.size);
   const modifiedAt = safeModifiedAt(file.lastModified);
@@ -55,6 +56,7 @@ export async function admitCanvasFile(
     kind: 'browser-file',
     sourceId,
     filename,
+    extension,
     state: 'available',
     mimeType: typeof file.type === 'string' && file.type.length <= 200 ? file.type : null,
     size,
@@ -62,7 +64,7 @@ export async function admitCanvasFile(
   };
   const node = createCanvasNode(ids, observation, layout);
 
-  if (ACTIVE_EXTENSIONS.has(extension)) {
+  if (policy === 'active') {
     return { node, selection: selectCanvasRepresentation(node.source, null), status: 'active-content-skipped' };
   }
   if (size === null || size > MAX_CANVAS_BINARY_BYTES) {
@@ -79,7 +81,7 @@ export async function admitCanvasFile(
   if (bytes.byteLength > MAX_CANVAS_BINARY_BYTES) return { node, selection: selectCanvasRepresentation(node.source, { kind: 'too-large' }), status: 'payload-too-large' };
 
   // One acquisition is reused for both structure/text and raster classification.
-  if (RASTER_EXTENSIONS.has(extension)) {
+  if (policy === 'raster') {
     return { node, selection: selectCanvasRepresentation(node.source, { kind: 'binary', bytes }), status: 'selected' };
   }
   const text = new TextDecoder().decode(bytes);
@@ -91,8 +93,8 @@ export async function admitCanvasFile(
 }
 
 function unavailable(node: CanvasNode): CanvasFileAdmissionResult {
-  const source = { ...node.source, state: 'unavailable' as const };
-  return { node, selection: selectCanvasRepresentation(source, null), status: 'unreadable' };
+  const unavailableNode = markCanvasNodeUnavailable(node);
+  return { node: unavailableNode, selection: selectCanvasRepresentation(unavailableNode.source, null), status: 'unreadable' };
 }
 
 function safeFilename(value: string): string {
@@ -105,5 +107,7 @@ function safeSize(value: number): number | null {
 }
 
 function safeModifiedAt(value: number): string | null {
-  return Number.isFinite(value) && value >= 0 ? new Date(value).toISOString() : null;
+  if (!Number.isFinite(value) || value < 0) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }

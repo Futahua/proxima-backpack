@@ -55,6 +55,18 @@ export interface CanvasRepresentationSelection {
 
 const TEXT_EXTENSIONS = new Set(['md', 'markdown', 'txt', 'text', 'json', 'csv', 'tsv']);
 const ACTIVE_EXTENSIONS = new Set(['html', 'htm', 'svg', 'js', 'mjs', 'cjs', 'exe', 'com', 'bat', 'cmd', 'ps1', 'sh', 'wasm']);
+const RASTER_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+
+export type CanvasExtensionPolicy = 'active' | 'raster' | 'text' | 'unknown';
+
+/** Shared filename policy used by every acquisition path. */
+export function canvasExtensionPolicy(filename: string): CanvasExtensionPolicy {
+  const extension = fileExtension(filename);
+  if (ACTIVE_EXTENSIONS.has(extension)) return 'active';
+  if (RASTER_EXTENSIONS.has(extension)) return 'raster';
+  if (TEXT_EXTENSIONS.has(extension) || extension === 'excalidraw') return 'text';
+  return 'unknown';
+}
 
 /** Select a data-only representation; all unsupported cases remain fallback. */
 export function selectCanvasRepresentation(
@@ -65,7 +77,7 @@ export function selectCanvasRepresentation(
     ? { ...source, path: validateVaultRelativePath(source.path) }
     : { ...source };
   const filename = safeSource.kind === 'vault-file' ? vaultFileName(safeSource.path) : safeSource.filename;
-  const extension = safeSource.kind === 'vault-file' ? vaultFileExtension(safeSource.path) : fileExtension(filename);
+  const extension = safeSource.kind === 'vault-file' ? vaultFileExtension(safeSource.path) : safeSource.extension;
   const base = (kind: CanvasRendererKind, reason: CanvasSelectionReason | null, mediaType: SupportedImageMedia | null = null): CanvasRepresentationSelection => ({
     kind,
     sourceKind: safeSource.kind,

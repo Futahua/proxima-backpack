@@ -45,6 +45,14 @@ describe('Gate 8B one-shot browser File admission', () => {
     expect(largeResult).toMatchObject({ status: 'payload-too-large', selection: { reason: 'payload-too-large' } });
   });
 
+  it('keeps active policy based on the full filename, not the bounded display copy', async () => {
+    let reads = 0;
+    const longActive = file(`${'a'.repeat(300)}.svg`, png, { arrayBuffer: async () => { reads += 1; return png.buffer; } });
+    const result = await admitCanvasFile(sequentialIdGenerator(), longActive);
+    expect(reads).toBe(0);
+    expect(result).toMatchObject({ status: 'active-content-skipped', selection: { reason: 'active-content', extension: 'svg' } });
+  });
+
   it('uses one bounded acquisition for structural Excalidraw and unknown raster files', async () => {
     let reads = 0;
     const ids = sequentialIdGenerator();
@@ -73,5 +81,19 @@ describe('Gate 8B one-shot browser File admission', () => {
     expect(restarted.source).toMatchObject({ kind: 'browser-file', state: 'unavailable', filename: 'report.txt' });
     if (restarted.source.kind !== 'browser-file' || result.node.source.kind !== 'browser-file') throw new Error('expected browser sources');
     expect(restarted.source.sourceId).toBe(result.node.source.sourceId);
+  });
+
+  it('marks the retained node unavailable when one-shot acquisition fails', async () => {
+    const result = await admitCanvasFile(sequentialIdGenerator(), file('broken.bin', png, { arrayBuffer: async () => { throw new Error('read failed'); } }));
+    expect(result.status).toBe('unreadable');
+    expect(result.node.source.state).toBe('unavailable');
+    expect(result.selection.sourceState).toBe('unavailable');
+    expect(result.selection.sourceId).toBe(result.node.source.kind === 'browser-file' ? result.node.source.sourceId : null);
+  });
+
+  it('treats an unrepresentable lastModified as absent metadata', async () => {
+    const result = await admitCanvasFile(sequentialIdGenerator(), file('odd.txt', new TextEncoder().encode('hello'), { lastModified: 8.64e15 + 1 }));
+    expect(result.node.source.modifiedAt).toBeNull();
+    expect(result.selection.modifiedAt).toBeNull();
   });
 });
