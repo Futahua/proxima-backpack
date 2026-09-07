@@ -755,3 +755,22 @@ manual transcription or second inspection step is part of the acceptance path.
 **Boundary:** reports for the already-used core fixture intentionally fail the
 clean-profile handle/marker assertions. This is diagnostic separation, not a claim
 that the core fixture is the clean-profile fixture.
+
+## D40 — Canvas nodes own identity and keep arbitrary files passive
+
+**Decided:** Gate 8 begins with a pure, headless canvas node model. A node receives
+its stable Proxima-owned id from the injected `IdGenerator`; its canvas layout is
+separate from the vault-relative source locator and the source's observed revision,
+size and modified time. Rename/re-observe changes source provenance without changing
+node identity or layout. Missing and unavailable sources remain first-class node
+states and retain last-known metadata rather than disappearing.
+
+Every vault locator is rejected unless it is already canonical and relative: absolute,
+drive, traversal, empty-component and backslash forms are not repaired. The first
+representation is a total passive fallback card exposing filename, lowercase
+extension, optional metadata and source state. No source is read here, and no HTML,
+JavaScript, executable or other active content is ever treated as inline preview.
+
+Canvas workspace state remains separate from source-derived `ProximaState`; renderer
+selection, binary reads, external grants, directories and drag/drop require later
+decisions and tests.

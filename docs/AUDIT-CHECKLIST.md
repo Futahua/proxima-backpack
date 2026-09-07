@@ -1406,16 +1406,16 @@ No speculative broadening of `connect-src`.
 
 ### 8.1 Core canvas object model
 
-- [ ] Canvas node identity is Proxima-owned and stable.
-- [ ] Node identity is not renderer type.
+- [x] Canvas node identity is Proxima-owned and stable.
+- [x] Node identity is not renderer type.
 - [ ] Node can reference:
-  - [ ] vault file
+  - [x] vault file
   - [ ] granted external file
   - [ ] directory if supported
-- [ ] Source locator/provenance is distinct from canvas node ID.
-- [ ] Position/layout independent of source path.
-- [ ] Rename/delete behavior specified.
-- [ ] Missing source remains a representable canvas state.
+- [x] Source locator/provenance is distinct from canvas node ID.
+- [x] Position/layout independent of source path.
+- [x] Rename/delete behavior specified.
+- [x] Missing source remains a representable canvas state.
 
 ### 8.2 Renderer registry
 
@@ -1430,15 +1430,15 @@ No speculative broadening of `connect-src`.
 
 - [ ] Every creator-selected file can exist as a canvas object.
 - [ ] Only understood formats require inline preview.
-- [ ] Unsupported format gets first-class fallback card.
+- [x] Unsupported format gets first-class fallback card.
 - [ ] Fallback card can show available:
-  - [ ] filename
-  - [ ] extension
-  - [ ] size
-  - [ ] modified time
+  - [x] filename
+  - [x] extension
+  - [x] size
+  - [x] modified time
   - [ ] icon/thumbnail
-  - [ ] missing/unavailable state
-- [ ] Unsupported file is not treated as error just because no renderer exists.
+  - [x] missing/unavailable state
+- [x] Unsupported file is not treated as error just because no renderer exists.
 
 ### 8.4 Drag/drop
 
