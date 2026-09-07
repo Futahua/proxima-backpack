@@ -110,9 +110,8 @@ function metadataValue<T>(value: T | null | undefined, previous: T | null): T | 
 }
 
 function fallbackFor(source: CanvasVaultFileSource): CanvasFallbackRepresentation {
-  const filename = source.path.slice(source.path.lastIndexOf('/') + 1);
-  const dot = filename.lastIndexOf('.');
-  const extension = dot > 0 && dot < filename.length - 1 ? filename.slice(dot + 1).toLowerCase() : '';
+  const filename = vaultFileName(source.path);
+  const extension = vaultFileExtension(source.path);
   return {
     kind: 'fallback',
     filename,
@@ -122,6 +121,16 @@ function fallbackFor(source: CanvasVaultFileSource): CanvasFallbackRepresentatio
     size: source.size,
     modifiedAt: source.modifiedAt,
   };
+}
+
+export function vaultFileName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
+}
+
+export function vaultFileExtension(path: string): string {
+  const filename = vaultFileName(path);
+  const dot = filename.lastIndexOf('.');
+  return dot > 0 && dot < filename.length - 1 ? filename.slice(dot + 1).toLowerCase() : '';
 }
 
 /** Reject rather than normalise an unsafe locator. */

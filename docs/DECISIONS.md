@@ -774,3 +774,16 @@ JavaScript, executable or other active content is ever treated as inline preview
 Canvas workspace state remains separate from source-derived `ProximaState`; renderer
 selection, binary reads, external grants, directories and drag/drop require later
 decisions and tests.
+
+## D41 — Renderer selection is declarative, bounded and total
+
+**Decided:** renderer selection is a pure domain classification over an already
+authorised, bounded payload. The registry order is Excalidraw by structure, text by
+an explicit small extension allowlist, raster image by byte signature, then passive
+fallback. A missing/unavailable source, absent payload, oversized payload, invalid
+media and unknown format all remain visible fallback outcomes with bounded reasons.
+
+HTML, SVG, JavaScript, WebAssembly, executables and other active-content extensions
+never become inline representations in this slice. The selector receives no reader,
+filesystem handle, URL, DOM, callback or executable content; binary acquisition,
+object-URL lifecycle and browser rendering remain later application/surface work.

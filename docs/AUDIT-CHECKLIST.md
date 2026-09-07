@@ -1419,12 +1419,13 @@ No speculative broadening of `connect-src`.
 
 ### 8.2 Renderer registry
 
-- [ ] Markdown/text
-- [ ] PNG/JPEG/WebP/SVG
-- [ ] Excalidraw
+- [x] Markdown/text selection
+- [x] PNG/JPEG/WebP selection by byte signature
+- [ ] SVG (deferred passive policy)
+- [x] Excalidraw selection by structure
 - [ ] PDF if later added
-- [ ] unknown file fallback
-- [ ] no arbitrary executable HTML/JS simply because a file was dropped
+- [x] unknown file fallback
+- [x] no arbitrary executable HTML/JS simply because a file was dropped
 
 ### 8.3 "Any file" contract
 
