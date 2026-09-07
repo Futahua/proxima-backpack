@@ -406,7 +406,7 @@ function colour(value: unknown, fallback: string, allowTransparent = false): str
   if (allowTransparent && candidate === 'transparent') return candidate;
   // SVG paint servers and URLs are intentionally excluded from this renderer's
   // inline boundary. Excalidraw's ordinary palette is represented by hex colors.
-  return /^#[0-9a-f]{3,4}([0-9a-f]{2})?$/i.test(candidate) ? candidate : fallback;
+  return /^(?:#[0-9a-f]{3,4}|#[0-9a-f]{6}|#[0-9a-f]{8})$/i.test(candidate) ? candidate : fallback;
 }
 
 function round(value: number): number {

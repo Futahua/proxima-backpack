@@ -5,6 +5,7 @@ import type { BrowserFileLike } from '../src/browser/canvasFileAdmission.js';
 import { createCanvasPreviewRegistry } from '../src/browser/canvasPreview.js';
 import { createCanvasExcalidrawPreviewRegistry } from '../src/browser/canvasExcalidrawPreview.js';
 import { createCanvasTextPreviewRegistry } from '../src/browser/canvasTextPreview.js';
+import { MAX_CANVAS_TEXT_PREVIEW_ITEMS } from '../src/browser/canvasTextPreview.js';
 
 function file(name: string, bytes: Uint8Array): BrowserFileLike {
   return { name, size: bytes.length, lastModified: 0, type: 'application/octet-stream', arrayBuffer: async () => new Uint8Array(bytes).buffer as ArrayBuffer };
@@ -16,6 +17,7 @@ describe('Gate 8C visible passive canvas surface', () => {
     const html = renderCanvasSurface(state);
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;.bin');
     expect(html).toContain('unsupported media');
+    expect(html).toContain('>FILE</span>');
     expect(html).not.toContain('<img');
     expect(html).not.toContain('data:');
     expect(html).not.toContain('arrayBuffer');
@@ -97,5 +99,16 @@ describe('Gate 8C visible passive canvas surface', () => {
     expect(html).toContain('<pre class="canvas-text-preview">');
     expect(html).not.toContain('<script>');
     expect(html).not.toContain('<img src=x>');
+  });
+
+  it('keeps a visible budget diagnostic when the text registry is full', async () => {
+    const textPreviews = createCanvasTextPreviewRegistry();
+    const ids = sequentialIdGenerator();
+    const files = Array.from({ length: MAX_CANVAS_TEXT_PREVIEW_ITEMS + 1 }, (_, index) => file(`note${index}.txt`, new TextEncoder().encode(`note ${index}`)));
+    const first = await admitCanvasDrop(files, undefined, ids, undefined, undefined, textPreviews);
+    const state = await admitCanvasDrop([file('overflow.txt', new TextEncoder().encode('overflow'))], first, ids, undefined, undefined, textPreviews);
+    const html = renderCanvasSurface(state, undefined, undefined, textPreviews.snapshot());
+    expect(state.items.at(-1)?.presentationDiagnostic).toBe('preview-budget-exhausted');
+    expect(html).toContain('preview budget exhausted');
   });
 });

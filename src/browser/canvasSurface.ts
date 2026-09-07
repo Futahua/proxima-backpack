@@ -7,6 +7,7 @@ import { admitCanvasFile, admitCanvasFileForPresentation, type BrowserFileLike, 
 import type { CanvasPreviewRegistry } from './canvasPreview.js';
 import type { CanvasExcalidrawPreviewRegistry, CanvasExcalidrawPresentation } from './canvasExcalidrawPreview.js';
 import type { CanvasTextPreviewRegistry, CanvasTextPreviewSnapshot } from './canvasTextPreview.js';
+import { canvasFallbackIcon } from './canvasFallbackIcon.js';
 
 export const MAX_CANVAS_DROP_FILES = 32;
 
@@ -14,6 +15,7 @@ export interface CanvasSurfaceItem {
   node: CanvasNode;
   selection: CanvasRepresentationSelection;
   status: CanvasFileAdmissionResult['status'];
+  presentationDiagnostic: string | null;
 }
 
 export interface CanvasSurfaceState {
@@ -58,10 +60,11 @@ export async function admitCanvasDrop(
     if (!file) continue;
     const resultWithPreview = previews || excalidrawPreviews || textPreviews ? await admitCanvasFileForPresentation(ids, file) : null;
     const result = resultWithPreview?.admission ?? await admitCanvasFile(ids, file);
-    if (resultWithPreview?.preview?.kind === 'raster-image' && previews) previews.install(result.node.id, resultWithPreview.preview);
-    if (resultWithPreview?.preview?.kind === 'excalidraw' && excalidrawPreviews) excalidrawPreviews.install(result.node.id, resultWithPreview.preview);
-    if (resultWithPreview?.preview?.kind === 'text' && textPreviews) textPreviews.install(result.node.id, resultWithPreview.preview);
-    nextItems.push({ node: result.node, selection: result.selection, status: result.status });
+    let presentationDiagnostic: string | null = null;
+    if (resultWithPreview?.preview?.kind === 'raster-image' && previews && !previews.install(result.node.id, resultWithPreview.preview)) presentationDiagnostic = 'preview-budget-exhausted';
+    if (resultWithPreview?.preview?.kind === 'excalidraw' && excalidrawPreviews && !excalidrawPreviews.install(result.node.id, resultWithPreview.preview)) presentationDiagnostic = 'preview-too-large';
+    if (resultWithPreview?.preview?.kind === 'text' && textPreviews && !textPreviews.install(result.node.id, resultWithPreview.preview)) presentationDiagnostic = textPreviews.get(result.node.id).failure ?? 'preview-budget-exhausted';
+    nextItems.push({ node: result.node, selection: result.selection, status: result.status, presentationDiagnostic });
   }
   const diagnostic = files.length > MAX_CANVAS_DROP_FILES
     ? `drop-limit-exceeded: admitted ${MAX_CANVAS_DROP_FILES} of ${files.length} files`
@@ -91,8 +94,10 @@ function canvasCard(item: CanvasSurfaceItem, index: number, previews?: ReadonlyM
   const image = preview && preview.url.startsWith('blob:') ? `<img src="${escapeHtml(preview.url)}" alt="${escapeHtml(selection.filename)}">` : '';
   const drawingSvg = drawing ? `<div class="canvas-excalidraw-preview" aria-label="Generated Excalidraw preview">${drawing.svg}</div><small>scene ${drawing.census.sceneElements} · rendered ${drawing.census.rendered} · problems ${drawing.problems.length}</small>` : '';
   const textMarkup = textPreview?.presentation ? `<pre class="canvas-text-preview">${escapeHtml(textPreview.presentation.text)}</pre>` : '';
-  const previewFailure = textPreview?.failure ? ` · ${textPreview.failure.replaceAll('-', ' ')}` : '';
-  return `<article class="canvas-card" data-c1-key="canvas-card-${index}" data-canvas-node-id="${escapeHtml(node.id)}"><header><strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}${escapeHtml(previewFailure)}</span></header>${image}${drawingSvg}${textMarkup}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(state)}${escapeHtml(reason)}</span></footer></article>`;
+  const previewFailure = item.presentationDiagnostic ? ` · ${item.presentationDiagnostic.replaceAll('-', ' ')}` : textPreview?.failure ? ` · ${textPreview.failure.replaceAll('-', ' ')}` : '';
+  const icon = selection.kind === 'fallback' ? canvasFallbackIcon(selection.extension) : null;
+  const iconMarkup = icon ? `<span class="canvas-fallback-icon" aria-label="${escapeHtml(icon.label)}">${icon.token}</span>` : '';
+  return `<article class="canvas-card" data-c1-key="canvas-card-${index}" data-canvas-node-id="${escapeHtml(node.id)}"><header>${iconMarkup}<strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}${escapeHtml(previewFailure)}</span></header>${image}${drawingSvg}${textMarkup}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(state)}${escapeHtml(reason)}</span></footer></article>`;
 }
 
 function escapeHtml(value: unknown): string {
