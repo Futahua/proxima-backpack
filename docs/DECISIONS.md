@@ -790,6 +790,21 @@ no reader, filesystem handle, URL, DOM, callback or execution authority. Binary
 acquisition, object-URL lifecycle and browser rendering remain later
 application/surface work.
 
+## D44 — Canvas surface renders passive drop cards only
+
+**Decided:** the browser surface may accept a bounded `DataTransfer.files` batch and
+feed each File through the signed Gate 8B admission seam sequentially. It retains
+only capability-free node, selection and status values, renders escaped metadata
+cards (including active, oversized, unavailable and unsupported reasons), preserves
+duplicate admissions, and reports files beyond the finite per-drop limit. The Canvas
+surface is a third action surface; project selection remains untouched and vault
+refresh replaces only source-derived state.
+
+**Boundary:** no File/Blob/bytes are retained after admission, no path/directory
+metadata or handles are inspected, and no public action carries browser data. Inline
+text/image/Excalidraw/SVG/PDF rendering, object URLs, persistence, durable grants,
+drag/move/resize and writes remain deferred until a viewer owns their lifecycle.
+
 ## D43 — Browser File admission is ephemeral and one-shot
 
 **Decided:** a browser `File` may be admitted once through the browser adapter as a

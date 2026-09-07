@@ -1431,7 +1431,7 @@ No speculative broadening of `connect-src`.
 
 - [x] Every admitted creator-selected browser file can exist as a canvas object (ephemeral one-shot source).
 - [ ] Only understood formats require inline preview.
-- [x] Unsupported format gets first-class fallback card.
+- [x] Unsupported format gets a first-class fallback card, rendered visibly on Canvas.
 - [ ] Fallback card can show available:
   - [x] filename
   - [x] extension
