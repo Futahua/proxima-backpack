@@ -229,6 +229,19 @@ describe('images before asset resolution', () => {
       { code: 'element-geometry-invalid', elementType: 'text', count: 1 },
     ]);
   });
+
+  it('keeps the derived frame finite across opposite extreme bounds', () => {
+    const huge = 1e308;
+    const result = renderExcalidrawSvg(scene([
+      { ...text, id: 'left', x: -huge },
+      { ...text, id: 'right', x: huge },
+    ]));
+    expect(result.svg).not.toContain('Infinity');
+    expect(result.census.rendered).toBe(2);
+    expect(result.census.skipped).toBe(0);
+    expect(Number.isFinite(result.viewBox.width)).toBe(true);
+    expect(Number.isFinite(result.viewBox.height)).toBe(true);
+  });
 });
 
 describe('the scene decides its own background', () => {

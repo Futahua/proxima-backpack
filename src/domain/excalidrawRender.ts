@@ -352,11 +352,17 @@ class Bounds {
     // An empty scene still needs a frame, and a fixed one keeps rendering
     // deterministic rather than dependent on whatever the viewport happens to be.
     if (!Number.isFinite(this.minX)) return { x: 0, y: 0, width: 100, height: 100 };
+    const x = finite(this.minX - padding) ?? (this.minX < 0 ? -Number.MAX_VALUE : Number.MAX_VALUE);
+    const y = finite(this.minY - padding) ?? (this.minY < 0 ? -Number.MAX_VALUE : Number.MAX_VALUE);
+    const widthSpan = this.maxX - this.minX + padding * 2;
+    const heightSpan = this.maxY - this.minY + padding * 2;
+    // Opposite-sign finite extrema can overflow their difference. Clamp the
+    // frame to the largest finite SVG number rather than emitting Infinity.
     return {
-      x: this.minX - padding,
-      y: this.minY - padding,
-      width: Math.max(this.maxX - this.minX + padding * 2, 1),
-      height: Math.max(this.maxY - this.minY + padding * 2, 1),
+      x,
+      y,
+      width: Number.isFinite(widthSpan) ? Math.max(widthSpan, 1) : Number.MAX_VALUE,
+      height: Number.isFinite(heightSpan) ? Math.max(heightSpan, 1) : Number.MAX_VALUE,
     };
   }
 }
