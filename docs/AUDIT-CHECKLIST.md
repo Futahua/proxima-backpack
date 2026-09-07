@@ -2206,6 +2206,26 @@ Fixture only initially.
       peer refusal; focused flat/folder insert-clear, reload, preservation and stale
       regressions pass in `tests/projectOptionalMutation.test.ts`.
 
+### 13.2I Project description override / body fallback
+
+- [x] Public authority is limited to explicit `{ kind: 'set', value }` and
+      `{ kind: 'use-body' }`; runtime kind validation rejects arbitrary fields and
+      empty/null sentinels before source reads.
+- [x] Signed 13.2G/H provenance and observed-revision CAS rules are reused for flat
+      and one-level folder/index projects; outside/deep/non-project sources refuse.
+- [x] Set patches an existing supported scalar or inserts a missing description
+      immediately before the fence with bounded reader-safe encoding; quote style,
+      comments and spacing are preserved on replacement.
+- [x] `use-body` removes exactly one supported description line (including its
+      comment), leaves Markdown body untouched, and is a deterministic no-op when
+      no override exists; the reader then exposes its existing body fallback.
+- [x] Duplicate, nested, malformed and block-scalar description targets refuse;
+      foreign YAML, BOM/LF/CRLF, linked-folder metadata, identity and all unrelated
+      bytes remain exact, with no parsed Project serialization.
+- [x] Effective set/use-body operations use coordinator update and durable recovery;
+      stale peer bytes survive. Flat/folder reload, fallback transition, malformed
+      refusal and zero-read authority tests pass in `tests/projectDescriptionMutation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.

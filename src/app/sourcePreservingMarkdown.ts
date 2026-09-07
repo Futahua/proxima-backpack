@@ -20,7 +20,7 @@ export type TaskOptionalField = 'project' | 'fixedDuration' | 'maxDuration' | 's
 export type ProjectScalarField = 'name' | 'status' | 'projectType' | 'tabBgColor' | 'tabTextColor';
 export type ProjectOptionalField = 'tabBgColor' | 'tabTextColor';
 
-type SourceScalarField = TaskScalarField | ProjectScalarField | 'projectId';
+type SourceScalarField = TaskScalarField | ProjectScalarField | 'projectId' | 'description';
 const TASK_SCALAR_FIELDS: readonly TaskScalarField[] = ['name', 'project', 'status', 'weight', 'orderIndex', 'isFixedDuration', 'fixedDuration', 'maxDuration', 'isCompleted', 'startDate', 'deadline'];
 const PROJECT_SCALAR_FIELDS: readonly ProjectScalarField[] = ['name', 'status', 'projectType', 'tabBgColor', 'tabTextColor'];
 
@@ -136,6 +136,34 @@ export function planTaskProjectPatch(input: Uint8Array | string, value: string, 
 export function planProjectScalarPatch(input: Uint8Array | string, field: ProjectScalarField, value: string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
   if (!PROJECT_SCALAR_FIELDS.includes(field)) return { ok: false, reason: 'field-not-allowed' };
   return planSourceScalarPatch(input, field, value, maxBytes);
+}
+
+/** Patch an existing project description scalar without changing Markdown body bytes. */
+export function planProjectDescriptionPatch(input: Uint8Array | string, value: string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  return planSourceScalarPatch(input, 'description', value, maxBytes);
+}
+
+/** Remove one existing project description scalar so the reader falls back to body text. */
+export function planProjectDescriptionRemove(input: Uint8Array | string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  const window = sourceAndFence(input, maxBytes); if (!('source' in window)) return window;
+  const matches = targetLines(window.source, window.closingStart, 'description');
+  if (matches.some((match) => match.start < 0)) return { ok: false, reason: 'target-unsupported' };
+  if (matches.length === 0) return { ok: false, reason: 'target-missing' };
+  if (matches.length !== 1) return { ok: false, reason: 'target-ambiguous' };
+  const lines = linesOf(window.source); const target = matches[0] as { start: number; end: number };
+  const line = lines.find((candidate) => candidate.start <= target.start && candidate.end >= target.end); if (!line) return { ok: false, reason: 'target-unsupported' };
+  const patched = window.source.slice(0, line.start) + window.source.slice(line.end); const encoder = new TextEncoder();
+  return { ok: true, bytes: encoder.encode(patched), start: encoder.encode(window.source.slice(0, line.start)).byteLength, end: encoder.encode(window.source.slice(0, line.end)).byteLength };
+}
+
+/** Insert a missing explicit project description immediately before the closing fence. */
+export function planProjectDescriptionInsert(input: Uint8Array | string, value: string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  if (typeof value !== 'string' || value.length === 0 || /[\u0000-\u001F\u007F\r\n]/u.test(value)) return { ok: false, reason: 'invalid-value' };
+  const window = sourceAndFence(input, maxBytes); if (!('source' in window)) return window;
+  const matches = targetLines(window.source, window.closingStart, 'description'); if (matches.some((match) => match.start < 0)) return { ok: false, reason: 'target-unsupported' }; if (matches.length > 0) return { ok: false, reason: 'target-ambiguous' };
+  const encoded = safePlain(value) ? value : `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+  const insertion = `description: ${encoded}${window.lineEnding}`; const patched = window.source.slice(0, window.closingStart) + insertion + window.source.slice(window.closingStart); const encoder = new TextEncoder(); const start = encoder.encode(window.source.slice(0, window.closingStart)).byteLength;
+  return { ok: true, bytes: encoder.encode(patched), start, end: start };
 }
 
 function planSourceScalarPatch(input: Uint8Array | string, field: SourceScalarField, value: string | number | boolean, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
