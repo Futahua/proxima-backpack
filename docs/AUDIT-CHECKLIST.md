@@ -2360,6 +2360,27 @@ Fixture only initially.
       retry/alternate filename/merge/LWW occurs. Focused canonical, quoting,
       validation and collision tests pass in `tests/eventCreation.test.ts`.
 
+### 13.2Q Canonical project creation
+
+- [x] Creation exposes only typed project input and derives a flat
+      `<projectsDirectory>/<id>.md` destination internally; no folder/index or
+      caller-selected path is accepted. IDs/directories are bounded, safe and
+      reject traversal, drives and portable device stems.
+- [x] Required name/createdAt and optional status/projectType/colors/description/body
+      use reader-compatible bounded semantics; linked-folder fields are not accepted
+      and invalid/oversized input refuses before coordinator calls.
+- [x] Canonical LF UTF-8 source emits explicit identity/name/createdAt, preferred
+      spellings, only supplied optionals, safe quoting and bounded final bytes;
+      parsed Project projection is never serialized.
+- [x] Flat reload yields frontmatter identity, supplied metadata, archived presence,
+      explicit-description precedence or Markdown-body fallback, and unchanged
+      source provenance.
+- [x] Creation uses coordinator `create` with exclusive `createIfAbsent`; existing
+      bytes and concurrent winners are preserved, losers receive deterministic
+      conflicts, and no alternate filename/retry/merge/LWW occurs. Focused canonical,
+      quoting, fallback, validation and collision tests pass in
+      `tests/projectCreation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
