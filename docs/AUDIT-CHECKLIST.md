@@ -2016,8 +2016,10 @@ Backpack page:
       (`tests/httpDirectory.test.ts`, `tests/presencePropagation.test.ts`).
 - [x] no unrestricted machine path access — vault locators reject POSIX, Windows-drive,
       UNC, `file:` URL, traversal and malformed paths; FSA evidence accepts only
-      bounded relative entries, and the bridge requires vault-relative paths
-      (`tests/canvas.test.ts`, `tests/fsaEvidence.test.ts`, `tests/httpDirectory.test.ts`).
+      bounded relative entries, and the bridge confines every requested path beneath
+      its configured vault root, failing closed on traversal/drive and symlink escapes
+      (`tests/canvas.test.ts`, `tests/fsaEvidence.test.ts`, `tests/agentVaultBridge.test.ts`,
+      `tests/bridgeDisclosure.test.ts`).
 - [x] arbitrary HTML/JS dropped on canvas remains passive — active extensions are
       rejected before payload reads and render only escaped fallback metadata; hostile
       script/iframe/JavaScript bytes never enter the surface (`tests/canvasSurface.test.ts`).
