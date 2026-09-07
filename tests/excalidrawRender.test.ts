@@ -25,6 +25,22 @@ const line = { id: 'l1', type: 'line', x: 5, y: 5, points: [[0, 0], [50, 0]] };
 const arrow = { id: 'a1', type: 'arrow', x: 0, y: 0, points: [[0, 0], [40, 40]] };
 const image = { id: 'i1', type: 'image', x: 100, y: 100, width: 60, height: 40, fileId: 'abc123' };
 
+describe('inline paint containment', () => {
+  it('restricts paint values to passive hex colors', () => {
+    const malicious = renderExcalidrawSvg(scene([
+      { ...line, strokeColor: 'url(https://example.invalid/paint.svg#x)' },
+    ], { viewBackgroundColor: 'url(https://example.invalid/bg.svg#x)' }));
+    expect(malicious.svg).not.toContain('example.invalid');
+    expect(malicious.svg).toContain('stroke="#1e1e1e"');
+    expect(malicious.svg).toContain('fill="#ffffff"');
+    const ordinary = renderExcalidrawSvg(scene([
+      { ...line, strokeColor: '#3E6F8D' },
+    ], { viewBackgroundColor: '#ffe9b0' }));
+    expect(ordinary.svg).toContain('stroke="#3E6F8D"');
+    expect(ordinary.svg).toContain('fill="#ffe9b0"');
+  });
+});
+
 describe('rendering the supported element types', () => {
   it('draws each type the creator drawings actually contain', () => {
     const result = renderExcalidrawSvg(scene([freedraw, text, line, arrow]));

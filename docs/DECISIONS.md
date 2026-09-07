@@ -821,6 +821,9 @@ removal, page teardown and BFCache handling are explicit and idempotent.
 no attachment reads or durable rebinding are implied. Text/Markdown, SVG, PDF,
 directories, persistence, public browser-data actions and writes remain deferred.
 
+This decision supersedes D44–D45 only for scene-only Excalidraw presentation; their
+raster, text, SVG/PDF and authority boundaries remain in force.
+
 ## D44 — Canvas surface renders passive drop cards only
 
 **Decided:** the browser surface may accept a bounded `DataTransfer.files` batch and

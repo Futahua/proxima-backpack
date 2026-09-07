@@ -214,7 +214,7 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
   }
 
   const viewBox = bounds.viewBox(PADDING);
-  const background = typeof scene?.appState?.viewBackgroundColor === 'string' ? scene.appState.viewBackgroundColor : '#ffffff';
+  const background = colour(scene?.appState?.viewBackgroundColor, '#ffffff', true);
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${round(viewBox.x)} ${round(viewBox.y)} ${round(viewBox.width)} ${round(viewBox.height)}" width="100%" height="100%" role="img">`,
     `<rect x="${round(viewBox.x)}" y="${round(viewBox.y)}" width="${round(viewBox.width)}" height="${round(viewBox.height)}" fill="${escapeAttribute(background)}" />`,
@@ -400,8 +400,13 @@ function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function colour(value: unknown, fallback: string): string {
-  return typeof value === 'string' && value.trim() !== '' && value !== 'transparent' ? value : fallback;
+function colour(value: unknown, fallback: string, allowTransparent = false): string {
+  if (typeof value !== 'string') return fallback;
+  const candidate = value.trim();
+  if (allowTransparent && candidate === 'transparent') return candidate;
+  // SVG paint servers and URLs are intentionally excluded from this renderer's
+  // inline boundary. Excalidraw's ordinary palette is represented by hex colors.
+  return /^#[0-9a-f]{3,4}([0-9a-f]{2})?$/i.test(candidate) ? candidate : fallback;
 }
 
 function round(value: number): number {
