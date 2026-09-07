@@ -2606,12 +2606,16 @@ Only after fallback file cards are already first-class.
 
 ### 17.1 Multiple live Proxima surfaces
 
-- [ ] same fixture in two surfaces
-- [ ] same real vault in two surfaces
-- [ ] refresh in one converges appropriately in the other
-- [ ] navigation/selection independence specified
-- [ ] source revision model consistent
-- [ ] no surface-local state accidentally written as canonical file state
+- [x] same fixture in two independent source sessions/surfaces.
+- [x] same disposable real-disk vault is opened by two independent sessions.
+- [x] refresh in one and then the other converges both projections to the same
+      source generation and bytes (`tests/multiSurface.test.ts`).
+- [x] navigation/selection independence is specified and pinned: each dispatcher
+      retains its own selection while consuming the shared source snapshot.
+- [x] source revision model is consistent across both sessions; each advances from
+      generation 1 to 2 for the same external change.
+- [x] no surface-local state is written as canonical file state; the multi-surface
+      tests use read-only sessions and dispose both refresh policies.
 
 ### 17.2 If writes become enabled
 
