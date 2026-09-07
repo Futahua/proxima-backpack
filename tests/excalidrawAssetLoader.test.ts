@@ -118,6 +118,13 @@ describe('each failure degrades one asset', () => {
     expect(result.loaded.map((asset) => asset.outcome)).toEqual(['unresolved', 'resolved']);
     expect(Object.keys(result.assets)).toEqual(['good']);
   });
+
+  it('rejects duplicate file ids instead of choosing the last mapping', async () => {
+    const vault = vaultWith({ 'Attachments/photo.png': PNG, 'Attachments/scan.jpg': JPEG });
+    const result = await loadDrawingAssets(vault, index, [embed('same', 'photo.png'), embed('same', 'scan.jpg')]);
+    expect(result.loaded.map((asset) => asset.outcome)).toEqual(['ambiguous', 'ambiguous']);
+    expect(result.assets).toEqual({});
+  });
 });
 
 describe('three independent bounds', () => {

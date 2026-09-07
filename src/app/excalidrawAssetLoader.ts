@@ -77,6 +77,12 @@ export async function loadDrawingAssets(
   const assets: Record<string, string> = Object.create(null) as Record<string, string>;
   const loaded: LoadedAsset[] = [];
   let totalBytes = 0;
+  const seenKeys = new Set<string>();
+  const duplicateKeys = new Set<string>();
+  for (const embed of embeddedFiles) {
+    if (seenKeys.has(embed.key)) duplicateKeys.add(embed.key);
+    else seenKeys.add(embed.key);
+  }
 
   for (const [position, embed] of embeddedFiles.entries()) {
     const base: LoadedAsset = {
@@ -88,6 +94,14 @@ export async function loadDrawingAssets(
       sourceRevision: null,
       bytes: 0,
     };
+
+    // One scene file ID must identify one asset. If the envelope supplies the
+    // same key more than once, selecting either link would be a guess; report
+    // every occurrence as ambiguous instead of allowing last-write-wins.
+    if (duplicateKeys.has(embed.key)) {
+      loaded.push({ ...base, outcome: 'ambiguous' });
+      continue;
+    }
 
     if (position >= maxAssets) {
       // Reported rather than ignored: the drawing references more than this will
