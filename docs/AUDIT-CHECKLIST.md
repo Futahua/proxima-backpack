@@ -1862,8 +1862,8 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Conditional update/delete/move restore refuses peer-modified target state.
 - [x] Peer activity is programmatic and barrier-driven; no UI or creator interaction
       is required for the disposable gate.
-- [ ] Full source rename/delete race matrix and machine-readable bounded tree-diff
-      coverage remain to be expanded.
+- [x] Full source rename/delete race matrix and machine-readable bounded tree-diff
+      attribution cover peer source disappearance without automatic recreation.
 - [ ] Actual Obsidian application against a disposable vault remains Gate 13.D2.
 
 Not enabled merely because a UI needs editing.

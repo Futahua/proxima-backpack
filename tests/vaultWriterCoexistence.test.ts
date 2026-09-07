@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -26,6 +26,19 @@ async function rootWithFiles() {
   await writeFile(join(root, '.obsidian-workspace'), 'metadata-stable', 'utf8');
   return root;
 }
+async function treeSnapshot(root: string, directory = ''): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  for (const entry of await readdir(join(root, directory), { withFileTypes: true })) {
+    const relative = directory ? `${directory}/${entry.name}` : entry.name;
+    if (relative === 'recovery.json') continue;
+    if (entry.isDirectory()) for (const [path, value] of await treeSnapshot(root, relative)) result.set(path, value);
+    else result.set(relative, Buffer.from(await readFile(join(root, relative))).toString('base64'));
+  }
+  return result;
+}
+function changedSnapshot(before: Map<string, string>, after: Map<string, string>): string[] {
+  return [...new Set([...before.keys(), ...after.keys()])].filter((path) => before.get(path) !== after.get(path)).sort();
+}
 async function makeCoordinator(root: string, options: Parameters<typeof createDiskVault>[1] = {}) {
   const vault = createDiskVault(root, options);
   const recovery = createDurableRecoveryStore(backend(root)); await recovery.load();
@@ -45,7 +58,7 @@ describe('Gate 13D1 disposable multi-writer coexistence', () => {
       expect(moved.ok).toBe(true); expect(await readFile(join(root, 'moved.md'), 'utf8')).toBe('updated-by-proxima');
       const deleted = await coordinator.execute({ kind: 'delete', path: 'created.md', expectedRevision: (await vault.read('created.md')).revision });
       expect(deleted.ok).toBe(true); expect(await vault.exists('created.md')).toBe(false);
-      expect(await readFile(join(root, 'unrelated.md'), 'utf8')).toContain('peer-update');
+      expect(await readFile(join(root, 'unrelated.md'), 'utf8')).toBe('peer-stable\npeer-update');
       expect(await readFile(join(root, '.obsidian-workspace'), 'utf8')).toBe('metadata-stable');
       expect(recovery.list().map((record) => record.status)).toEqual(['committed', 'committed', 'committed']);
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -73,16 +86,48 @@ describe('Gate 13D1 disposable multi-writer coexistence', () => {
     const root = await rootWithFiles();
     try {
       const updateSetup = await makeCoordinator(root); const update = await updateSetup.coordinator.execute({ kind: 'update', path: 'task.md', bytes: new TextEncoder().encode('new'), expectedRevision: (await updateSetup.vault.read('task.md')).revision });
-      const updateRecord = updateSetup.recovery.list()[0]!; await peer(root, 'write', 'task.md', '', 'peer');
+      const updateRecord = updateSetup.recovery.list().find((record) => record.requestId === update.requestId)!;
+      expect(updateRecord.operation).toBe('update'); await peer(root, 'write', 'task.md', '', 'peer');
       expect((await restoreCommittedRecovery(updateRecord, updateSetup.vault, updateSetup.vault, updateSetup.recovery)).outcome).toBe('blocked');
 
       await writeFile(join(root, 'task.md'), 'original', 'utf8'); const deleteSetup = await makeCoordinator(root); const deleted = await deleteSetup.coordinator.execute({ kind: 'delete', path: 'task.md', expectedRevision: (await deleteSetup.vault.read('task.md')).revision });
-      expect(deleted.ok).toBe(true); const deleteRecord = deleteSetup.recovery.list()[0]!; await peer(root, 'write', 'task.md', '', 'peer-recreated');
+      expect(deleted.ok).toBe(true); const deleteRecord = deleteSetup.recovery.list().find((record) => record.requestId === deleted.requestId)!;
+      expect(deleteRecord.operation).toBe('delete'); await peer(root, 'write', 'task.md', '', 'peer-recreated');
       expect((await restoreCommittedRecovery(deleteRecord, deleteSetup.vault, deleteSetup.vault, deleteSetup.recovery)).outcome).toBe('blocked');
 
       await writeFile(join(root, 'task.md'), 'original', 'utf8'); const moveSetup = await makeCoordinator(root); const moved = await moveSetup.coordinator.execute({ kind: 'move', from: 'task.md', to: 'moved.md', expectedRevision: (await moveSetup.vault.read('task.md')).revision });
-      expect(moved.ok).toBe(true); const moveRecord = moveSetup.recovery.list()[0]!; await peer(root, 'write', 'moved.md', '', 'peer-destination');
+      expect(moved.ok).toBe(true); const moveRecord = moveSetup.recovery.list().find((record) => record.requestId === moved.requestId)!;
+      expect(moveRecord.operation).toBe('move'); expect(moveRecord.destination).toBe('moved.md'); await peer(root, 'write', 'moved.md', '', 'peer-destination');
       expect((await restoreCommittedRecovery(moveRecord, moveSetup.vault, moveSetup.vault, moveSetup.recovery)).outcome).toBe('blocked');
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('refuses peer source rename/delete races and attributes exactly the peer tree changes', async () => {
+    for (const peerAction of ['rename', 'delete'] as const) {
+      for (const operation of ['update', 'delete', 'move'] as const) {
+        const root = await rootWithFiles();
+        try {
+          const before = await treeSnapshot(root);
+          const setup = await makeCoordinator(root, { beforeCommit: async (phase) => {
+            if (phase !== operation) return;
+            if (peerAction === 'rename') await peer(root, 'rename', 'task.md', 'peer-renamed.md');
+            else await peer(root, 'delete', 'task.md');
+          } });
+          const expectedRevision = (await setup.vault.read('task.md')).revision;
+          const result = operation === 'update'
+            ? await setup.coordinator.execute({ kind: 'update', path: 'task.md', bytes: new TextEncoder().encode('proxima'), expectedRevision })
+            : operation === 'delete'
+              ? await setup.coordinator.execute({ kind: 'delete', path: 'task.md', expectedRevision })
+              : await setup.coordinator.execute({ kind: 'move', from: 'task.md', to: 'moved.md', expectedRevision });
+          expect(result.ok).toBe(false);
+          expect(result.reason === 'missing' || result.reason === 'stale').toBe(true);
+          const after = await treeSnapshot(root);
+          expect(changedSnapshot(before, after)).toEqual(peerAction === 'rename' ? ['peer-renamed.md', 'task.md'] : ['task.md']);
+          expect(await setup.vault.exists('task.md')).toBe(false);
+          if (peerAction === 'rename') expect(await readFile(join(root, 'peer-renamed.md'), 'utf8')).toBe('original');
+          expect(await setup.vault.exists('moved.md')).toBe(false);
+        } finally { await rm(root, { recursive: true, force: true }); }
+      }
+    }
   });
 });
