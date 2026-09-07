@@ -841,11 +841,11 @@ rows remain OPEN until directly evidenced.
 
 - [x] A loopback-only bridge exposes bounded list/read/exists/walk operations for an
       explicitly configured root; no native picker gesture is required for automation.
-- [x] Browser startup consumes the bridge through the existing structural directory seam
+- [x] Agent-enabled browser startup consumes the bridge through the existing structural directory seam
       and preserves the read-only source/session/runbook/preflight pipeline.
 - [x] Non-loopback URLs, traversal, oversized responses, and non-GET methods are rejected;
       bridge tests exercise the real child process and temporary disk fixture.
-- [x] README documents the one-time root configuration and automatic `?bridge=` bootstrap.
+- [x] README documents the explicit agent-build opt-in, root configuration and `?bridge=` bootstrap.
 - [x] Bridge failures answer in a closed code vocabulary; no filesystem `error.message`,
       errno text, or absolute root reaches an HTTP body, startup line, or evidence
       bundle. Pinned by `tests/bridgeDisclosure.test.ts`.
@@ -2069,7 +2069,11 @@ Filesystem:
 
 Developer control:
 
-- [ ] dev-only transport absent in ordinary production launch
+- [x] dev-only transport absent in ordinary production launch — ordinary fixture
+      builds set `agentBridgeEnabled: false`, so `?bridge=` is ignored; resolving
+      the bridge requires an explicit `PROXIMA_AGENT_BRIDGE=1` build opt-in
+      (`src/browser/agentBridge.ts`, `tools/build-fixture-module.mjs`,
+      `tests/agentBridgeBoundary.test.ts`).
 - [ ] authenticated
 - [ ] exact surface targeting
 - [ ] bounded data

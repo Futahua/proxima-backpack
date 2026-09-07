@@ -104,11 +104,14 @@ npm run build
 
 ## Agent-controlled read-only bridge
 
-The browser can be bootstrapped without a native folder-picker gesture by using the
-loopback bridge. Start it with the explicit creator-vault root, then open the generated
-page with `?bridge=`:
+An explicitly agent-enabled browser build can be bootstrapped without a native
+folder-picker gesture by using the loopback bridge. Ordinary fixture builds ignore
+`?bridge=`; opt in before building, then start the bridge with the explicit
+creator-vault root and open the generated page with `?bridge=`:
 
-```bash
+```powershell
+$env:PROXIMA_AGENT_BRIDGE = '1'
+npm run build
 npm run agent:bridge -- --root "D:\\Vaults\\Creator" --port 4174
 # open http://127.0.0.1:4173/?bridge=http://127.0.0.1:4174
 ```

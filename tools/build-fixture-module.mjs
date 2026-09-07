@@ -51,6 +51,9 @@ const buildIdentity = {
   proximaVersion: packageJson.version,
   gitSha,
   buildMode: 'fixture',
+  // Ordinary browser builds exclude the optional agent bridge. An explicit
+  // environment opt-in is required to produce an agent-enabled build.
+  agentBridgeEnabled: process.env.PROXIMA_AGENT_BRIDGE === '1',
   domainSchemaVersion: '1',
   controlSchemaVersion: '0',
   fixtureSchemaVersion: '1',

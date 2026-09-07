@@ -32,6 +32,7 @@ import { calendarGridDates } from './calendarGrid.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
+import { bridgeUrlForLaunch } from './agentBridge.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -342,7 +343,7 @@ function bindInteractions(): void {
 
 async function boot(): Promise<void> {
   setBootState('loading');
-  const bridgeUrl = new URLSearchParams(window.location.search).get('bridge');
+  const bridgeUrl = bridgeUrlForLaunch(window.location.search, BUILD_IDENTITY.agentBridgeEnabled);
   const automationDirectory = bridgeUrl ? createHttpDirectoryHandle(bridgeUrl) : null;
   const fixture = createBrowserSource();
   const loaded = await loadVaultState(fixture.reader);
