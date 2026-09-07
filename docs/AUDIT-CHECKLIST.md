@@ -1338,9 +1338,16 @@ abstraction exactly as Excalidraw does.
 - [x] Multi-day events render across all covered days — inclusive local-day bucketing,
       reversed/invalid-end fallback, and the exact 36,600-day fail-closed bound are
       pinned by `tests/calendarDerivation.test.ts` (6.3A, `95188f8`).
-- [ ] Calendar navigation deterministic.
-- [ ] Invalid events surface safely.
-- [ ] Timezone behavior matches chosen semantics.
+- [x] Calendar navigation deterministic — canonical integer month arithmetic, bounded
+      `0000`–`9999` no-op edges, and low-year-safe 42-cell rendering are pinned by
+      `tests/actionProtocol.test.ts` and `tests/calendarGrid.test.ts` (6.3B,
+      `5af0c66` + `381a294`).
+- [x] Invalid events surface safely — strict date validation yields bounded `bad-date`
+      diagnostics, invalid starts receive no bucket, and invalid/reversed ends plus
+      over-limit spans fail visibly (6.3C, `2fd66b6` + `6828664`).
+- [x] Timezone behavior matches chosen semantics — date-only values are literal civil
+      dates; explicit timestamps/offsets use viewer-local day conversion (D10,
+      6.3C, `2fd66b6`).
 - [ ] No mutation to real vault.
 
 ### 6.4 Projects

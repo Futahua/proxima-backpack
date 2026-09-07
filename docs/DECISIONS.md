@@ -219,8 +219,10 @@ calculation rather than merely in output order.
 
 ## D10 — Calendar grouping uses the viewer's machine-local calendar
 
-**Decided:** calendar grouping uses JavaScript's machine-local date fields. A dated
-event covers every inclusive local calendar day from `startDate` through `deadline`.
+**Decided:** calendar grouping uses machine-local date fields for explicit timestamps,
+while exact `YYYY-MM-DD` values are strict Gregorian civil dates and are never shifted
+through UTC. A dated event covers every inclusive local/civil calendar day from
+`startDate` through `deadline`.
 If the deadline precedes the start, the event is shown on its start day only. An
 invalid or missing start is not placed; a start without a deadline is a one-day event,
 while a deadline without a start remains undated. Expansion is bounded at 36,600 days
@@ -228,15 +230,17 @@ while a deadline without a start remains undated. Expansion is bounded at 36,600
 buckets rather than being silently truncated.
 
 **Why:** the original calendar is a local month grid, so a creator should see day
-boundaries in the machine timezone rather than UTC boundaries. `setDate()` advances
-calendar dates across month, year, and DST transitions without assuming every day is
-24 hours.
+boundaries in the machine timezone rather than UTC boundaries. Date-only frontmatter is
+already a civil date, so parsing it as UTC midnight would move it across a negative
+offset boundary. Civil-day iteration advances across month, year, and DST transitions
+without assuming every day is 24 hours.
 
-**Determinism:** tests assert inclusive counts and derive boundary keys through the
-same `localDateKey` helper instead of hard-coding one developer's timezone. The explicit
-100-year bound prevents creator-controlled input from causing unbounded synchronous
-work. Any future cross-machine shared-calendar requirement must introduce an explicit
-injected timezone before the live surface is built.
+**Determinism:** tests assert inclusive counts, exact civil-date bounds and invalid-date
+diagnostics, while explicit timestamp boundary keys use the same `localDateKey` helper
+instead of hard-coding one developer's timezone. The explicit 100-year bound prevents
+creator-controlled input from causing unbounded synchronous work. Any future
+cross-machine shared-calendar requirement must introduce an explicit injected timezone
+before the live surface is built.
 
 **Reverses if:** creator acceptance requires the same event to land on identical date
 keys regardless of viewer timezone.
