@@ -181,6 +181,20 @@ describe('images before asset resolution', () => {
     expect(result.census.skipped).toBe(1);
     expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'line', count: 1 });
   });
+
+  it('reports zero-size text instead of counting invisible glyphs as rendered', () => {
+    const result = renderExcalidrawSvg(scene([{ ...text, fontSize: 0 }]));
+    expect(result.census.rendered).toBe(0);
+    expect(result.census.skipped).toBe(1);
+    expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'text', count: 1 });
+  });
+
+  it('reports empty text instead of counting a text node with no glyphs as rendered', () => {
+    const result = renderExcalidrawSvg(scene([{ ...text, text: '' }]));
+    expect(result.census.rendered).toBe(0);
+    expect(result.census.skipped).toBe(1);
+    expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'text', count: 1 });
+  });
 });
 
 describe('the scene decides its own background', () => {

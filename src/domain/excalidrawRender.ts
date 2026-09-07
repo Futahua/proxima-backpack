@@ -232,6 +232,7 @@ function drawElement(type: string, element: ElementLike, x: number, y: number, b
   if (type === 'text') {
     const text = typeof element.text === 'string' ? element.text : '';
     const fontSize = finite(element.fontSize) ?? 16;
+    if (text.length === 0 || fontSize <= 0) return null;
     bounds.add(x, y);
     bounds.add(x + Math.max(fontSize * text.length * 0.6, 1), y + fontSize);
     // Baseline sits a line down from the element origin, matching Excalidraw's
