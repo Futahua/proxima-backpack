@@ -2226,6 +2226,25 @@ Fixture only initially.
       stale peer bytes survive. Flat/folder reload, fallback transition, malformed
       refusal and zero-read authority tests pass in `tests/projectDescriptionMutation.test.ts`.
 
+### 13.2J Legacy project identity promotion
+
+- [x] Promotion accepts only bounded `source.kind: project` provenance confined to
+      the configured projects directory; flat filename and one-level folder/index
+      origins are supported, while frontmatter origin is an explicit no-op before
+      reads and outside/deep/arbitrary paths refuse.
+- [x] The derived identity is exact filename stem or containing folder name; the
+      caller cannot supply a replacement ID, and mismatches refuse before I/O.
+- [x] Existing frontmatter is required and one reader-safe `id:` is inserted before
+      the closing fence, preserving BOM/line endings, description, linked folders,
+      body and every prior source byte; malformed/duplicate/structured IDs refuse.
+- [x] Promotion uses coordinator update with CAS derived solely from the observed
+      project revision, durable recovery and stale-peer preservation; no retry,
+      merge, move or generic YAML insertion is exposed.
+- [x] Flat and folder/index reloads retain the same logical ID/path and all semantic
+      project fields while changing only identity origin to frontmatter. Focused
+      promotion, no-op, mismatch, malformed, duplicate and stale tests pass in
+      `tests/projectIdentityPromotion.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.

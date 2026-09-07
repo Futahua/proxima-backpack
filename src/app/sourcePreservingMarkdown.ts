@@ -334,3 +334,8 @@ export function planTaskIdentityPromotion(input: Uint8Array | string, id: string
   const encoder = new TextEncoder(); const start = encoder.encode(window.source.slice(0, window.closingStart)).byteLength;
   return { ok: true, bytes: encoder.encode(patched), start, end: start };
 }
+
+/** Project identity uses the same exact id insertion primitive, under a separate semantic API. */
+export function planProjectIdentityPromotion(input: Uint8Array | string, id: string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  return planTaskIdentityPromotion(input, id, maxBytes);
+}
