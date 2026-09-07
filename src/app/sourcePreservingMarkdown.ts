@@ -16,6 +16,7 @@ export type TaskScalarField =
   | 'name' | 'project' | 'status' | 'weight' | 'orderIndex'
   | 'isFixedDuration' | 'fixedDuration' | 'maxDuration' | 'isCompleted'
   | 'startDate' | 'deadline';
+export type TaskOptionalField = 'project' | 'fixedDuration' | 'maxDuration' | 'startDate' | 'deadline';
 
 type SourceScalarField = TaskScalarField | 'projectId';
 const TASK_SCALAR_FIELDS: readonly TaskScalarField[] = ['name', 'project', 'status', 'weight', 'orderIndex', 'isFixedDuration', 'fixedDuration', 'maxDuration', 'isCompleted', 'startDate', 'deadline'];
@@ -175,4 +176,79 @@ function planSourceScalarPatch(input: Uint8Array | string, field: SourceScalarFi
   const patched = source.slice(0, match.start) + replacement + source.slice(match.end);
   const encoder = new TextEncoder();
   return { ok: true, bytes: encoder.encode(patched), start: encoder.encode(source.slice(0, match.start)).byteLength, end: encoder.encode(source.slice(0, match.end)).byteLength };
+}
+
+function sourceAndFence(input: Uint8Array | string, maxBytes: number): { ok: true; source: string; bytes: Uint8Array; closingStart: number; lineEnding: string } | SourcePatchResult {
+  const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  if (bytes.byteLength > maxBytes) return { ok: false, reason: 'source-too-large' };
+  let source: string;
+  try { source = typeof input === 'string' ? input : new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
+  catch { return { ok: false, reason: 'invalid-utf8' }; }
+  const lines = linesOf(source); const first = lines[0];
+  const opening = first && first.content.startsWith(BOM) ? first.content.slice(BOM.length) : first?.content;
+  if (opening === undefined || !/^---[ \t]*$/.test(opening)) return { ok: false, reason: 'no-frontmatter' };
+  let closingStart = -1; let lineEnding = '';
+  for (let i = 1; i < lines.length; i += 1) {
+    if (/^---[ \t]*$/.test(lines[i]?.content ?? '')) { closingStart = lines[i]?.start ?? -1; break; }
+    const previous = lines[i - 1] as SourceLine;
+    const ending = source.slice(previous.start + previous.content.length, previous.end);
+    if (!lineEnding && /\r\n|\n|\r/.test(ending)) lineEnding = ending.match(/\r\n|\n|\r/)?.[0] ?? '';
+  }
+  if (closingStart < 0) return { ok: false, reason: 'no-frontmatter' };
+  if (!lineEnding) lineEnding = source.includes('\r\n') ? '\r\n' : source.includes('\n') ? '\n' : source.includes('\r') ? '\r' : '\n';
+  return { ok: true, source, bytes, closingStart, lineEnding };
+}
+
+function targetLines(source: string, closingStart: number, field: SourceScalarField): Array<{ start: number; end: number; style: 'plain' | 'single' | 'double' }> {
+  const lines = linesOf(source); const matches: Array<{ start: number; end: number; style: 'plain' | 'single' | 'double' }> = [];
+  for (const line of lines) {
+    if (line.start >= closingStart || /^[ \t]/.test(line.content) || line.content.trim() === '' || /^[ \t]*#/.test(line.content)) continue;
+    const colon = line.content.indexOf(':'); if (colon < 0 || line.content.slice(0, colon).trim() !== field) continue;
+    const rest = line.content.slice(colon + 1); const comment = scalarEnd(rest); const withoutComment = rest.slice(0, comment);
+    const leading = withoutComment.match(/^[ \t]*/)?.[0].length ?? 0; const trailing = withoutComment.match(/[ \t]*$/)?.[0].length ?? 0;
+    const valueText = withoutComment.slice(leading, Math.max(leading, withoutComment.length - trailing)); if (!valueText) return [{ start: -1, end: -1, style: 'plain' }];
+    let style: 'plain' | 'single' | 'double' = 'plain'; if (valueText.startsWith('"')) style = 'double'; else if (valueText.startsWith("'")) style = 'single';
+    if ((style !== 'plain' && !validQuoted(valueText, style === 'double' ? '"' : "'")) || (style === 'double' && findUnsupportedDoubleQuotedEscape(valueText) !== null) || (style === 'plain' && /^[\[\]{|>&*]/.test(valueText))) return [{ start: -1, end: -1, style: 'plain' }];
+    matches.push({ start: line.start + colon + 1 + leading, end: line.start + colon + 1 + withoutComment.length - trailing, style });
+  }
+  return matches;
+}
+
+function insertEncoding(field: TaskOptionalField, value: string | number): string | null {
+  if (field === 'project' || field === 'startDate' || field === 'deadline') {
+    if (typeof value !== 'string' || /[\u0000-\u001F\u007F\r\n]/u.test(value) || value.length === 0) return null;
+    if (safePlain(value)) return value;
+    return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+  }
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? String(value) : null;
+}
+
+/** Insert one explicitly allowlisted optional task field immediately before the closing fence. */
+export function planTaskOptionalInsert(input: Uint8Array | string, field: TaskOptionalField, value: string | number, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  if (!['project', 'fixedDuration', 'maxDuration', 'startDate', 'deadline'].includes(field)) return { ok: false, reason: 'field-not-allowed' };
+  const window = sourceAndFence(input, maxBytes); if (!('source' in window)) return window;
+  const fields: SourceScalarField[] = field === 'project' ? ['project', 'projectId'] : [field];
+  const matches = fields.flatMap((candidate) => targetLines(window.source, window.closingStart, candidate));
+  if (matches.some((match) => match.start < 0)) return { ok: false, reason: 'target-unsupported' };
+  if (matches.length > 0) return { ok: false, reason: matches.length === 1 ? 'target-ambiguous' : 'target-ambiguous' };
+  const encoded = insertEncoding(field, value); if (encoded === null) return { ok: false, reason: 'invalid-value' };
+  const insertion = `${field}: ${encoded}${window.lineEnding}`;
+  const patched = window.source.slice(0, window.closingStart) + insertion + window.source.slice(window.closingStart);
+  const encoder = new TextEncoder(); const start = encoder.encode(window.source.slice(0, window.closingStart)).byteLength;
+  return { ok: true, bytes: encoder.encode(patched), start, end: start };
+}
+
+/** Remove one explicitly allowlisted optional task field line, including its inline comment. */
+export function planTaskOptionalRemove(input: Uint8Array | string, field: TaskOptionalField, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  if (!['project', 'fixedDuration', 'maxDuration', 'startDate', 'deadline'].includes(field)) return { ok: false, reason: 'field-not-allowed' };
+  const window = sourceAndFence(input, maxBytes); if (!('source' in window)) return window;
+  const fields: SourceScalarField[] = field === 'project' ? ['project', 'projectId'] : [field];
+  const matches = fields.flatMap((candidate) => targetLines(window.source, window.closingStart, candidate));
+  if (matches.some((match) => match.start < 0)) return { ok: false, reason: 'target-unsupported' };
+  if (matches.length === 0) return { ok: false, reason: 'target-missing' };
+  if (matches.length !== 1) return { ok: false, reason: 'target-ambiguous' };
+  const lines = linesOf(window.source); const target = matches[0] as { start: number; end: number };
+  const line = lines.find((candidate) => candidate.start <= target.start && candidate.end >= target.end); if (!line) return { ok: false, reason: 'target-unsupported' };
+  const patched = window.source.slice(0, line.start) + window.source.slice(line.end); const encoder = new TextEncoder();
+  return { ok: true, bytes: encoder.encode(patched), start: encoder.encode(window.source.slice(0, line.start)).byteLength, end: encoder.encode(window.source.slice(0, line.end)).byteLength };
 }

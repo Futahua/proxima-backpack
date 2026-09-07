@@ -1971,6 +1971,40 @@ Fixture only initially.
 - [x] Empty scalar attempts perform zero coordinator/writer calls; explicit unlink,
       null and removal semantics remain deferred to 13.2C.
 
+### 13.2C Explicit optional-field set / clear
+
+#### Authority and existing fields
+
+- [x] Public set/clear operations expose only `project`, `fixedDuration`,
+      `maxDuration`, `startDate` and `deadline`; runtime kind/field membership is
+      enforced before source acquisition.
+- [x] Existing set uses the signed 13.2B source-preserving replacement behavior;
+      project aliases are selected semantically and ambiguity refuses.
+- [x] Every filesystem change still travels through
+      `createVaultMutationCoordinator`; no arbitrary insertion/removal primitive is
+      exposed.
+
+#### Insertion and explicit clear
+
+- [x] Missing optional fields insert immediately before the closing fence, preserving
+      BOM, detected LF/CRLF convention, key order and all foreign/unsupported bytes.
+- [x] Explicit clear removes only the target line (including its inline comment),
+      preserves surrounding comments and foreign bytes, and refuses duplicates or
+      structured targets.
+- [x] Clearing an absent field is a deterministic no-op; no frontmatter creation,
+      null sentinel or empty-string removal is inferred.
+
+#### Semantic validation and coexistence
+
+- [x] Set values use the existing reader's non-empty string, positive-duration and
+      valid-date semantics; resulting files reload through `loadVaultState` (where
+      applicable) to the intended optional value.
+- [x] Caller revisions bind insertion and clear to CAS/recovery; stale edits preserve
+      peer bytes and terminalize no-op recovery without retry or merge.
+- [x] CRLF/BOM insertion, line-only clear, missing-field no-op, invalid/unsupported
+      targets and stale optional commits are covered by
+      `tests/taskSourceMutation.test.ts`.
+
 ### 13.2A Source-preserving task status mutation
 
 - [x] D7 is explicitly re-decided for write-era source patching; the interpreted
