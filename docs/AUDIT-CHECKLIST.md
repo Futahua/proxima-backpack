@@ -2435,6 +2435,22 @@ Fixture only initially.
 - [x] Commits after 83692ff are local-only supplied evidence while GitHub connectivity
       is unavailable; no connector verification is claimed for those SHAs.
 
+### 13.2T Project and event lifecycle (repo-only)
+
+- [x] Project lifecycle accepts observed provenance in flat and one-level
+      folder/index layouts; explicit-ID rename preserves logical identity, while
+      delete supports legacy or explicit identity without cascade.
+- [x] Event lifecycle accepts immediate Markdown sources; explicit-ID rename
+      preserves identity and delete removes only the observed source.
+- [x] Destination stems are bounded/portable; traversal and device names refuse,
+      folder/index renames derive sibling `<stem>/index.md`, and no arbitrary path
+      or fallback filename is exposed.
+- [x] Rename/delete use coordinator move/delete with observed-revision CAS, stale
+      peer preservation and collision/recovery attribution; no retry/merge/LWW.
+- [x] Focused project/event lifecycle coverage passes in
+      `tests/recordLifecycle.test.ts`; native FSA and actual Obsidian coexistence
+      remain separate OPEN gates.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
