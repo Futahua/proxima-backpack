@@ -2042,8 +2042,9 @@ Filesystem:
       `tests/bridgeDisclosure.test.ts`, `tests/canvas.test.ts`, `tests/fsaEvidence.test.ts`).
 - [x] symlink/junction containment explicitly tested where host capability exists —
       the bridge rejects intermediate linked directories for list and binary reads,
-      while the external-directory acceptance exercises dangling links without
-      erasing adjacent records; tests skip only when the host cannot create a link
+      while the bridge-backed acceptance exercises dangling links without erasing
+      adjacent records; link-dependent tests fail loudly when the host cannot create
+      the required link
       (`tests/bridgeDisclosure.test.ts`, `tests/transportCompleteness.test.ts`).
 - [ ] revocation works
 - [ ] grant ownership is exact Backpack identity
