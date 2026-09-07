@@ -1893,7 +1893,10 @@ Only after fallback file cards are already first-class.
       five-level nested content tree; only the one-level index is discovered, with
       folder provenance, linked-folder metadata, complete census accounting, and no
       phantom nested projects (Gate 18I, follow-up).
-- [ ] large Markdown notes
+- [x] large Markdown notes — a deterministic 12,000-line Markdown body (>250 KiB)
+      is loaded without truncating body-derived descriptions; explicit frontmatter
+      descriptions still win, with complete census accounting and no problems (Gate
+      18J, follow-up).
 - [x] many events in one month — 1,000 deterministic events concentrated in one
       month are grouped with complete single-/multi-day coverage and a broad
       non-SLA timing guard (Gate 18C, follow-up to `622953e`).

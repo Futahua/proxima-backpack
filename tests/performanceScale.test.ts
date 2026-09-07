@@ -128,6 +128,36 @@ describe('Gate 18A deterministic load/refresh scale baseline', () => {
     expect(elapsedMs).toBeLessThan(5000);
   });
 
+  it('loads large Markdown notes without truncating descriptions or census rows', async () => {
+    const lines = Array.from({ length: 12_000 }, (_, index) => `- paragraph ${index}: ${'lorem ipsum '.repeat(3)}marker-${index}`);
+    const largeBody = `# Large note\n\n${lines.join('\n')}\n`;
+    const explicitBody = `# Explicit body\n\n${lines.join('\n')}\n`;
+    const vault = createMemoryVault({
+      'Proxima/projects/Large note.md': `---\nname: Large note\nstatus: active\n---\n${largeBody}`,
+      'Proxima/projects/Explicit description.md': `---\nname: Explicit description\ndescription: Keep this short\nstatus: active\n---\n${explicitBody}`,
+    });
+    const started = performance.now();
+    const loaded = await loadVaultState(vault);
+    const elapsedMs = performance.now() - started;
+    const large = loaded.state.projects.find((project) => project.id === 'Large note');
+    const explicit = loaded.state.projects.find((project) => project.id === 'Explicit description');
+
+    expect(large?.description).toBe(largeBody.trim());
+    expect(large?.description.length).toBeGreaterThan(250_000);
+    expect(large?.description).toContain('marker-11999');
+    expect(explicit?.description).toBe('Keep this short');
+    expect(loaded.census.project).toMatchObject({
+      status: 'complete',
+      scannedFiles: 2,
+      recordCandidates: 2,
+      loadedRecords: 2,
+      explicitlyRejected: 0,
+      unaccountedCandidates: 0,
+    });
+    expect(loaded.problems).toEqual([]);
+    expect(elapsedMs).toBeLessThan(5000);
+  });
+
   it('refreshes a 1000-record source unchanged and after one edit', async () => {
     const vault = scaledVault(1000);
     const initial = await loadVaultState(vault);
