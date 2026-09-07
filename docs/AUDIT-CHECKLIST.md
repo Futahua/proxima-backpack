@@ -1891,17 +1891,38 @@ Not enabled merely because a UI needs editing.
 
 ### 13.1 Conflict model
 
-- [ ] observed source revision
-- [ ] intended logical mutation
-- [ ] serialize preserving unknown data
-- [ ] checked commit
-- [ ] stale result
-- [ ] retry/merge/refuse policy
-- [ ] rename conflict behavior
-- [ ] deletion conflict behavior
-- [ ] external Obsidian edit during Proxima edit
-- [ ] two Proxima surfaces editing same source
-- [ ] crash/power-loss behavior where relevant
+- [x] observed source revision
+- [x] intended logical mutation
+- [x] serialize preserving unknown data
+- [x] checked commit
+- [x] stale result
+- [x] retry/merge/refuse policy
+- [x] rename conflict behavior
+- [x] deletion conflict behavior
+- [ ] external Obsidian edit during Proxima edit — native Obsidian 13D2 remains OPEN
+- [x] two Proxima surfaces editing same source
+- [x] process-death/restart recovery behavior where relevant; fsync/power-loss
+      durability is explicitly not claimed
+
+### 13.1R Repo-only conflict-model closeout
+
+- [x] SourceRef revisions flow through semantic scalar/optional/promotion/lifecycle
+      APIs into conditional coordinator operations.
+- [x] Typed task operations express intended logical mutations; no renderer or
+      arbitrary filesystem intent is accepted.
+- [x] Source-span patching preserves unknown/unsupported bytes exactly; no lossy
+      interpreted frontmatter projection is serialized.
+- [x] Coordinator conditional update/move/delete and exclusive create provide the
+      checked commit boundary.
+- [x] Deterministic peer races return stale/missing/destination-exists and preserve
+      peer bytes; policy is refusal with no retry, merge or last-writer-wins.
+- [x] Rename/delete conflict behavior, independent Proxima surfaces, and durable
+      request attribution are covered by 13.1P/17.2A and 13.2E evidence.
+- [x] Process death before/after filesystem commit and restart classification are
+      covered by 13C2B/C3F durable journal tests; this row does not claim power-loss
+      or fsync guarantees.
+- [ ] Actual Obsidian application edits during Proxima writes remain OPEN at 13D2;
+      disposable peer-writer evidence is not substituted.
 
 ### 13.2 Writer conformance
 
