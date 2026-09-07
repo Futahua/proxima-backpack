@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { createDurableRecoveryStore, createMemoryRecoveryStore, reconcileRecoveryEntries } from '../src/app/vaultRecovery.js';
 import { createMemoryVault } from '../src/adapters/memoryVault.js';
+import { createDiskVault } from './test-disk-vault.js';
 import { fixedClock } from '../src/domain/clock.js';
 import { classifyRecoveryRecord } from '../src/app/vaultRecoveryReconcile.js';
 
