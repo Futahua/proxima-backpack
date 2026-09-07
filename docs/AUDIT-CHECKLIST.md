@@ -2195,7 +2195,11 @@ Current truth stays in-repo.
       recorded in the Gate 2A acceptance note; the README explicitly treats this UUID
       as non-portable machine-local state rather than a placeholder (`project.json`,
       `README.md`, Gate 2.1).
-- [ ] no unnecessary Papers changes
+- [x] no unnecessary Papers changes — this release slice modifies only the Proxima
+      repository; the reviewed commits contain no Papers checkout, host configuration,
+      or native-host source changes, and the status table records `Papers changed: No`.
+      The separate Papers host-change ledger remains deferred/unauthorized unless its
+      exact trigger truth is later demonstrated.
 - [ ] every Papers change has a recorded specific missing truth and acceptance test
 - [ ] creator real-vault write state is clearly documented as enabled or disabled
 - [ ] no known data-loss path
