@@ -638,8 +638,9 @@ Only then consider a project-scoped external read capability in Papers.
 - [x] Focus/external trigger storms are coalesced behind an in-flight refresh.
 - [x] Interval is bounded by a nonzero minimum and start is idempotent.
 - [x] Stop/disposal removes timers and prevents future refreshes.
-- [x] Hidden state suspends interval polling and returning visible issues one focus
-      refresh through the same path.
+- [x] Hidden state suspends interval polling; becoming visible only re-arms the timer,
+      and the browser window-focus adapter owns the single focus refresh through the
+      same path.
 - [x] Failed refreshes do not create tight automatic retry loops.
 - [x] Inspection state is bounded: enabled, interval, last reason, counters, timer,
       and visibility.
