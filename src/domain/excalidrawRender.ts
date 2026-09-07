@@ -138,8 +138,13 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
 
     if (type === 'image') {
       census.imageElements += 1;
-      const width = finite(element.width) ?? 0;
-      const height = finite(element.height) ?? 0;
+      const width = finite(element.width);
+      const height = finite(element.height);
+      if (width === null || height === null || width <= 0 || height <= 0) {
+        census.skipped += 1;
+        note('element-geometry-invalid', type);
+        continue;
+      }
       const href = typeof element.fileId === 'string' ? assets[element.fileId] : undefined;
       bounds.add(x, y);
       bounds.add(x + width, y + height);
@@ -230,7 +235,7 @@ function drawElement(type: string, element: ElementLike, x: number, y: number, b
   }
 
   const points = readPoints(element.points);
-  if (!points || points.length === 0) return null;
+  if (!points || points.length < 2) return null;
   const path = points
     .map(([px, py], index) => `${index === 0 ? 'M' : 'L'}${round(x + px)},${round(y + py)}`)
     .join(' ');

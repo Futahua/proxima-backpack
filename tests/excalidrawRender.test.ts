@@ -137,6 +137,20 @@ describe('images before asset resolution', () => {
     expect(result.svg).toContain('data:image/png;base64,AAAA');
     expect(result.problems).toEqual([]);
   });
+
+  it('reports non-drawable image dimensions instead of counting invisible geometry as rendered', () => {
+    const result = renderExcalidrawSvg(scene([{ ...image, width: 0 }, { ...image, id: 'negative', height: -1 }]));
+    expect(result.census.rendered).toBe(0);
+    expect(result.census.skipped).toBe(2);
+    expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'image', count: 2 });
+  });
+
+  it('reports a point element with fewer than two drawable points', () => {
+    const result = renderExcalidrawSvg(scene([{ ...line, points: [[0, 0]] }]));
+    expect(result.census.rendered).toBe(0);
+    expect(result.census.skipped).toBe(1);
+    expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'line', count: 1 });
+  });
 });
 
 describe('the scene decides its own background', () => {
