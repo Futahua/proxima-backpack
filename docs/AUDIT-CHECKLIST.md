@@ -2381,6 +2381,25 @@ Fixture only initially.
       quoting, fallback, validation and collision tests pass in
       `tests/projectCreation.test.ts`.
 
+### 13.2R Preferred project linkedFolders set / clear
+
+- [x] Public authority is limited to explicit set/clear over preferred
+      `linkedFolders`; no generic list/frontmatter API or project lifecycle is exposed.
+- [x] Signed project provenance/CAS boundaries are reused for flat and one-level
+      folder/index sources; bounded folder paths/names, count and encoded size are
+      enforced before reads, with duplicate semantic paths refused.
+- [x] Missing set inserts preferred inline-list `linkedFolders`; an existing unique
+      preferred inline list is replaced; clear removes exactly that line and missing
+      clear is a deterministic no-op.
+- [x] Singular `linkedFolder`, packed-string legacy `linkedFolders`, mixed/duplicate,
+      block, nested and malformed forms refuse without migration or canonicalization.
+- [x] Canonical entries encode leaf paths or reader-compatible `Name|path` strings;
+      reload returns requested ordered folder semantics without relying on dedupe.
+- [x] Only target bytes change; identity/name/status/type/colors/description/body,
+      foreign YAML, comments, BOM and line endings remain exact. Coordinator update,
+      recovery and stale-peer rules apply; focused flat/folder, preservation,
+      invalid-input and stale tests pass in `tests/projectLinkedFoldersMutation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.

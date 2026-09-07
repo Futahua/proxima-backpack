@@ -19,6 +19,7 @@ export type TaskScalarField =
 export type TaskOptionalField = 'project' | 'fixedDuration' | 'maxDuration' | 'startDate' | 'deadline';
 export type ProjectScalarField = 'name' | 'status' | 'projectType' | 'tabBgColor' | 'tabTextColor';
 export type ProjectOptionalField = 'tabBgColor' | 'tabTextColor';
+export interface ProjectLinkedFolderValue { path: string; name?: string; }
 
 type SourceScalarField = TaskScalarField | ProjectScalarField | 'projectId' | 'description';
 const TASK_SCALAR_FIELDS: readonly TaskScalarField[] = ['name', 'project', 'status', 'weight', 'orderIndex', 'isFixedDuration', 'fixedDuration', 'maxDuration', 'isCompleted', 'startDate', 'deadline'];
@@ -290,6 +291,30 @@ export function planProjectOptionalRemove(input: Uint8Array | string, field: Pro
   const line = lines.find((candidate) => candidate.start <= target.start && candidate.end >= target.end); if (!line) return { ok: false, reason: 'target-unsupported' };
   const patched = window.source.slice(0, line.start) + window.source.slice(line.end); const encoder = new TextEncoder();
   return { ok: true, bytes: encoder.encode(patched), start: encoder.encode(window.source.slice(0, line.start)).byteLength, end: encoder.encode(window.source.slice(0, line.end)).byteLength };
+}
+
+function linkedFolderScalar(value: ProjectLinkedFolderValue): string | null {
+  if (typeof value.path !== 'string' || value.path.length === 0 || value.path.length > 4096 || /[\u0000-\u001F\u007F\r\n]/u.test(value.path)) return null;
+  if (value.name !== undefined && (typeof value.name !== 'string' || value.name.length === 0 || value.name.length > 4096 || /[\u0000-\u001F\u007F\r\n]/u.test(value.name))) return null;
+  const leaf = value.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || value.path; const item = value.name && value.name !== leaf ? `${value.name}|${value.path}` : value.path;
+  return `"${item.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+/** Set only the preferred inline-list linkedFolders representation. Legacy forms refuse. */
+export function planProjectLinkedFoldersSet(input: Uint8Array | string, folders: readonly ProjectLinkedFolderValue[], maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  if (!Array.isArray(folders) || folders.length > 256) return { ok: false, reason: 'invalid-value' };
+  const seen = new Set<string>(); const encoded: string[] = []; for (const folder of folders) { const normalized = typeof folder?.path === 'string' ? folder.path.replaceAll('\\', '/') : ''; if (seen.has(normalized)) return { ok: false, reason: 'invalid-value' }; seen.add(normalized); const value = linkedFolderScalar(folder); if (value === null) return { ok: false, reason: 'invalid-value' }; encoded.push(value); }
+  const window = sourceAndFence(input, maxBytes); if (!('source' in window)) return window; const lines = linesOf(window.source); const matches: Array<{ start: number; end: number }> = []; let singular = 0;
+  for (const line of lines) { if (line.start >= window.closingStart || /^[ \t]/.test(line.content) || line.content.trim() === '' || /^[ \t]*#/.test(line.content)) continue; const colon = line.content.indexOf(':'); if (colon < 0) continue; const key = line.content.slice(0, colon).trim(); if (key === 'linkedFolder') singular += 1; if (key !== 'linkedFolders') continue; const rest = line.content.slice(colon + 1); const comment = scalarEnd(rest); const valueText = rest.slice(0, comment).trim(); if (!valueText.startsWith('[') || !valueText.endsWith(']') || /[{}>&*]/.test(valueText)) return { ok: false, reason: 'target-unsupported' }; const leading = rest.length - rest.trimStart().length; let valueEnd = comment; while (valueEnd > leading && /[ \t]/.test(rest[valueEnd - 1] ?? '')) valueEnd -= 1; matches.push({ start: line.start + colon + 1 + leading, end: line.start + colon + 1 + valueEnd }); }
+  if (singular > 0 || matches.length > 1) return { ok: false, reason: 'target-ambiguous' }; const replacement = `[${encoded.join(', ')}]`; if (matches.length === 0) { const insertion = `linkedFolders: ${replacement}${window.lineEnding}`; const patched = window.source.slice(0, window.closingStart) + insertion + window.source.slice(window.closingStart); const encoder = new TextEncoder(); const start = encoder.encode(window.source.slice(0, window.closingStart)).byteLength; return { ok: true, bytes: encoder.encode(patched), start, end: start }; }
+  const match = matches[0]!; const line = lines.find((candidate) => candidate.start <= match.start && candidate.end >= match.end); if (!line) return { ok: false, reason: 'target-unsupported' }; const patched = window.source.slice(0, match.start) + replacement + window.source.slice(match.end); const encoder = new TextEncoder(); return { ok: true, bytes: encoder.encode(patched), start: encoder.encode(window.source.slice(0, match.start)).byteLength, end: encoder.encode(window.source.slice(0, match.end)).byteLength };
+}
+
+/** Remove only the preferred inline-list linkedFolders line. */
+export function planProjectLinkedFoldersRemove(input: Uint8Array | string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  const window = sourceAndFence(input, maxBytes); if (!('source' in window)) return window; const lines = linesOf(window.source); let match: SourceLine | undefined; let count = 0; let singular = 0;
+  for (const line of lines) { if (line.start >= window.closingStart || /^[ \t]/.test(line.content) || line.content.trim() === '' || /^[ \t]*#/.test(line.content)) continue; const colon = line.content.indexOf(':'); if (colon < 0) continue; const key = line.content.slice(0, colon).trim(); if (key === 'linkedFolder') singular += 1; if (key !== 'linkedFolders') continue; count += 1; const value = line.content.slice(colon + 1).split('#')[0]!.trim(); if (!value.startsWith('[') || !value.endsWith(']') || /[{}>&*]/.test(value)) return { ok: false, reason: 'target-unsupported' }; match = line; }
+  if (singular > 0 || count > 1) return { ok: false, reason: 'target-ambiguous' }; if (!match) return { ok: false, reason: 'target-missing' }; const patched = window.source.slice(0, match.start) + window.source.slice(match.end); const encoder = new TextEncoder(); return { ok: true, bytes: encoder.encode(patched), start: encoder.encode(window.source.slice(0, match.start)).byteLength, end: encoder.encode(window.source.slice(0, match.end)).byteLength };
 }
 
 /** Insert one explicitly allowlisted optional task field immediately before the closing fence. */
