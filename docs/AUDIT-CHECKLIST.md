@@ -2123,7 +2123,8 @@ Current truth stays in-repo.
       `tests/elastic.test.ts`).
 - [x] timezone semantics _(Gate 1C)_ — calendar grouping is inclusive in the
       machine-local civil timezone with calendar-date arithmetic; UTC-stable keys
-      remain explicitly deferred (`docs/VAULT-FORMATS.md`, `tests/calendarGrid.test.ts`).
+      remain explicitly deferred (`docs/VAULT-FORMATS.md`,
+      `tests/calendarDerivation.test.ts`, `tests/calendarGrid.test.ts`).
 - [x] fixture conventions — `docs/VAULT-FORMATS.md`
 - [x] action protocol _(Gate 3)_ — semantic actions, rejection codes and state
       revisions are defined in `src/app/actionProtocol.ts` and pinned by
@@ -2140,7 +2141,8 @@ Current truth stays in-repo.
       evidence and validation are defined in `src/app/evidence.ts` and pinned by
       `tests/evidence.test.ts`.
 - [x] FSA limitations _(Gate 5)_ — clean-profile evidence is bounded and relative-only;
-      native grant/ownership and real-vault acceptance remain explicitly OPEN
+      native Papers/FSA grant ownership and native FSA/Papers-hosted creator-vault
+      acceptance remain explicitly OPEN
       (`docs/DECISIONS.md`, `tests/cleanProfileAcceptance.test.ts`).
 - [x] Papers capabilities actually required _(ledger below)_ — the ledger records
       only justified triggers; no additional Papers capability is required by the
