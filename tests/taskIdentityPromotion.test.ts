@@ -47,6 +47,12 @@ describe('13.2F legacy task identity promotion', () => {
     const duplicateRevision = (await reader.read('Proxima/tasks/Duplicate.md')).revision;
     expect(await promoteTaskIdentity({ task: { id: 'Duplicate', source: { path: 'Proxima/tasks/Duplicate.md', revision: duplicateRevision, kind: 'task', idOrigin: 'filename' } }, reader, coordinator })).toMatchObject({ ok: false, reason: 'target-ambiguous' });
     expect(calls).toBe(0); expect(reads).toBe(2);
+    const baseTask = task(revision);
+    expect(await promoteTaskIdentity({ task: { ...baseTask, id: 'x'.repeat(201) }, reader, coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
+    expect(await promoteTaskIdentity({ task: { ...baseTask, source: { ...baseTask.source, path: `Proxima/tasks/${'x'.repeat(260)}.md` } }, reader, coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
+    expect(await promoteTaskIdentity({ task: { ...baseTask, source: { ...baseTask.source, revision: '' } }, reader, coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
+    expect(await promoteTaskIdentity({ task: { ...baseTask, source: { ...baseTask.source, revision: 'r'.repeat(401) } }, reader, coordinator })).toMatchObject({ ok: false, reason: 'invalid-provenance' });
+    expect(reads).toBe(2);
   });
 
   it('returns an explicit no-op for already explicit identity and refuses stale peer edits', async () => {

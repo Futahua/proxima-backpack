@@ -8,7 +8,7 @@ export type TaskIdentityPromotionOutcome = VaultMutationOutcome | { ok: true; no
 
 function validPath(source: unknown, directory: string): source is SourceRef {
   if (typeof source !== 'object' || source === null) return false;
-  const candidate = source as Partial<SourceRef>; if (candidate.kind !== 'task' || (candidate.idOrigin !== 'filename' && candidate.idOrigin !== 'frontmatter') || typeof candidate.path !== 'string' || typeof candidate.revision !== 'string') return false;
+  const candidate = source as Partial<SourceRef>; if (candidate.kind !== 'task' || (candidate.idOrigin !== 'filename' && candidate.idOrigin !== 'frontmatter') || typeof candidate.path !== 'string' || candidate.path.length === 0 || candidate.path.length > 260 || typeof candidate.revision !== 'string' || candidate.revision.length === 0 || candidate.revision.length > 400) return false;
   const path = candidate.path.replaceAll('\\', '/'); const prefix = `${directory.replaceAll('\\', '/')}/`;
   if (!path.startsWith(prefix) || path.slice(prefix.length).includes('/') || !path.toLowerCase().endsWith('.md')) return false;
   return path.length > prefix.length + 3 && !path.split('/').some((part) => part === '.' || part === '..' || part.length === 0);
@@ -22,7 +22,7 @@ function validDirectory(directory: string): boolean {
 /** Make a legacy filename-derived task's current identity explicit, without moving it. */
 export async function promoteTaskIdentity(options: PromoteTaskIdentityOptions): Promise<TaskIdentityPromotionOutcome> {
   const directory = (options.tasksDirectory ?? 'Proxima/tasks').replaceAll('\\', '/');
-  if (!validDirectory(directory) || typeof options.task !== 'object' || options.task === null || typeof options.task.id !== 'string' || !validPath(options.task.source, directory)) return { ok: false, reason: 'invalid-provenance' };
+  if (!validDirectory(directory) || typeof options.task !== 'object' || options.task === null || typeof options.task.id !== 'string' || options.task.id.length === 0 || options.task.id.length > 200 || !validPath(options.task.source, directory)) return { ok: false, reason: 'invalid-provenance' };
   if (options.task.source.idOrigin !== 'filename') return { ok: true, noOp: true, path: options.task.source.path, revision: options.task.source.revision };
   const path = options.task.source.path.replaceAll('\\', '/'); const stem = path.slice(`${directory}/`.length, -3);
   if (options.task.id !== stem) return { ok: false, reason: 'identity-mismatch' };

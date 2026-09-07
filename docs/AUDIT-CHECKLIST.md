@@ -2101,6 +2101,14 @@ Fixture only initially.
       the same logical ID/path/fields/body, and the promoted task subsequently passes
       the explicit-ID rename boundary (`tests/taskIdentityPromotion.test.ts`).
 
+### 13.2F-F Bounded observed provenance
+
+- [x] Promotion bounds nonempty task ID (≤200), source path (≤260) and revision
+      (≤400) before any binary read, on both mutation and explicit no-op paths.
+- [x] Oversized IDs/paths/revisions and empty revisions refuse with zero readBinary or
+      coordinator calls; immediate-child, task-kind and filename-origin checks remain
+      enforced (`tests/taskIdentityPromotion.test.ts`).
+
 ### 13.2A Source-preserving task status mutation
 
 - [x] D7 is explicitly re-decided for write-era source patching; the interpreted
