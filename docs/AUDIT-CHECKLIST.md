@@ -1917,6 +1917,26 @@ Fixture only initially.
 - [ ] Obsidian reopens resulting file normally
 - [ ] Excalidraw/plugin-specific sections preserved exactly where required
 
+### 13.2A Source-preserving task status mutation
+
+- [x] D7 is explicitly re-decided for write-era source patching; the interpreted
+      frontmatter projection is never serialized.
+- [x] Exact bounded UTF-8 source bytes are acquired through `readBinary`; source
+      size and invalid UTF-8 fail closed.
+- [x] Only one existing, unique, top-level scalar `status:` span is writable; missing,
+      duplicate, nested, structured, malformed and unsafe targets refuse visibly.
+- [x] Plain, single-quoted and double-quoted status representations preserve their
+      style, surrounding whitespace, inline comments, BOM and LF/CRLF bytes.
+- [x] Unknown keys, nested mappings, block scalars, anchors/aliases and Markdown body
+      bytes remain exact even when the reader's interpretation is lossy.
+- [x] The patch is submitted through `createVaultMutationCoordinator` with the
+      caller's observed revision; stale edits preserve peer bytes and terminalize the
+      no-op recovery record as `recovered`.
+- [x] Focused adversarial fixtures cover ordinary success, exact preservation,
+      unsupported targets, invalid UTF-8, unsafe values and stale external edits
+      (`src/app/sourcePreservingMarkdown.ts`, `src/app/taskSourceMutation.ts`,
+      `tests/taskSourceMutation.test.ts`).
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.

@@ -76,6 +76,11 @@ export function createDiskVault(root: string, options: DiskVaultOptions = {}): V
       const modifiedAt = metadata.mtime.toISOString();
       return { path: relativePath, text, size: metadata.size, modifiedAt, revision: `${modifiedAt}:${metadata.size}:${hash(new TextEncoder().encode(text))}` };
     },
+    async readBinary(path, maxBytes) {
+      const currentFile = await current(path);
+      if (currentFile.bytes.byteLength > maxBytes) throw new Error('disk vault byte size limit exceeded');
+      return { path: currentFile.relativePath, bytes: new Uint8Array(currentFile.bytes), size: currentFile.bytes.byteLength, modifiedAt: currentFile.metadata.mtime.toISOString(), revision: currentFile.revision };
+    },
     async createIfAbsent(path, bytes): Promise<VaultMutationResult> {
       const relativePath = normalise(path); const target = within(root, relativePath);
       await mkdir(resolve(target, '..'), { recursive: true });

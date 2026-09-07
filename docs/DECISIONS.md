@@ -160,6 +160,25 @@ interpreted values are not the whole truth, and `frontmatterRaw` is the lossless
 than implementation. A YAML-backed replacement must pass the same suite — including
 the issue-reporting cases, which a library alone will not satisfy.
 
+### D7 write-era re-decision — semantic writes patch source spans
+
+**Decided:** the hand-written parser remains an interpretation layer only. The first
+semantic writer patches the exact bounded UTF-8 source span for one unambiguous,
+existing top-level scalar and conditionally commits the resulting bytes. It never
+serializes `ParsedDocument.frontmatter`.
+
+**Why:** a document may be lossy because of unrelated nested YAML, block scalars,
+anchors or aliases. Copying every byte except the owned scalar preserves those creator-
+or plugin-owned regions without requiring a generic YAML serializer.
+
+**Current slice:** only `status:` on an existing top-level task frontmatter line is
+writable. Missing, duplicate, nested, structured or ambiguous targets refuse visibly;
+broader YAML editing and adding keys remain deferred.
+
+**Reverses if:** a future writer needs structural YAML edits that cannot be expressed as
+a bounded source-span patch; that gate must adopt a real lossless YAML/build strategy
+before expanding the writable surface.
+
 ---
 
 ## D8 — Invalid fields are substituted *and* reported, never silently
