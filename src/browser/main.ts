@@ -21,6 +21,8 @@ import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
 import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
 import { createBrowserSource } from './sourceFactory.js';
+import { admitCanvasDrop, EMPTY_CANVAS_SURFACE, renderCanvasSurface, type CanvasSurfaceState } from './canvasSurface.js';
+import type { BrowserFileLike } from './canvasFileAdmission.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -36,6 +38,7 @@ let startupInspection: StartupInspection | null = null;
 let sourceProjection: ReadOnlyProjection | null = null;
 let lastRefreshEvidence: Parameters<typeof evaluateRealVaultAcceptance>[0]['refreshEvidence'];
 let lastRenameDeleteEvidence: Parameters<typeof evaluateRealVaultAcceptance>[0]['renameDeleteEvidence'];
+let canvasState: CanvasSurfaceState = EMPTY_CANVAS_SURFACE;
 
 function element<T extends Element>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -98,7 +101,7 @@ function projectNavigation(state: ProximaState): string {
 }
 
 function surfaceSwitcher(): string {
-  return `<div class="surface-switcher" data-c1-key="surface-switcher" role="tablist" aria-label="Proxima surfaces"><button type="button" class="surface-tab${surface === 'board' ? ' selected' : ''}" data-action="switch-surface" data-surface="board" role="tab" aria-selected="${surface === 'board'}" data-c1-key="surface-tab-board">Elastic board</button><button type="button" class="surface-tab${surface === 'calendar' ? ' selected' : ''}" data-action="switch-surface" data-surface="calendar" role="tab" aria-selected="${surface === 'calendar'}" data-c1-key="surface-tab-calendar">Calendar</button></div>`;
+  return `<div class="surface-switcher" data-c1-key="surface-switcher" role="tablist" aria-label="Proxima surfaces"><button type="button" class="surface-tab${surface === 'board' ? ' selected' : ''}" data-action="switch-surface" data-surface="board" role="tab" aria-selected="${surface === 'board'}" data-c1-key="surface-tab-board">Elastic board</button><button type="button" class="surface-tab${surface === 'calendar' ? ' selected' : ''}" data-action="switch-surface" data-surface="calendar" role="tab" aria-selected="${surface === 'calendar'}" data-c1-key="surface-tab-calendar">Calendar</button><button type="button" class="surface-tab${surface === 'canvas' ? ' selected' : ''}" data-action="switch-surface" data-surface="canvas" role="tab" aria-selected="${surface === 'canvas'}" data-c1-key="surface-tab-canvas">Canvas</button></div>`;
 }
 
 function taskCard(state: ProximaState, task: Task, height?: number): string {
@@ -223,7 +226,7 @@ function render(): void {
   const health = currentUiHealth();
   root.dataset.proximaHealthGeneration = String(health.sourceRevision);
   const sourceLabel = sourceSession?.snapshot().sourceMode === 'external' ? 'Read-only external source' : 'Read-only fixture';
-  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : calendarSurface(appState, problems)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
+  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : surface === 'calendar' ? calendarSurface(appState, problems) : renderCanvasSurface(canvasState)}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
   updateHydrationSummary(appState, problems);
   exposeInspection();
 }
@@ -297,7 +300,7 @@ function bindInteractions(): void {
       void rereadSelectedDirectory().then((report) => renderFsaProbe(report ?? { error: 'No selected directory handle' }));
     } else if (action === 'switch-surface') {
       const next = button.dataset.surface as Surface;
-      if (next !== 'board' && next !== 'calendar') return;
+      if (next !== 'board' && next !== 'calendar' && next !== 'canvas') return;
       dispatchAction({ type: 'surface.select', surface: next });
     } else if (action === 'select-project') {
       dispatchAction({ type: 'project.select', projectId: button.dataset.projectId ?? ALL_PROJECTS });
@@ -307,6 +310,15 @@ function bindInteractions(): void {
     } else if (action === 'source-refresh') {
       void refreshFromSource('manual');
     }
+  });
+  root.addEventListener('dragover', (event) => {
+    if ((event.target as HTMLElement).closest('[data-c1-key="canvas-drop-zone"]')) event.preventDefault();
+  });
+  root.addEventListener('drop', (event) => {
+    if (!(event.target as HTMLElement).closest('[data-c1-key="canvas-drop-zone"]')) return;
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer?.files ?? []) as unknown as BrowserFileLike[];
+    void admitCanvasDrop(files, canvasState, DETERMINISTIC_IDS).then((next) => { canvasState = next; render(); });
   });
   window.addEventListener('focus', () => { void refreshFromSource('focus'); });
 }

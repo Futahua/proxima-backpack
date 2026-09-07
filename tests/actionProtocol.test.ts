@@ -14,6 +14,8 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction(null)).toEqual({ ok: false, error: { code: 'invalid-action', message: 'action must be an object with a string type', field: 'type' } });
     expect(parseAction({ type: 'calendar.shift-month', delta: 2 })).toEqual({ ok: false, error: { code: 'invalid-action-input', message: 'delta must be -1 or 1', field: 'delta' } });
     expect(parseAction({ type: 'unknown.action' })).toMatchObject({ ok: false, error: { code: 'invalid-action' } });
+    expect(parseAction({ type: 'surface.select', surface: 'canvas' })).toEqual({ ok: true, action: { type: 'surface.select', surface: 'canvas' } });
+    expect(parseAction({ type: 'surface.select', surface: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'surface' } });
   });
 
   it('uses one dispatcher for project/surface/calendar intent and increments revision only when state changes', async () => {
@@ -26,7 +28,11 @@ describe('Gate 3A semantic action protocol', () => {
     const switched = dispatcher.dispatch({ type: 'surface.select', surface: 'calendar' });
     expect(switched).toMatchObject({ ok: true, changed: true, stateRevision: 3, snapshot: { selection: 'all', surface: 'calendar' } });
 
-    expect(dispatcher.dispatch({ type: 'project.select', projectId: 'proj-term' })).toMatchObject({ ok: true, changed: true, stateRevision: 4 });
+    const canvas = dispatcher.dispatch({ type: 'surface.select', surface: 'canvas' });
+    expect(canvas).toMatchObject({ ok: true, snapshot: { surface: 'canvas', selection: 'all' } });
+    expect(isActionResult(canvas)).toBe(true);
+
+    expect(dispatcher.dispatch({ type: 'project.select', projectId: 'proj-term' })).toMatchObject({ ok: true, changed: false, stateRevision: 4 });
     expect(dispatcher.dispatch({ type: 'calendar.shift-month', delta: 1 })).toMatchObject({ ok: true, changed: true, stateRevision: 5, snapshot: { calendarMonth: '2026-10-01' } });
     expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({ ok: true, changed: true, stateRevision: 6, snapshot: { selection: 'all', surface: 'board', calendarMonth: '2026-09-01' } });
 

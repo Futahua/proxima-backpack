@@ -7,7 +7,7 @@ import { createEventRing, type EventRing, type ProximaEvent } from './eventRing.
 /** The wire/schema version for project-owned semantic actions. */
 export const ACTION_SCHEMA_VERSION = 1 as const;
 
-export type Surface = 'board' | 'calendar';
+export type Surface = 'board' | 'calendar' | 'canvas';
 
 export type ProximaAction =
   | { type: 'project.select'; projectId: string }
@@ -117,7 +117,7 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
       : { ok: false, error: { code: 'invalid-action-input', message: 'projectId must be a bounded string', field: 'projectId' } };
   }
   if (input.type === 'surface.select') {
-    return input.surface === 'board' || input.surface === 'calendar'
+    return input.surface === 'board' || input.surface === 'calendar' || input.surface === 'canvas'
       ? { ok: true, action: { type: input.type, surface: input.surface } }
       : { ok: false, error: { code: 'invalid-action-input', message: 'surface must be board or calendar', field: 'surface' } };
   }
@@ -173,7 +173,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     sourceRevision: options.initialSourceRevision ?? 1,
   };
   if (!isValidCalendarMonth(state.calendarMonth)) state.calendarMonth = '2026-09-01';
-  state.selection = reconcileSelection(state.state.projects, state.selection, state.surface);
+  if (state.surface !== 'canvas') state.selection = reconcileSelection(state.state.projects, state.selection, state.surface);
 
   return {
     dispatch(input: unknown): ActionResult {
@@ -193,7 +193,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
           state.latestEventSequence = ring.latestSequence();
           return result;
         }
-        const next = reconcileSelection(state.state.projects, action.projectId, state.surface);
+        const next = state.surface === 'canvas' ? state.selection : reconcileSelection(state.state.projects, action.projectId, state.surface);
         const changed = next !== state.selection;
         if (changed) { state.selection = next; state.stateRevision += 1; }
         ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [action.projectId], requestId, actionType: action.type, stateRevision: state.stateRevision });
@@ -203,7 +203,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         return resultFor(state, action.type, changed, requestId);
       }
       if (action.type === 'surface.select') {
-        const nextSelection = reconcileSelection(state.state.projects, state.selection, action.surface);
+        const nextSelection = action.surface === 'canvas' ? state.selection : reconcileSelection(state.state.projects, state.selection, action.surface);
         const changed = state.surface !== action.surface || state.selection !== nextSelection;
         if (changed) { state.surface = action.surface; state.selection = nextSelection; state.stateRevision += 1; }
         ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [action.surface], requestId, actionType: action.type, stateRevision: state.stateRevision });
@@ -240,7 +240,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     },
     replaceSource(input) {
       const sourceChanged = input.sourceRevision !== state.sourceRevision;
-      const nextSelection = reconcileSelection(input.state.projects, state.selection, state.surface);
+      const nextSelection = state.surface === 'canvas' ? state.selection : reconcileSelection(input.state.projects, state.selection, state.surface);
       const selectionChanged = nextSelection !== state.selection;
       state.state = input.state;
       state.problems = [...input.problems];
@@ -275,7 +275,7 @@ export function isActionResult(value: unknown): value is ActionResult {
   if (!isRecord(value) || value.schemaVersion !== ACTION_SCHEMA_VERSION || typeof value.ok !== 'boolean' || typeof value.stateRevision !== 'number' || typeof value.actionType !== 'string') return false;
   if (value.ok) {
     const snapshot = value.snapshot;
-    return typeof value.changed === 'boolean' && typeof value.requestId === 'string' && isRecord(snapshot) && (snapshot.surface === 'board' || snapshot.surface === 'calendar') && typeof snapshot.selection === 'string' && typeof snapshot.calendarMonth === 'string';
+    return typeof value.changed === 'boolean' && typeof value.requestId === 'string' && isRecord(snapshot) && (snapshot.surface === 'board' || snapshot.surface === 'calendar' || snapshot.surface === 'canvas') && typeof snapshot.selection === 'string' && typeof snapshot.calendarMonth === 'string';
   }
   const error = value.error;
   return typeof value.requestId === 'string' && isRecord(error) && typeof error.code === 'string' && typeof error.message === 'string';
