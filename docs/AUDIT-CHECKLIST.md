@@ -2322,6 +2322,26 @@ Fixture only initially.
       preservation and no retry/merge/LWW. Focused set/use-body, insertion, fallback,
       malformed and zero-read tests pass in `tests/eventDescriptionMutation.test.ts`.
 
+### 13.2O Task description override / body fallback
+
+- [x] Public task authority is explicit `set` versus `use-body`; runtime rejects
+      other kinds and empty/null sentinels before reads, with no generic task-field
+      mutation exposed.
+- [x] Signed task provenance is enforced: bounded ID/path/revision, immediate task
+      Markdown child, task-only source kind, and observed-revision-only CAS.
+- [x] Set patches an existing supported description scalar or inserts a missing one
+      with bounded reader-safe encoding; replacement style/spacing/comments remain
+      exact and reload returns the requested description.
+- [x] `use-body` removes only the supported description override, leaves Markdown
+      body untouched, and deterministically exposes the reader's existing fallback;
+      absent override is a no-op.
+- [x] Duplicate, nested, malformed and block-scalar targets refuse. ID/name/project
+      aliases/status/durations/dates/completion, foreign YAML, BOM/line endings and
+      all unrelated bytes remain exact; no parsed Task is serialized.
+- [x] Effective updates use coordinator recovery with stale-peer preservation and
+      no retry/merge/LWW. Focused set/use-body, insertion, fallback, block refusal
+      and zero-read provenance tests pass in `tests/taskDescriptionMutation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
