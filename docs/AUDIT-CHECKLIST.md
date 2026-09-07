@@ -1332,8 +1332,12 @@ abstraction exactly as Excalidraw does.
 
 ### 6.3 Calendar
 
-- [ ] Task/schedule project separation correct.
-- [ ] Multi-day events render across all covered days.
+- [x] Task/schedule project separation correct — active schedule eligibility,
+      task/archived exclusion, and all/uncategorised/selected filtering are pinned by
+      `tests/calendarDerivation.test.ts` (6.3A, `95188f8`).
+- [x] Multi-day events render across all covered days — inclusive local-day bucketing,
+      reversed/invalid-end fallback, and the exact 36,600-day fail-closed bound are
+      pinned by `tests/calendarDerivation.test.ts` (6.3A, `95188f8`).
 - [ ] Calendar navigation deterministic.
 - [ ] Invalid events surface safely.
 - [ ] Timezone behavior matches chosen semantics.
