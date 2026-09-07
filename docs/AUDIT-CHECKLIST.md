@@ -1235,6 +1235,22 @@ Tests must prove that switching the underlying state cannot leave the descriptio
 stale or contradictory — in particular across fixture→external, external→fixture,
 external→degraded, external→recovered and external→deleted.
 
+### ⚠ Gate 7 verdicts are PROVISIONAL — pending re-audit
+
+The creator reported that the reviewer session switched models partway through, and
+that the last five reviewer turns were faulty as a result. Those five turns are
+exactly the Gate 7 verdicts: 7A/7B, 7C decoding, 7C rendering, 7D link resolution,
+and 7D binary assets.
+
+**Every row below marked 7A–7D is therefore provisional and must not be treated as
+signed until re-audited by a sound reviewer.** The work, the tests and the
+real-vault evidence stand on their own — 344 tests, whole-vault fingerprints
+unchanged, the creator's drawings demonstrably rendering — but a verdict is only
+worth the reviewer that issued it, and a suspect sign-off is closer to no sign-off
+than to a good one.
+
+Gates through 6R remain signed: those verdicts predate the reported switch.
+
 ### Signed gate ledger (as of 2026-09-07)
 
 | Gate | Status | SHA |
@@ -1242,12 +1258,12 @@ external→degraded, external→recovered and external→deleted.
 | 6Q real creator-vault read-only baseline | PASS | `82c3f9a6` |
 | 6R Obsidian coexistence — create / modify / delete | PASS | `abf99364` |
 | 6R external **rename** | **OPEN** — not exercised | — |
-| 7A real Excalidraw discovery | PASS | `f5a3364` |
-| 7B structural recognition | PASS | `f5a3364` |
-| 7C compressed-json decoding | PASS | `11ddb084` |
-| 7C SVG rendering | PASS | `878240b8` |
-| 7D link resolution | PASS | `9ddb2db` |
-| 7D binary assets + real-artifact acceptance | PASS | `c074bf09` |
+| 7A real Excalidraw discovery | PROVISIONAL | `f5a3364` |
+| 7B structural recognition | PROVISIONAL | `f5a3364` |
+| 7C compressed-json decoding | PROVISIONAL | `11ddb084` |
+| 7C SVG rendering | PROVISIONAL | `878240b8` |
+| 7D link resolution | PROVISIONAL | `9ddb2db` |
+| 7D binary assets + real-artifact acceptance | PROVISIONAL | `c074bf09` |
 | Object-URL lifecycle | deferred to the browser viewer | — |
 | Native FSA, clean-profile picker, Papers-hosted acceptance, write/concurrency | OPEN | — |
 
