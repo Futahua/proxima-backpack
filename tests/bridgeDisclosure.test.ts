@@ -141,6 +141,9 @@ describe('bridge disclosure bounds', () => {
       const response = await fetch(`http://127.0.0.1:${port}/api/vault/read-binary?path=${encodeURIComponent('inside-link/secret.png')}&maxBytes=1000`);
       expect(response.status).toBe(400);
       expect((await response.json()).error).toBe('symlink-rejected');
+      const listing = await fetch(`http://127.0.0.1:${port}/api/vault/list?path=${encodeURIComponent('inside-link')}`);
+      expect(listing.status).toBe(400);
+      expect((await listing.json()).error).toBe('symlink-rejected');
     } finally { child.kill(); await rm(root, { recursive: true, force: true }); await rm(outside, { recursive: true, force: true }); }
   });
 });

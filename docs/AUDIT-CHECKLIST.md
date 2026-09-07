@@ -1179,10 +1179,13 @@ by filename.
 - [x] The scene's background is reported, not substituted. `transparent` is a real
       answer — painting white would invent a decision the artist did not make — so
       the surface supplies its own sheet.
+- [x] Bounded element and point budgets are explicit diagnostics: elements beyond
+      the scene limit and point-based geometry beyond the point limit are counted as
+      skipped rather than silently omitted.
 - [x] Both real drawings render: 117 elements all drawn, and 289 elements with 283
       drawn, 6 deleted, 0 unsupported. One image placeholder each.
 
-**7D asset resolution — resolver implemented, byte loading still open.**
+**7D asset resolution — resolver and bounded byte loading implemented.**
 
 - [x] A narrow resolver, not Obsidian link semantics. Block and heading references,
       aliases beyond the display half, metadata resolution, `.obsidian` config, URI
@@ -1205,9 +1208,12 @@ by filename.
       start let `[[Note^block]]` through as an ordinary name, and `[[]]` fell out of
       the wikilink pattern and survived as a literal target reported merely as
       unresolved.
-- [ ] **Load the resolved bytes.** `VaultReader.read` returns text, and reading a PNG
+- [x] **Load the resolved bytes.** `VaultReader.readBinary` returns bounded bytes,
+      validates media by signature, records provenance and per-asset outcomes, and
+      refuses unsupported media without spending a hidden/unaccounted read budget.
+      `VaultReader.read` returns text, and reading a PNG
       as UTF-8 corrupts it, so turning a resolved attachment into an actual rendered
-      image needs a binary read on the port. Raised rather than worked around.
+      image uses the binary capability on the port.
 
 - [ ] (superseded) 7D asset resolution — embeds are recorded as links. The
       vault supplies both cases naturally: one embed resolves to

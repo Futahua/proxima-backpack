@@ -27,7 +27,9 @@ export type ExcalidrawRenderProblemCode =
   /** An element whose geometry could not be read. */
   | 'element-geometry-invalid'
   /** Elements beyond the renderer's bounded scene-element budget. */
-  | 'element-limit-exceeded';
+  | 'element-limit-exceeded'
+  /** A point-based element exceeded the bounded geometry budget. */
+  | 'point-limit-exceeded';
 
 export interface ExcalidrawRenderProblem {
   code: ExcalidrawRenderProblemCode;
@@ -156,6 +158,12 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
       continue;
     }
 
+    if (['freedraw', 'line', 'arrow'].includes(type) && Array.isArray(element.points) && element.points.length > MAX_POINTS) {
+      census.skipped += 1;
+      note('point-limit-exceeded', type);
+      continue;
+    }
+
     const drawn = drawElement(type, element, x, y, bounds);
     if (drawn === null) {
       census.skipped += 1;
@@ -271,11 +279,11 @@ function placeholder(x: number, y: number, width: number, height: number): strin
 function readPoints(value: unknown): Array<[number, number]> | null {
   if (!Array.isArray(value)) return null;
   const out: Array<[number, number]> = [];
-  for (const point of value.slice(0, MAX_POINTS)) {
-    if (!Array.isArray(point)) continue;
+  for (const point of value) {
+    if (!Array.isArray(point)) return null;
     const px = finite(point[0]);
     const py = finite(point[1]);
-    if (px === null || py === null) continue;
+    if (px === null || py === null) return null;
     out.push([px, py]);
   }
   return out.length > 0 ? out : null;

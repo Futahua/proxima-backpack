@@ -108,6 +108,15 @@ describe('nothing disappears without a reason', () => {
     expect(skipped).toBe(1);
     expect(result.problems).toContainEqual({ code: 'element-limit-exceeded', elementType: 'text', count: 1 });
   });
+
+  it('reports a point array beyond the geometry budget instead of drawing partial geometry', () => {
+    const manyPoints = Array.from({ length: 5_001 }, (_, index) => [index, index]);
+    const result = renderExcalidrawSvg(scene([{ ...line, points: manyPoints }]));
+    expect(result.census.rendered).toBe(0);
+    expect(result.census.skipped).toBe(1);
+    expect(result.census.rendered + result.census.unsupported + result.census.deleted + result.census.skipped).toBe(1);
+    expect(result.problems).toContainEqual({ code: 'point-limit-exceeded', elementType: 'line', count: 1 });
+  });
 });
 
 describe('images before asset resolution', () => {
