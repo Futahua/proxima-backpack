@@ -1338,6 +1338,19 @@ abstraction exactly as Excalidraw does.
 
 ## Gate 7 — Excalidraw display compatibility
 
+### Defined compatibility contract (current implementation)
+
+- **Level A — display/reference fidelity: PASS** for the audited creator-vault
+  subset and supported scene/asset types, through the direct source parse → bounded
+  pure SVG render route.
+- **Level B — core editing/round-trip: DEFERRED** to later write/editing work.
+- **Level C — broad Obsidian Excalidraw plugin compatibility: NOT CLAIMED.**
+
+The auto-export/embedded upstream-editor-runtime route described in parts of the
+historical plan below is **not chosen / superseded** by the signed direct-source
+route. Unsupported scene constructs remain fail-visible rather than silently
+discarded.
+
 ### 7.1 Compatibility levels explicitly separated
 
 - [ ] A — display/reference fidelity

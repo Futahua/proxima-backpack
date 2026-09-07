@@ -824,6 +824,21 @@ directories, persistence, public browser-data actions and writes remain deferred
 This decision supersedes D44–D45 only for scene-only Excalidraw presentation; their
 raster, text, SVG/PDF and authority boundaries remain in force.
 
+## D50 — Gate 7 compatibility is direct-source display/reference only
+
+**Decided:** the implemented Excalidraw compatibility contract is Level A
+display/reference fidelity for the audited creator-vault subset and supported
+scene/asset types. Proxima uses structural source parsing, bounded decoding and a
+pure SVG renderer; it does not depend on Obsidian auto-export files or the upstream
+Excalidraw editor runtime.
+
+**Boundary:** Level B core editing/round-trip is deferred to later write/editing
+work. Level C broad Obsidian-plugin compatibility is not claimed. Plugin-specific
+links/transclusions and unsupported scene constructs remain narrower or fail-visible
+rather than silently becoming a second compatibility contract. The historical
+7.1–7.5 checklist prose remains for context only and must not be read as an
+unfinished requirement for the signed direct-source route.
+
 ## D47 — Text previews are literal, escaped and browser-owned
 
 **Decided:** supported text selections may transfer the already-decoded bounded
