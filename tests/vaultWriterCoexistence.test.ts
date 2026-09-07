@@ -26,13 +26,24 @@ async function rootWithFiles() {
   await writeFile(join(root, '.obsidian-workspace'), 'metadata-stable', 'utf8');
   return root;
 }
-async function treeSnapshot(root: string, directory = ''): Promise<Map<string, string>> {
+const MAX_TREE_ITEMS = 256;
+const MAX_TREE_BYTES = 4 * 1024 * 1024;
+const MAX_TREE_DEPTH = 16;
+async function treeSnapshot(root: string, directory = '', state = { items: 0, bytes: 0 }, depth = 0): Promise<Map<string, string>> {
+  if (depth > MAX_TREE_DEPTH) throw new Error('tree snapshot depth limit exceeded');
   const result = new Map<string, string>();
   for (const entry of await readdir(join(root, directory), { withFileTypes: true })) {
     const relative = directory ? `${directory}/${entry.name}` : entry.name;
     if (relative === 'recovery.json') continue;
-    if (entry.isDirectory()) for (const [path, value] of await treeSnapshot(root, relative)) result.set(path, value);
-    else result.set(relative, Buffer.from(await readFile(join(root, relative))).toString('base64'));
+    state.items += 1;
+    if (state.items > MAX_TREE_ITEMS) throw new Error('tree snapshot item limit exceeded');
+    if (entry.isDirectory()) for (const [path, value] of await treeSnapshot(root, relative, state, depth + 1)) result.set(path, value);
+    else {
+      const content = await readFile(join(root, relative));
+      state.bytes += content.byteLength;
+      if (state.bytes > MAX_TREE_BYTES) throw new Error('tree snapshot byte limit exceeded');
+      result.set(relative, Buffer.from(content).toString('base64'));
+    }
   }
   return result;
 }
@@ -129,5 +140,13 @@ describe('Gate 13D1 disposable multi-writer coexistence', () => {
         } finally { await rm(root, { recursive: true, force: true }); }
       }
     }
+  });
+
+  it('rejects an intentionally oversized tree instead of accumulating unbounded evidence', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'proxima-13d-bounds-'));
+    try {
+      await Promise.all(Array.from({ length: MAX_TREE_ITEMS + 1 }, (_, index) => writeFile(join(root, `file-${index}.md`), 'x', 'utf8')));
+      await expect(treeSnapshot(root)).rejects.toThrow(/item limit/);
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
