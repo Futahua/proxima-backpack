@@ -237,8 +237,9 @@ describe('images before asset resolution', () => {
       { ...text, id: 'right', x: huge },
     ]));
     expect(result.svg).not.toContain('Infinity');
-    expect(result.census.rendered).toBe(2);
-    expect(result.census.skipped).toBe(0);
+    expect(result.census.rendered).toBe(0);
+    expect(result.census.skipped).toBe(2);
+    expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'text', count: 2 });
     expect(Number.isFinite(result.viewBox.width)).toBe(true);
     expect(Number.isFinite(result.viewBox.height)).toBe(true);
   });

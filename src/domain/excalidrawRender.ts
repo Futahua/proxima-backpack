@@ -105,6 +105,7 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
     skipped: 0,
   };
   const problemCounts = new Map<string, ExcalidrawRenderProblem>();
+  const renderedTypes: string[] = [];
   const note = (code: ExcalidrawRenderProblemCode, elementType: string) => {
     const key = `${code}:${elementType}`;
     const existing = problemCounts.get(key);
@@ -159,12 +160,14 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
       if (href) {
         census.imagesResolved += 1;
         census.rendered += 1;
+        renderedTypes.push(type);
         body.push(`<image x="${round(x)}" y="${round(y)}" width="${round(width)}" height="${round(height)}" href="${escapeAttribute(href)}" preserveAspectRatio="none" />`);
       } else {
         // Visible, labelled, and reported. A missing image must not read as empty
         // canvas: the viewer would believe the drawing looks like this.
         census.imagePlaceholders += 1;
         census.rendered += 1;
+        renderedTypes.push(type);
         note('image-asset-unresolved', type);
         body.push(placeholder(x, y, width, height));
       }
@@ -184,6 +187,7 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
       continue;
     }
     census.rendered += 1;
+    renderedTypes.push(type);
     body.push(drawn);
   }
 
@@ -195,6 +199,18 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
     countType(type);
     census.skipped += 1;
     note('element-limit-exceeded', type);
+  }
+
+  // If the scene-wide extrema cannot fit in a finite SVG frame, do not claim
+  // that those elements were rendered while silently clipping them.
+  if (bounds.frameOverflows(PADDING)) {
+    for (const type of renderedTypes) {
+      census.rendered -= 1;
+      census.skipped += 1;
+      note('element-geometry-invalid', type);
+    }
+    body.length = 0;
+    bounds.clear();
   }
 
   const viewBox = bounds.viewBox(PADDING);
@@ -348,6 +364,19 @@ class Bounds {
     this.maxY = Math.max(this.maxY, y);
   }
 
+  clear(): void {
+    this.minX = Number.POSITIVE_INFINITY;
+    this.minY = Number.POSITIVE_INFINITY;
+    this.maxX = Number.NEGATIVE_INFINITY;
+    this.maxY = Number.NEGATIVE_INFINITY;
+  }
+
+  frameOverflows(padding: number): boolean {
+    if (!Number.isFinite(this.minX)) return false;
+    return !Number.isFinite(this.maxX - this.minX + padding * 2)
+      || !Number.isFinite(this.maxY - this.minY + padding * 2);
+  }
+
   viewBox(padding: number): { x: number; y: number; width: number; height: number } {
     // An empty scene still needs a frame, and a fixed one keeps rendering
     // deterministic rather than dependent on whatever the viewport happens to be.
@@ -356,8 +385,8 @@ class Bounds {
     const y = finite(this.minY - padding) ?? (this.minY < 0 ? -Number.MAX_VALUE : Number.MAX_VALUE);
     const widthSpan = this.maxX - this.minX + padding * 2;
     const heightSpan = this.maxY - this.minY + padding * 2;
-    // Opposite-sign finite extrema can overflow their difference. Clamp the
-    // frame to the largest finite SVG number rather than emitting Infinity.
+    // frameOverflows() is handled by the caller before SVG emission. Keep a
+    // finite fallback here as a final defense for direct future callers.
     return {
       x,
       y,
