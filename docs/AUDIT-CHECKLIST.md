@@ -2177,6 +2177,10 @@ Fixture only initially.
 - [x] Updates use the observed revision through `createVaultMutationCoordinator`,
       preserve peer bytes on stale edits, and retain durable recovery attribution;
       no retry, merge or fallback destination is used.
+- [x] Coordinator CAS is derived directly from `project.source.revision`; no
+      independent caller-selected expected revision can upgrade stale state.
+- [x] The focused binding regression verifies the observed revision is passed to
+      the coordinator (`tests/projectSourceMutation.test.ts`).
 - [x] Flat and folder/index writes reload through `loadVaultState` with unchanged
       project identity/source provenance and only the intended scalar changed;
       adversarial provenance, validation, preservation and stale-race cases are

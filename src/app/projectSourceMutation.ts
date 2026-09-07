@@ -10,7 +10,7 @@ export type ProjectScalarMutation =
   | { field: 'tabBgColor'; value: string }
   | { field: 'tabTextColor'; value: string };
 
-interface ProjectMutationCommon { path: string; expectedRevision: string; reader: VaultReader; coordinator: VaultMutationCoordinator; projectsDirectory?: string; maxBytes?: number; }
+interface ProjectMutationCommon { path: string; reader: VaultReader; coordinator: VaultMutationCoordinator; projectsDirectory?: string; maxBytes?: number; }
 export type UpdateProjectScalarOptions = ProjectMutationCommon & { project: { id: string; source: SourceRef }; mutation: ProjectScalarMutation };
 export type ProjectScalarMutationOutcome = VaultMutationOutcome | { ok: false; reason: SourcePatchFailureReason | 'invalid-provenance' | 'invalid-value' | 'binary-read-unavailable' | 'missing' };
 
@@ -50,5 +50,5 @@ export async function updateProjectScalar(options: UpdateProjectScalarOptions): 
   if (file.bytes.byteLength > maxBytes) return { ok: false, reason: 'source-too-large' };
   const patch = planProjectScalarPatch(file.bytes, options.mutation.field as ProjectScalarField, options.mutation.value, maxBytes);
   if (!patch.ok) return patch;
-  return options.coordinator.execute({ kind: 'update', path: options.path, bytes: patch.bytes, expectedRevision: options.expectedRevision });
+  return options.coordinator.execute({ kind: 'update', path: options.path, bytes: patch.bytes, expectedRevision: options.project.source.revision });
 }
