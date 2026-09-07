@@ -105,6 +105,38 @@ describe('Gate 6M disposable peer-writer coexistence', () => {
     } finally { await removeDiskFixture(root); }
   });
 
+  it('Gate 6R external rename acceptance preserves identity/provenance with zero Proxima writes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'proxima-gate6r-rename-'));
+    try {
+      await copyFixtureToDisk(fixtureFiles('vault-basic'), root);
+      const witness = createZeroWriteWitness(createDiskVault(root), root);
+      const vault = witness.reader;
+      const beforeTree = await witness.snapshot();
+      const initial = await loadVaultState(vault);
+      let projection: ReadOnlyProjection = createReadOnlyProjection({ sourceRevision: 1, lastSuccessfulRefreshRevision: 1, refreshState: 'idle', stale: false, lastRefreshReason: null, lastRefreshProblemCode: null, pendingRefreshCount: 0, load: initial });
+      const session = createSourceSession({ initial: { mode: 'external', reader: vault, initial }, intervalMs: 60_000, onProjection(next) { projection = next; } });
+      const oldPath = join(root, 'Proxima', 'tasks', 'Write fixture vault.md');
+      const newPath = join(root, 'Proxima', 'tasks', 'Write fixture vault-renamed.md');
+      const original = projection.state.tasks.find((task) => task.source.path.endsWith('Write fixture vault.md'));
+      if (!original) throw new Error('rename fixture task missing');
+
+      await rename(oldPath, newPath);
+      const result = await session.refresh('external-signal');
+      expect(result?.ok).toBe(true);
+      expect(result?.outcome).toBe('renamed');
+      const renamed = projection.state.tasks.find((task) => task.id === original.id);
+      expect(renamed?.source.path.endsWith('Write fixture vault-renamed.md')).toBe(true);
+      expect(renamed?.source.idOrigin).toBe(original.source.idOrigin);
+      expect(renameDeleteEvidenceFromProjections(createReadOnlyProjection({ sourceRevision: 1, lastSuccessfulRefreshRevision: 1, refreshState: 'idle', stale: false, lastRefreshReason: null, lastRefreshProblemCode: null, pendingRefreshCount: 0, load: initial }), projection, result?.outcome ?? 'changed')).toMatchObject({ outcome: 'renamed' });
+
+      witness.assertObserved();
+      expect(witness.violations).toEqual([]);
+      const changed = changedPaths(beforeTree, await witness.snapshot());
+      expect(changed.sort()).toEqual(['Proxima/tasks/Write fixture vault-renamed.md', 'Proxima/tasks/Write fixture vault.md'].sort());
+      session.dispose();
+    } finally { await removeDiskFixture(root); }
+  });
+
   it('serializes rapid peer changes so the latest accepted generation wins', async () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-gate6m-rapid-'));
     try {
