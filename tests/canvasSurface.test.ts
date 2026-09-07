@@ -35,6 +35,25 @@ describe('Gate 8C visible passive canvas surface', () => {
     expect(html).toContain('payload too large');
   });
 
+  it('keeps hostile HTML and JavaScript drops passive through admission and render', async () => {
+    let reads = 0;
+    const payload = new TextEncoder().encode('<script>fetch("https://evil.invalid")</script><iframe src="javascript:alert(1)"></iframe>');
+    const hostile = ['page.html', 'script.js'].map((name) => ({
+      ...file(name, payload),
+      arrayBuffer: async () => { reads += 1; throw new Error('active content must not be read'); },
+    }));
+    const state = await admitCanvasDrop(hostile, undefined, sequentialIdGenerator());
+    const html = renderCanvasSurface(state);
+    expect(reads).toBe(0);
+    expect(state.items).toHaveLength(2);
+    expect(state.items.every((item) => item.selection.kind === 'fallback' && item.selection.reason === 'active-content')).toBe(true);
+    expect(html).toContain('active content');
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('<iframe');
+    expect(html).not.toContain('javascript:');
+    expect(html).not.toContain('fetch(');
+  });
+
   it('admits duplicates independently, processes sequentially, and reports a drop limit', async () => {
     let activeReads = 0;
     let maxActive = 0;

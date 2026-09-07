@@ -2009,7 +2009,9 @@ Backpack page:
 - [ ] no arbitrary code execution bridge
 - [ ] no unrestricted network
 - [ ] no unrestricted machine path access
-- [ ] arbitrary HTML/JS dropped on canvas remains passive
+- [x] arbitrary HTML/JS dropped on canvas remains passive — active extensions are
+      rejected before payload reads and render only escaped fallback metadata; hostile
+      script/iframe/JavaScript bytes never enter the surface (`tests/canvasSurface.test.ts`).
 - [ ] untrusted Markdown does not gain host authority
 
 Filesystem:
