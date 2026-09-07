@@ -1818,6 +1818,19 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Durable reload preserves prior/intended byte evidence needed for classification.
 - [ ] Automatic startup reconciliation is wired into the Papers runtime.
 
+### 13.C2B Real process-death mutation phases
+
+- [x] Child-process crash scenarios cover update, delete and move before mutation and
+      after filesystem commit; parent reloads the durable journal and classifies without
+      rollback.
+- [x] Prepared-before-mutation state is `not-applied`; committed filesystem effects
+      are `effect-present`.
+- [x] Parent classification performs no writes and repeated classification is stable.
+- [x] Crash before writer, after filesystem commit, and after durable
+      `markCommitted` are exercised against the built mutation coordinator and
+      disposable disk writer; the parent reloads and classifies each phase.
+- [ ] Automatic startup reconciliation is wired into the Papers runtime.
+
 Not enabled merely because a UI needs editing.
 
 ### 13.1 Conflict model
