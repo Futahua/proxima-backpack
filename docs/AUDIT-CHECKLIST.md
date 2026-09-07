@@ -1158,8 +1158,37 @@ by filename.
       verified preserved through the decode.
 - [x] The envelope summary still reads when the scene cannot be decoded, so a canvas
       has something honest to show for an undecodable drawing.
-- [ ] Render the decoded scene on the canvas surface. Next.
-- [ ] 7D asset resolution — embeds are recorded as links and never resolved.
+**7C rendering — implemented.**
+
+- [x] Pure SVG renderer: scene plus already-resolved assets in, SVG and census out.
+      No DOM, no filesystem, no Obsidian. Acquiring asset bytes is a different trust
+      boundary and belongs to the resolver.
+- [x] Supported types are exactly those the creator's drawings contain — freedraw,
+      text, line, arrow, image. Rendering types nobody has would be untested code
+      pretending to be capability.
+- [x] **Nothing disappears without a reason.** `rendered + unsupported + deleted +
+      skipped === sceneElements`. This caught a real omission: Excalidraw tombstones
+      (`isDeleted`) were being skipped silently, leaving six of 289 elements
+      unexplained in a census reporting zero unsupported.
+- [x] An unsupported type is a bounded diagnostic carrying type and count, never a
+      silent drop; the supported remainder still renders.
+- [x] An image without a resolved asset renders a visible, labelled placeholder plus
+      `image-asset-unresolved`. A missing image must not read as empty canvas.
+- [x] Element order preserved as z-order; framing derived from the drawing's own
+      extent; element text escaped so content cannot escape into markup.
+- [x] The scene's background is reported, not substituted. `transparent` is a real
+      answer — painting white would invent a decision the artist did not make — so
+      the surface supplies its own sheet.
+- [x] Both real drawings render: 117 elements all drawn, and 289 elements with 283
+      drawn, 6 deleted, 0 unsupported. One image placeholder each.
+
+- [ ] 7D asset resolution — embeds are recorded as links and never resolved. The
+      vault supplies both cases naturally: one embed resolves to
+      `-Hide/Attachments/Pasted Image 20260605223658_755.png`, and the other,
+      `[[Ôn sử đảng]]`, is **dangling** — no such file exists anywhere in the vault.
+      So the missing-asset path has real evidence, not a synthetic fixture.
+      `scene.files` is empty in both drawings, confirming the bytes live outside the
+      scene as vault attachments.
 
 **7F re-asserted after decoding:** fingerprinting the whole vault before and after
 decoding both real drawings reports no changed paths.

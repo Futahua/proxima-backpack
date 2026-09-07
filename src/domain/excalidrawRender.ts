@@ -1,0 +1,317 @@
+import type { ExcalidrawScene } from './excalidraw.js';
+
+/**
+ * Rendering a decoded Excalidraw scene to SVG.
+ *
+ * Pure by construction: a scene and a set of already-resolved assets go in, an SVG
+ * string and a census come out. No DOM, no filesystem, no Obsidian. The browser
+ * surface owns insertion; acquiring asset bytes is a different trust boundary and
+ * belongs to the asset resolver, not here.
+ *
+ * The element types supported are exactly those the creator's own drawings contain —
+ * freedraw, text, line, arrow, image. The format supports many more, and rendering
+ * types nobody has would be untested code pretending to be capability.
+ *
+ * The rule that matters most: **an element this cannot draw is reported, never
+ * dropped.** Silently omitting an unsupported element produces a picture that looks
+ * complete and is not, which is the one failure a viewer cannot detect. The same
+ * applies to an image whose bytes are unavailable: it becomes a visible placeholder
+ * and a diagnostic, not a hole.
+ */
+
+export type ExcalidrawRenderProblemCode =
+  /** An element type this renderer does not draw. */
+  | 'unsupported-element'
+  /** An image element whose asset was not resolved. */
+  | 'image-asset-unresolved'
+  /** An element whose geometry could not be read. */
+  | 'element-geometry-invalid';
+
+export interface ExcalidrawRenderProblem {
+  code: ExcalidrawRenderProblemCode;
+  /** Element type, never element content. */
+  elementType: string;
+  count: number;
+}
+
+export interface ExcalidrawRenderCensus {
+  /** Every element in the decoded scene. */
+  sceneElements: number;
+  /** Counts per type, whatever the type. */
+  byType: Record<string, number>;
+  /** Elements this renderer drew. */
+  rendered: number;
+  /** Elements reported as unsupported. */
+  unsupported: number;
+  imageElements: number;
+  imagesResolved: number;
+  imagePlaceholders: number;
+  /**
+   * Elements Excalidraw itself marks as deleted. They are tombstones and are not
+   * drawn, but they are counted: rendered + unsupported + deleted + skipped must
+   * equal sceneElements, so no element can disappear without a reason.
+   */
+  deleted: number;
+  /** Elements dropped because their geometry could not be read. */
+  skipped: number;
+}
+
+export interface ExcalidrawRenderResult {
+  svg: string;
+  census: ExcalidrawRenderCensus;
+  problems: ExcalidrawRenderProblem[];
+  /** The frame chosen for the drawing, so a test can assert deterministic framing. */
+  viewBox: { x: number; y: number; width: number; height: number };
+  /**
+   * The scene's own background, reported rather than substituted.
+   *
+   * Excalidraw's `transparent` is a real answer: the drawing is meant to sit on
+   * whatever canvas shows it. Painting white here would be inventing a decision the
+   * artist did not make, so the surface is told and chooses its own backdrop —
+   * which also stops dark strokes from vanishing on a dark host.
+   */
+  background: string;
+}
+
+/**
+ * Asset bytes the caller has already resolved, keyed by the element's `fileId`.
+ * A `data:` URL, because the Papers CSP permits `img-src data:` and forbids
+ * fetching anything at runtime.
+ */
+export type ResolvedAssets = Readonly<Record<string, string>>;
+
+const SUPPORTED = new Set(['freedraw', 'text', 'line', 'arrow', 'image']);
+const MAX_ELEMENTS = 5_000;
+const MAX_POINTS = 5_000;
+const PADDING = 20;
+
+export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: ResolvedAssets = {}): ExcalidrawRenderResult {
+  const elements = Array.isArray(scene?.elements) ? (scene.elements as ElementLike[]).slice(0, MAX_ELEMENTS) : [];
+  const census: ExcalidrawRenderCensus = {
+    sceneElements: Array.isArray(scene?.elements) ? scene.elements.length : 0,
+    byType: {},
+    rendered: 0,
+    unsupported: 0,
+    imageElements: 0,
+    imagesResolved: 0,
+    imagePlaceholders: 0,
+    deleted: 0,
+    skipped: 0,
+  };
+  const problemCounts = new Map<string, ExcalidrawRenderProblem>();
+  const note = (code: ExcalidrawRenderProblemCode, elementType: string) => {
+    const key = `${code}:${elementType}`;
+    const existing = problemCounts.get(key);
+    if (existing) existing.count += 1;
+    else problemCounts.set(key, { code, elementType, count: 1 });
+  };
+
+  const body: string[] = [];
+  const bounds = new Bounds();
+
+  for (const element of elements) {
+    const type = typeof element?.type === 'string' ? element.type : 'unknown';
+    census.byType[type] = (census.byType[type] ?? 0) + 1;
+
+    if (!SUPPORTED.has(type)) {
+      census.unsupported += 1;
+      note('unsupported-element', type);
+      continue;
+    }
+    if (element.isDeleted === true) {
+      census.deleted += 1;
+      continue;
+    }
+
+    const x = finite(element.x);
+    const y = finite(element.y);
+    if (x === null || y === null) {
+      census.skipped += 1;
+      note('element-geometry-invalid', type);
+      continue;
+    }
+
+    if (type === 'image') {
+      census.imageElements += 1;
+      const width = finite(element.width) ?? 0;
+      const height = finite(element.height) ?? 0;
+      const href = typeof element.fileId === 'string' ? assets[element.fileId] : undefined;
+      bounds.add(x, y);
+      bounds.add(x + width, y + height);
+      if (href) {
+        census.imagesResolved += 1;
+        census.rendered += 1;
+        body.push(`<image x="${round(x)}" y="${round(y)}" width="${round(width)}" height="${round(height)}" href="${escapeAttribute(href)}" preserveAspectRatio="none" />`);
+      } else {
+        // Visible, labelled, and reported. A missing image must not read as empty
+        // canvas: the viewer would believe the drawing looks like this.
+        census.imagePlaceholders += 1;
+        census.rendered += 1;
+        note('image-asset-unresolved', type);
+        body.push(placeholder(x, y, width, height));
+      }
+      continue;
+    }
+
+    const drawn = drawElement(type, element, x, y, bounds);
+    if (drawn === null) {
+      census.skipped += 1;
+      note('element-geometry-invalid', type);
+      continue;
+    }
+    census.rendered += 1;
+    body.push(drawn);
+  }
+
+  const viewBox = bounds.viewBox(PADDING);
+  const background = typeof scene?.appState?.viewBackgroundColor === 'string' ? scene.appState.viewBackgroundColor : '#ffffff';
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${round(viewBox.x)} ${round(viewBox.y)} ${round(viewBox.width)} ${round(viewBox.height)}" width="100%" height="100%" role="img">`,
+    `<rect x="${round(viewBox.x)}" y="${round(viewBox.y)}" width="${round(viewBox.width)}" height="${round(viewBox.height)}" fill="${escapeAttribute(background)}" />`,
+    // Document order is z-order, and it is preserved.
+    ...body,
+    '</svg>',
+  ].join('');
+
+  return { svg, census, problems: [...problemCounts.values()], viewBox, background };
+}
+
+interface ElementLike {
+  type?: unknown;
+  x?: unknown;
+  y?: unknown;
+  width?: unknown;
+  height?: unknown;
+  points?: unknown;
+  text?: unknown;
+  fontSize?: unknown;
+  fileId?: unknown;
+  isDeleted?: unknown;
+  strokeColor?: unknown;
+  backgroundColor?: unknown;
+  strokeWidth?: unknown;
+  opacity?: unknown;
+}
+
+function drawElement(type: string, element: ElementLike, x: number, y: number, bounds: Bounds): string | null {
+  const stroke = colour(element.strokeColor, '#1e1e1e');
+  const strokeWidth = finite(element.strokeWidth) ?? 1;
+  const opacity = typeof element.opacity === 'number' ? Math.max(0, Math.min(1, element.opacity / 100)) : 1;
+
+  if (type === 'text') {
+    const text = typeof element.text === 'string' ? element.text : '';
+    const fontSize = finite(element.fontSize) ?? 16;
+    bounds.add(x, y);
+    bounds.add(x + Math.max(fontSize * text.length * 0.6, 1), y + fontSize);
+    // Baseline sits a line down from the element origin, matching Excalidraw's
+    // top-left positioning.
+    return `<text x="${round(x)}" y="${round(y + fontSize)}" font-size="${round(fontSize)}" fill="${escapeAttribute(stroke)}" opacity="${opacity}" font-family="Segoe UI, system-ui, sans-serif" xml:space="preserve">${escapeText(text)}</text>`;
+  }
+
+  const points = readPoints(element.points);
+  if (!points || points.length === 0) return null;
+  const path = points
+    .map(([px, py], index) => `${index === 0 ? 'M' : 'L'}${round(x + px)},${round(y + py)}`)
+    .join(' ');
+  for (const [px, py] of points) bounds.add(x + px, y + py);
+
+  if (type === 'freedraw') {
+    return `<path d="${path}" fill="none" stroke="${escapeAttribute(stroke)}" stroke-width="${round(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" />`;
+  }
+  if (type === 'line') {
+    return `<path d="${path}" fill="none" stroke="${escapeAttribute(stroke)}" stroke-width="${round(strokeWidth)}" opacity="${opacity}" />`;
+  }
+  // arrow: the head is what distinguishes it from a line.
+  const head = arrowHead(points, x, y, stroke, strokeWidth);
+  return `<g opacity="${opacity}"><path d="${path}" fill="none" stroke="${escapeAttribute(stroke)}" stroke-width="${round(strokeWidth)}" /><path d="${head}" fill="${escapeAttribute(stroke)}" /></g>`;
+}
+
+function arrowHead(points: Array<[number, number]>, x: number, y: number, _stroke: string, strokeWidth: number): string {
+  const last = points[points.length - 1] as [number, number];
+  const previous = (points[points.length - 2] ?? points[0]) as [number, number];
+  const endX = x + last[0];
+  const endY = y + last[1];
+  const angle = Math.atan2(last[1] - previous[1], last[0] - previous[0]);
+  const size = Math.max(8, strokeWidth * 4);
+  const left = angle + Math.PI - Math.PI / 7;
+  const right = angle + Math.PI + Math.PI / 7;
+  return [
+    `M${round(endX)},${round(endY)}`,
+    `L${round(endX + Math.cos(left) * size)},${round(endY + Math.sin(left) * size)}`,
+    `L${round(endX + Math.cos(right) * size)},${round(endY + Math.sin(right) * size)}`,
+    'Z',
+  ].join(' ');
+}
+
+/** A visible, labelled stand-in for an image whose bytes are not available. */
+function placeholder(x: number, y: number, width: number, height: number): string {
+  const w = Math.max(width, 24);
+  const h = Math.max(height, 24);
+  return [
+    `<g>`,
+    `<rect x="${round(x)}" y="${round(y)}" width="${round(w)}" height="${round(h)}" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1" stroke-dasharray="6 4" />`,
+    `<text x="${round(x + w / 2)}" y="${round(y + h / 2)}" font-size="${round(Math.min(16, h / 3))}" fill="#6b7280" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">image unavailable</text>`,
+    `</g>`,
+  ].join('');
+}
+
+function readPoints(value: unknown): Array<[number, number]> | null {
+  if (!Array.isArray(value)) return null;
+  const out: Array<[number, number]> = [];
+  for (const point of value.slice(0, MAX_POINTS)) {
+    if (!Array.isArray(point)) continue;
+    const px = finite(point[0]);
+    const py = finite(point[1]);
+    if (px === null || py === null) continue;
+    out.push([px, py]);
+  }
+  return out.length > 0 ? out : null;
+}
+
+/** Tracks the drawing's extent so the frame is derived, not guessed. */
+class Bounds {
+  private minX = Number.POSITIVE_INFINITY;
+  private minY = Number.POSITIVE_INFINITY;
+  private maxX = Number.NEGATIVE_INFINITY;
+  private maxY = Number.NEGATIVE_INFINITY;
+
+  add(x: number, y: number): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    this.minX = Math.min(this.minX, x);
+    this.minY = Math.min(this.minY, y);
+    this.maxX = Math.max(this.maxX, x);
+    this.maxY = Math.max(this.maxY, y);
+  }
+
+  viewBox(padding: number): { x: number; y: number; width: number; height: number } {
+    // An empty scene still needs a frame, and a fixed one keeps rendering
+    // deterministic rather than dependent on whatever the viewport happens to be.
+    if (!Number.isFinite(this.minX)) return { x: 0, y: 0, width: 100, height: 100 };
+    return {
+      x: this.minX - padding,
+      y: this.minY - padding,
+      width: Math.max(this.maxX - this.minX + padding * 2, 1),
+      height: Math.max(this.maxY - this.minY + padding * 2, 1),
+    };
+  }
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function colour(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() !== '' && value !== 'transparent' ? value : fallback;
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function escapeText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeAttribute(value: string): string {
+  return escapeText(value).replace(/"/g, '&quot;');
+}
