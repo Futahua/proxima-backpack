@@ -2200,7 +2200,11 @@ Current truth stays in-repo.
       or native-host source changes, and the status table records `Papers changed: No`.
       The separate Papers host-change ledger remains deferred/unauthorized unless its
       exact trigger truth is later demonstrated.
-- [ ] every Papers change has a recorded specific missing truth and acceptance test
+- [x] every Papers change has a recorded specific missing truth and acceptance test —
+      this release makes no Papers change. The host-change ledger below is the
+      fail-closed policy for any future change: an entry must name one falsifiable
+      missing truth and its concrete acceptance test/artifact, plus the reviewed SHA
+      and result, before implementation is authorized.
 - [ ] creator real-vault write state is clearly documented as enabled or disabled
 - [ ] no known data-loss path
 - [ ] no test depends on arbitrary sleeps
@@ -2212,6 +2216,11 @@ Current truth stays in-repo.
 
 Maintained separately. **A host change is not authorized merely because it appears
 here.**
+
+Before any ledger item can move from deferred to implemented, record the exact
+falsifiable trigger truth, the concrete acceptance test or host artifact that will
+prove it, and the exact reviewed SHA/result. A capability without all three remains
+unauthorized; listing a plausible future capability is not an acceptance test.
 
 | ID | Capability | Trigger | Status |
 | --- | --- | --- | --- |
