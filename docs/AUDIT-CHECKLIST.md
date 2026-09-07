@@ -1319,10 +1319,15 @@ abstraction exactly as Excalidraw does.
       covered by the selector and Elastic tests (6.2A, `fa02b06`).
 - [x] Ordering preserved — numeric `orderIndex` sorting and stable ties are pinned by
       `tests/boardDerivation.test.ts` (6.2A, `fa02b06`).
-- [ ] Elastic heights match pinned domain timeline.
-- [ ] Fixed-duration behavior visible.
-- [ ] `maxDuration` cap behavior visible.
-- [ ] Expired deadline behavior visible.
+- [x] Elastic heights match pinned domain timeline — `tests/elastic.test.ts` and
+      `tests/boardElasticPresentation.test.ts` (Gate 6.2B, `6e58f8f`).
+- [x] Fixed-duration behavior visible — fixed allocation is reflected in running-card
+      minimum heights (Gate 6.2B, `6e58f8f`).
+- [x] `maxDuration` cap behavior visible — capped allocation is reflected in running-card
+      minimum heights (Gate 6.2B, `6e58f8f`).
+- [x] Expired deadline behavior visible — expired/equal work is marked `Overdue` and
+      uses the defined weight fallback, including mixed expired/future deadlines (Gate
+      6.2B, `6e58f8f`).
 - [ ] No mutation to real vault.
 
 ### 6.3 Calendar
