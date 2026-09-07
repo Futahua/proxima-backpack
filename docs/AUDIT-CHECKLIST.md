@@ -2040,7 +2040,11 @@ Filesystem:
       traversal and resolved-root escapes, with symlink components rejected
       (`tests/externalDirectoryVault.test.ts`, `tests/agentVaultBridge.test.ts`,
       `tests/bridgeDisclosure.test.ts`, `tests/canvas.test.ts`, `tests/fsaEvidence.test.ts`).
-- [ ] symlink/junction containment explicitly tested where host capability exists
+- [x] symlink/junction containment explicitly tested where host capability exists —
+      the bridge rejects intermediate linked directories for list and binary reads,
+      while the external-directory acceptance exercises dangling links without
+      erasing adjacent records; tests skip only when the host cannot create a link
+      (`tests/bridgeDisclosure.test.ts`, `tests/transportCompleteness.test.ts`).
 - [ ] revocation works
 - [ ] grant ownership is exact Backpack identity
 - [ ] stale references fail closed
