@@ -90,14 +90,19 @@ export function createOpfsVault(root: OpfsDirectoryHandleLike, options: OpfsVaul
     list,
     async walk(directory) { return walk(directory); },
     async exists(path) { try { await childFile(root, path); return true; } catch { try { await childDirectory(root, path); return true; } catch { return false; } } },
-    async read(path): Promise<VaultFile> {
+    async read(path, maxChars): Promise<VaultFile> {
       const normalised = normalise(path);
       const file = await childFile(root, normalised);
       const data = await file.getFile();
       if (data.size > maxFileBytes) throw new Error('OPFS file size limit exceeded');
+      // UTF-8 can use at most four bytes per decoded character. This early check
+      // avoids materialising clearly over-bound text; the decoded check below is
+      // still authoritative for sources whose byte/character ratio is smaller.
+      if (maxChars !== undefined && data.size > maxChars * 4) throw new Error('OPFS text size limit exceeded');
       const modifiedAt = new Date(data.lastModified || 0).toISOString();
       const text = await data.text();
       if (text.length > maxFileBytes) throw new Error('OPFS file size limit exceeded');
+      if (maxChars !== undefined && text.length > maxChars) throw new Error('OPFS text size limit exceeded');
       return { path: normalised, text, size: data.size, modifiedAt, revision: `${modifiedAt}:${data.size}:${hash(text)}` };
     },
   };

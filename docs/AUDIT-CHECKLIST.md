@@ -1450,6 +1450,18 @@ No speculative broadening of `connect-src`.
 - [ ] Large file bounds exist.
 - [ ] Active/executable content remains passive unless explicitly trusted.
 
+### 8.5 Bounded source loader
+
+- [x] Canvas loader validates vault-relative paths before any read.
+- [x] Active-content extensions are skipped without source I/O.
+- [x] Text reads receive the selector character bound.
+- [x] Binary reads use the optional bounded `readBinary` seam.
+- [x] Read-time path/revision/size/modified metadata reaches selection unchanged.
+- [x] Missing binary capability and read failure become explicit fallback outcomes.
+- [x] Loader preserves Proxima-owned node identity and layout.
+- [ ] Browser `File` one-shot drop acquisition.
+- [ ] Inline browser rendering and object-URL lifecycle.
+
 ---
 
 ## Gate 9 — Native open/reveal handoff

@@ -48,7 +48,12 @@ export type DirectoryPresence = 'present' | 'missing' | 'unknown';
 export interface VaultReader {
   /** Entries directly under a vault-relative directory ('' is the vault root). */
   list(directory: string): Promise<VaultEntry[]>;
-  read(path: string): Promise<VaultFile>;
+  /**
+   * Read text, optionally refusing a response whose decoded character count
+   * exceeds the caller's bound. Sources should apply the bound before exposing
+   * the payload where their underlying API permits it.
+   */
+  read(path: string, maxChars?: number): Promise<VaultFile>;
   exists(path: string): Promise<boolean>;
   /** Every file under a directory, recursively. */
   walk(directory: string): Promise<string[]>;

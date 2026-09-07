@@ -789,3 +789,18 @@ classification only as already-authorised, bounded inert data; the selector rece
 no reader, filesystem handle, URL, DOM, callback or execution authority. Binary
 acquisition, object-URL lifecycle and browser rendering remain later
 application/surface work.
+
+## D42 — Canvas source reads stay bounded and provenance-bearing
+
+**Decided:** the app-layer canvas loader is the only Gate 8 slice that spends source
+I/O. It validates the vault-relative locator, skips active-content extensions without
+reading them, asks text sources for the selector's character bound, and asks the
+optional binary seam for the selector's byte bound. Returned path, revision, size and
+modified time become the read-time source observation passed to the pure selector.
+Missing capability and read failure are explicit passive outcomes; node identity and
+layout are preserved, and no reader or handle crosses into the domain.
+
+**Boundary:** this does not add browser drag/drop, external grants, inline browser
+rendering, object URLs, SVG/PDF support or write authority. A source that cannot
+provide the optional binary seam remains a first-class fallback rather than widening
+the capability contract.

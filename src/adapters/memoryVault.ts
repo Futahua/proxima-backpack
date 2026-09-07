@@ -47,8 +47,10 @@ export function createMemoryVault(files: Record<string, string>): VaultReader & 
       }
       return [...seen.values()].sort((a, b) => a.path.localeCompare(b.path));
     },
-    async read(path) {
-      return fileOf(normalise(path));
+    async read(path, maxChars) {
+      const file = fileOf(normalise(path));
+      if (maxChars !== undefined && file.text.length > maxChars) throw new Error('memory vault text size limit exceeded');
+      return file;
     },
     async exists(path) {
       const key = normalise(path);

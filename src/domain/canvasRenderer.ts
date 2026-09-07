@@ -74,8 +74,8 @@ export function selectCanvasRepresentation(
 
   if (safeSource.state === 'missing') return base('fallback', 'source-missing');
   if (safeSource.state === 'unavailable') return base('fallback', 'source-unavailable');
-  if (payload === null) return base('fallback', 'payload-unavailable');
   if (ACTIVE_EXTENSIONS.has(vaultFileExtension(path))) return base('fallback', 'active-content');
+  if (payload === null) return base('fallback', 'payload-unavailable');
 
   if (payload.kind === 'text') {
     if (payload.text.length > MAX_CANVAS_TEXT_CHARS) return base('fallback', 'payload-too-large');
