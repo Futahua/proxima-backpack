@@ -149,5 +149,14 @@ describe('13.2A source-preserving task status mutation', () => {
     const coordinator = createVaultMutationCoordinator({ reader, writer: vault });
     const observed = await reader.read('tasks/a.md');
     expect(await updateTaskScalar({ path: 'tasks/a.md', expectedRevision: observed.revision, reader, coordinator, field: 'project', value: 'changed' })).toMatchObject({ ok: false, reason: 'target-ambiguous' });
+
+    const quoted = createMemoryVault({ 'tasks/q.md': '---\nname: "Old name"\nproject: "old-project"\nstatus: running\n---\nbody' });
+    let reads = 0;
+    const quotedReader = { ...quoted, readBinary: async (path: string, maxBytes: number) => { reads += 1; const file = await quoted.read(path); return { ...file, bytes: enc.encode(file.text) }; } };
+    const quotedCoordinator = createVaultMutationCoordinator({ reader: quotedReader, writer: quoted });
+    const quotedRevision = (await quotedReader.read('tasks/q.md')).revision;
+    expect(await updateTaskScalar({ path: 'tasks/q.md', expectedRevision: quotedRevision, reader: quotedReader, coordinator: quotedCoordinator, field: 'name', value: '' })).toMatchObject({ ok: false, reason: 'invalid-value' });
+    expect(await updateTaskScalar({ path: 'tasks/q.md', expectedRevision: quotedRevision, reader: quotedReader, coordinator: quotedCoordinator, field: 'project', value: '' })).toMatchObject({ ok: false, reason: 'invalid-value' });
+    expect(reads).toBe(0);
   });
 });

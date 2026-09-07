@@ -52,6 +52,7 @@ function validValue(mutation: TaskScalarMutation): boolean {
   if (field === 'orderIndex') return Number.isFinite(value);
   if (field === 'isFixedDuration' || field === 'isCompleted') return typeof value === 'boolean';
   if (typeof value !== 'string' || /[\u0000-\u001F\u007F\r\n]/u.test(value)) return false;
+  if ((field === 'name' || field === 'project') && value.length === 0) return false;
   if (field === 'status') return value.trim() !== '';
   if (field === 'startDate' || field === 'deadline') { const issues: FieldIssue[] = []; return readOptionalDate(value, field, issues) !== null && issues.length === 0; }
   return value.length <= 4096;

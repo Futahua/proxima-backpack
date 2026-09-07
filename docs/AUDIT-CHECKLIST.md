@@ -1964,6 +1964,13 @@ Fixture only initially.
 - [x] Runtime authority, alias ambiguity, scalar round-trip and zero-read regressions
       are covered in `tests/taskSourceMutation.test.ts`.
 
+### 13.2B-F2 No implicit removal through scalar update
+
+- [x] Empty `name` and `project` values are rejected before source acquisition,
+      including when the existing source uses quoted style.
+- [x] Empty scalar attempts perform zero coordinator/writer calls; explicit unlink,
+      null and removal semantics remain deferred to 13.2C.
+
 ### 13.2A Source-preserving task status mutation
 
 - [x] D7 is explicitly re-decided for write-era source patching; the interpreted
