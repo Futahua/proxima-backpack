@@ -27,9 +27,9 @@ against, so it must travel with the code rather than living in a conversation.
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 5 — real File System Access spike in Papers |
+| Current slice | Gate 6.5B — defined-scope read-only real-vault closeout |
 | Branch | `codex/gate-1b-correction` (local acceptance worktree) |
-| Last audited SHA | `faccdcd` — Gate 5 disposable FSA core and full-process lifecycle PASS; clean-profile and real-vault follow-ups remain open. |
+| Last audited SHA | `57f1e20` — Gate 6.5A safety invariants PASS; native Papers-hosted and broader native-host acceptance remain OPEN. |
 | Papers changed | No |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
 | Real-vault write authority | **Disabled.** Read-only until a separate write/conflict gate is approved. |
@@ -587,6 +587,14 @@ Only then consider a project-scoped external read capability in Papers.
 ---
 
 ## Gate 6 — Read-only real-vault product surface
+
+### Defined-scope contract (Gate 6.5B)
+
+**PASS for the audited read-only product surface** over fixture, disposable
+external-directory, loopback-bridge and explicitly evidenced real-vault/Obsidian
+substages. This contract does not claim native Papers-hosted access, durable native
+FSA/picker lifecycle, native watcher behavior, or broad native-host acceptance; those
+rows remain OPEN until directly evidenced.
 
 ### 6.1 Source refresh model
 
@@ -1328,7 +1336,8 @@ abstraction exactly as Excalidraw does.
 - [x] Expired deadline behavior visible — expired/equal work is marked `Overdue` and
       uses the defined weight fallback, including mixed expired/future deadlines (Gate
       6.2B, `6e58f8f`).
-- [ ] No mutation to real vault.
+- [x] No mutation to real vault — the Gate 6.5A read-only authority boundary and
+      zero-write evidence apply to the Board surface (Gate 6.5B, `57f1e20`).
 
 ### 6.3 Calendar
 
@@ -1348,7 +1357,8 @@ abstraction exactly as Excalidraw does.
 - [x] Timezone behavior matches chosen semantics — date-only values are literal civil
       dates; explicit timestamps/offsets use viewer-local day conversion (D10,
       6.3C, `2fd66b6`).
-- [ ] No mutation to real vault.
+- [x] No mutation to real vault — the Gate 6.5A read-only authority boundary and
+      zero-write evidence apply to the Calendar surface (Gate 6.5B, `57f1e20`).
 
 ### 6.4 Projects
 
@@ -2035,7 +2045,9 @@ Each pushed SHA is sent for audit approximately in this order.
 8. [x] Gate 4 — adapter conformance: disk + OPFS
 9. [x] Gate 5 — real Papers FSA spike (core viability and full-process lifecycle PASS;
        clean-profile and real-vault follow-ups remain open)
-10. [ ] Gate 6 — read-only creator vault
+10. [x] Gate 6 — read-only creator vault (defined-scope PASS; native Papers-hosted,
+       durable native FSA/picker lifecycle, native watcher and broader native-host
+       acceptance remain OPEN)
 11. [x] Gate 7 — Excalidraw display (direct-source display contract PASS)
 12. [x] Gate 8 — arbitrary-file canvas (defined scope PASS; durable grants/directories, source SVG and PDF remain deferred)
 13. [ ] Gate 9 — native open/reveal if justified

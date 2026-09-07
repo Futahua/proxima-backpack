@@ -25,7 +25,9 @@ import { runAcceptance } from './agent-accept.mjs';
  *   4. Remove the plugin, restore the configuration byte-for-byte, and verify that
  *      neither the plugin nor its probe record remains.
  *
- * Every mutation of the creator's vault in this run is performed by Obsidian.
+ * Probe-record mutations are performed by Obsidian. Harness setup/cleanup also
+ * installs/removes its disposable probe and edits/restores plugin configuration;
+ * those tool-owned mutations are separately scoped and byte-for-byte restored.
  * Proxima only ever reads, and the zero-write witness in each observation proves it.
  */
 
