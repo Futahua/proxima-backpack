@@ -2183,7 +2183,12 @@ Current truth stays in-repo.
       read-only acceptance therefore remains gated on a foreground gesture; no
       headless/OPFS/bridge result is substituted (`Gate 5.1`,
       `tests/cleanProfileAcceptance.test.ts`, `docs/DECISIONS.md#d21`).
-- [ ] representative real Obsidian vault acceptance passes
+- [ ] representative real Obsidian vault acceptance passes — OPEN: the signed Gate 6R
+      substages cover disposable/bridge-backed read-only coexistence and Obsidian
+      process observations, but the checklist still has no fresh native
+      creator-vault/Obsidian acceptance artifact tied to the current build and grant.
+      Disposable peer-writer evidence is not substituted for that host-integrated
+      acceptance (`Gate 6.1L`, `Gate 6.1U`, `docs/DECISIONS.md#d36`).
 - [ ] Excalidraw display acceptance passes if included
 - [ ] arbitrary-file fallback acceptance passes if included
 - [x] exact build provenance recorded — `npm run build` completed at exact SHA
