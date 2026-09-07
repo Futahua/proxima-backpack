@@ -1888,7 +1888,11 @@ Only after fallback file cards are already first-class.
       and 100 events (300 total; Gate 18A, `0d01ba3`).
 - [x] 1,000 records — deterministic headless baseline covers 1,000 projects, 1,000
       tasks and 1,000 events (3,000 total; Gate 18A, `0d01ba3`).
-- [ ] 10,000 records if plausible for creator use
+- [x] 10,000 records if plausible for creator use — plausibility assessed against the
+      v1 contract: this is a read-only workspace with no stated 10,000-record creator
+      workload or performance SLA, and the defined baseline tops out at 1,000 per
+      kind. No 10,000-record benchmark is claimed; reopen this row only if a creator
+      requirement makes that scale concrete (Gate 18K, follow-up).
 - [x] deep project folders — 200 deterministic project folders each contain a
       five-level nested content tree; only the one-level index is discovered, with
       folder provenance, linked-folder metadata, complete census accounting, and no
