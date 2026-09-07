@@ -2221,7 +2221,14 @@ Current truth stays in-repo.
       `tests/refreshIntegration.test.ts`, `tests/canvasPreview.test.ts`,
       `tests/zeroWriteWitness.test.ts`). Native open/reveal and any future write path
       remain separate unchecked gates, so this row makes no native-write claim.
-- [ ] no test depends on arbitrary sleeps
+- [x] no test depends on arbitrary sleeps — Vitest refresh/session tests use injected
+      schedulers and promise resolution, while the bridge tests use only bounded
+      5-second startup deadlines that fail loudly if readiness is absent; no test
+      assertion waits for a fixed sleep. The fixed delays in `tools/coexistence-run.mjs`
+      are manual process-lifecycle orchestration, not test synchronization
+      (`tests/refreshPolicy.test.ts`, `tests/sourceSession.test.ts`,
+      `tests/startupSession.test.ts`, `tests/agentVaultBridge.test.ts`,
+      `tests/bridgeDisclosure.test.ts`).
 - [ ] no test succeeds only by bypassing the real application action path
 
 ---
