@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -35,4 +35,30 @@ describe('loopback read-only automation bridge', () => {
       expect(traversal.status).toBe(400);
     } finally { child.kill(); await removeDiskFixture(root); }
   });
+
+  it('enforces entry, depth and file-size bounds at the transport boundary', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'proxima-bridge-bounds-'));
+    const port = 4201;
+    const wide = join(root, 'wide');
+    await mkdir(wide, { recursive: true });
+    for (let index = 0; index < 10_001; index += 1) await writeFile(join(wide, `f-${index}.txt`), 'x');
+    const deepParts = Array.from({ length: 66 }, (_, index) => `d-${index}`);
+    const deep = join(root, ...deepParts);
+    await mkdir(deep, { recursive: true });
+    await writeFile(join(deep, 'leaf.txt'), 'x');
+    await writeFile(join(root, 'oversized.bin'), Buffer.alloc(4 * 1024 * 1024 + 1));
+    const child = spawn(process.execPath, ['tools/agent-vault-bridge.mjs', '--root', root, '--port', String(port)], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      await listening(child);
+      const wideResponse = await fetch(`http://127.0.0.1:${port}/api/vault/list?path=wide`);
+      expect(wideResponse.status).toBe(400);
+      expect(await wideResponse.json()).toEqual({ error: 'entry-bound-exceeded' });
+      const deepResponse = await fetch(`http://127.0.0.1:${port}/api/vault/walk`);
+      expect(deepResponse.status).toBe(400);
+      expect(await deepResponse.json()).toEqual({ error: 'depth-bound-exceeded' });
+      const fileResponse = await fetch(`http://127.0.0.1:${port}/api/vault/read-binary?path=oversized.bin&maxBytes=99999999`);
+      expect(fileResponse.status).toBe(400);
+      expect(await fileResponse.json()).toEqual({ error: 'file-bound-exceeded' });
+    } finally { child.kill(); await rm(root, { recursive: true, force: true }); }
+  }, 45_000);
 });

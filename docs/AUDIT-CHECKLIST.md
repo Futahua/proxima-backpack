@@ -2082,7 +2082,11 @@ Developer control:
       target/session selector whose isolation can be accepted; the loopback bridge
       is read-only source transport and internal action-dispatcher tests are not
       substituted for cross-surface control evidence.
-- [ ] bounded data
+- [x] bounded data — the enabled bridge caps directory entries, recursion depth,
+      text/binary file bytes and returns only bounded error codes; inspection,
+      evidence and diagnostics also cap item counts and field lengths
+      (`tests/agentVaultBridge.test.ts`, `tests/inspection.test.ts`,
+      `tests/evidence.test.ts`, `tests/cleanProfileAcceptance.test.ts`).
 - [ ] no arbitrary renderer JS
 - [ ] no creator-vault mutation by default
 - [ ] no secrets in evidence/logs
