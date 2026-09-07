@@ -1960,14 +1960,17 @@ Performance work must not move domain/file semantics into Papers.
       partial scene (`tests/excalidraw.test.ts`).
 - [x] missing linked file — unresolved or unreadable embedded assets degrade to a
       visible bounded outcome while other assets continue (`tests/excalidrawAssets.test.ts`,
-      `tests/excalidrawRender.test.ts`).
+      `tests/excalidrawAssetLoader.test.ts`, `tests/excalidrawRender.test.ts`).
 - [x] moved/renamed file — explicit identity survives a path move and refresh classifies
       the change as `renamed` (`tests/identity.test.ts`, `tests/refreshController.test.ts`).
 - [x] deleted project — refresh removes the record and clears a stale selection with
       no ghost events (`tests/refreshIntegration.test.ts`, `tests/externalDirectoryVault.test.ts`).
 - [x] source changes during read — concurrent refreshes serialize and a stale older
       result cannot overwrite the newer source (`tests/refreshController.test.ts`).
-- [ ] renderer crash
+- [x] renderer crash — the selected surface renderer is wrapped in a pure boundary
+      that returns escaped role-alert fallback markup, stable `renderer-failure` state,
+      bounded detail and clean recovery (`src/browser/renderBoundary.ts`,
+      `tests/renderBoundary.test.ts`).
 - [x] failed refresh — unreadable and malformed refreshes return structured outcomes,
       preserve last-good data, and recover after repair (`tests/refreshController.test.ts`,
       `tests/refreshIntegration.test.ts`).
@@ -1976,7 +1979,7 @@ Performance work must not move domain/file semantics into Papers.
 - [ ] failed native open/reveal
 - [ ] stale write if writes exist
 
-For every defined read-only error above:
+For every checked defined-scope read-only error above:
 
 - [x] structured code — failure paths use the documented problem/outcome vocabulary,
       including `preview-install-failed` and `renderer-failure`, with focused coverage
