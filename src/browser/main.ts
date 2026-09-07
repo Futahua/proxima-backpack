@@ -20,6 +20,7 @@ import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
 import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
+import { bindRefreshWiring, refreshReasonForAction } from './refreshWiring.js';
 import { createBrowserSource } from './sourceFactory.js';
 import { createCanvasDropQueue, EMPTY_CANVAS_SURFACE, renderCanvasSurface, type CanvasSurfaceState } from './canvasSurface.js';
 import type { BrowserFileLike } from './canvasFileAdmission.js';
@@ -315,7 +316,8 @@ function bindInteractions(): void {
       const delta = Number(button.dataset.delta ?? 0);
       if (delta === -1 || delta === 1) dispatchAction({ type: 'calendar.shift-month', delta });
     } else if (action === 'source-refresh') {
-      void refreshFromSource('manual');
+      const reason = refreshReasonForAction(action);
+      if (reason) void refreshFromSource(reason);
     }
   });
   root.addEventListener('dragover', (event) => {
@@ -327,7 +329,7 @@ function bindInteractions(): void {
     const files = Array.from(event.dataTransfer?.files ?? []) as unknown as BrowserFileLike[];
     void canvasDropQueue.enqueue(files).then((next) => { canvasState = next; render(); });
   });
-  window.addEventListener('focus', () => { void refreshFromSource('focus'); });
+  bindRefreshWiring({ documentTarget: document, windowTarget: window, setVisible: (visible, options) => sourceSession?.setVisible(visible, options), refresh: refreshFromSource });
   window.addEventListener('pagehide', (event) => { disposeCanvasPreviewsOnPageHide(event, canvasPreviewRegistry); disposeCanvasExcalidrawPreviewsOnPageHide(event, canvasExcalidrawPreviewRegistry); disposeCanvasTextPreviewsOnPageHide(event, canvasTextPreviewRegistry); });
 }
 

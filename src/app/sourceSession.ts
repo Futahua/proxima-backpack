@@ -39,6 +39,7 @@ export interface SourceSessionOptions {
 export interface SourceSession {
   switchTo(candidate: SourceCandidate): Promise<SourceTransitionResult>;
   refresh(reason: RefreshReason): Promise<RefreshResult | null>;
+  setVisible(visible: boolean, options?: { refreshOnVisible?: boolean }): void;
   dispose(): void;
   snapshot(): SourceSessionSnapshot;
   projection(): ReadOnlyProjection;
@@ -140,6 +141,10 @@ export function createSourceSession(options: SourceSessionOptions): SourceSessio
       if (disposed || transitionState === 'switching') return Promise.resolve(null);
       lastTransitionReason = 'refresh';
       return active.policy.trigger(reason);
+    },
+    setVisible(visible, options) {
+      if (disposed || transitionState === 'switching') return;
+      active.policy.setVisible(visible, options);
     },
     dispose() {
       if (disposed) return;

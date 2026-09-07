@@ -68,6 +68,18 @@ describe('Gate 6C refresh trigger policy', () => {
     expect(policy.snapshot()).toMatchObject({ visible: true, timerActive: true });
   });
 
+  it('can leave resume refresh ownership to the browser focus adapter', async () => {
+    const harness = schedulerHarness();
+    const calls: RefreshReason[] = [];
+    const policy = createRefreshPolicy({ controller: { refreshSource: async (reason) => { calls.push(reason); return result(reason); } }, scheduler: harness.scheduler, intervalMs: 2_000 });
+    policy.start();
+    policy.setVisible(false);
+    policy.setVisible(true, { refreshOnVisible: false });
+    await Promise.resolve();
+    expect(calls).toEqual([]);
+    expect(policy.snapshot()).toMatchObject({ visible: true, timerActive: true });
+  });
+
   it('stops pending follow-up work on disposal and never retries a failed refresh by itself', async () => {
     const harness = schedulerHarness();
     const calls: RefreshReason[] = [];

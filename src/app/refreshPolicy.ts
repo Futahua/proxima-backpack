@@ -31,7 +31,7 @@ export interface RefreshPolicy {
   start(): void;
   stop(): void;
   dispose(): void;
-  setVisible(visible: boolean): void;
+  setVisible(visible: boolean, options?: { refreshOnVisible?: boolean }): void;
   trigger(reason: RefreshReason): Promise<RefreshResult | null>;
   snapshot(): RefreshPolicySnapshot;
 }
@@ -120,7 +120,7 @@ export function createRefreshPolicy(options: RefreshPolicyOptions): RefreshPolic
       pendingReason = null;
       clearTimer();
     },
-    setVisible(nextVisible) {
+    setVisible(nextVisible, options) {
       const wasVisible = visible;
       visible = nextVisible;
       if (!visible) {
@@ -129,7 +129,7 @@ export function createRefreshPolicy(options: RefreshPolicyOptions): RefreshPolic
       }
       if (started) {
         armTimer();
-        if (!wasVisible) void trigger('focus');
+        if (!wasVisible && (options?.refreshOnVisible ?? true)) void trigger('focus');
       }
     },
     trigger,
