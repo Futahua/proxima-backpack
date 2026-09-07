@@ -30,6 +30,7 @@ import { boardElasticPresentation, type DeadlineState } from './boardElasticPres
 import { calendarGridDates } from './calendarGrid.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
+import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -71,15 +72,14 @@ function setBootState(state: BootState): void {
   applyBootState(root.dataset, state);
 }
 
-function projectName(state: ProximaState, projectId: string | null): string {
-  if (!projectId) return 'Uncategorised';
-  return state.projects.find((project) => project.id === projectId)?.name ?? projectId;
+function projectName(state: ProximaState, projectId: string | null, lookup?: Map<string, string>): string {
+  return projectLabel(lookup ?? createProjectNameLookup(state), projectId);
 }
 
-function selectionLabel(state: ProximaState, selected: string): string {
+function selectionLabel(state: ProximaState, selected: string, lookup?: Map<string, string>): string {
   if (selected === ALL_PROJECTS) return 'All projects';
   if (selected === UNCATEGORISED) return 'Uncategorised';
-  return projectName(state, selected);
+  return projectName(state, selected, lookup);
 }
 
 function visibleProblems(problems: LoadProblem[]): LoadProblem[] {
@@ -121,34 +121,34 @@ function surfaceSwitcher(): string {
   return `<div class="surface-switcher" data-c1-key="surface-switcher" role="tablist" aria-label="Proxima surfaces"><button type="button" class="surface-tab${surface === 'board' ? ' selected' : ''}" data-action="switch-surface" data-surface="board" role="tab" aria-selected="${surface === 'board'}" data-c1-key="surface-tab-board">Elastic board</button><button type="button" class="surface-tab${surface === 'calendar' ? ' selected' : ''}" data-action="switch-surface" data-surface="calendar" role="tab" aria-selected="${surface === 'calendar'}" data-c1-key="surface-tab-calendar">Calendar</button><button type="button" class="surface-tab${surface === 'canvas' ? ' selected' : ''}" data-action="switch-surface" data-surface="canvas" role="tab" aria-selected="${surface === 'canvas'}" data-c1-key="surface-tab-canvas">Canvas</button></div>`;
 }
 
-function taskCard(state: ProximaState, task: Task, height?: number, deadlineState?: DeadlineState): string {
+function taskCard(state: ProximaState, task: Task, height?: number, deadlineState?: DeadlineState, lookup?: Map<string, string>): string {
   const deadline = task.deadline ? new Date(task.deadline).toLocaleDateString() : 'No deadline';
   const deadlineText = deadlineState === 'expired' ? `Overdue · ${deadline}` : deadline;
   const style = height === undefined ? '' : ` style="min-height:${Math.round(height)}px"`;
-  return `<article class="task-card" data-c1-key="task-card-${escapeHtml(task.id)}"${style}><div class="task-card-top"><span class="task-status">${escapeHtml(task.status)}</span>${task.isCompleted ? '<span class="task-complete">Done</span>' : ''}</div><h3>${escapeHtml(task.name)}</h3><p>${escapeHtml(task.description || 'No description')}</p><footer><span>${escapeHtml(projectName(state, task.projectId))}</span><span${deadlineState === 'expired' ? ' class="task-overdue"' : ''}>${escapeHtml(deadlineText)}</span></footer></article>`;
+  return `<article class="task-card" data-c1-key="task-card-${escapeHtml(task.id)}"${style}><div class="task-card-top"><span class="task-status">${escapeHtml(task.status)}</span>${task.isCompleted ? '<span class="task-complete">Done</span>' : ''}</div><h3>${escapeHtml(task.name)}</h3><p>${escapeHtml(task.description || 'No description')}</p><footer><span>${escapeHtml(projectName(state, task.projectId, lookup))}</span><span${deadlineState === 'expired' ? ' class="task-overdue"' : ''}>${escapeHtml(deadlineText)}</span></footer></article>`;
 }
 
-function boardSurface(state: ProximaState): string {
+function boardSurface(state: ProximaState, lookup: Map<string, string>): string {
   const taskProjectIds = new Set(projectsFor(state.projects, 'task').map((project) => project.id));
   const boardTasks = state.tasks.filter((task) => task.projectId === null || taskProjectIds.has(task.projectId));
   const selectedTasks = tasksForSelection(boardTasks, selection);
   const board = elasticBoard(selectedTasks, state.statuses);
   const presentation = boardElasticPresentation(board.running, new Date(FIXED_CLOCK.now()), 460);
   const columns: Array<{ id: 'backlog' | 'running' | 'finished'; label: string; tasks: Task[] }> = [{ id: 'backlog', label: 'Backlog', tasks: board.backlog }, { id: 'running', label: 'Running', tasks: board.running }, { id: 'finished', label: 'Finished', tasks: board.finished }];
-  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection))}</p><h2>Elastic board</h2><p class="surface-description">Running work expands by time remaining; status determines the column.</p></div><span class="surface-count">${selectedTasks.length} tasks</span></header><div class="board-grid">${columns.map((column) => `<section class="board-column" data-c1-key="board-column-${column.id}" aria-label="${column.label} column"><header><h3>${column.label}</h3><span>${column.tasks.length}</span></header><div class="column-cards">${column.tasks.length === 0 ? `<p class="empty-state" data-c1-key="board-empty-${column.id}">No tasks here.</p>` : column.tasks.map((task) => taskCard(state, task, column.id === 'running' ? presentation.heights[task.id] : undefined, column.id === 'running' ? presentation.deadlineState[task.id] : undefined)).join('')}</div></section>`).join('')}</div></section>`;
+  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection, lookup))}</p><h2>Elastic board</h2><p class="surface-description">Running work expands by time remaining; status determines the column.</p></div><span class="surface-count">${selectedTasks.length} tasks</span></header><div class="board-grid">${columns.map((column) => `<section class="board-column" data-c1-key="board-column-${column.id}" aria-label="${column.label} column"><header><h3>${column.label}</h3><span>${column.tasks.length}</span></header><div class="column-cards">${column.tasks.length === 0 ? `<p class="empty-state" data-c1-key="board-empty-${column.id}">No tasks here.</p>` : column.tasks.map((task) => taskCard(state, task, column.id === 'running' ? presentation.heights[task.id] : undefined, column.id === 'running' ? presentation.deadlineState[task.id] : undefined, lookup)).join('')}</div></section>`).join('')}</div></section>`;
 }
 
 function monthTitle(date: Date): string { return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }); }
 
-function eventCard(event: CalendarEvent, state: ProximaState, dayKey: string): string { return `<article class="event-card" data-c1-key="event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}" title="${escapeHtml(event.description || event.name)}"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(state, event.projectId))}</small></article>`; }
+function eventCard(event: CalendarEvent, state: ProximaState, dayKey: string, lookup: Map<string, string>): string { return `<article class="event-card" data-c1-key="event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}" title="${escapeHtml(event.description || event.name)}"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(state, event.projectId, lookup))}</small></article>`; }
 
-function calendarSurface(state: ProximaState, problems: LoadProblem[]): string {
+function calendarSurface(state: ProximaState, problems: LoadProblem[], lookup: Map<string, string>): string {
   const scheduleIds = new Set(projectsFor(state.projects, 'schedule').map((project) => project.id));
   const calendarEvents = eventsForSelection(state.events.filter((event) => event.projectId === null || scheduleIds.has(event.projectId)), selection);
   const byDay = eventsByDay(calendarEvents, problems);
   const days = calendarGridDates(calendarCursor);
   const today = localDateKey(new Date(FIXED_CLOCK.now()));
-  return `<section class="surface calendar-surface" data-c1-key="calendar-region" aria-label="Calendar"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection))}</p><h2>Calendar</h2><p class="surface-description">Local civil days, inclusive event ranges, and fail-visible diagnostics.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-action="calendar-shift" data-delta="-1" data-c1-key="calendar-previous" aria-label="Previous month">←</button><strong>${escapeHtml(monthTitle(calendarCursor))}</strong><button type="button" class="icon-button" data-action="calendar-shift" data-delta="1" data-c1-key="calendar-next" aria-label="Next month">→</button></div></header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${days.map((day) => { const key = localDateKey(day); const events = byDay.get(key) ?? []; const outside = day.getMonth() !== calendarCursor.getMonth(); return `<div class="calendar-day${outside ? ' outside' : ''}${key === today ? ' today' : ''}" data-c1-key="calendar-day-${escapeHtml(key)}" aria-label="${escapeHtml(key)}"><span class="day-number">${day.getDate()}</span><div class="day-events">${events.map((event) => eventCard(event, state, key)).join('')}</div></div>`; }).join('')}</div></section>`;
+  return `<section class="surface calendar-surface" data-c1-key="calendar-region" aria-label="Calendar"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection, lookup))}</p><h2>Calendar</h2><p class="surface-description">Local civil days, inclusive event ranges, and fail-visible diagnostics.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-action="calendar-shift" data-delta="-1" data-c1-key="calendar-previous" aria-label="Previous month">←</button><strong>${escapeHtml(monthTitle(calendarCursor))}</strong><button type="button" class="icon-button" data-action="calendar-shift" data-delta="1" data-c1-key="calendar-next" aria-label="Next month">→</button></div></header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${days.map((day) => { const key = localDateKey(day); const events = byDay.get(key) ?? []; const outside = day.getMonth() !== calendarCursor.getMonth(); return `<div class="calendar-day${outside ? ' outside' : ''}${key === today ? ' today' : ''}" data-c1-key="calendar-day-${escapeHtml(key)}" aria-label="${escapeHtml(key)}"><span class="day-number">${day.getDate()}</span><div class="day-events">${events.map((event) => eventCard(event, state, key, lookup)).join('')}</div></div>`; }).join('')}</div></section>`;
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -233,9 +233,10 @@ function render(): void {
   root.dataset.proximaSurface = surface;
   root.dataset.proximaSelection = selection;
   const health = currentUiHealth();
+  const projectNames = createProjectNameLookup(appState);
   root.dataset.proximaHealthGeneration = String(health.sourceRevision);
   const sourceLabel = sourceSession?.snapshot().sourceMode === 'external' ? 'Read-only external source' : 'Read-only fixture';
-  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState) : surface === 'calendar' ? calendarSurface(appState, problems) : renderCanvasSurface(canvasState, canvasPreviewRegistry.snapshot(), canvasExcalidrawPreviewRegistry.snapshot(), canvasTextPreviewRegistry.snapshot())}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
+  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surface === 'board' ? boardSurface(appState, projectNames) : surface === 'calendar' ? calendarSurface(appState, problems, projectNames) : renderCanvasSurface(canvasState, canvasPreviewRegistry.snapshot(), canvasExcalidrawPreviewRegistry.snapshot(), canvasTextPreviewRegistry.snapshot())}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
   updateHydrationSummary(appState, problems);
   exposeInspection();
 }
