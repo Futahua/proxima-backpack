@@ -2229,7 +2229,17 @@ Current truth stays in-repo.
       (`tests/refreshPolicy.test.ts`, `tests/sourceSession.test.ts`,
       `tests/startupSession.test.ts`, `tests/agentVaultBridge.test.ts`,
       `tests/bridgeDisclosure.test.ts`).
-- [ ] no test succeeds only by bypassing the real application action path
+- [x] no test succeeds only by bypassing the real application action path — the
+      browser binds every semantic `data-action` to the single project-owned
+      `ActionDispatcher` (surface/project/calendar actions), while refresh actions
+      go through the public refresh wiring and source session. Protocol, refresh,
+      integration and inspection tests exercise those same dispatcher/session
+      contracts, including accepted/rejected events and state replacement; no test
+      invents a parallel UI mutation path (`src/browser/main.ts`,
+      `src/app/actionProtocol.ts`, `src/browser/refreshWiring.ts`,
+      `tests/actionProtocol.test.ts`, `tests/refreshIntegration.test.ts`,
+      `tests/inspection.test.ts`). Full Papers-host click/capture acceptance remains
+      the separate C1 OPEN row.
 
 ---
 
