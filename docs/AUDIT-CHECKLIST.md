@@ -1691,22 +1691,32 @@ Before introducing writes.
 
 ### 12.1 Read refresh
 
-- [ ] Detect or discover changed revision.
-- [ ] Reload changed file.
-- [ ] Update domain state.
-- [ ] Maintain selection where identity survives.
-- [ ] Handle source rename.
-- [ ] Handle source deletion.
-- [ ] Handle newly created records.
-- [ ] Handle temporarily malformed file while Obsidian/plugin is saving.
-- [ ] Never partially merge malformed source into confirmed state.
+- [x] Detect or discover changed revision — refresh revisions and source generations
+      are pinned by the refresh-controller/integration suites.
+- [x] Reload changed file — accepted refreshes rebuild one bounded projection.
+- [x] Update domain state — dispatcher replacement applies the accepted projection
+      atomically.
+- [x] Maintain selection where identity survives — selection reconciliation is
+      covered across refresh and deletion cases.
+- [x] Handle source rename — explicit-ID continuity and disposable external rename
+      acceptance are pinned by `tests/obsidianCoexistence.test.ts` (Gate 6R).
+- [x] Handle source deletion — deletion removes the visible record and safely
+      reconciles selection in refresh integration.
+- [x] Handle newly created records — external acceptance and refresh integration
+      cover discovery on the next refresh.
+- [x] Handle temporarily malformed file while Obsidian/plugin is saving — last-good
+      projection is retained and health becomes stale/degraded.
+- [x] Never partially merge malformed source into confirmed state — projection
+      replacement is generation-atomic and recovery is separately tested.
 
 ### 12.2 Refresh strategy decision
 
-- [ ] refresh-on-focus
-- [ ] explicit refresh
-- [ ] bounded polling
-- [ ] browser watcher availability if any
+- [x] refresh-on-focus — browser focus wiring converges on the normal refresh path.
+- [x] explicit refresh — the stable `source-refresh` control routes through policy.
+- [x] bounded polling — visibility-aware interval policy is bounded, idempotent and
+      disposable.
+- [x] browser watcher availability if any — no native watcher is required for the
+      current pull-refresh contract; browser lifecycle triggers are the chosen strategy.
 
 Only request host watch support if a concrete acceptance requirement fails.
 Possible missing truth:
@@ -2053,7 +2063,8 @@ Each pushed SHA is sent for audit approximately in this order.
 13. [ ] Gate 9 — native open/reveal if justified
 14. [ ] Gate 10 — Papers live semantic relay if justified
 15. [ ] Gate 11 — complete integrated agent harness
-16. [ ] Gate 12 — external-change convergence
+16. [x] Gate 12 — external-change convergence (defined pull-refresh scope PASS;
+       native watcher remains deferred unless a concrete latency requirement fails)
 17. [ ] Gate 13 — write model, fixture-only
 18. [ ] Gate 14 — first real-vault write, only after explicit approval
 19. [ ] Gate 15+ — Excalidraw editing, richer previews, scale, hardening and release
