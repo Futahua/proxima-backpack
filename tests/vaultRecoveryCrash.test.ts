@@ -3,7 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
-import { createDurableRecoveryStore } from '../src/app/vaultRecovery.js';
+import { createDurableRecoveryStore, createMemoryRecoveryStore, reconcileRecoveryEntries } from '../src/app/vaultRecovery.js';
+import { createMemoryVault } from '../src/adapters/memoryVault.js';
+import { fixedClock } from '../src/domain/clock.js';
 
 describe('Gate 13C crash-durable recovery journal', () => {
   it('loads a prepared journal written by a terminated process', async () => {
@@ -27,5 +29,16 @@ describe('Gate 13C crash-durable recovery journal', () => {
     await expect(oversized.load()).rejects.toThrow(/byte limit/i);
     const malformed = createDurableRecoveryStore({ async read() { return JSON.stringify([{ requestId: 'x', operation: 'write-anything', path: 'task.md', revision: 'r', bytes: [999], createdAt: 'now' }]); }, async write() {} });
     await expect(malformed.load()).rejects.toThrow(/invalid recovery record/i);
+  });
+
+  it('classifies prepared update/delete/move entries on restart without blind rollback', async () => {
+    const vault = createMemoryVault({ 'task.md': 'new', 'old.md': 'old', 'destination.md': 'peer' });
+    const store = createMemoryRecoveryStore(fixedClock('2026-09-08T00:00:00.000Z'));
+    await store.save({ requestId: 'u', operation: 'update', path: 'task.md', revision: 'task.md@1', bytes: new TextEncoder().encode('old'), nextBytes: new TextEncoder().encode('new'), createdAt: 'now' });
+    await store.save({ requestId: 'd', operation: 'delete', path: 'missing.md', revision: 'missing.md@1', bytes: new TextEncoder().encode('old'), createdAt: 'now' });
+    await store.save({ requestId: 'm', operation: 'move', path: 'old.md', destination: 'destination.md', revision: 'old.md@1', bytes: new TextEncoder().encode('old'), createdAt: 'now' });
+    const outcomes = await reconcileRecoveryEntries(store, vault);
+    expect(outcomes).toEqual(expect.arrayContaining([{ requestId: 'u', outcome: 'committed' }, { requestId: 'd', outcome: 'committed' }, { requestId: 'm', outcome: 'blocked' }]));
+    expect(store.list().find((record) => record.requestId === 'm')?.status).toBe('blocked');
   });
 });

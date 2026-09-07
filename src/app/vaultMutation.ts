@@ -92,7 +92,7 @@ export function createVaultMutationCoordinator(options: VaultMutationOptions): V
           append({ requestId, kind: mutation.kind, path, outcome: 'conflict', reason: 'missing' });
           return result;
         }
-        recovery = { requestId, operation: mutation.kind, path, ...(mutation.kind === 'move' ? { destination: canonicalPath(mutation.to, maxPathLength) } : {}), revision: prior.revision, bytes: new TextEncoder().encode(prior.text), createdAt: new Date(clock.now()).toISOString() };
+          recovery = { requestId, operation: mutation.kind, path, ...(mutation.kind === 'move' ? { destination: canonicalPath(mutation.to, maxPathLength) } : {}), revision: prior.revision, bytes: new TextEncoder().encode(prior.text), ...(mutation.kind === 'update' ? { nextBytes: new Uint8Array(mutation.bytes) } : {}), createdAt: new Date(clock.now()).toISOString() };
         if (options.recovery) {
           try { await options.recovery.save(recovery); }
           catch {
