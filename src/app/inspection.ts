@@ -68,9 +68,20 @@ function sourceRevisions(state: ProximaState, dispatcher: ActionDispatcherState)
   return records.slice(0, MAX_INSPECTION_ITEMS).map(({ kind, id, source }) => ({ kind, id: safeText(id), revision: safeText(dispatcher.revisions[source.path] ?? source.revision), ...(dispatcher.mode === 'fixture' ? { path: safeText(source.path.replaceAll('\\', '/'), 260) } : {}) }));
 }
 
-function eventSummary(event: CalendarEvent, byDay: Map<string, CalendarEvent[]>): InspectionProjection['calendar']['events'][number] {
-  const dayKeys: string[] = [];
-  for (const [key, events] of byDay) if (events.some((candidate) => candidate.id === event.id)) dayKeys.push(key);
+function eventDayKeysById(byDay: Map<string, CalendarEvent[]>): Map<string, string[]> {
+  const dayKeysById = new Map<string, string[]>();
+  for (const [key, events] of byDay) {
+    for (const candidate of events) {
+      const keys = dayKeysById.get(candidate.id);
+      if (keys) keys.push(key);
+      else dayKeysById.set(candidate.id, [key]);
+    }
+  }
+  return dayKeysById;
+}
+
+function eventSummary(event: CalendarEvent, dayKeysById: Map<string, string[]>): InspectionProjection['calendar']['events'][number] {
+  const dayKeys = dayKeysById.get(event.id) ?? [];
   return { id: event.id, name: event.name, projectId: event.projectId, startDate: event.startDate, deadline: event.deadline, dayKeys, provenance: sourceProvenance(event) };
 }
 
@@ -89,6 +100,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
   const calendarEvents = eventsForSelection(dispatcher.state.events.filter((event) => event.projectId === null || scheduleProjects.has(event.projectId)), dispatcher.selection);
   const calendarProblems: LoadProblem[] = [];
   const byDay = eventsByDay(calendarEvents, calendarProblems);
+  const dayKeysById = eventDayKeysById(byDay);
   const problems = [...dispatcher.problems, ...calendarProblems];
   const health = createUiHealthModel(sourceHealth ?? {
     sourceRevision: 1,
@@ -108,7 +120,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     selection: dispatcher.selection,
     projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), projectType: project.projectType, status: project.status, provenance: sourceProvenance(project) })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
     board: { counts: { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length }, tasks: taskSummaries.slice(0, MAX_INSPECTION_ITEMS).map((task) => ({ ...task, id: safeText(task.id), name: safeText(task.name), provenance: { ...task.provenance, logicalId: safeText(task.provenance.logicalId), sourceRevision: safeText(task.provenance.sourceRevision) } })) },
-    calendar: { cursorMonth: dispatcher.calendarMonth, events: calendarEvents.map((event) => eventSummary(event, byDay)).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS).map((event) => ({ ...event, id: safeText(event.id), name: safeText(event.name) })) },
+    calendar: { cursorMonth: dispatcher.calendarMonth, events: calendarEvents.map((event) => eventSummary(event, dayKeysById)).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS).map((event) => ({ ...event, id: safeText(event.id), name: safeText(event.name) })) },
     loadProblems: problems.slice(0, MAX_INSPECTION_ITEMS).map((problem) => safeProblem(problem, dispatcher.mode)),
     sourceRevisions: sourceRevisions(dispatcher.state, dispatcher),
     pendingOperations: [],

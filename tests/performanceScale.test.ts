@@ -7,6 +7,8 @@ import type { Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
 import { eventsByDay } from '../src/domain/selectors.js';
 import type { CalendarEvent } from '../src/domain/types.js';
+import { createActionDispatcher } from '../src/app/actionProtocol.js';
+import { createInspectionProjection } from '../src/app/inspection.js';
 
 function scaledVault(count: number) {
   const files: Record<string, string> = {};
@@ -128,6 +130,24 @@ describe('Gate 18A deterministic load/refresh scale baseline', () => {
     expect(byDay.size).toBe(28);
     expect(grouped).toHaveLength(1200);
     expect(new Set(grouped.map((event) => event.id))).toEqual(new Set(events.map((event) => event.id)));
+    expect(elapsedMs).toBeLessThan(5000);
+  });
+
+  it('keeps 1000-event inspection day-key projection linear and bounded', () => {
+    const events = monthlyEvents(1000);
+    const state = { projects: [], tasks: [], events, statuses: [], taskSchema: [] } as never;
+    const dispatcher = createActionDispatcher({ state, mode: 'fixture' });
+    const started = performance.now();
+    const projection = createInspectionProjection(dispatcher.snapshot(), {
+      proximaVersion: '0.1.0', gitSha: 'test', buildMode: 'fixture', domainSchemaVersion: '1',
+      controlSchemaVersion: '1', fixtureSchemaVersion: '1', fixtureHash: 'fixture', lockfileHash: 'lock',
+      fixedClock: '2026-09-01T00:00:00.000Z',
+    });
+    const elapsedMs = performance.now() - started;
+
+    expect(projection.calendar.events).toHaveLength(500);
+    expect(projection.calendar.events[0]?.dayKeys).toEqual(['2026-09-01', '2026-09-02']);
+    expect(projection.loadProblems).toEqual([]);
     expect(elapsedMs).toBeLessThan(5000);
   });
 });
