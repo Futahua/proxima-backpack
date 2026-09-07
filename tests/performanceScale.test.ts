@@ -13,6 +13,8 @@ import { createCanvasNode } from '../src/domain/canvas.js';
 import { selectCanvasRepresentation } from '../src/domain/canvasRenderer.js';
 import { renderCanvasSurface, type CanvasSurfaceState } from '../src/browser/canvasSurface.js';
 import { sequentialIdGenerator } from '../src/domain/clock.js';
+import { renderExcalidrawSvg } from '../src/domain/excalidrawRender.js';
+import type { ExcalidrawScene } from '../src/domain/excalidraw.js';
 
 function scaledVault(count: number) {
   const files: Record<string, string> = {};
@@ -187,6 +189,38 @@ describe('Gate 18A deterministic load/refresh scale baseline', () => {
     expect((html.match(/data-canvas-node-id=/g) ?? []).length).toBe(1000);
     expect(html).not.toContain('<img');
     expect(html).not.toContain('arrayBuffer');
+    expect(elapsedMs).toBeLessThan(5000);
+  });
+
+  it('bounds a large Excalidraw scene with complete deterministic census', () => {
+    const elements = Array.from({ length: 5_001 }, (_, index) => ({
+      id: `large-text-${index}`,
+      type: 'text',
+      x: index,
+      y: index % 17,
+      text: `Large scene ${index}`,
+      fontSize: 16,
+    }));
+    const scene: ExcalidrawScene = { type: 'excalidraw', version: 2, elements };
+    const started = performance.now();
+    const result = renderExcalidrawSvg(scene);
+    const elapsedMs = performance.now() - started;
+    const { sceneElements, rendered, unsupported, deleted, skipped } = result.census;
+
+    expect(sceneElements).toBe(5_001);
+    expect(result.census.byType).toEqual({ text: 5_001 });
+    expect(rendered + unsupported + deleted + skipped).toBe(sceneElements);
+    expect(rendered).toBe(5_000);
+    expect(unsupported).toBe(0);
+    expect(deleted).toBe(0);
+    expect(skipped).toBe(1);
+    expect(result.problems).toContainEqual({ code: 'element-limit-exceeded', elementType: 'text', count: 1 });
+    expect(result.svg).toContain('Large scene 0');
+    expect(result.svg).toContain('Large scene 4999');
+    expect(result.svg).not.toContain('Large scene 5000');
+    expect(result.viewBox.width).toBeGreaterThan(0);
+    expect(result.viewBox.height).toBeGreaterThan(0);
+    expect(renderExcalidrawSvg(scene)).toEqual(result);
     expect(elapsedMs).toBeLessThan(5000);
   });
 });

@@ -1901,8 +1901,11 @@ Only after fallback file cards are already first-class.
       broad non-SLA timing guard (Gate 18F, follow-up).
 - [ ] large Excalidraw scene
 - [x] many unsupported file cards — 1,000 unknown-extension cards stay on the
-      passive fallback path with complete node accounting and no content/authority
-      leakage, under a broad non-SLA headless timing guard (Gate 18G, follow-up).
+        passive fallback path with complete node accounting and no content/authority
+        leakage, under a broad non-SLA headless timing guard (Gate 18G, follow-up).
+- [x] large Excalidraw scene — a 5,001-element deterministic scene is rendered
+        headlessly with the 5,000-element budget enforced, explicit skipped-element
+        diagnostics, complete census accounting, and stable output (Gate 18H, follow-up).
 - [x] cold load measured — in-memory headless load timing is guarded below five
       seconds at both scales; this is a broad non-SLA regression guard (Gate 18A,
       `0d01ba3`).
