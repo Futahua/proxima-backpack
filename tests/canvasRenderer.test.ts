@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sequentialIdGenerator } from '../src/domain/clock.js';
 import { createCanvasNode } from '../src/domain/canvas.js';
 import {
+  MAX_CANVAS_BINARY_BYTES,
   MAX_CANVAS_TEXT_CHARS,
   selectCanvasRepresentation,
 } from '../src/domain/canvasRenderer.js';
@@ -27,6 +28,7 @@ describe('Gate 8 renderer-selection contract', () => {
   it('selects Excalidraw by structure rather than filename', () => {
     const selected = selectCanvasRepresentation(source('Notes/diagram.data'), { kind: 'text', text: nativeScene });
     expect(selected.kind).toBe('excalidraw');
+    expect(selectCanvasRepresentation(source('Notes/diagram.md'), { kind: 'text', text: nativeScene }).kind).toBe('excalidraw');
   });
 
   it('selects raster images by byte signature, not extension', () => {
@@ -36,6 +38,7 @@ describe('Gate 8 renderer-selection contract', () => {
 
   it('keeps SVG and invalid image bytes in passive fallback', () => {
     expect(selectCanvasRepresentation(source('Notes/shape.svg'), { kind: 'binary', bytes: png })).toMatchObject({ kind: 'fallback', reason: 'active-content' });
+    expect(selectCanvasRepresentation(source('Notes/shape.svg'), { kind: 'text', text: nativeScene })).toMatchObject({ kind: 'fallback', reason: 'active-content' });
     expect(selectCanvasRepresentation(source('Notes/photo.png'), { kind: 'binary', bytes: new Uint8Array(12) })).toMatchObject({ kind: 'fallback', reason: 'unsupported-media' });
   });
 
@@ -55,6 +58,25 @@ describe('Gate 8 renderer-selection contract', () => {
   it('bounds text before classification', () => {
     const selected = selectCanvasRepresentation(source('Notes/readme.md'), { kind: 'text', text: 'x'.repeat(MAX_CANVAS_TEXT_CHARS + 1) });
     expect(selected).toMatchObject({ kind: 'fallback', reason: 'payload-too-large' });
+  });
+
+  it('bounds binary payloads before media classification', () => {
+    const selected = selectCanvasRepresentation(source('Notes/photo.bin'), {
+      kind: 'binary',
+      bytes: new Uint8Array(MAX_CANVAS_BINARY_BYTES + 1),
+    });
+    expect(selected).toMatchObject({ kind: 'fallback', reason: 'payload-too-large', mediaType: null });
+  });
+
+  it('copies source provenance unchanged into the selection', () => {
+    const observed = source('Notes/photo.bin');
+    const selected = selectCanvasRepresentation(observed, { kind: 'binary', bytes: png });
+    expect(selected).toMatchObject({
+      revision: observed.revision,
+      size: observed.size,
+      modifiedAt: observed.modifiedAt,
+      sourcePath: observed.path,
+    });
   });
 
   it('does not require a reader or alter the canvas node model', () => {

@@ -784,6 +784,8 @@ fallback. A missing/unavailable source, absent payload, oversized payload, inval
 media and unknown format all remain visible fallback outcomes with bounded reasons.
 
 HTML, SVG, JavaScript, WebAssembly, executables and other active-content extensions
-never become inline representations in this slice. The selector receives no reader,
-filesystem handle, URL, DOM, callback or executable content; binary acquisition,
-object-URL lifecycle and browser rendering remain later application/surface work.
+never become inline representations in this slice. Active content may enter
+classification only as already-authorised, bounded inert data; the selector receives
+no reader, filesystem handle, URL, DOM, callback or execution authority. Binary
+acquisition, object-URL lifecycle and browser rendering remain later
+application/surface work.
