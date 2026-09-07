@@ -2197,7 +2197,14 @@ Current truth stays in-repo.
       `tests/excalidrawAssets.test.ts`, `tests/excalidrawRender.test.ts`). Editing,
       round-trip writes, broad plugin compatibility and browser object-URL lifecycle
       remain explicitly deferred/not claimed.
-- [ ] arbitrary-file fallback acceptance passes if included
+- [x] arbitrary-file fallback acceptance passes if included — the defined Gate 8
+      contract admits unknown/unsupported files as visible passive fallback cards,
+      preserves filename/extension/size metadata, bounds acquisition, and turns
+      missing binary capability, read failure, active content and oversized payloads
+      into explicit fallback outcomes (`tests/canvasLoader.test.ts`,
+      `tests/canvasSurface.test.ts`, `tests/canvasFileAdmission.test.ts`,
+      `tests/canvasFallbackIcon.test.ts`). Durable external grants/directories,
+      arbitrary SVG/PDF rendering and native open/reveal remain deferred.
 - [x] exact build provenance recorded — `npm run build` completed at exact SHA
       `d8431bfc26c96cce7c31b0023c93f9bd964032c2`; generated fixture build identity
       reports Proxima `0.1.0`, `buildMode: fixture`, `agentBridgeEnabled: false`,
