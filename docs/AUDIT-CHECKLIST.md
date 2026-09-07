@@ -2186,6 +2186,26 @@ Fixture only initially.
       adversarial provenance, validation, preservation and stale-race cases are
       covered by `tests/projectSourceMutation.test.ts`.
 
+### 13.2H Explicit project optional metadata set / clear
+
+- [x] Public operations expose only explicit `{ kind: 'set'|'clear', field:
+      'tabBgColor'|'tabTextColor' }`; runtime authority rejects unknown kinds/fields
+      before source acquisition, and empty strings are not clear sentinels.
+- [x] The signed 13.2G project provenance boundary is reused for flat and one-level
+      folder/index sources; outside, deep and non-project paths refuse before read,
+      while CAS derives only from `project.source.revision`.
+- [x] Set replaces an existing target with the signed scalar rules or inserts a
+      missing target immediately before the closing fence using bounded, reader-safe
+      encoding and preserved BOM/LF/CRLF convention.
+- [x] Clear removes exactly one existing target line and its inline comment; clearing
+      an absent field is a deterministic no-op, while duplicate/structured/malformed
+      targets refuse.
+- [x] Unrelated metadata, description/body, linked-folder encodings, foreign YAML,
+      identity and source provenance remain exact; no parsed Project is serialized.
+- [x] Effective set/clear uses coordinator update with durable recovery and stale
+      peer refusal; focused flat/folder insert-clear, reload, preservation and stale
+      regressions pass in `tests/projectOptionalMutation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.

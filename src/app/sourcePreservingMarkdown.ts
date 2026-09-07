@@ -18,6 +18,7 @@ export type TaskScalarField =
   | 'startDate' | 'deadline';
 export type TaskOptionalField = 'project' | 'fixedDuration' | 'maxDuration' | 'startDate' | 'deadline';
 export type ProjectScalarField = 'name' | 'status' | 'projectType' | 'tabBgColor' | 'tabTextColor';
+export type ProjectOptionalField = 'tabBgColor' | 'tabTextColor';
 
 type SourceScalarField = TaskScalarField | ProjectScalarField | 'projectId';
 const TASK_SCALAR_FIELDS: readonly TaskScalarField[] = ['name', 'project', 'status', 'weight', 'orderIndex', 'isFixedDuration', 'fixedDuration', 'maxDuration', 'isCompleted', 'startDate', 'deadline'];
@@ -229,6 +230,38 @@ function insertEncoding(field: TaskOptionalField, value: string | number): strin
     return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
   }
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? String(value) : null;
+}
+
+function insertProjectEncoding(value: string): string | null {
+  if (typeof value !== 'string' || value.length === 0 || /[\u0000-\u001F\u007F\r\n]/u.test(value)) return null;
+  return safePlain(value) ? value : `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+/** Insert one explicitly allowlisted optional project field immediately before the closing fence. */
+export function planProjectOptionalInsert(input: Uint8Array | string, field: ProjectOptionalField, value: string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  if (!['tabBgColor', 'tabTextColor'].includes(field)) return { ok: false, reason: 'field-not-allowed' };
+  const window = sourceAndFence(input, maxBytes); if (!('source' in window)) return window;
+  const matches = targetLines(window.source, window.closingStart, field);
+  if (matches.some((match) => match.start < 0)) return { ok: false, reason: 'target-unsupported' };
+  if (matches.length > 0) return { ok: false, reason: 'target-ambiguous' };
+  const encoded = insertProjectEncoding(value); if (encoded === null) return { ok: false, reason: 'invalid-value' };
+  const insertion = `${field}: ${encoded}${window.lineEnding}`; const patched = window.source.slice(0, window.closingStart) + insertion + window.source.slice(window.closingStart);
+  const encoder = new TextEncoder(); const start = encoder.encode(window.source.slice(0, window.closingStart)).byteLength;
+  return { ok: true, bytes: encoder.encode(patched), start, end: start };
+}
+
+/** Remove one explicitly allowlisted optional project field line, including its inline comment. */
+export function planProjectOptionalRemove(input: Uint8Array | string, field: ProjectOptionalField, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  if (!['tabBgColor', 'tabTextColor'].includes(field)) return { ok: false, reason: 'field-not-allowed' };
+  const window = sourceAndFence(input, maxBytes); if (!('source' in window)) return window;
+  const matches = targetLines(window.source, window.closingStart, field);
+  if (matches.some((match) => match.start < 0)) return { ok: false, reason: 'target-unsupported' };
+  if (matches.length === 0) return { ok: false, reason: 'target-missing' };
+  if (matches.length !== 1) return { ok: false, reason: 'target-ambiguous' };
+  const lines = linesOf(window.source); const target = matches[0] as { start: number; end: number };
+  const line = lines.find((candidate) => candidate.start <= target.start && candidate.end >= target.end); if (!line) return { ok: false, reason: 'target-unsupported' };
+  const patched = window.source.slice(0, line.start) + window.source.slice(line.end); const encoder = new TextEncoder();
+  return { ok: true, bytes: encoder.encode(patched), start: encoder.encode(window.source.slice(0, line.start)).byteLength, end: encoder.encode(window.source.slice(0, line.end)).byteLength };
 }
 
 /** Insert one explicitly allowlisted optional task field immediately before the closing fence. */
