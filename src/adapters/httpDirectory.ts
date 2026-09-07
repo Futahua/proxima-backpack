@@ -19,7 +19,7 @@ function assertLoopback(base: URL): void {
 }
 
 async function json<T>(url: string): Promise<T> {
-  const response = await fetch(url, { method: 'GET', credentials: 'omit' });
+  const response = await fetch(url, { method: 'GET', credentials: 'omit', redirect: 'error' });
   if (!response.ok) throw new Error(`automation bridge request failed: ${response.status}`);
   return response.json() as Promise<T>;
 }
@@ -46,7 +46,7 @@ export function createHttpPresenceProbe(baseUrl: string): (directory: string) =>
   const origin = base.toString().replace(/\/$/, '');
   return async (directory: string) => {
     try {
-      const response = await fetch(`${origin}/api/vault/presence?path=${encodeURIComponent(directory)}`, { method: 'GET', credentials: 'omit' });
+      const response = await fetch(`${origin}/api/vault/presence?path=${encodeURIComponent(directory)}`, { method: 'GET', credentials: 'omit', redirect: 'error' });
       if (!response.ok) return 'unknown';
       const body = (await response.json()) as { presence?: unknown };
       return body.presence === 'present' || body.presence === 'missing' ? body.presence : 'unknown';
@@ -68,7 +68,7 @@ export function createHttpBinaryReader(baseUrl: string): (path: string, maxBytes
   const origin = base.toString().replace(/\/$/, '');
   return async (path: string, maxBytes: number): Promise<VaultBinaryFile> => {
     const url = `${origin}/api/vault/read-binary?path=${encodeURIComponent(path)}&maxBytes=${encodeURIComponent(String(maxBytes))}`;
-    const response = await fetch(url, { method: 'GET', credentials: 'omit' });
+    const response = await fetch(url, { method: 'GET', credentials: 'omit', redirect: 'error' });
     if (!response.ok) throw new Error(`automation bridge binary read failed: ${response.status}`);
     const body = (await response.json()) as { path?: string; base64?: string; size?: number; modifiedAt?: string; revision?: string };
     const bytes = typeof body.base64 === 'string' ? base64ToBytes(body.base64) : null;

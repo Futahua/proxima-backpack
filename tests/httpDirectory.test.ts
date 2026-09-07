@@ -48,7 +48,7 @@ describe('zero-click loopback directory adapter', () => {
       await createHttpPresenceProbe('http://localhost:4174')('Proxima/tasks');
       await createHttpBinaryReader('http://[::1]:4174')('x.png', 100);
       expect(calls.length).toBe(3);
-      expect(calls.every(({ init }) => init?.method === 'GET' && init.credentials === 'omit')).toBe(true);
+      expect(calls.every(({ init }) => init?.method === 'GET' && init.credentials === 'omit' && init.redirect === 'error')).toBe(true);
     } finally { globalThis.fetch = original; }
   });
 });
