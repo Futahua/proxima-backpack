@@ -2004,7 +2004,10 @@ For every checked defined-scope read-only error above:
 
 Backpack page:
 
-- [ ] still sandboxed
+- [ ] still sandboxed — OPEN: the host/embed containment primitive (Papers
+      `papers-backpack://` CSP/container policy) is outside this repository's
+      browser source and has no exact host configuration or acceptance evidence here;
+      the standalone loopback viewer is explicitly not a Papers sandbox claim.
 - [x] no Node — the production source graph and emitted browser modules contain no
       Node builtin imports or Node runtime globals (`tests/browserBoundary.test.ts`).
 - [x] no arbitrary code execution bridge — production source and emitted browser
