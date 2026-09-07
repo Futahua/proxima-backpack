@@ -2264,6 +2264,27 @@ Fixture only initially.
       retry/merge/LWW. Focused all-field reload, alias ambiguity, authority,
       preservation and stale tests pass in `tests/eventSourceMutation.test.ts`.
 
+### 13.2L Explicit event optional mutation
+
+- [x] Runtime accepts only six named semantic operations: set/unlink project,
+      set/clear start, and set/use-start-as-deadline; null/empty values and generic
+      event key insertion/removal are not authorities.
+- [x] Signed immediate-event provenance and observed-revision CAS rules are reused;
+      outside, nested and non-event sources refuse before reads.
+- [x] Project set/unlink preserves the preferred/legacy alias rule, inserts preferred
+      `project:` when absent, removes only the active alias, and makes missing unlink
+      a deterministic no-op with `projectId === null` on reload.
+- [x] Start set/clear and deadline set/use-start-as-deadline patch or insert/remove
+      only their named lines with reader-valid dates. Start clearing leaves deadline
+      bytes untouched; removing deadline exposes the reader's start fallback.
+- [x] Duplicate, structured, malformed and unsafe targets refuse; BOM/line endings,
+      body, foreign YAML and unrelated event fields remain exact, with no parsed
+      CalendarEvent serialization.
+- [x] Effective operations use coordinator update/recovery with stale-peer
+      preservation and no retry/merge/LWW. Focused six-operation, insertion,
+      fallback, no-op, authority and preservation tests pass in
+      `tests/eventOptionalMutation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
