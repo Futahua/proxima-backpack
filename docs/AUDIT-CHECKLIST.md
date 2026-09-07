@@ -2097,7 +2097,12 @@ Developer control:
       POST/PUT/PATCH/DELETE and mutation-shaped routes fail closed, while the
       read-only source/action layers expose no writer methods (`tests/agentVaultBridge.test.ts`,
       `tests/zeroWriteWitness.test.ts`, `tests/obsidianCoexistence.test.ts`).
-- [ ] no secrets in evidence/logs
+- [x] no secrets in evidence/logs — defined disclosure surfaces emit no absolute
+      creator paths or raw filesystem errors, and there is no credential/token
+      mechanism to leak; bridge failures, startup output, inspection/evidence
+      projections and clean-profile reports stay within bounded redacted fields
+      (`tests/bridgeDisclosure.test.ts`, `tests/inspection.test.ts`,
+      `tests/evidence.test.ts`, `tests/cleanProfileAcceptance.test.ts`).
 
 ---
 
