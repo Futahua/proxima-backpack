@@ -46,6 +46,29 @@ describe('Gate 3A semantic action protocol', () => {
     expect(dispatcher.dispatch({ type: 'project.select', projectId: 'not-a-project' })).toMatchObject({ ok: false, error: { code: 'project-not-found', field: 'projectId' }, stateRevision: 1 });
   });
 
+  it('keeps month navigation canonical across year boundaries and supported edges', async () => {
+    const loaded = await loadVaultState(fixtureVault('vault-basic'));
+    const dispatcher = createActionDispatcher({ state: loaded.state, initialCalendarMonth: '2026-12-01', idGenerator: sequentialIdGenerator() });
+    expect(dispatcher.dispatch({ type: 'calendar.shift-month', delta: 1 })).toMatchObject({ changed: true, snapshot: { calendarMonth: '2027-01-01' } });
+    expect(dispatcher.dispatch({ type: 'calendar.shift-month', delta: -1 })).toMatchObject({ changed: true, snapshot: { calendarMonth: '2026-12-01' } });
+    const low = createActionDispatcher({ state: loaded.state, initialCalendarMonth: '0099-12-01', idGenerator: sequentialIdGenerator() });
+    expect(low.dispatch({ type: 'calendar.shift-month', delta: 1 })).toMatchObject({ changed: true, snapshot: { calendarMonth: '0100-01-01' } });
+    const floor = createActionDispatcher({ state: loaded.state, initialCalendarMonth: '0000-01-01', idGenerator: sequentialIdGenerator() });
+    expect(floor.dispatch({ type: 'calendar.shift-month', delta: -1 })).toMatchObject({ changed: false, snapshot: { calendarMonth: '0000-01-01' } });
+    const ceiling = createActionDispatcher({ state: loaded.state, initialCalendarMonth: '9999-12-01', idGenerator: sequentialIdGenerator() });
+    expect(ceiling.dispatch({ type: 'calendar.shift-month', delta: 1 })).toMatchObject({ changed: false, snapshot: { calendarMonth: '9999-12-01' } });
+  });
+
+  it('falls back invalid initial months and remains canonical through repeated shifts', async () => {
+    const loaded = await loadVaultState(fixtureVault('vault-basic'));
+    const dispatcher = createActionDispatcher({ state: loaded.state, initialCalendarMonth: '2026-13-40', idGenerator: sequentialIdGenerator() });
+    expect(dispatcher.snapshot().calendarMonth).toBe('2026-09-01');
+    for (let index = 0; index < 24; index += 1) {
+      dispatcher.dispatch({ type: 'calendar.shift-month', delta: 1 });
+      expect(dispatcher.snapshot().calendarMonth).toMatch(/^\d{4}-(0[1-9]|1[0-2])-01$/);
+    }
+  });
+
   it('keeps fixture-only reset unavailable for a live dispatcher', async () => {
     const fixture = await loadVaultState(fixtureVault('vault-basic'));
     const dispatcher = createActionDispatcher({ state: fixture.state, mode: 'live' });

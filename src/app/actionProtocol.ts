@@ -151,7 +151,17 @@ function failureFor(state: ActionDispatcherState, actionType: string, error: Act
 }
 
 function isValidCalendarMonth(value: string): boolean {
-  return /^\d{4}-\d{2}-01$/.test(value) && Number.isFinite(new Date(`${value}T00:00:00`).getTime());
+  return /^\d{4}-(0[1-9]|1[0-2])-01$/.test(value) && Number.isFinite(new Date(`${value}T00:00:00`).getTime());
+}
+
+function shiftCalendarMonth(value: string, delta: -1 | 1): string {
+  const match = /^(\d{4})-(\d{2})-01$/.exec(value);
+  if (!match) return '2026-09-01';
+  const monthIndex = Number(match[1]) * 12 + Number(match[2]) - 1 + delta;
+  const year = Math.floor(monthIndex / 12);
+  if (year < 0 || year > 9999) return value;
+  const month = monthIndex - year * 12 + 1;
+  return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01`;
 }
 
 export function createActionDispatcher(options: ActionDispatcherOptions): ProximaActionDispatcher {
@@ -213,15 +223,15 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         return resultFor(state, action.type, changed, requestId);
       }
       if (action.type === 'calendar.shift-month') {
-        const current = new Date(`${state.calendarMonth}T00:00:00`);
-        const next = new Date(current.getFullYear(), current.getMonth() + action.delta, 1);
-        state.calendarMonth = `${next.getFullYear().toString().padStart(4, '0')}-${(next.getMonth() + 1).toString().padStart(2, '0')}-01`;
-        state.stateRevision += 1;
+        const next = shiftCalendarMonth(state.calendarMonth, action.delta);
+        const changed = next !== state.calendarMonth;
+        state.calendarMonth = next;
+        if (changed) state.stateRevision += 1;
         ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [state.calendarMonth], requestId, actionType: action.type, stateRevision: state.stateRevision });
         ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
         state.settledRevision = state.stateRevision; state.settled = true;
         state.latestEventSequence = ring.latestSequence();
-        return resultFor(state, action.type, true, requestId);
+        return resultFor(state, action.type, changed, requestId);
       }
       if (state.mode !== 'fixture') {
         const result = failureFor(state, action.type, { code: 'action-not-available', message: 'fixture reset is only available in fixture mode' }, requestId);
