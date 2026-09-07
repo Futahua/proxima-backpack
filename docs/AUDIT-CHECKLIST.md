@@ -2005,7 +2005,8 @@ For every checked defined-scope read-only error above:
 Backpack page:
 
 - [ ] still sandboxed
-- [ ] no Node
+- [x] no Node — the production source graph and emitted browser modules contain no
+      Node builtin imports or Node runtime globals (`tests/browserBoundary.test.ts`).
 - [ ] no arbitrary code execution bridge
 - [ ] no unrestricted network
 - [ ] no unrestricted machine path access
