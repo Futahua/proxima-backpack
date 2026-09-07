@@ -34,13 +34,16 @@ export function createCanvasTextPreviewRegistry(): CanvasTextPreviewRegistry {
     install(nodeId, seed) {
       const previous = entries.get(nodeId);
       const previousChars = previous?.presentation?.charLength ?? 0;
+      const replacing = previous !== undefined;
       if (seed.text.length > MAX_CANVAS_TEXT_PREVIEW_CHARS) {
+        if (!replacing && entries.size >= MAX_CANVAS_TEXT_PREVIEW_ITEMS) return false;
         entries.set(nodeId, { presentation: null, failure: 'preview-too-large' });
         totalChars -= previousChars;
         return false;
       }
       const nextChars = totalChars - previousChars + seed.text.length;
-      if ((entries.size >= MAX_CANVAS_TEXT_PREVIEW_ITEMS && !previous) || nextChars > MAX_CANVAS_TEXT_PREVIEW_TOTAL_CHARS) {
+      if ((entries.size >= MAX_CANVAS_TEXT_PREVIEW_ITEMS && !replacing) || nextChars > MAX_CANVAS_TEXT_PREVIEW_TOTAL_CHARS) {
+        if (!replacing && entries.size >= MAX_CANVAS_TEXT_PREVIEW_ITEMS) return false;
         entries.set(nodeId, { presentation: null, failure: 'preview-budget-exhausted' });
         totalChars -= previousChars;
         return false;

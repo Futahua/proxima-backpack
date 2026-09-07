@@ -122,7 +122,7 @@ export async function admitCanvasFile(
     if (artifact.scene !== null) excalidrawSink?.({ kind: 'excalidraw', scene: artifact.scene });
     return { node, selection: textSelection, status: 'selected' };
   }
-  if (extension === 'md' || extension === 'markdown' || extension === 'txt' || extension === 'text' || extension === 'json' || extension === 'csv' || extension === 'tsv') {
+  if (policy === 'text') {
     if (textSelection.kind === 'text') textSink?.({ kind: 'text', text });
     return { node, selection: textSelection, status: 'selected' };
   }

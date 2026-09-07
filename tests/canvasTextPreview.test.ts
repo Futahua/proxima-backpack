@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide, MAX_CANVAS_TEXT_PREVIEW_CHARS } from '../src/browser/canvasTextPreview.js';
+import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide, MAX_CANVAS_TEXT_PREVIEW_CHARS, MAX_CANVAS_TEXT_PREVIEW_ITEMS } from '../src/browser/canvasTextPreview.js';
 
 const seed = { kind: 'text' as const, text: '<script>alert(1)</script>\n[link](javascript:alert(1))' };
 
@@ -28,5 +28,13 @@ describe('Gate 8F literal text preview registry', () => {
     disposeCanvasTextPreviewsOnPageHide({ persisted: false }, registry);
     registry.clear();
     expect(registry.totalChars()).toBe(0);
+  });
+
+  it('counts failed diagnostics toward the finite item budget', () => {
+    const registry = createCanvasTextPreviewRegistry();
+    const huge = 'x'.repeat(MAX_CANVAS_TEXT_PREVIEW_CHARS + 1);
+    for (let index = 0; index < MAX_CANVAS_TEXT_PREVIEW_ITEMS; index += 1) expect(registry.install(`n${index}`, { kind: 'text', text: huge })).toBe(false);
+    expect(registry.snapshot().size).toBe(MAX_CANVAS_TEXT_PREVIEW_ITEMS);
+    expect(registry.install('overflow', { kind: 'text', text: 'ok' })).toBe(false);
   });
 });

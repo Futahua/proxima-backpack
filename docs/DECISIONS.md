@@ -837,6 +837,9 @@ object URLs or attachment resolution are introduced.
 remains absolute; Canvas/domain/app state, action protocol, persistence, grants and
 writes remain unchanged. SVG and PDF remain passive/deferred.
 
+This decision supersedes D44–D46 only for escaped literal text/Markdown
+presentation; SVG/PDF and all authority boundaries remain unchanged.
+
 ## D44 — Canvas surface renders passive drop cards only
 
 **Decided:** the browser surface may accept a bounded `DataTransfer.files` batch and
