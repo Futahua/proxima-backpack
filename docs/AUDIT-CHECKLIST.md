@@ -1241,19 +1241,14 @@ Tests must prove that switching the underlying state cannot leave the descriptio
 stale or contradictory — in particular across fixture→external, external→fixture,
 external→degraded, external→recovered and external→deleted.
 
-### ⚠ Gate 7 verdicts are PROVISIONAL — pending re-audit
+### Gate 7 verdicts — re-audited and signed
 
-The creator reported that the reviewer session switched models partway through, and
-that the last five reviewer turns were faulty as a result. Those five turns are
-exactly the Gate 7 verdicts: 7A/7B, 7C decoding, 7C rendering, 7D link resolution,
-and 7D binary assets.
-
-**Every row below marked 7A–7D is therefore provisional and must not be treated as
-signed until re-audited by a sound reviewer.** The work, the tests and the
-real-vault evidence stand on their own — 344 tests, whole-vault fingerprints
-unchanged, the creator's drawings demonstrably rendering — but a verdict is only
-worth the reviewer that issued it, and a suspect sign-off is closer to no sign-off
-than to a good one.
+The current ChatGPT browser reviewer re-audited the exact pushed tree at
+`7c22f6014c611ffbe6c7de093f1c75c886705ca3` on 2026-09-07. The audit covered the
+full 7A–7D sequence, including the fail-closed embedded-file parser boundary, and
+found no remaining blocker. The work, tests and real-vault evidence stand on their
+own — 362 tests, whole-vault fingerprints unchanged, and the creator's drawings
+demonstrably rendering — while the reviewer supplies the independent sign-off.
 
 Gates through 6R remain signed: those verdicts predate the reported switch.
 
@@ -1264,12 +1259,13 @@ Gates through 6R remain signed: those verdicts predate the reported switch.
 | 6Q real creator-vault read-only baseline | PASS | `82c3f9a6` |
 | 6R Obsidian coexistence — create / modify / delete | PASS | `abf99364` |
 | 6R external **rename** | **OPEN** — not exercised | — |
-| 7A real Excalidraw discovery | PROVISIONAL | `f5a3364` |
-| 7B structural recognition | PROVISIONAL | `f5a3364` |
-| 7C compressed-json decoding | PROVISIONAL | `11ddb084` |
-| 7C SVG rendering | PROVISIONAL | `878240b8` |
-| 7D link resolution | PROVISIONAL | `9ddb2db` |
-| 7D binary assets + real-artifact acceptance | PROVISIONAL | `c074bf09` |
+| 7A real Excalidraw discovery | PASS | `7c22f601` |
+| 7B structural recognition | PASS | `7c22f601` |
+| 7C compressed-json decoding | PASS | `7c22f601` |
+| 7C SVG rendering | PASS | `7c22f601` |
+| 7D link resolution | PASS | `7c22f601` |
+| 7D binary assets + real-artifact acceptance | PASS | `7c22f601` |
+| 7A–7D overall | PASS | `7c22f601` |
 | Object-URL lifecycle | deferred to the browser viewer | — |
 | Native FSA, clean-profile picker, Papers-hosted acceptance, write/concurrency | OPEN | — |
 
