@@ -21,4 +21,11 @@ describe('Gate 13C crash-durable recovery journal', () => {
       expect(new TextDecoder().decode(store.list()[0]!.bytes)).toBe('old');
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+
+  it('fails closed on oversized or malformed journal input before coercion', async () => {
+    const oversized = createDurableRecoveryStore({ async read() { return 'x'.repeat(5000); }, async write() {} }, 4, 100);
+    await expect(oversized.load()).rejects.toThrow(/byte limit/i);
+    const malformed = createDurableRecoveryStore({ async read() { return JSON.stringify([{ requestId: 'x', operation: 'write-anything', path: 'task.md', revision: 'r', bytes: [999], createdAt: 'now' }]); }, async write() {} });
+    await expect(malformed.load()).rejects.toThrow(/invalid recovery record/i);
+  });
 });
