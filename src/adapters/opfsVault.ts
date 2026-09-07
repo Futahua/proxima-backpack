@@ -1,4 +1,4 @@
-import type { DirectoryPresence, VaultEntry, VaultFile, VaultReader } from '../ports/vault.js';
+import type { DirectoryPresence, VaultBinaryFile, VaultEntry, VaultFile, VaultReader } from '../ports/vault.js';
 
 /** Minimal structural subset shared by browser OPFS and test doubles. */
 export interface OpfsFileHandleLike { kind: 'file'; getFile(): Promise<{ text(): Promise<string>; size: number; lastModified: number }> }
@@ -19,6 +19,11 @@ export interface OpfsVaultOptions {
    * loopback bridge reads errno — supplies this so the answer is precise.
    */
   presence?(directory: string): Promise<DirectoryPresence>;
+  /**
+   * Optional binary read. Attached only when the source can actually serve bytes,
+   * so an asset layer sees a missing capability rather than a confusing failure.
+   */
+  readBinary?(path: string, maxBytes: number): Promise<VaultBinaryFile>;
 }
 
 const DEFAULT_MAX_ENTRIES = 10_000;
@@ -100,5 +105,6 @@ export function createOpfsVault(root: OpfsDirectoryHandleLike, options: OpfsVaul
   // answer for a handle that cannot tell missing from unreadable, and the loader
   // blocks on that rather than assuming absence.
   if (options.presence) reader.presence = (directory) => options.presence!(directory);
+  if (options.readBinary) reader.readBinary = (path, maxBytes) => options.readBinary!(path, maxBytes);
   return reader;
 }

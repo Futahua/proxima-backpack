@@ -1,5 +1,6 @@
 import type { OpfsDirectoryHandleLike, OpfsFileHandleLike, OpfsHandleLike } from './opfsVault.js';
-import type { DirectoryPresence } from '../ports/vault.js';
+import { base64ToBytes } from '../domain/imageMedia.js';
+import type { DirectoryPresence, VaultBinaryFile } from '../ports/vault.js';
 
 interface BridgeEntry { path: string; kind: 'file' | 'directory' }
 interface BridgeFile { path: string; text: string; size: number; modifiedAt: string; revision: string }
@@ -51,6 +52,33 @@ export function createHttpPresenceProbe(baseUrl: string): (directory: string) =>
     } catch {
       return 'unknown';
     }
+  };
+}
+
+/**
+ * Read one file's bytes through the bridge.
+ *
+ * Base64 is the transport, not the representation: it is decoded here so nothing
+ * above this line carries an inflated copy of every image.
+ */
+export function createHttpBinaryReader(baseUrl: string): (path: string, maxBytes: number) => Promise<VaultBinaryFile> {
+  const base = new URL(baseUrl);
+  assertLoopback(base);
+  const origin = base.toString().replace(/\/$/, '');
+  return async (path: string, maxBytes: number): Promise<VaultBinaryFile> => {
+    const url = `${origin}/api/vault/read-binary?path=${encodeURIComponent(path)}&maxBytes=${encodeURIComponent(String(maxBytes))}`;
+    const response = await fetch(url, { method: 'GET', credentials: 'omit' });
+    if (!response.ok) throw new Error(`automation bridge binary read failed: ${response.status}`);
+    const body = (await response.json()) as { path?: string; base64?: string; size?: number; modifiedAt?: string; revision?: string };
+    const bytes = typeof body.base64 === 'string' ? base64ToBytes(body.base64) : null;
+    if (!bytes) throw new Error('automation bridge returned an undecodable body');
+    return {
+      path: typeof body.path === 'string' ? body.path : path,
+      bytes,
+      size: typeof body.size === 'number' ? body.size : bytes.length,
+      revision: typeof body.revision === 'string' ? body.revision : '',
+      modifiedAt: typeof body.modifiedAt === 'string' ? body.modifiedAt : new Date(0).toISOString(),
+    };
   };
 }
 

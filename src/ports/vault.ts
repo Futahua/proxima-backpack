@@ -21,6 +21,15 @@ export interface VaultFile {
   modifiedAt: string;
 }
 
+/** Bytes, with the provenance a text read would have carried. */
+export interface VaultBinaryFile {
+  path: string;
+  bytes: Uint8Array;
+  size: number;
+  revision: string;
+  modifiedAt: string;
+}
+
 export interface VaultEntry {
   path: string;
   kind: 'file' | 'directory';
@@ -43,6 +52,20 @@ export interface VaultReader {
   exists(path: string): Promise<boolean>;
   /** Every file under a directory, recursively. */
   walk(directory: string): Promise<string[]>;
+  /**
+   * Optional binary read, for assets that are not text.
+   *
+   * Optional because a source may genuinely not offer one, and an asset layer that
+   * assumed every source could return bytes would fail confusingly instead of
+   * reporting a missing capability. Bytes rather than base64: base64 belongs at an
+   * HTTP boundary, not in the source contract, where it would expand everything in
+   * memory by a third for no benefit.
+   *
+   * It grants no new authority. The same traversal rejection, symlink refusal and
+   * bounds apply as for `read`; this is the same file, returned unmangled.
+   */
+  readBinary?(path: string, maxBytes: number): Promise<VaultBinaryFile>;
+
   /**
    * Optional precise presence probe, used only to classify a traversal failure.
    * A reader that omits it is treated as `unknown`, which blocks rather than

@@ -171,6 +171,27 @@ const server = createServer(async (request, response) => {
     const path = url.searchParams.get('path') ?? '';
     if (operation === 'list') return send(response, 200, await list(path), origin);
     if (operation === 'walk') return send(response, 200, await walk(path), origin);
+    if (operation === 'read-binary') {
+      // The same file `read` serves, returned unmangled. No new authority: the same
+      // containment, the same symlink refusal, the same bounds. Base64 only because
+      // this is an HTTP boundary; the domain contract is bytes.
+      const target = absolute(path);
+      const linkMetadata = await lstat(target);
+      if (linkMetadata.isSymbolicLink()) throw new BridgeError(BRIDGE_CODES.symlink);
+      const metadata = await stat(target);
+      if (!metadata.isFile()) throw new BridgeError(BRIDGE_CODES.notADirectory);
+      const requested = Number(url.searchParams.get('maxBytes') ?? MAX_FILE_BYTES);
+      const ceiling = Math.min(Number.isFinite(requested) && requested > 0 ? requested : MAX_FILE_BYTES, MAX_FILE_BYTES);
+      if (metadata.size > ceiling) throw new BridgeError(BRIDGE_CODES.fileBound);
+      const buffer = await readFile(target);
+      return send(response, 200, {
+        path: relativePath(relative(root, target).split(sep).join('/')),
+        base64: buffer.toString('base64'),
+        size: metadata.size,
+        modifiedAt: metadata.mtime.toISOString(),
+        revision: revision(buffer.toString('binary'), metadata),
+      }, origin);
+    }
     if (operation === 'presence') {
       // Absence must be provable, not inferred from a failed listing. ENOENT and
       // ENOTDIR say the directory is genuinely not there; a permission or I/O

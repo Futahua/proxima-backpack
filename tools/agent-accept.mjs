@@ -311,7 +311,7 @@ async function readThroughWitness(port, options) {
     throw new Error(CODES.modulesUnavailable);
   }
   const [
-    { createHttpDirectoryHandle, createHttpPresenceProbe },
+    { createHttpDirectoryHandle, createHttpPresenceProbe, createHttpBinaryReader },
     { createExternalDirectoryVault },
     { createZeroWriteWitness },
     { loadVaultState },
@@ -331,6 +331,7 @@ async function readThroughWitness(port, options) {
   // that can disappear without any test noticing.
   const reader = createExternalDirectoryVault(createHttpDirectoryHandle(base), {
     presence: createHttpPresenceProbe(base),
+    readBinary: createHttpBinaryReader(base),
   });
   const witness = createZeroWriteWitness(reader);
   // The regression the reviewer asked for: when this hands over the unwrapped
