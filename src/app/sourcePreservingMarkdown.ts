@@ -199,7 +199,7 @@ function sourceAndFence(input: Uint8Array | string, maxBytes: number): { ok: tru
   return { ok: true, source, bytes, closingStart, lineEnding };
 }
 
-function targetLines(source: string, closingStart: number, field: SourceScalarField): Array<{ start: number; end: number; style: 'plain' | 'single' | 'double' }> {
+function targetLines(source: string, closingStart: number, field: string): Array<{ start: number; end: number; style: 'plain' | 'single' | 'double' }> {
   const lines = linesOf(source); const matches: Array<{ start: number; end: number; style: 'plain' | 'single' | 'double' }> = [];
   for (const line of lines) {
     if (line.start >= closingStart || /^[ \t]/.test(line.content) || line.content.trim() === '' || /^[ \t]*#/.test(line.content)) continue;
@@ -251,4 +251,17 @@ export function planTaskOptionalRemove(input: Uint8Array | string, field: TaskOp
   const line = lines.find((candidate) => candidate.start <= target.start && candidate.end >= target.end); if (!line) return { ok: false, reason: 'target-unsupported' };
   const patched = window.source.slice(0, line.start) + window.source.slice(line.end); const encoder = new TextEncoder();
   return { ok: true, bytes: encoder.encode(patched), start: encoder.encode(window.source.slice(0, line.start)).byteLength, end: encoder.encode(window.source.slice(0, line.end)).byteLength };
+}
+
+/** Insert the observed filename-derived identity as an explicit id, and nothing else. */
+export function planTaskIdentityPromotion(input: Uint8Array | string, id: string, maxBytes = DEFAULT_MAX_BYTES): SourcePatchResult {
+  if (typeof id !== 'string' || id.length === 0 || id.length > 200 || /[\u0000-\u001F\u007F\r\n]/u.test(id)) return { ok: false, reason: 'invalid-value' };
+  const window = sourceAndFence(input, maxBytes); if (!('source' in window)) return window;
+  const matches = targetLines(window.source, window.closingStart, 'id');
+  if (matches.some((match) => match.start < 0)) return { ok: false, reason: 'target-unsupported' };
+  if (matches.length > 0) return { ok: false, reason: 'target-ambiguous' };
+  const encoded = safePlain(id) ? id : `"${id.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+  const insertion = `id: ${encoded}${window.lineEnding}`; const patched = window.source.slice(0, window.closingStart) + insertion + window.source.slice(window.closingStart);
+  const encoder = new TextEncoder(); const start = encoder.encode(window.source.slice(0, window.closingStart)).byteLength;
+  return { ok: true, bytes: encoder.encode(patched), start, end: start };
 }

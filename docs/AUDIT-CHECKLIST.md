@@ -2074,6 +2074,33 @@ Fixture only initially.
       the old source is not recreated, the winner bytes remain exact, and each
       recovery store remains attributable (loser is missing/stale or recovered no-op).
 
+### 13.2F Legacy task identity promotion
+
+#### Authority and identity consistency
+
+- [x] Promotion accepts only observed immediate task-child provenance with
+      `source.kind: task` and `idOrigin: filename`; explicit-id tasks return an
+      explicit no-op before reads, while folder/project/event/fabricated/nested
+      provenance refuses.
+- [x] No replacement ID is accepted: the supplied task id must equal the current
+      filename stem, otherwise promotion refuses before coordinator execution.
+
+#### Source preservation and CAS
+
+- [x] Existing frontmatter is required; a missing `id:` is inserted immediately before
+      the closing fence with preserved BOM/LF/CRLF convention and reader-safe quoting.
+- [x] Existing frontmatter/body, foreign/unsupported YAML and all non-target bytes stay
+      exact; malformed or duplicate `id:` refuses rather than replacing guessed spans.
+- [x] Promotion uses observed revision through coordinator update, leaves durable
+      committed recovery on success, refuses stale peer edits without overwrite, and
+      leaves stale no-op recovery terminalized.
+
+#### Read-back / lifecycle
+
+- [x] Fresh `loadVaultState` changes only source identity origin to `frontmatter`, keeps
+      the same logical ID/path/fields/body, and the promoted task subsequently passes
+      the explicit-ID rename boundary (`tests/taskIdentityPromotion.test.ts`).
+
 ### 13.2A Source-preserving task status mutation
 
 - [x] D7 is explicitly re-decided for write-era source patching; the interpreted
