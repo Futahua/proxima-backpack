@@ -2074,7 +2074,9 @@ Developer control:
       the bridge requires an explicit `PROXIMA_AGENT_BRIDGE=1` build opt-in
       (`src/browser/agentBridge.ts`, `tools/build-fixture-module.mjs`,
       `tests/agentBridgeBoundary.test.ts`).
-- [ ] authenticated
+- [ ] authenticated — OPEN: the explicitly enabled loopback bridge has origin/Host
+      and build-opt-in defenses, but no bearer credential, shared secret or other
+      caller authentication; loopback reachability is not treated as identity.
 - [ ] exact surface targeting
 - [ ] bounded data
 - [ ] no arbitrary renderer JS
