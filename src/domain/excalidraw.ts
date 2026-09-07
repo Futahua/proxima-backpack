@@ -19,6 +19,8 @@
  * drawing must never change its bytes, so no path in this file rewrites anything.
  */
 
+import { decompressFromBase64 } from './excalidraw-lz-string.js';
+
 export type ExcalidrawEncoding = 'json' | 'compressed-json' | 'unknown';
 
 export type ExcalidrawKind = 'native-json' | 'obsidian-envelope' | 'not-excalidraw';
@@ -61,6 +63,8 @@ export interface ExcalidrawScene {
 export type ExcalidrawProblemCode =
   /** The drawing block is present but this build cannot decode its encoding. */
   | 'encoding-unsupported'
+  /** The encoding is known but this particular payload would not decode. */
+  | 'decode-failed'
   /** The payload claimed to be JSON and was not. */
   | 'payload-unparsable'
   /** Parsed, but the object is not an Excalidraw scene. */
@@ -155,12 +159,23 @@ function recogniseEnvelope(text: string): ExcalidrawArtifact | null {
     encoding = fence[1] === 'compressed-json' ? 'compressed-json' : 'json';
     payload = (fence[2] ?? '').trim();
     if (encoding === 'compressed-json') {
-      // Reported, not guessed at. Decoding belongs to a later slice, and inventing
-      // a scene from an undecoded payload would be worse than saying so.
-      problems.push({
-        code: 'encoding-unsupported',
-        detail: 'drawing is stored as compressed-json; this build reads the envelope but does not decode it',
-      });
+      // The payload is wrapped across lines by the plugin; the algorithm wants it
+      // whole. Nothing else about it is altered.
+      const decoded = decompressFromBase64(payload.split(/\s+/).join(''));
+      if (decoded === null) {
+        problems.push({ code: 'decode-failed', detail: 'compressed-json payload did not decode' });
+      } else {
+        try {
+          const parsed = JSON.parse(decoded);
+          if (isSceneLike(parsed)) scene = parsed;
+          else problems.push({ code: 'scene-shape-invalid', detail: 'decoded payload is not an Excalidraw scene' });
+        } catch (error) {
+          // Decoding produced something, but not JSON. Reported rather than
+          // salvaged: a scene assembled from partially decoded bytes is a drawing
+          // nobody made.
+          problems.push({ code: 'payload-unparsable', detail: bounded(error) });
+        }
+      }
     } else {
       try {
         const parsed = JSON.parse(payload);

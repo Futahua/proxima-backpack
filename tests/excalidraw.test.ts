@@ -47,11 +47,16 @@ describe('structural recognition', () => {
     ]);
   });
 
-  it('says it cannot decode a compressed payload rather than inventing a scene', () => {
+  it('never invents a scene from a compressed payload it cannot make sense of', () => {
+    // This asserted `encoding-unsupported` while decoding was unimplemented. Now
+    // the payload is decoded and found to be nonsense; the rule it guards is
+    // unchanged — no scene, and a bounded reason — so the assertion follows the
+    // behaviour rather than the other way round.
     const artifact = recogniseExcalidraw(envelope('compressedpayload'), 'a.excalidraw.md');
     expect(artifact.scene).toBeNull();
     expect(artifact.payload).toBe('compressedpayload');
-    expect(artifact.problems.map((problem) => problem.code)).toEqual(['encoding-unsupported']);
+    expect(artifact.problems).toHaveLength(1);
+    expect(['decode-failed', 'payload-unparsable', 'scene-shape-invalid']).toContain(artifact.problems[0]?.code);
   });
 
   it('parses an uncompressed envelope scene', () => {
@@ -123,5 +128,75 @@ describe('failure surfaces', () => {
     const text = envelope(scene, 'json').replace('A line with an anchor ^lGqbdCxY\nA line without one', many);
     const artifact = recogniseExcalidraw(text, 'big.excalidraw.md');
     expect(artifact.textElements.length).toBeLessThanOrEqual(200);
+  });
+});
+
+/**
+ * Gate 7C — decoding the encoding the creator's own drawings actually use.
+ *
+ * This payload is genuinely LZ-String-compressed, produced by the upstream
+ * compressor rather than hand-written, and wrapped across lines exactly as the
+ * Obsidian plugin wraps its own. A synthetic "looks compressed" string would prove
+ * nothing about the algorithm.
+ */
+const REAL_COMPRESSED_SCENE = [
+  'N4IgLgngDgpiBcIYA8DGBDANgSwCYCd0B3EAGhADcZ8BnbAewDsEAmcm+gV31TkTBg0wZJJhgBbGIzA0EAbVB4EIfAEYRkWMvwxU',
+  'YdIwDmYkcgSqADOQisrIInjAALcxbtOY2Q0+HwArHYGxnx2Qvj0ANYwAML0mPT4ygDEqjCpqSAAvqSKuMpg6uSafOAowuRm8Kp+1',
+  'ggAzHYCyL4gHpjxIgBmTGAAytgAXnwsFtm5yuiF4NAl6PjhJBUIdjbwdlD02NKy8HJyVhYAuqRyACxW54fHIEJzYABCW7hbhgigM',
+  'GKS0gCSeYhqWUy13QUCgvX0AjelGwMCI93QqAihnCnEYuFi8USiCSnVxeKy5E62DEO2AmUyQA===',
+].join('\n');
+
+describe('compressed-json decoding', () => {
+  it('decodes a real compressed payload into a usable scene', () => {
+    const artifact = recogniseExcalidraw(envelope(REAL_COMPRESSED_SCENE), 'Untitled Drawing.excalidraw.md');
+    expect(artifact.encoding).toBe('compressed-json');
+    expect(artifact.problems).toEqual([]);
+    expect(artifact.scene?.type).toBe('excalidraw');
+    expect(artifact.scene?.version).toBe(2);
+    expect(artifact.scene?.elements).toHaveLength(3);
+  });
+
+  it('preserves geometry, text and connectors through the decode', () => {
+    const artifact = recogniseExcalidraw(envelope(REAL_COMPRESSED_SCENE), 'a.excalidraw.md');
+    const elements = (artifact.scene?.elements ?? []) as Array<Record<string, unknown>>;
+    const rectangle = elements.find((element) => element.id === 'r1');
+    const text = elements.find((element) => element.type === 'text');
+    const arrow = elements.find((element) => element.type === 'arrow');
+
+    expect(rectangle).toMatchObject({ x: 10, y: 20, width: 100, height: 50, strokeColor: '#1e1e1e' });
+    expect(text).toMatchObject({ text: 'hello', fontSize: 20 });
+    expect(arrow?.points).toEqual([[0, 0], [40, 40]]);
+    // A connector's binding is what makes it a connector rather than a line.
+    expect(arrow?.startBinding).toMatchObject({ elementId: 'r1' });
+    expect(artifact.scene?.appState).toMatchObject({ viewBackgroundColor: '#ffffff' });
+  });
+
+  it('keeps element order, which is z-order', () => {
+    const artifact = recogniseExcalidraw(envelope(REAL_COMPRESSED_SCENE), 'a.excalidraw.md');
+    const ids = ((artifact.scene?.elements ?? []) as Array<{ id?: string }>).map((element) => element.id);
+    expect(ids).toEqual(['r1', 't1', 'a1']);
+  });
+
+  it('reports a corrupted compressed payload rather than yielding a partial scene', () => {
+    // Truncation is the realistic corruption: a decoder that returns whatever it
+    // managed would hand the surface a drawing nobody made.
+    const truncated = REAL_COMPRESSED_SCENE.slice(0, 120);
+    const artifact = recogniseExcalidraw(envelope(truncated), 'a.excalidraw.md');
+    expect(artifact.scene).toBeNull();
+    expect(artifact.problems.map((problem) => problem.code)[0]).toMatch(/decode-failed|payload-unparsable|scene-shape-invalid/);
+  });
+
+  it('reports garbage in a compressed block without throwing', () => {
+    const artifact = recogniseExcalidraw(envelope('!!!! not base64 at all !!!!'), 'a.excalidraw.md');
+    expect(artifact.scene).toBeNull();
+    expect(artifact.problems.length).toBeGreaterThan(0);
+    expect(artifact.kind).toBe('obsidian-envelope');
+  });
+
+  it('still reads the envelope summary when the scene cannot be decoded', () => {
+    // The text elements are what a canvas can still show for an undecodable drawing.
+    const artifact = recogniseExcalidraw(envelope('!!!!'), 'a.excalidraw.md');
+    expect(artifact.textElements).toHaveLength(2);
+    expect(artifact.embeddedFiles).toHaveLength(1);
   });
 });

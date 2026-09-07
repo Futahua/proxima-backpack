@@ -1126,6 +1126,59 @@ fixture had exercised:
 - [x] `tools/serve-public.mjs` serves `public/` on loopback, GET only, confined to
       that directory, so the built page can be looked at outside Papers.
 
+### 7 Excalidraw display
+
+**7A real artifact discovery — PASS at `f5a3364`.** The vault holds exactly two real
+Excalidraw artifacts, both Obsidian-plugin envelopes, read through the audited
+bridge path. No synthetic artifact substituted for the real-vault evidence.
+
+**7B structural recognition — PASS at `f5a3364`.** Recognition is by structure, never
+by filename.
+
+**7C decoding — implemented.**
+
+- [x] LZ-String decompression **vendored verbatim** (`src/domain/excalidraw-lz-string.ts`,
+      upstream 1.5.0, WTFPL header preserved), decompression half only — Proxima does
+      not write drawings, so it carries no compressor. Vendored rather than depended
+      upon because the build is tsc-only with no bundler and the Papers CSP forbids
+      fetching anything at runtime; the code has to be in the build output.
+- [x] Not reimplemented. A hand-written LZ decoder is the kind of deceptively small
+      compatibility task that yields "works on my sample" corruption, and corruption
+      here renders a drawing nobody made.
+- [x] Both real creator drawings decode through the ordinary entry point with zero
+      problems: 117 elements (freedraw, text, image) and 289 elements (image,
+      freedraw, line, text, arrow), `type: excalidraw`, version 2.
+- [x] A decoder failure returns null rather than a partial string, and surfaces as a
+      bounded `decode-failed`; garbage that decodes to non-JSON surfaces as
+      `payload-unparsable`. Neither produces a scene.
+- [x] Tests use a genuinely LZ-String-compressed payload produced by the upstream
+      compressor and wrapped across lines as the plugin wraps its own — a synthetic
+      "looks compressed" string would prove nothing about the algorithm.
+- [x] Geometry, text, connector bindings, appState and element order (z-order) all
+      verified preserved through the decode.
+- [x] The envelope summary still reads when the scene cannot be decoded, so a canvas
+      has something honest to show for an undecodable drawing.
+- [ ] Render the decoded scene on the canvas surface. Next.
+- [ ] 7D asset resolution — embeds are recorded as links and never resolved.
+
+**7F re-asserted after decoding:** fingerprinting the whole vault before and after
+decoding both real drawings reports no changed paths.
+
+### Audit invariant — self-description integrity
+
+Promoted from the `mode: fixture` defect, which was a trust-boundary failure rather
+than a display bug: the page reported *disposable fixture* while serving the
+creator's real vault, which is exactly backwards from what an agent-control surface
+must tolerate.
+
+Every machine-readable claim about source mode, source identity, generation,
+fixture-versus-live status, read-only-versus-writable, health, provenance, build
+identity or capability availability must be derived from the same authoritative
+state the application itself uses. The UI must not manufacture a second truth.
+Tests must prove that switching the underlying state cannot leave the description
+stale or contradictory — in particular across fixture→external, external→fixture,
+external→degraded, external→recovered and external→deleted.
+
 ### 6.2 Elastic board
 
 - [ ] Correct projects available.
