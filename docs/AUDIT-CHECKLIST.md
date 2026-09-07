@@ -1310,10 +1310,15 @@ abstraction exactly as Excalidraw does.
 
 ### 6.2 Elastic board
 
-- [ ] Correct projects available.
-- [ ] Correct task filtering.
-- [ ] Correct three-column derivation.
-- [ ] Ordering preserved.
+- [x] Correct projects available — active task-project set and inactive-selection
+      reconciliation are covered by `tests/boardDerivation.test.ts` (6.2A, `fa02b06`).
+- [x] Correct task filtering — all, uncategorised, selected-project and
+      schedule-project exclusion are covered by `tests/boardDerivation.test.ts`
+      (6.2A, `fa02b06`).
+- [x] Correct three-column derivation — `backlog`/`running`/`finished` mapping is
+      covered by the selector and Elastic tests (6.2A, `fa02b06`).
+- [x] Ordering preserved — numeric `orderIndex` sorting and stable ties are pinned by
+      `tests/boardDerivation.test.ts` (6.2A, `fa02b06`).
 - [ ] Elastic heights match pinned domain timeline.
 - [ ] Fixed-duration behavior visible.
 - [ ] `maxDuration` cap behavior visible.
