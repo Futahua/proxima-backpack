@@ -2400,6 +2400,25 @@ Fixture only initially.
       recovery and stale-peer rules apply; focused flat/folder, preservation,
       invalid-input and stale tests pass in `tests/projectLinkedFoldersMutation.test.ts`.
 
+### 13.2S Legacy project linked-folder promotion
+
+- [x] Promotion accepts no replacement folder list; it derives existing reader
+      semantics only from one unambiguous legacy source. Preferred inline lists and
+      absent sources return explicit no-ops, while project provenance reuses the
+      bounded flat/folder boundary and observed-revision CAS.
+- [x] Unique singular `linkedFolder:` and packed scalar `linkedFolders:` entries
+      promote to preferred inline `linkedFolders: [...]`, retaining ordered names
+      and paths with safe YAML encoding.
+- [x] Mixed/singular-plus-preferred, duplicate keys or semantic paths, empty/invalid
+      packed entries, list/block/nested/malformed targets and unsupported comments
+      refuse rather than dropping data or migrating heuristically.
+- [x] Only the legacy target representation changes; unrelated frontmatter,
+      description/body, foreign YAML, BOM and line endings remain exact. Resulting
+      projects reload identically and are subsequently writable through 13.2R.
+- [x] Promotion uses coordinator update/recovery with stale-peer preservation and no
+      retry/merge/LWW. Focused singular/packed, no-op, malformed, duplicate and
+      stale tests pass in `tests/projectLinkedFoldersPromotion.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
