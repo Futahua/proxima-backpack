@@ -2191,7 +2191,7 @@ Current truth stays in-repo.
       acceptance (`Gate 6.1L`, `Gate 6.1U`, `docs/DECISIONS.md#d36`).
 - [x] Excalidraw display acceptance passes if included — Level A
       display/reference fidelity is signed PASS at exact Gate 7 SHA
-      `a9f69ad7ebe6215a47437dca5e1dc8d6597f555e`: direct-source parse, bounded
+      `7c22f6014c611ffbe6c7de093f1c75c886705ca3`: direct-source parse, bounded
       scene validation, linked-asset resolution and pure SVG rendering cover the
       accepted creator-vault subset (`tests/excalidraw.test.ts`,
       `tests/excalidrawAssets.test.ts`, `tests/excalidrawRender.test.ts`). Editing,
