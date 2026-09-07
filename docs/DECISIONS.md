@@ -790,6 +790,20 @@ no reader, filesystem handle, URL, DOM, callback or execution authority. Binary
 acquisition, object-URL lifecycle and browser rendering remain later
 application/surface work.
 
+## D45 — Raster previews are browser-owned, bounded and revocable
+
+**Decided:** only a signature-selected passive raster may transfer a bounded,
+one-shot byte seed from browser admission to the browser-only preview registry. The
+registry is the sole Blob/object-URL owner, with independent 64 MiB aggregate-byte
+and 32-item ceilings; it stores URL/media/byte-count metadata, revokes on replacement,
+node removal and page teardown, and keeps the old URL if replacement creation fails.
+Canvas/domain/app state remains free of File, Blob, bytes and URL authority. Canvas
+surface switching is not unmount; the workspace continues to own its previews.
+
+**Boundary:** this slice renders raster `<img>` previews only. Text, Markdown,
+Excalidraw, SVG, PDF, directories, durable grants, persistence, rebinding,
+drag/move/resize, public browser-data actions and writes remain deferred.
+
 ## D44 — Canvas surface renders passive drop cards only
 
 **Decided:** the browser surface may accept a bounded `DataTransfer.files` batch and

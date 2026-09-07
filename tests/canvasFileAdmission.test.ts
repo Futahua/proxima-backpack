@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sequentialIdGenerator } from '../src/domain/clock.js';
 import { MAX_CANVAS_BINARY_BYTES, MAX_CANVAS_TEXT_CHARS } from '../src/domain/canvasRenderer.js';
-import { admitCanvasFile, type BrowserFileLike } from '../src/browser/canvasFileAdmission.js';
+import { admitCanvasFile, admitCanvasFileForPresentation, type BrowserFileLike } from '../src/browser/canvasFileAdmission.js';
 import { markCanvasNodeUnavailable } from '../src/domain/canvas.js';
 
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -95,5 +95,16 @@ describe('Gate 8B one-shot browser File admission', () => {
     const result = await admitCanvasFile(sequentialIdGenerator(), file('odd.txt', new TextEncoder().encode('hello'), { lastModified: 8.64e15 + 1 }));
     expect(result.node.source.modifiedAt).toBeNull();
     expect(result.selection.modifiedAt).toBeNull();
+  });
+
+  it('transfers a raster seed for presentation without rereading and never for passive formats', async () => {
+    let reads = 0;
+    const raster = file('photo.bin', png, { arrayBuffer: async () => { reads += 1; return png.buffer; } });
+    const selected = await admitCanvasFileForPresentation(sequentialIdGenerator(), raster);
+    expect(reads).toBe(1);
+    expect(selected.admission.selection.kind).toBe('raster-image');
+    expect(selected.preview?.mediaType).toBe('image/png');
+    const text = await admitCanvasFileForPresentation(sequentialIdGenerator(), file('note.md', new TextEncoder().encode('hello')));
+    expect(text.preview).toBeNull();
   });
 });

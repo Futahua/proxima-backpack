@@ -1443,7 +1443,7 @@ No speculative broadening of `connect-src`.
 
 ### 8.4 Drag/drop
 
-- [ ] Browser drop file can be previewed one-shot from `File`.
+- [x] Browser raster drop can be previewed one-shot from `File` (text/Excalidraw remain open).
 - [x] Source identity semantics after restart specified for ephemeral admission.
 - [x] Dropped path-like metadata does not become a vault locator or logical ID.
 - [x] Duplicate drops have defined behavior: each admission is independent.
@@ -1460,7 +1460,7 @@ No speculative broadening of `connect-src`.
 - [x] Missing binary capability and read failure become explicit fallback outcomes.
 - [x] Loader preserves Proxima-owned node identity and layout.
 - [x] Browser `File` one-shot admission is bounded and capability-free after acquisition.
-- [ ] Inline browser rendering and object-URL lifecycle.
+- [x] Inline browser raster rendering and object-URL lifecycle (text/Excalidraw/SVG/PDF remain open).
 
 ---
 

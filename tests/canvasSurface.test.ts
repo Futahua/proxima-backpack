@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sequentialIdGenerator } from '../src/domain/clock.js';
 import { admitCanvasDrop, createCanvasDropQueue, MAX_CANVAS_DROP_FILES, renderCanvasSurface } from '../src/browser/canvasSurface.js';
 import type { BrowserFileLike } from '../src/browser/canvasFileAdmission.js';
+import { createCanvasPreviewRegistry } from '../src/browser/canvasPreview.js';
 
 function file(name: string, bytes: Uint8Array): BrowserFileLike {
   return { name, size: bytes.length, lastModified: 0, type: 'application/octet-stream', arrayBuffer: async () => new Uint8Array(bytes).buffer as ArrayBuffer };
@@ -61,5 +62,15 @@ describe('Gate 8C visible passive canvas surface', () => {
     releaseFirst();
     await Promise.all([a, b]);
     expect(queue.snapshot().items.map((item) => item.selection.filename)).toEqual(['first.bin', 'second.bin']);
+  });
+
+  it('renders only registry-owned blob URLs for admitted raster selections', async () => {
+    const registry = createCanvasPreviewRegistry({ createObjectURL: () => 'blob:preview-1', revokeObjectURL: () => undefined });
+    const state = await admitCanvasDrop([file('photo.bin', new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]))], undefined, sequentialIdGenerator(), registry);
+    const item = state.items[0];
+    const html = renderCanvasSurface(state, registry.snapshot());
+    expect(item?.selection.kind).toBe('raster-image');
+    expect(html).toContain('src="blob:preview-1"');
+    expect(html).not.toContain('data:');
   });
 });
