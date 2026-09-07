@@ -1137,11 +1137,13 @@ by filename.
 
 **7C decoding — implemented.**
 
-- [x] LZ-String decompression **vendored verbatim** (`src/domain/excalidraw-lz-string.ts`,
-      upstream 1.5.0, WTFPL header preserved), decompression half only — Proxima does
-      not write drawings, so it carries no compressor. Vendored rather than depended
-      upon because the build is tsc-only with no bundler and the Papers CSP forbids
-      fetching anything at runtime; the code has to be in the build output.
+- [x] Upstream LZ-String decompression core vendored from 1.5.0 in
+      `src/domain/excalidraw-lz-string.ts` (WTFPL header preserved); the Proxima wrapper
+      adds bounded input validation, TypeScript types and fail-closed normalization.
+      This is decompression-only — Proxima does not write drawings, so it carries no
+      compressor. Vendored rather than depended upon because the build is tsc-only with
+      no bundler and the Papers CSP forbids fetching anything at runtime; the code has
+      to be in the build output.
 - [x] Not reimplemented. A hand-written LZ decoder is the kind of deceptively small
       compatibility task that yields "works on my sample" corruption, and corruption
       here renders a drawing nobody made.
@@ -1244,11 +1246,13 @@ external→degraded, external→recovered and external→deleted.
 ### Gate 7 verdicts — re-audited and signed
 
 The current ChatGPT browser reviewer re-audited the exact pushed tree at
-`7c22f6014c611ffbe6c7de093f1c75c886705ca3` on 2026-09-07. The audit covered the
+`a9f69ad7ebe6215a47437dca5e1dc8d6597f555e` on 2026-09-07. The audit covered the
 full 7A–7D sequence, including the fail-closed embedded-file parser boundary, and
-found no remaining blocker. The work, tests and real-vault evidence stand on their
-own — 362 tests, whole-vault fingerprints unchanged, and the creator's drawings
-demonstrably rendering — while the reviewer supplies the independent sign-off.
+found no implementation regression or compatibility blocker. The work, tests and
+real-vault evidence stand on their own — whole-vault fingerprints unchanged and the
+creator's drawings demonstrably rendering — while the reviewer supplies the
+independent sign-off. The legacy 7.1–7.5 plan below is retained as historical
+context; the implemented direct-source route is the signed compatibility contract.
 
 Gates through 6R remain signed: those verdicts predate the reported switch.
 
@@ -1259,13 +1263,13 @@ Gates through 6R remain signed: those verdicts predate the reported switch.
 | 6Q real creator-vault read-only baseline | PASS | `82c3f9a6` |
 | 6R Obsidian coexistence — create / modify / delete | PASS | `abf99364` |
 | 6R external **rename** | **OPEN** — not exercised | — |
-| 7A real Excalidraw discovery | PASS | `7c22f601` |
-| 7B structural recognition | PASS | `7c22f601` |
-| 7C compressed-json decoding | PASS | `7c22f601` |
-| 7C SVG rendering | PASS | `7c22f601` |
-| 7D link resolution | PASS | `7c22f601` |
-| 7D binary assets + real-artifact acceptance | PASS | `7c22f601` |
-| 7A–7D overall | PASS | `7c22f601` |
+| 7A real Excalidraw discovery | PASS | `a9f69ad7` |
+| 7B structural recognition | PASS | `a9f69ad7` |
+| 7C compressed-json decoding | PASS | `a9f69ad7` |
+| 7C SVG rendering | PASS | `a9f69ad7` |
+| 7D link resolution | PASS | `a9f69ad7` |
+| 7D binary assets + real-artifact acceptance | PASS | `a9f69ad7` |
+| 7A–7D overall | PASS | `a9f69ad7` |
 | Object-URL lifecycle | deferred to the browser viewer | — |
 | Native FSA, clean-profile picker, Papers-hosted acceptance, write/concurrency | OPEN | — |
 
@@ -1895,7 +1899,7 @@ Current truth stays in-repo.
 - [ ] FSA limitations _(Gate 5)_
 - [ ] Papers capabilities actually required _(ledger below)_
 - [x] rejected architectures — `README.md`, `docs/DECISIONS.md`
-- [ ] Excalidraw compatibility level _(Gate 7)_
+- [x] Excalidraw compatibility level _(Gate 7 — direct-source display contract PASS)_
 - [x] current read/write authority — `AGENTS.md`, status table above
 - [ ] exact currently validated Papers SHA — baseline recorded above, but nothing has
       been validated against a running Papers yet _(Gate 2)_
@@ -1963,7 +1967,7 @@ Each pushed SHA is sent for audit approximately in this order.
 9. [x] Gate 5 — real Papers FSA spike (core viability and full-process lifecycle PASS;
        clean-profile and real-vault follow-ups remain open)
 10. [ ] Gate 6 — read-only creator vault
-11. [ ] Gate 7 — Excalidraw display
+11. [x] Gate 7 — Excalidraw display (direct-source display contract PASS)
 12. [x] Gate 8 — arbitrary-file canvas (defined scope PASS; durable grants/directories, source SVG and PDF remain deferred)
 13. [ ] Gate 9 — native open/reveal if justified
 14. [ ] Gate 10 — Papers live semantic relay if justified
