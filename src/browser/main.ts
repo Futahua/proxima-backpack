@@ -29,6 +29,7 @@ import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } 
 import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
 import { calendarGridDates } from './calendarGrid.js';
 import { projectPresentation } from './projectPresentation.js';
+import { applyBootState, type BootState } from './bootState.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -65,11 +66,9 @@ function escapeHtml(value: unknown): string {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
 
-function setBootState(state: 'loading' | 'ready' | 'error'): void {
+function setBootState(state: BootState): void {
   const root = element<HTMLElement>('#proxima-app');
-  root.dataset.proximaMode = 'fixture';
-  root.dataset.proximaHydrated = state === 'ready' ? 'true' : 'false';
-  root.dataset.proximaBootState = state;
+  applyBootState(root.dataset, state);
 }
 
 function projectName(state: ProximaState, projectId: string | null): string {

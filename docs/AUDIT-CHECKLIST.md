@@ -1372,12 +1372,23 @@ abstraction exactly as Excalidraw does.
 
 ### 6.5 Real-vault safety
 
-- [ ] No writer implementation wired.
-- [ ] No hidden write through browser APIs.
-- [ ] No migration on boot.
-- [ ] No auto-fix of frontmatter.
-- [ ] No destructive agent commands against creator vault.
-- [ ] Fixture mode remains the default mutable automation environment.
+- [x] No writer implementation wired — `VaultWriter` is not reachable from the
+      browser/source-session/action graph; zero-write witness tests enforce the
+      capability boundary (Gate 6.5A, `8a53fbd` + follow-up).
+- [x] No hidden write through browser APIs — external/FSA/bridge adapters expose
+      read-only paths to Proxima (Gate 6.5A, existing zero-write and acceptance
+      suites).
+- [x] No migration on boot — startup restores or reads a source and does not write
+      migration state (Gate 6.5A, existing startup/acceptance suites).
+- [x] No auto-fix of frontmatter — malformed fields become bounded diagnostics and
+      are never rewritten (Gate 6.5A, existing validation/zero-write suites).
+- [x] No destructive product/semantic agent commands against a creator vault — the
+      explicitly invoked `agent:coexist` harness is a separately scoped acceptance
+      tool whose peer writes are authorized, declared and verified; it is not a
+      Proxima product action (Gate 6.5A, `8a53fbd` + coexistence evidence).
+- [x] Fixture mode remains the default mutable automation environment — source-mode
+      boot metadata is now owned by resolved source state and cannot be overwritten
+      by lifecycle transitions (Gate 6.5A, follow-up boot-state regression).
 
 ---
 
