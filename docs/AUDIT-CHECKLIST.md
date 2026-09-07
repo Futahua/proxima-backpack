@@ -2245,6 +2245,25 @@ Fixture only initially.
       promotion, no-op, mismatch, malformed, duplicate and stale tests pass in
       `tests/projectIdentityPromotion.test.ts`.
 
+### 13.2K Existing event scalar mutation
+
+- [x] Closed runtime-checked event authority exposes only `name`, `project`,
+      `startDate`, `deadline` and `isCompleted`; createdAt, description, insertion,
+      identity and lifecycle remain outside this slice.
+- [x] Event provenance is bounded, confined to immediate Markdown children of the
+      configured events directory, and rejects project/task/nested/outside sources
+      before reads; CAS derives solely from `event.source.revision`.
+- [x] Values use reader-compatible semantics: nonempty bounded name/project,
+      validated dates and real YAML booleans. Project writes preserve the preferred
+      or sole legacy alias and refuse when both aliases are present.
+- [x] Only one existing unique top-level target is source-patched; missing,
+      nested, structured, malformed and unsafe targets refuse. Quote style,
+      whitespace, comments, BOM/CRLF, Markdown body and foreign YAML stay exact;
+      no parsed CalendarEvent is serialized.
+- [x] Updates use coordinator CAS/recovery with stale-peer preservation and no
+      retry/merge/LWW. Focused all-field reload, alias ambiguity, authority,
+      preservation and stale tests pass in `tests/eventSourceMutation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
