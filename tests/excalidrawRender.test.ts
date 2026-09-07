@@ -195,6 +195,22 @@ describe('images before asset resolution', () => {
     expect(result.census.skipped).toBe(1);
     expect(result.problems).toContainEqual({ code: 'element-geometry-invalid', elementType: 'text', count: 1 });
   });
+
+  it('validates geometry after SVG rounding', () => {
+    const result = renderExcalidrawSvg(scene([
+      { ...image, width: 0.004 },
+      { ...line, id: 'tiny-line', points: [[0, 0], [0.004, 0]] },
+      { ...line, id: 'tiny-stroke', strokeWidth: 0.004 },
+      { ...text, id: 'tiny-text', fontSize: 0.004 },
+    ]));
+    expect(result.census.rendered).toBe(0);
+    expect(result.census.skipped).toBe(4);
+    expect(result.problems).toEqual([
+      { code: 'element-geometry-invalid', elementType: 'image', count: 1 },
+      { code: 'element-geometry-invalid', elementType: 'line', count: 2 },
+      { code: 'element-geometry-invalid', elementType: 'text', count: 1 },
+    ]);
+  });
 });
 
 describe('the scene decides its own background', () => {

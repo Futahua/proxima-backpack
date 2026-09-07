@@ -142,7 +142,7 @@ export function renderExcalidrawSvg(scene: ExcalidrawScene | null, assets: Resol
       census.imageElements += 1;
       const width = finite(element.width);
       const height = finite(element.height);
-      if (width === null || height === null || width <= 0 || height <= 0) {
+      if (width === null || height === null || width <= 0 || height <= 0 || round(width) <= 0 || round(height) <= 0) {
         census.skipped += 1;
         note('element-geometry-invalid', type);
         continue;
@@ -232,7 +232,7 @@ function drawElement(type: string, element: ElementLike, x: number, y: number, b
   if (type === 'text') {
     const text = typeof element.text === 'string' ? element.text : '';
     const fontSize = finite(element.fontSize) ?? 16;
-    if (text.length === 0 || fontSize <= 0) return null;
+    if (text.length === 0 || fontSize <= 0 || round(fontSize) <= 0) return null;
     bounds.add(x, y);
     bounds.add(x + Math.max(fontSize * text.length * 0.6, 1), y + fontSize);
     // Baseline sits a line down from the element origin, matching Excalidraw's
@@ -242,8 +242,8 @@ function drawElement(type: string, element: ElementLike, x: number, y: number, b
 
   const points = readPoints(element.points);
   if (!points || points.length < 2) return null;
-  if ((type === 'line' || type === 'freedraw') && strokeWidth <= 0) return null;
-  if ((type === 'line' || type === 'freedraw') && !hasDrawableSegment(points)) return null;
+  if ((type === 'line' || type === 'freedraw') && (strokeWidth <= 0 || round(strokeWidth) <= 0)) return null;
+  if ((type === 'line' || type === 'freedraw') && !hasDrawableSegment(points, x, y)) return null;
   const path = points
     .map(([px, py], index) => `${index === 0 ? 'M' : 'L'}${round(x + px)},${round(y + py)}`)
     .join(' ');
@@ -260,11 +260,11 @@ function drawElement(type: string, element: ElementLike, x: number, y: number, b
   return `<g opacity="${opacity}"><path d="${path}" fill="none" stroke="${escapeAttribute(stroke)}" stroke-width="${round(strokeWidth)}" /><path d="${head}" fill="${escapeAttribute(stroke)}" /></g>`;
 }
 
-function hasDrawableSegment(points: Array<[number, number]>): boolean {
+function hasDrawableSegment(points: Array<[number, number]>, x: number, y: number): boolean {
   for (let index = 1; index < points.length; index += 1) {
     const current = points[index] as [number, number];
     const previous = points[index - 1] as [number, number];
-    if (current[0] !== previous[0] || current[1] !== previous[1]) return true;
+    if (round(x + current[0]) !== round(x + previous[0]) || round(y + current[1]) !== round(y + previous[1])) return true;
   }
   return false;
 }
