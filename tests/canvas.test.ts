@@ -60,7 +60,7 @@ describe('Gate 8A canvas nodes', () => {
   });
 
   it('rejects absolute, drive, traversal and malformed locators', () => {
-    for (const path of ['/etc/passwd', 'C:\\temp\\a.bin', 'a/../b', './b', 'a//b', 'a\\b', '']) {
+    for (const path of ['/etc/passwd', '//server/share/a.bin', '\\\\server\\share\\a.bin', 'C:\\temp\\a.bin', 'file:///etc/passwd', 'a/../b', './b', 'a//b', 'a\\b', '']) {
       expect(() => validateVaultRelativePath(path)).toThrow();
     }
     expect(validateVaultRelativePath('Attachments/photo.png')).toBe('Attachments/photo.png');

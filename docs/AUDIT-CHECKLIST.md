@@ -2014,7 +2014,10 @@ Backpack page:
 - [x] no unrestricted network — the sole browser fetch adapter is loopback-checked,
       rejects foreign URLs before any request, and uses credentialless GET only
       (`tests/httpDirectory.test.ts`, `tests/presencePropagation.test.ts`).
-- [ ] no unrestricted machine path access
+- [x] no unrestricted machine path access — vault locators reject POSIX, Windows-drive,
+      UNC, `file:` URL, traversal and malformed paths; FSA evidence accepts only
+      bounded relative entries, and the bridge requires vault-relative paths
+      (`tests/canvas.test.ts`, `tests/fsaEvidence.test.ts`, `tests/httpDirectory.test.ts`).
 - [x] arbitrary HTML/JS dropped on canvas remains passive — active extensions are
       rejected before payload reads and render only escaped fallback metadata; hostile
       script/iframe/JavaScript bytes never enter the surface (`tests/canvasSurface.test.ts`).
