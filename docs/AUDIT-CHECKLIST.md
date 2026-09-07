@@ -1866,6 +1866,18 @@ to the creator's real vault. No UI interaction is required to drive it.
       attribution cover peer source disappearance without automatic recreation.
 - [ ] Actual Obsidian application against a disposable vault remains Gate 13.D2.
 
+### 13.1P / 17.2A Independent Proxima writer coexistence
+
+- [x] Two independently constructed coordinators sharing one disposable disk vault
+      refuse symmetric stale same-source updates; the winner's bytes remain exact.
+- [x] Independent delete/move/destination conflicts return missing/stale or
+      destination-exists without last-writer-wins behavior.
+- [x] Independent sources commit concurrently and durable recovery records remain
+      attributable to the correct writer/request ID.
+- [x] No coordinator queue is shared across writer instances; no UI/native capability
+      is required.
+- [ ] Native creator-vault/FSA authority and actual Obsidian application remain open.
+
 Not enabled merely because a UI needs editing.
 
 ### 13.1 Conflict model
