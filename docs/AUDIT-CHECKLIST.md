@@ -2087,11 +2087,12 @@ Developer control:
       evidence and diagnostics also cap item counts and field lengths
       (`tests/agentVaultBridge.test.ts`, `tests/inspection.test.ts`,
       `tests/evidence.test.ts`, `tests/cleanProfileAcceptance.test.ts`).
-- [x] no arbitrary renderer JS — the enabled bridge exposes fixed JSON
-      list/read/exists/walk data only; source and emitted browser modules contain no
-      eval/Function construction, script-element injection, JavaScript URLs or
-      event-handler sinks, with scanner self-tests covering each forbidden entry
-      point (`tests/agentVaultBridge.test.ts`, `tests/browserBoundary.test.ts`).
+- [x] no arbitrary renderer JS — the enabled bridge exposes only fixed read-only
+      JSON/data endpoints and no code-bearing renderer/control surface; source and
+      emitted browser modules contain no eval/Function construction, script-element
+      injection, JavaScript URLs or event-handler sinks, with scanner self-tests
+      covering each forbidden entry point (`tests/agentVaultBridge.test.ts`,
+      `tests/browserBoundary.test.ts`).
 - [ ] no creator-vault mutation by default
 - [ ] no secrets in evidence/logs
 
