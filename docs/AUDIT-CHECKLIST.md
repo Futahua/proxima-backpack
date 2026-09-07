@@ -1851,6 +1851,21 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [ ] Papers runtime wires startup reconciliation before exposing owner-mode writes.
 - [ ] Native creator-vault/FSA restore and Obsidian coexistence remain open.
 
+### 13.D1 Disposable multi-writer coexistence
+
+- [x] Proxima create/update/move/delete run through `createVaultMutationCoordinator`
+      and the disposable disk `VaultWriter`; destructive records finalize durably.
+- [x] Independent peer process edits unrelated bytes while Proxima commits; unrelated
+      and `.obsidian`-equivalent metadata remain intact.
+- [x] Deterministic peer edit and destination-creation races return stale/conflict
+      without overwriting peer bytes.
+- [x] Conditional update/delete/move restore refuses peer-modified target state.
+- [x] Peer activity is programmatic and barrier-driven; no UI or creator interaction
+      is required for the disposable gate.
+- [ ] Full source rename/delete race matrix and machine-readable bounded tree-diff
+      coverage remain to be expanded.
+- [ ] Actual Obsidian application against a disposable vault remains Gate 13.D2.
+
 Not enabled merely because a UI needs editing.
 
 ### 13.1 Conflict model
