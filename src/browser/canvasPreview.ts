@@ -25,6 +25,14 @@ export interface CanvasPreviewRegistry {
   totalBytes(): number;
 }
 
+/** Clear only when the document is actually being discarded, not BFCache-suspended. */
+export function disposeCanvasPreviewsOnPageHide(
+  event: Pick<PageTransitionEvent, 'persisted'>,
+  registry: CanvasPreviewRegistry,
+): void {
+  if (!event.persisted) registry.clear();
+}
+
 export function createCanvasPreviewRegistry(urls: CanvasObjectUrlPort): CanvasPreviewRegistry {
   const entries = new Map<string, CanvasRasterPresentation>();
   let totalBytes = 0;

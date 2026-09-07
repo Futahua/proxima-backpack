@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCanvasPreviewRegistry, MAX_CANVAS_PREVIEW_BYTES, MAX_CANVAS_PREVIEW_ITEMS } from '../src/browser/canvasPreview.js';
+import { createCanvasPreviewRegistry, disposeCanvasPreviewsOnPageHide, MAX_CANVAS_PREVIEW_BYTES, MAX_CANVAS_PREVIEW_ITEMS } from '../src/browser/canvasPreview.js';
 import type { CanvasRasterPreviewSeed } from '../src/browser/canvasFileAdmission.js';
 
 const seed: CanvasRasterPreviewSeed = { kind: 'raster-image', mediaType: 'image/png', bytes: new Uint8Array([1, 2, 3]) };
@@ -57,5 +57,16 @@ describe('Gate 8D browser raster preview registry', () => {
     const bad = createCanvasPreviewRegistry({ createObjectURL: () => 'https://bad', revokeObjectURL: (url) => revoked.push(url) });
     expect(bad.install('node', seed)).toBe(false);
     expect(revoked).toContain('https://bad');
+  });
+
+  it('preserves previews for BFCache pagehide and clears on discarded pagehide', () => {
+    const io = urls();
+    const registry = createCanvasPreviewRegistry(io.port);
+    registry.install('node', seed);
+    disposeCanvasPreviewsOnPageHide({ persisted: true }, registry);
+    expect(registry.get('node')?.url).toBe('blob:test-1');
+    disposeCanvasPreviewsOnPageHide({ persisted: false }, registry);
+    expect(registry.get('node')).toBeNull();
+    expect(io.revoked).toEqual(['blob:test-1']);
   });
 });

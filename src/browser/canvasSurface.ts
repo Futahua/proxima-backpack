@@ -63,7 +63,7 @@ export async function admitCanvasDrop(
   return { items: nextItems, lastDropDiagnostic: diagnostic };
 }
 
-/** Render metadata only; no payload, File, URL, HTML or SVG content is embedded. */
+/** Render escaped metadata plus an optional registry-owned raster URL. */
 export function renderCanvasSurface(state: CanvasSurfaceState, previews?: ReadonlyMap<string, { url: string; mediaType: string }>): string {
   const diagnostic = state.lastDropDiagnostic
     ? `<p class="canvas-diagnostic" data-c1-key="canvas-drop-diagnostic">${escapeHtml(state.lastDropDiagnostic)}</p>`
@@ -74,12 +74,12 @@ export function renderCanvasSurface(state: CanvasSurfaceState, previews?: Readon
 
 function canvasCard(item: CanvasSurfaceItem, index: number, previews?: ReadonlyMap<string, { url: string; mediaType: string }>): string {
   const { selection, node } = item;
-  const label = selection.kind === 'fallback' ? 'Fallback file' : `${selection.kind} — inline preview not mounted`;
+  const preview = selection.kind === 'raster-image' ? previews?.get(node.id) : undefined;
+  const label = selection.kind === 'fallback' ? 'Fallback file' : selection.kind === 'raster-image' && preview ? 'raster-image — inline preview mounted' : `${selection.kind} — inline preview not mounted`;
   const reason = selection.reason ? ` · ${selection.reason.replaceAll('-', ' ')}` : '';
   const size = selection.size === null ? 'size unavailable' : `${selection.size} bytes`;
   const modified = selection.modifiedAt ?? 'modified time unavailable';
   const state = selection.sourceState;
-  const preview = selection.kind === 'raster-image' ? previews?.get(node.id) : undefined;
   const image = preview && preview.url.startsWith('blob:') ? `<img src="${escapeHtml(preview.url)}" alt="${escapeHtml(selection.filename)}">` : '';
   return `<article class="canvas-card" data-c1-key="canvas-card-${index}" data-canvas-node-id="${escapeHtml(node.id)}"><header><strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}</span></header>${image}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(state)}${escapeHtml(reason)}</span></footer></article>`;
 }

@@ -804,6 +804,9 @@ surface switching is not unmount; the workspace continues to own its previews.
 Excalidraw, SVG, PDF, directories, durable grants, persistence, rebinding,
 drag/move/resize, public browser-data actions and writes remain deferred.
 
+This decision supersedes D43–D44 only for the raster presentation exception; their
+non-raster and authority boundaries remain in force.
+
 ## D44 — Canvas surface renders passive drop cards only
 
 **Decided:** the browser surface may accept a bounded `DataTransfer.files` batch and
@@ -816,8 +819,9 @@ refresh replaces only source-derived state.
 
 **Boundary:** no File/Blob/bytes are retained after admission, no path/directory
 metadata or handles are inspected, and no public action carries browser data. Inline
-text/image/Excalidraw/SVG/PDF rendering, object URLs, persistence, durable grants,
-drag/move/resize and writes remain deferred until a viewer owns their lifecycle.
+text/Excalidraw/SVG/PDF rendering, persistence, durable grants, drag/move/resize and
+writes remain deferred; raster presentation and object-URL ownership are defined by
+D45.
 
 ## D43 — Browser File admission is ephemeral and one-shot
 
@@ -831,8 +835,9 @@ classification. Restart marks the source unavailable; no filename-based rebindin
 durable handle is implied. Duplicate admissions remain independent nodes.
 
 **Boundary:** the `File` object never enters domain or retained canvas state. Visible
-drop handlers, browser rendering, object-URL lifecycle, external grants, directories,
-source rebinding, persistence and writes remain later work.
+drop handlers for passive cards, external grants, directories, source rebinding,
+persistence and writes remain later work; raster browser presentation is defined by
+D45.
 
 ## D42 — Canvas source reads stay bounded and provenance-bearing
 

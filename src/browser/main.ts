@@ -23,7 +23,7 @@ import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } f
 import { createBrowserSource } from './sourceFactory.js';
 import { createCanvasDropQueue, EMPTY_CANVAS_SURFACE, renderCanvasSurface, type CanvasSurfaceState } from './canvasSurface.js';
 import type { BrowserFileLike } from './canvasFileAdmission.js';
-import { createCanvasPreviewRegistry } from './canvasPreview.js';
+import { createCanvasPreviewRegistry, disposeCanvasPreviewsOnPageHide } from './canvasPreview.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -324,7 +324,7 @@ function bindInteractions(): void {
     void canvasDropQueue.enqueue(files).then((next) => { canvasState = next; render(); });
   });
   window.addEventListener('focus', () => { void refreshFromSource('focus'); });
-  window.addEventListener('pagehide', () => { canvasPreviewRegistry.clear(); });
+  window.addEventListener('pagehide', (event) => { disposeCanvasPreviewsOnPageHide(event, canvasPreviewRegistry); });
 }
 
 async function boot(): Promise<void> {
