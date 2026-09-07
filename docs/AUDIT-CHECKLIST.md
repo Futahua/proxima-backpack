@@ -1437,7 +1437,7 @@ No speculative broadening of `connect-src`.
   - [x] extension
   - [x] size
   - [x] modified time
-  - [ ] icon/thumbnail
+- [x] icon/thumbnail (static local category token; no source-derived thumbnail)
   - [x] missing/unavailable state
 - [x] Unsupported file is not treated as error just because no renderer exists.
 

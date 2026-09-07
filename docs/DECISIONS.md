@@ -840,6 +840,17 @@ writes remain unchanged. SVG and PDF remain passive/deferred.
 This decision supersedes D44–D46 only for escaped literal text/Markdown
 presentation; SVG/PDF and all authority boundaries remain unchanged.
 
+## D48 — Fallback icons are static local category tokens
+
+**Decided:** fallback cards may show a fixed local token derived from already-known
+selection metadata (`TXT`, `IMG`, `DRAW`, `SVG`, `PDF`, `SAFE` or `FILE`). The
+mapping is pure, total and display-only; it performs no reads, MIME trust, native
+icon lookup, network access, URL/object-URL creation or renderer authorization.
+
+**Boundary:** the token never changes selection, active-content veto or preview
+routing, and no source bytes or thumbnails are generated or retained. Durable
+external grants, directories, source SVG and PDF rendering remain scope decisions.
+
 ## D44 — Canvas surface renders passive drop cards only
 
 **Decided:** the browser surface may accept a bounded `DataTransfer.files` batch and
