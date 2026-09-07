@@ -28,6 +28,7 @@ import { createCanvasExcalidrawPreviewRegistry, disposeCanvasExcalidrawPreviewsO
 import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } from './canvasTextPreview.js';
 import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
 import { calendarGridDates } from './calendarGrid.js';
+import { projectPresentation } from './projectPresentation.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -93,19 +94,27 @@ function visibleProblems(problems: LoadProblem[]): LoadProblem[] {
 }
 
 function projectNavigation(state: ProximaState): string {
-  const active = state.projects.filter((project) => project.status === 'active').slice().sort((a, b) => a.id.localeCompare(b.id));
+  const projects = state.projects.slice().sort((a, b) => a.id.localeCompare(b.id));
+  const active = projects.filter((project) => project.status === 'active');
   const items = [
     { id: ALL_PROJECTS, label: 'All projects', detail: 'Board and calendar', project: undefined },
     { id: UNCATEGORISED, label: 'Uncategorised', detail: 'Records without a project', project: undefined },
-    ...active.map((project) => ({ id: project.id, label: project.name, detail: project.projectType === 'schedule' ? 'Calendar project' : 'Task project', project })),
+    ...projects.map((project) => ({ id: project.id, label: project.name, detail: `${project.status === 'archived' ? 'Archived · ' : ''}${project.projectType === 'schedule' ? 'Calendar project' : 'Task project'}`, project })),
   ];
+  const selectedProject = state.projects.find((project) => project.id === selection);
+  const detail = selectedProject ? projectPresentation(selectedProject) : null;
   return `<nav class="project-navigation" data-c1-key="project-navigation" aria-label="Projects">
     <div class="region-heading"><span>Projects</span><span class="count">${active.length}</span></div><div class="project-list">
     ${items.map((item) => {
       const activeItem = selection === item.id;
       const wrongSurface = item.project !== undefined && ((surface === 'board' && item.project.projectType === 'schedule') || (surface === 'calendar' && item.project.projectType === 'task'));
-      return `<button type="button" class="project-item${activeItem ? ' selected' : ''}" data-action="select-project" data-project-id="${escapeHtml(item.id)}" data-c1-key="project-item-${escapeHtml(item.id || 'uncategorised')}" aria-current="${activeItem ? 'page' : 'false'}" title="${escapeHtml(item.detail)}"><span class="project-dot ${item.project?.projectType ?? 'all'}"></span><span class="project-item-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span>${wrongSurface ? '<span class="surface-hint">↗</span>' : ''}</button>`;
+      const disabled = item.project?.status === 'archived';
+      const body = `<span class="project-dot ${item.project?.projectType ?? 'all'}"></span><span class="project-item-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span>${wrongSurface ? '<span class="surface-hint">↗</span>' : ''}`;
+      return disabled
+        ? `<div class="project-item archived" data-c1-key="project-item-${escapeHtml(item.id)}" title="${escapeHtml(item.detail)}" aria-label="${escapeHtml(item.label)}">${body}</div>`
+        : `<button type="button" class="project-item${activeItem ? ' selected' : ''}" data-action="select-project" data-project-id="${escapeHtml(item.id)}" data-c1-key="project-item-${escapeHtml(item.id || 'uncategorised')}" aria-current="${activeItem ? 'page' : 'false'}" title="${escapeHtml(item.detail)}">${body}</button>`;
     }).join('')}</div>
+    ${detail ? `<section class="project-details" data-c1-key="project-details" aria-label="Project details"><header><strong>${escapeHtml(detail.name)}</strong><small>${escapeHtml(detail.statusLabel)} · ${escapeHtml(detail.typeLabel)}</small></header><p>${escapeHtml(detail.description || 'No description')}</p>${detail.linkedFolders.length > 0 ? `<div><small>Linked folders</small><ul>${detail.linkedFolders.map((folder) => `<li><strong>${escapeHtml(folder.name)}</strong><span>${escapeHtml(folder.path)}</span></li>`).join('')}</ul></div>` : '<small>No linked folders</small>'}<footer><small>Source</small><code>${escapeHtml(detail.sourcePath)}</code><small>ID from ${escapeHtml(detail.sourceIdOrigin)}</small></footer></section>` : '<section class="project-details empty" data-c1-key="project-details"><small>Select a project to inspect its read-only details.</small></section>'}
   </nav>`;
 }
 
