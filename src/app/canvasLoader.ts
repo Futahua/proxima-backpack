@@ -71,7 +71,13 @@ export async function loadCanvasNode(
   const textResult = await readText(node, source, vault);
   if (textResult && (TEXT_EXTENSIONS.has(extension) || extension === 'excalidraw' || textResult.selection.kind === 'excalidraw')) return textResult;
   if (!textResult && (TEXT_EXTENSIONS.has(extension) || extension === 'excalidraw')) return unavailable(node, source);
-  if (textResult && typeof vault.readBinary !== 'function') return textResult;
+  if (textResult && typeof vault.readBinary !== 'function') {
+    return {
+      node: textResult.node,
+      selection: selectCanvasRepresentation(textResult.node.source, null),
+      status: 'binary-capability-unavailable',
+    };
+  }
   if (typeof vault.readBinary !== 'function') {
     return { node, selection: selectCanvasRepresentation(source, null), status: 'binary-capability-unavailable' };
   }

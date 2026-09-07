@@ -72,6 +72,12 @@ describe('Gate 8 source loader', () => {
     expect(result.selection).toMatchObject({ kind: 'fallback', reason: 'payload-unavailable' });
   });
 
+  it('reports missing binary capability after an unknown-file text probe', async () => {
+    const result = await loadCanvasNode(createMemoryVault({ 'Notes/photo.bin': 'not a drawing' }), node('Notes/photo.bin'));
+    expect(result.status).toBe('binary-capability-unavailable');
+    expect(result.selection).toMatchObject({ kind: 'fallback', reason: 'payload-unavailable' });
+  });
+
   it('turns source read failure into an unavailable node without throwing', async () => {
     const base = createMemoryVault({ 'Notes/readme.md': '# hi' });
     const vault: VaultReader = { ...base, read: async () => { throw new Error('permission denied'); } };
