@@ -51,7 +51,7 @@ export function reconcileSelection(
   const project = projects.find((p) => p.id === selection);
   if (!project) return ALL_PROJECTS;
   const wanted = surface === 'calendar' ? 'schedule' : 'task';
-  return project.projectType === wanted ? selection : ALL_PROJECTS;
+  return project.status === 'active' && project.projectType === wanted ? selection : ALL_PROJECTS;
 }
 
 export interface ElasticBoard {
