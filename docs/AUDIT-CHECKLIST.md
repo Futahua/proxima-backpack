@@ -2177,7 +2177,12 @@ Current truth stays in-repo.
       tests pass, but this run has no fresh exact capture/inspection artifact from
       a running Papers C1 surface; standalone string assertions are not substituted
       for host-integrated C1 acceptance.
-- [ ] real FSA read-only acceptance passes
+- [ ] real FSA read-only acceptance passes — OPEN: disposable FSA capability,
+      persistence and full-process restart evidence are recorded, but the clean-profile
+      native picker/grant has not been performed in this run. The real creator-vault
+      read-only acceptance therefore remains gated on a foreground gesture; no
+      headless/OPFS/bridge result is substituted (`Gate 5.1`,
+      `tests/cleanProfileAcceptance.test.ts`, `docs/DECISIONS.md#d21`).
 - [ ] representative real Obsidian vault acceptance passes
 - [ ] Excalidraw display acceptance passes if included
 - [ ] arbitrary-file fallback acceptance passes if included
