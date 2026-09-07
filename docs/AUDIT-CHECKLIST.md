@@ -2023,7 +2023,11 @@ Backpack page:
 - [x] arbitrary HTML/JS dropped on canvas remains passive — active extensions are
       rejected before payload reads and render only escaped fallback metadata; hostile
       script/iframe/JavaScript bytes never enter the surface (`tests/canvasSurface.test.ts`).
-- [ ] untrusted Markdown does not gain host authority
+- [x] untrusted Markdown does not gain host authority — hostile Markdown loaded as a
+      record body remains literal data in the browser text presentation: HTML/script,
+      `javascript:` links, `file:` paths and bridge-looking URLs are escaped and never
+      become DOM links, filesystem reads, network calls, bridge invocations or code
+      execution (`tests/markdownAuthority.test.ts`, `tests/canvasSurface.test.ts`).
 
 Filesystem:
 
