@@ -2160,7 +2160,8 @@ Current truth stays in-repo.
 
 ## Gate 22 — Release readiness
 
-- [ ] clean clone builds
+- [x] clean clone builds — a fresh local clone with no working-tree artifacts
+      completed `npm ci` and `npm run build` successfully at the reviewed tree.
 - [ ] all tests pass
 - [ ] typecheck passes
 - [ ] deterministic fixture scenarios pass
