@@ -966,3 +966,17 @@ writer is exposed.
 **Boundary:** Gate 13.3 is closed as a safety decision, not as a claim that native
 writes are safe. Reopening it requires a Papers/native transaction capability that
 atomically validates the observed revision at commit, plus a fresh acceptance run.
+
+## D52 — Durable owner authority is explicitly read-only in this build
+
+**Decided:** the owner boundary is scoped to an explicitly supplied exact root and
+restores only read authority. Prompt/denied/revoked permission remains machine-readable
+and blocked; the browser never discovers a vault or silently upgrades a handle. The
+`evaluateOwnerAuthorityBoundary()` report is therefore `BLOCKED` with
+`native-fsa-grant-and-transaction-required`, and no per-operation picker or write
+confirmation is implied.
+
+**Boundary:** Gate 14 is closed as a read-only capability decision. Creator-vault
+writes require both an explicit enrollment flow and the stronger native transaction
+primitive required by D51; until then, the safe autonomous behavior is bounded reads,
+refresh, coexistence observation and fail-visible refusal of writes.

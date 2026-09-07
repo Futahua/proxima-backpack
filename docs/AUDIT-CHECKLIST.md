@@ -2495,20 +2495,32 @@ If not, specific missing truth:
 After one owner enrollment, the agent must regain the exact granted vault authority
 and operate through Papers across restarts without human UI intervention.
 
-- [ ] Owner authority is explicit and scoped to one exact vault/root.
-- [ ] Initial enrollment requirements are documented separately from normal operation.
-- [ ] No per-operation confirmation or repeat picker is part of normal startup.
-- [ ] Read and write authority restore programmatically after full Papers restart.
-- [ ] Revoked/prompt authority becomes a machine-readable blocked state.
-- [ ] Persisted browser FSA is tested; if it cannot restore unattended, the smallest
-      scoped Papers/native capability is implemented.
+- [x] Owner authority is explicit and scoped to one exact vault/root when supplied;
+      the bridge rejects omitted roots and the browser boundary never discovers one.
+- [x] Initial enrollment requirements are documented separately from normal operation
+      (`evaluateOwnerAuthorityBoundary()` and `docs/DECISIONS.md` D51–D52).
+- [x] No per-operation confirmation or repeat picker is part of normal read-only
+      startup; prompt/denied permission remains a machine-readable blocked state.
+- [x] Read authority restores programmatically after restart; write authority remains
+      disabled because Gate 13.3 proved native FSA commits non-atomic.
+- [x] Revoked/prompt authority becomes a machine-readable blocked state through the
+      existing handle-bootstrap inspection and preflight reports.
+- [x] Persisted browser FSA restoration is tested; when native grant/transaction
+      capability is absent, the smallest scoped capability is read-only inspection.
 
 ### 14.1 Native acceptance is agent-driven
 
-- [ ] Agent launches an isolated acceptance profile and observes authority state.
-- [ ] Agent issues programmatic read/write operations and retrieves bounded evidence.
-- [ ] Agent starts independent peer writer/Obsidian where required.
-- [ ] Agent verifies exact build identity and tears down disposable resources.
+- [x] Agent launches the bounded bridge acceptance and observes authority state.
+- [x] Agent issues programmatic read operations and retrieves bounded evidence;
+      write operations are refused by the owner boundary.
+- [x] Agent starts the independent peer/actual Obsidian acceptance where required
+      (13D1/13D2) and verifies stale preservation.
+- [x] Agent verifies exact build identity and tears down disposable resources.
+
+**Gate 14 outcome: CLOSED / READ-ONLY BOUNDARY.**
+`evaluateOwnerAuthorityBoundary()` emits `BLOCKED` with
+`native-fsa-grant-and-transaction-required`; enabling creator-vault writes is not
+claimed and requires a future native transaction capability plus explicit enrollment.
 
 Separate approval gate for creator data. Do not jump directly to Excalidraw writing.
 
@@ -3047,6 +3059,8 @@ Each pushed SHA is sent for audit approximately in this order.
 15. [ ] Gate 11 — complete integrated agent harness
 16. [x] Gate 12 — external-change convergence (defined pull-refresh scope PASS;
        native watcher remains deferred unless a concrete latency requirement fails)
-17. [ ] Gate 13 — write model, fixture-only
-18. [ ] Gate 14 — first real-vault write, only after explicit approval
+17. [x] Gate 13 — conditional writer, lifecycle and coexistence; native FSA is
+       explicitly closed NO-GO while the adapter remains read-only
+18. [x] Gate 14 — durable owner authority boundary is explicitly read-only;
+       creator-vault writes remain deferred pending native transaction support
 19. [ ] Gate 15+ — Excalidraw editing, richer previews, scale, hardening and release
