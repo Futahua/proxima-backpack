@@ -129,6 +129,14 @@ describe('failure surfaces', () => {
     const artifact = recogniseExcalidraw(text, 'big.excalidraw.md');
     expect(artifact.textElements.length).toBeLessThanOrEqual(200);
   });
+
+  it('fails closed instead of hiding embedded mappings beyond the cap', () => {
+    const embeds = Array.from({ length: 201 }, (_, index) => `${index.toString(16)}: [[image-${index}.png]]`).join('\n');
+    const text = envelope(scene, 'json').replace('1bcca9d390e97603b688b8ed5d0227ae66f9ceb7: [[Ôn sử đảng]]', embeds);
+    const artifact = recogniseExcalidraw(text, 'large-embeds.excalidraw.md');
+    expect(artifact.embeddedFiles).toEqual([]);
+    expect(artifact.problems).toContainEqual({ code: 'embed-limit-exceeded', detail: 'more than 200 embedded files' });
+  });
 });
 
 /**

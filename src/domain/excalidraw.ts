@@ -72,7 +72,9 @@ export type ExcalidrawProblemCode =
   /** An envelope with no drawing block at all. */
   | 'drawing-block-missing'
   /** An embed line the plugin's format did not explain. */
-  | 'embed-unreadable';
+  | 'embed-unreadable'
+  /** The envelope contains more embedded-file mappings than this build can audit. */
+  | 'embed-limit-exceeded';
 
 export interface ExcalidrawProblem {
   code: ExcalidrawProblemCode;
@@ -229,8 +231,15 @@ function embeddedFiles(text: string, problems: ExcalidrawProblem[]): ExcalidrawE
       if (problems.length < 20) problems.push({ code: 'embed-unreadable', detail: bounded(trimmed) });
       continue;
     }
+    // A partial mapping is unsafe: a duplicate key after the cap could otherwise
+    // be hidden from the asset loader and make the first mapping look unique.
+    // Fail closed for the whole embedded-file section instead of returning a
+    // silently truncated prefix.
+    if (out.length >= MAX_EMBEDDED_FILES) {
+      problems.push({ code: 'embed-limit-exceeded', detail: `more than ${MAX_EMBEDDED_FILES} embedded files` });
+      return [];
+    }
     out.push({ key: match[1] ?? '', link: match[2] ?? '' });
-    if (out.length >= MAX_EMBEDDED_FILES) break;
   }
   return out;
 }
