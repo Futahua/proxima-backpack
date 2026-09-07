@@ -57,4 +57,21 @@ describe('Gate 13C crash-durable recovery journal', () => {
     const peerRecord = { requestId: 'p', operation: 'update' as const, path: 'peer.md', revision: 'peer.md@1', bytes: new TextEncoder().encode('old___'), nextBytes: new TextEncoder().encode('target'), createdAt: 'now' };
     expect(await classifyRecoveryRecord(peerRecord, sameSizePeer)).toMatchObject({ classification: 'conflict' });
   });
+
+  it('classifies real child-process mutation phases without rollback', async () => {
+    for (const [operation, expectedBefore, expectedAfter] of [['update', 'not-applied', 'effect-present'], ['delete', 'not-applied', 'effect-present'], ['move', 'not-applied', 'effect-present']] as const) {
+      for (const phase of ['before', 'after-commit'] as const) {
+        const root = await mkdtemp(join(tmpdir(), `proxima-crash-${operation}-`));
+        try {
+          await writeFile(join(root, 'task.md'), 'original', 'utf8');
+          const worker = join(process.cwd(), 'tests', 'helpers', 'mutation-crash-worker.mjs');
+          await new Promise<void>((resolve, reject) => { const child = spawn(process.execPath, [worker, root, operation, phase], { stdio: 'ignore' }); child.once('error', reject); child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`worker exited ${code}`))); });
+          const journal = createDurableRecoveryStore({ async read() { return readFile(join(root, 'recovery.json'), 'utf8'); }, async write(value: string) { await writeFile(join(root, 'recovery.json'), value, 'utf8'); } });
+          await journal.load(); const record = journal.list()[0]!; const vault = createDiskVault(root);
+          const result = await classifyRecoveryRecord(record, vault);
+          expect(result.classification).toBe(phase === 'before' ? expectedBefore : expectedAfter);
+        } finally { await rm(root, { recursive: true, force: true }); }
+      }
+    }
+  });
 });
