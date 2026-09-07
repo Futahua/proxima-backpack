@@ -2165,7 +2165,9 @@ Current truth stays in-repo.
 - [x] all tests pass — `npm test` completed 65 test files / 475 tests successfully
       on the current tree (including the real bridge, filesystem and browser-boundary
       regressions).
-- [ ] typecheck passes
+- [x] typecheck passes — `npm run typecheck` regenerated fixture/build identity and
+      passed both application and test TypeScript projects (`tsconfig.json` and
+      `tsconfig.tests.json`) on the current tree.
 - [ ] deterministic fixture scenarios pass
 - [ ] C1 integrated scenarios pass
 - [ ] real FSA read-only acceptance passes
