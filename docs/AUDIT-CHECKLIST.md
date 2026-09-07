@@ -1889,7 +1889,10 @@ Only after fallback file cards are already first-class.
 - [x] 1,000 records — deterministic headless baseline covers 1,000 projects, 1,000
       tasks and 1,000 events (3,000 total; Gate 18A, `0d01ba3`).
 - [ ] 10,000 records if plausible for creator use
-- [ ] deep project folders
+- [x] deep project folders — 200 deterministic project folders each contain a
+      five-level nested content tree; only the one-level index is discovered, with
+      folder provenance, linked-folder metadata, complete census accounting, and no
+      phantom nested projects (Gate 18I, follow-up).
 - [ ] large Markdown notes
 - [x] many events in one month — 1,000 deterministic events concentrated in one
       month are grouped with complete single-/multi-day coverage and a broad

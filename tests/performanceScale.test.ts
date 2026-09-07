@@ -86,6 +86,48 @@ describe('Gate 18A deterministic load/refresh scale baseline', () => {
     expect(elapsedMs).toBeLessThan(5000);
   });
 
+  it('discovers deep project folders without phantom nested projects', async () => {
+    const count = 200;
+    const depth = 5;
+    const files: Record<string, string> = {};
+    for (let index = 0; index < count; index += 1) {
+      const id = `deep-${String(index).padStart(3, '0')}`;
+      files[`Proxima/projects/${id}/index.md`] = `---\nname: Deep project ${index}\nstatus: active\nlinkedFolders: [Assets ${index}|assets/${index}]\n---\nDeep project ${index}.\n`;
+      for (let level = 1; level <= depth; level += 1) {
+        const nested = `Proxima/projects/${id}/${Array.from({ length: level }, (_, i) => `level-${i + 1}`).join('/')}`;
+        files[`${nested}/index.md`] = `---\nname: Phantom ${index}-${level}\nstatus: active\n---\nNot a project record.\n`;
+        files[`${nested}/notes.md`] = `Nested project content ${index}-${level}.\n`;
+      }
+    }
+
+    const started = performance.now();
+    const loaded = await loadVaultState(createMemoryVault(files));
+    const elapsedMs = performance.now() - started;
+
+    expect(loaded.state.projects).toHaveLength(count);
+    expect(loaded.state.projects[0]).toMatchObject({
+      id: 'deep-000',
+      name: 'Deep project 0',
+      linkedFolders: [{ name: 'Assets 0', path: 'assets/0' }],
+      source: { path: 'Proxima/projects/deep-000/index.md', idOrigin: 'folder' },
+    });
+    expect(loaded.state.projects.at(-1)).toMatchObject({
+      id: 'deep-199',
+      source: { path: 'Proxima/projects/deep-199/index.md', idOrigin: 'folder' },
+    });
+    expect(loaded.state.projects.some((project) => project.id.includes('level-'))).toBe(false);
+    expect(loaded.census.project).toMatchObject({
+      status: 'complete',
+      scannedFiles: count * (1 + depth * 2),
+      recordCandidates: count,
+      loadedRecords: count,
+      explicitlyRejected: 0,
+      unaccountedCandidates: 0,
+    });
+    expect(loaded.problems).toEqual([]);
+    expect(elapsedMs).toBeLessThan(5000);
+  });
+
   it('refreshes a 1000-record source unchanged and after one edit', async () => {
     const vault = scaledVault(1000);
     const initial = await loadVaultState(vault);
