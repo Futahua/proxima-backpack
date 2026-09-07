@@ -61,8 +61,8 @@ export async function admitCanvasDrop(
     const resultWithPreview = previews || excalidrawPreviews || textPreviews ? await admitCanvasFileForPresentation(ids, file) : null;
     const result = resultWithPreview?.admission ?? await admitCanvasFile(ids, file);
     let presentationDiagnostic: string | null = null;
-    if (resultWithPreview?.preview?.kind === 'raster-image' && previews && !previews.install(result.node.id, resultWithPreview.preview)) presentationDiagnostic = 'preview-budget-exhausted';
-    if (resultWithPreview?.preview?.kind === 'excalidraw' && excalidrawPreviews && !excalidrawPreviews.install(result.node.id, resultWithPreview.preview)) presentationDiagnostic = 'preview-too-large';
+    if (resultWithPreview?.preview?.kind === 'raster-image' && previews) previews.install(result.node.id, resultWithPreview.preview);
+    if (resultWithPreview?.preview?.kind === 'excalidraw' && excalidrawPreviews) excalidrawPreviews.install(result.node.id, resultWithPreview.preview);
     if (resultWithPreview?.preview?.kind === 'text' && textPreviews && !textPreviews.install(result.node.id, resultWithPreview.preview)) presentationDiagnostic = textPreviews.get(result.node.id).failure ?? 'preview-budget-exhausted';
     nextItems.push({ node: result.node, selection: result.selection, status: result.status, presentationDiagnostic });
   }

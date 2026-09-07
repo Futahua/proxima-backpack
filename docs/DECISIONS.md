@@ -897,3 +897,11 @@ layout are preserved, and no reader or handle crosses into the domain.
 rendering, object URLs, SVG/PDF support or write authority. A source that cannot
 provide the optional binary seam remains a first-class fallback rather than widening
 the capability contract.
+
+## D49 — Remaining Canvas authority rows stay explicit scope decisions
+
+Gate 8 does not add durable external-file grants or directory sources. Those would
+require persistent permission, rebinding, recursive enumeration and containment
+semantics beyond the ephemeral one-shot browser File contract. Source SVG remains
+passive by policy because it is active-capable content, and PDF rendering remains
+optional/not added. These are deliberate boundaries, not implicit capabilities.
