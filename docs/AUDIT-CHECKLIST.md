@@ -2050,7 +2050,11 @@ Filesystem:
       successfully, a denied handle makes the next refresh fail closed with an
       `unreadable` outcome and `stale` last-good state rather than silently
       reacquiring authority (`tests/externalDirectoryVault.test.ts`).
-- [ ] grant ownership is exact Backpack identity
+- [ ] grant ownership is exact Backpack identity — OPEN: this repository tests
+      wrong-handle rejection in the bounded clean-profile evidence, but does not own
+      the native Papers/FSA origin registry or prove that a persisted grant cannot be
+      borrowed by another Backpack identity; the machine-local `project.json` binding
+      is not substituted for that host acceptance (`tests/cleanProfileAcceptance.test.ts`).
 - [ ] stale references fail closed
 
 Developer control:
