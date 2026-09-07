@@ -2011,7 +2011,9 @@ Backpack page:
       modules contain no eval/Function construction, script-element injection,
       JavaScript URLs or event-handler attribute sinks; the scanner self-test covers
       each forbidden entry point (`tests/browserBoundary.test.ts`).
-- [ ] no unrestricted network
+- [x] no unrestricted network — the sole browser fetch adapter is loopback-checked,
+      rejects foreign URLs before any request, and uses credentialless GET only
+      (`tests/httpDirectory.test.ts`, `tests/presencePropagation.test.ts`).
 - [ ] no unrestricted machine path access
 - [x] arbitrary HTML/JS dropped on canvas remains passive — active extensions are
       rejected before payload reads and render only escaped fallback metadata; hostile

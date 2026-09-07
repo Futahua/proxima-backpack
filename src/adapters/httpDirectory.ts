@@ -14,7 +14,8 @@ function bridgeUrl(baseUrl: string, operation: string, path: string): string {
 }
 
 function assertLoopback(base: URL): void {
-  if (base.hostname !== '127.0.0.1' && base.hostname !== 'localhost' && base.hostname !== '::1') throw new Error('automation bridge must be loopback-only');
+  const hostname = base.hostname.replace(/^\[|\]$/g, '');
+  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1') throw new Error('automation bridge must be loopback-only');
 }
 
 async function json<T>(url: string): Promise<T> {
