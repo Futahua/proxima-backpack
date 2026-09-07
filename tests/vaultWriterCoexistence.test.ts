@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -35,13 +35,19 @@ async function treeSnapshot(root: string, directory = '', state = { items: 0, by
   for (const entry of await readdir(join(root, directory), { withFileTypes: true })) {
     const relative = directory ? `${directory}/${entry.name}` : entry.name;
     if (relative === 'recovery.json') continue;
+    if (entry.isSymbolicLink()) throw new Error('tree snapshot refuses symlinks');
     state.items += 1;
     if (state.items > MAX_TREE_ITEMS) throw new Error('tree snapshot item limit exceeded');
     if (entry.isDirectory()) for (const [path, value] of await treeSnapshot(root, relative, state, depth + 1)) result.set(path, value);
     else {
-      const content = await readFile(join(root, relative));
-      state.bytes += content.byteLength;
-      if (state.bytes > MAX_TREE_BYTES) throw new Error('tree snapshot byte limit exceeded');
+      const remaining = MAX_TREE_BYTES - state.bytes;
+      const handle = await open(join(root, relative), 'r');
+      const buffer = Buffer.alloc(remaining + 1);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, 0);
+      await handle.close();
+      if (bytesRead > remaining) throw new Error('tree snapshot byte limit exceeded');
+      state.bytes += bytesRead;
+      const content = buffer.subarray(0, bytesRead);
       result.set(relative, Buffer.from(content).toString('base64'));
     }
   }
@@ -147,6 +153,14 @@ describe('Gate 13D1 disposable multi-writer coexistence', () => {
     try {
       await Promise.all(Array.from({ length: MAX_TREE_ITEMS + 1 }, (_, index) => writeFile(join(root, `file-${index}.md`), 'x', 'utf8')));
       await expect(treeSnapshot(root)).rejects.toThrow(/item limit/);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('rejects one oversized file before reading it into the evidence map', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'proxima-13d-byte-bounds-'));
+    try {
+      await writeFile(join(root, 'huge.bin'), Buffer.alloc(MAX_TREE_BYTES + 1));
+      await expect(treeSnapshot(root)).rejects.toThrow(/byte limit/);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
