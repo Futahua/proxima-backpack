@@ -9,6 +9,10 @@ import { eventsByDay } from '../src/domain/selectors.js';
 import type { CalendarEvent } from '../src/domain/types.js';
 import { createActionDispatcher } from '../src/app/actionProtocol.js';
 import { createInspectionProjection } from '../src/app/inspection.js';
+import { createCanvasNode } from '../src/domain/canvas.js';
+import { selectCanvasRepresentation } from '../src/domain/canvasRenderer.js';
+import { renderCanvasSurface, type CanvasSurfaceState } from '../src/browser/canvasSurface.js';
+import { sequentialIdGenerator } from '../src/domain/clock.js';
 
 function scaledVault(count: number) {
   const files: Record<string, string> = {};
@@ -148,6 +152,24 @@ describe('Gate 18A deterministic load/refresh scale baseline', () => {
     expect(projection.calendar.events).toHaveLength(500);
     expect(projection.calendar.events[0]?.dayKeys).toEqual(['2026-09-01', '2026-09-02']);
     expect(projection.loadProblems).toEqual([]);
+    expect(elapsedMs).toBeLessThan(5000);
+  });
+
+  it('renders 1000 passive canvas nodes with complete identity accounting', () => {
+    const ids = sequentialIdGenerator();
+    const items = Array.from({ length: 1000 }, (_, index) => {
+      const node = createCanvasNode(ids, { kind: 'browser-file', sourceId: `source-${index}`, filename: `file-${index}.bin`, extension: 'bin', state: 'available', mimeType: 'application/octet-stream', size: 1, modifiedAt: null });
+      return { node, selection: selectCanvasRepresentation(node.source, null), status: 'selected' as const, presentationDiagnostic: null };
+    });
+    const state: CanvasSurfaceState = { items, lastDropDiagnostic: null };
+    const started = performance.now();
+    const html = renderCanvasSurface(state);
+    const elapsedMs = performance.now() - started;
+
+    expect((html.match(/class="canvas-card"/g) ?? []).length).toBe(1000);
+    expect((html.match(/data-canvas-node-id=/g) ?? []).length).toBe(1000);
+    expect(html).toContain('file-0.bin');
+    expect(html).toContain('file-999.bin');
     expect(elapsedMs).toBeLessThan(5000);
   });
 });

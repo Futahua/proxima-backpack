@@ -1896,7 +1896,9 @@ Only after fallback file cards are already first-class.
       non-SLA timing guard (Gate 18C, follow-up to `622953e`).
 - [x] many running Elastic tasks — 1,000-task headless timeline + card-height path
       is covered after indexing the timeline lookup (Gate 18B, `622953e`).
-- [ ] many canvas nodes
+- [x] many canvas nodes — 1,000 passive canvas nodes render through the bounded
+      headless string surface with complete node/card identity accounting and a
+      broad non-SLA timing guard (Gate 18F, follow-up).
 - [ ] large Excalidraw scene
 - [ ] many unsupported file cards
 - [x] cold load measured — in-memory headless load timing is guarded below five
