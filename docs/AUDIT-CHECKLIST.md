@@ -2342,6 +2342,24 @@ Fixture only initially.
       no retry/merge/LWW. Focused set/use-body, insertion, fallback, block refusal
       and zero-read provenance tests pass in `tests/taskDescriptionMutation.test.ts`.
 
+### 13.2P Canonical event creation
+
+- [x] Creation exposes only typed event input and derives the flat destination
+      `<eventsDirectory>/<id>.md` internally; relative bounded directories, safe IDs
+      and portable device-stem rejection prevent arbitrary paths.
+- [x] Required name/createdAt and optional project/start/deadline/completion values
+      use reader-compatible bounded semantics; invalid input and oversized bodies
+      refuse before coordinator calls.
+- [x] Canonical LF UTF-8 source emits explicit id/name/createdAt, preferred
+      `project:`, only supplied optionals, safe quoting and bounded body bytes.
+- [x] New files reload with frontmatter identity, supplied semantics, undated-start
+      and missing-deadline fallback behavior intact; no identity generation or
+      lifecycle operation is bundled.
+- [x] Creation uses coordinator `create` and exclusive `createIfAbsent`; existing
+      bytes are never overwritten, concurrent creators have one winner, and no
+      retry/alternate filename/merge/LWW occurs. Focused canonical, quoting,
+      validation and collision tests pass in `tests/eventCreation.test.ts`.
+
 ### 13.3 Decide whether FSA writes are safe enough
 
 - [ ] expected-revision check can be made meaningful.
