@@ -8,6 +8,8 @@ export interface RecoveryRecord {
   revision: string;
   bytes: Uint8Array;
   nextBytes?: Uint8Array;
+  priorFingerprint?: { size: number; hash: string };
+  intendedFingerprint?: { size: number; hash: string };
   createdAt: string;
   status?: 'prepared' | 'committed' | 'recovery-required' | 'recovered' | 'blocked';
 }

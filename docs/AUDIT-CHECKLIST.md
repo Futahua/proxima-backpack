@@ -1796,6 +1796,15 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [ ] Recovery refuses to overwrite newer peer bytes or delete a peer destination.
 - [x] Journal retention and recovery payload limits remain bounded.
 
+### 13.C2 Mutation-phase crash reconciliation
+
+- [x] Prepared entries are reconciled against actual filesystem state after restart.
+- [x] Update/delete/move committed-vs-unmodified states are classified without blind
+      rollback; ambiguous peer changes become blocked.
+- [x] Reconciliation is idempotent and emits machine-readable outcomes.
+- [ ] Actual process-kill injection at each filesystem mutation phase is verified.
+- [ ] Automatic startup reconciliation is wired into the Papers runtime.
+
 Not enabled merely because a UI needs editing.
 
 ### 13.1 Conflict model

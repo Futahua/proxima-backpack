@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { createDurableRecoveryStore, createMemoryRecoveryStore, reconcileRecoveryEntries } from '../src/app/vaultRecovery.js';
 import { createMemoryVault } from '../src/adapters/memoryVault.js';
 import { fixedClock } from '../src/domain/clock.js';
+import { classifyRecoveryRecord } from '../src/app/vaultRecoveryReconcile.js';
 
 describe('Gate 13C crash-durable recovery journal', () => {
   it('loads a prepared journal written by a terminated process', async () => {
@@ -40,5 +41,15 @@ describe('Gate 13C crash-durable recovery journal', () => {
     const outcomes = await reconcileRecoveryEntries(store, vault);
     expect(outcomes).toEqual(expect.arrayContaining([{ requestId: 'u', outcome: 'committed' }, { requestId: 'd', outcome: 'committed' }, { requestId: 'm', outcome: 'blocked' }]));
     expect(store.list().find((record) => record.requestId === 'm')?.status).toBe('blocked');
+  });
+
+  it('classifies prepared records from byte fingerprints without writing', async () => {
+    const vault = createMemoryVault({ 'task.md': 'new', 'old.md': 'old', 'destination.md': 'peer' });
+    const prior = { requestId: 'u', operation: 'update' as const, path: 'task.md', revision: 'task.md@1', bytes: new TextEncoder().encode('old'), nextBytes: new TextEncoder().encode('new'), createdAt: 'now' };
+    expect(await classifyRecoveryRecord(prior, vault)).toMatchObject({ classification: 'effect-present' });
+    const deleted = { requestId: 'd', operation: 'delete' as const, path: 'missing.md', revision: 'missing.md@1', bytes: new TextEncoder().encode('old'), createdAt: 'now' };
+    expect(await classifyRecoveryRecord(deleted, vault)).toMatchObject({ classification: 'effect-present' });
+    const move = { requestId: 'm', operation: 'move' as const, path: 'old.md', destination: 'destination.md', revision: 'old.md@1', bytes: new TextEncoder().encode('old'), createdAt: 'now' };
+    expect(await classifyRecoveryRecord(move, vault)).toMatchObject({ classification: 'conflict' });
   });
 });

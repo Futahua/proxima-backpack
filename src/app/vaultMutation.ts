@@ -2,6 +2,7 @@ import type { Clock, IdGenerator } from '../domain/clock.js';
 import { randomIdGenerator, systemClock } from '../domain/clock.js';
 import type { VaultReader, VaultWriter, VaultMutationResult } from '../ports/vault.js';
 import type { RecoveryRecord, RecoveryStore } from './vaultRecovery.js';
+function fingerprint(bytes: Uint8Array): { size: number; hash: string } { let value = 2166136261; for (const byte of bytes) value = Math.imul(value ^ byte, 16777619); return { size: bytes.byteLength, hash: (value >>> 0).toString(16).padStart(8, '0') }; }
 
 export type VaultMutation =
   | { kind: 'create'; path: string; bytes: Uint8Array; requestId?: string }
@@ -92,7 +93,8 @@ export function createVaultMutationCoordinator(options: VaultMutationOptions): V
           append({ requestId, kind: mutation.kind, path, outcome: 'conflict', reason: 'missing' });
           return result;
         }
-          recovery = { requestId, operation: mutation.kind, path, ...(mutation.kind === 'move' ? { destination: canonicalPath(mutation.to, maxPathLength) } : {}), revision: prior.revision, bytes: new TextEncoder().encode(prior.text), ...(mutation.kind === 'update' ? { nextBytes: new Uint8Array(mutation.bytes) } : {}), createdAt: new Date(clock.now()).toISOString() };
+          const priorBytes = options.reader.readBinary ? (await options.reader.readBinary(path, maxBytes)).bytes : new TextEncoder().encode(prior.text);
+          recovery = { requestId, operation: mutation.kind, path, ...(mutation.kind === 'move' ? { destination: canonicalPath(mutation.to, maxPathLength) } : {}), revision: prior.revision, bytes: new Uint8Array(priorBytes), priorFingerprint: fingerprint(priorBytes), ...(mutation.kind === 'update' ? { nextBytes: new Uint8Array(mutation.bytes), intendedFingerprint: fingerprint(mutation.bytes) } : {}), createdAt: new Date(clock.now()).toISOString() };
         if (options.recovery) {
           try { await options.recovery.save(recovery); }
           catch {
