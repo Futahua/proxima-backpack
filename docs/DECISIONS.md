@@ -175,6 +175,21 @@ or plugin-owned regions without requiring a generic YAML serializer.
 writable. Missing, duplicate, nested, structured or ambiguous targets refuse visibly;
 broader YAML editing and adding keys remain deferred.
 
+**Historical scope note:** the "Current slice" paragraph above records the first
+write-era implementation slice at the time this decision was re-made. Its narrow
+`status:`-only scope is not the current mutation surface.
+
+Gate 13 later added typed semantic mutation across task, project and event records,
+including bounded optional-field insertion and clear, canonical record creation, and
+record lifecycle. Those later writers preserve this decision's load-bearing invariant:
+existing creator files are changed through bounded source-preserving operations rather
+than by serializing the interpreted `ParsedDocument.frontmatter` projection, and
+canonical new records are emitted from closed semantic templates rather than a generic
+YAML serializer.
+
+See `docs/AUDIT-CHECKLIST.md` Gate 13.2 through 13.2T for the later implementation
+record. This annotation updates implementation scope only; it does not reverse D7.
+
 **Reverses if:** a future writer needs structural YAML edits that cannot be expressed as
 a bounded source-span patch; that gate must adopt a real lossless YAML/build strategy
 before expanding the writable surface.

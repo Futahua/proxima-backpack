@@ -31,13 +31,27 @@ supported. Do not repeat that with a different host.
 
 ## Vault safety
 
-Proxima does not write to the vault. Obsidian is the only writer until a conflict model
-is specified, reviewed and tested. `VaultWriter` in `src/ports/vault.ts` is a marker for
-that future decision and is deliberately unimplemented.
+Creator-vault write authority is disabled.
 
-Automated and agent-driven runs operate on `fixtures/`, never on a real vault. An
-authenticated agent being able to drive Proxima must not become an agent being able to
-mutate every file Proxima can see.
+`VaultWriter` in `src/ports/vault.ts` is an implemented conditional mutation port:
+create-if-absent, write-if-unchanged, move-if-unchanged and delete-if-unchanged. Gate 13
+uses that contract through memory and disposable-root implementations, together with
+semantic record writers, conflict refusal and recovery machinery.
+
+That does not make `VaultWriter` a creator-vault capability. Native browser FSA has no
+atomic compare-and-swap commit primitive, so `evaluateFsaWriteBoundary()` fails closed
+and exposes no FSA writer. `evaluateOwnerAuthorityBoundary()` exposes exact-root-scoped
+read authority only, and reports write authority disabled.
+
+Obsidian remains a concurrent peer writer. No Proxima path may silently turn an observed
+revision into last-writer-wins behaviour, or infer that successful read authority also
+grants write authority.
+
+Automated and agent-driven mutation runs operate on memory, `fixtures/` or disposable
+roots. Explicitly supplied external or creator-vault roots may be used by the defined
+read-only acceptance paths, but read access must never be treated as mutation authority.
+An authenticated agent being able to drive Proxima must not become an agent being able
+to mutate every file Proxima can see.
 
 ## Programmability
 

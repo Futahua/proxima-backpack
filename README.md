@@ -15,7 +15,9 @@ Proxima owns its own domain model and reads the same files from the outside.
 - Not an Obsidian plugin, and not an emulation of one. There is no fake `App`, `Vault`
   or `WorkspaceLeaf` compatibility layer — building one would preserve exactly the
   architecture this project exists to leave.
-- Not a writer, yet. See below.
+- Not a creator-vault writer. The repository contains conditional mutation machinery
+  for memory and disposable roots, but creator-vault write authority is disabled. See
+  below.
 
 ## Relationship to Obsidian
 
@@ -23,10 +25,18 @@ Obsidian is a peer, not a host. The vault stays canonical on disk and stays full
 editable in Obsidian, with its plugins — Excalidraw in particular — working exactly as
 they do today.
 
-**Proxima does not write to the vault in v1.** Obsidian is the only writer. Two
-programs editing the same Markdown file need a specified conflict model before either
-is allowed to save, and that model does not exist yet. Read-only first is a decision
-about protecting real creator data, not a limitation to route around.
+**Proxima's creator-vault boundary is read-only.** The repository already contains a
+conditional mutation engine, recovery machinery, and semantic task/project/event writers
+exercised against memory and disposable roots. Gate 13D2 records actual
+Obsidian-versus-Proxima conditional-write concurrency acceptance.
+
+That mutation substrate is not exposed as creator-vault write authority. Native browser
+File System Access cannot atomically validate the previously observed revision at
+commit, so `evaluateFsaWriteBoundary()` fails closed with
+`BLOCKED / fsa-no-compare-and-swap`. `evaluateOwnerAuthorityBoundary()` likewise reports
+read-only authority with writes disabled. Obsidian therefore remains a concurrent peer
+writer that Proxima must never silently overwrite. Read-only first is a decision about
+protecting real creator data, not a limitation to route around.
 
 ## Data layout
 
@@ -39,8 +49,9 @@ One Markdown file per record, under a configurable root (default `Proxima`):
 ```
 
 The plugin's own default — `-Hide/Proxima/projects | tasks | events` — is read too, in
-place, with no migration and no writes. Each of the three directories is configured
-separately, so a vault someone rearranged by hand stays readable.
+place, with no migration. Creator-vault source paths remain read-only. Each of the three
+directories is configured separately, so a vault someone rearranged by hand stays
+readable.
 
 Each file carries frontmatter Proxima interprets and a body it leaves alone. A record's
 logical id is what it declares in `id:`, or failing that its own filename — never its
@@ -51,14 +62,23 @@ the same id is a reported error rather than a tiebreak.
 The frontmatter parser handles a documented subset — scalars, quoted strings, inline and
 block lists — which is why the fixtures are real files rather than assumed YAML.
 
-## Fixture browser build
+## Browser build and source modes
 
 `npm run build` emits a self-contained static page at `public/index.html` and browser
-modules under `public/build/`. The page boots the real `vault-basic` fixture through the
-memory adapter and vault reader, with no FSA picker, Obsidian runtime, network request,
-or real-vault write authority. The page exposes the exact git SHA, fixture hash,
-lockfile hash, schema versions, fixed clock, hydration revision and record/problem
-counts so an acceptance run can identify exactly what it loaded.
+modules under `public/build/`. An ordinary build boots the real `vault-basic` fixture
+through the memory adapter and vault reader.
+
+The browser also exposes native FSA selection and re-read controls as bounded acceptance
+probes. Those controls inspect and persist probe authority; they do not make the selected
+FSA directory the active Proxima source session.
+
+An explicitly agent-enabled build may instead restore the loopback bridge as an external
+read-only source. If no accepted external source is available, startup falls back to the
+bundled fixture. Neither source mode exposes creator-vault write authority.
+
+The page exposes the exact git SHA, fixture hash, lockfile hash, schema versions, fixed
+clock, hydration revision and record/problem counts so an acceptance run can identify
+exactly what it loaded.
 
 **`docs/VAULT-FORMATS.md`** is the full specification: both layouts, the discovery
 rules, identity semantics and every problem code. **`docs/DECISIONS.md`** records the
@@ -129,15 +149,23 @@ The acceptance machine has a real Papers Backpack identity and a machine-local
 The UUID is intentionally not a portable product identity; another machine must mint
 and bind its own Backpack rather than copying this registration state.
 
-The browser surface is fixture-only and read-only. Its project-owned action dispatcher
-and inspection projection live in `src/app/actionProtocol.ts` and
-`src/app/inspection.ts`; Papers remains an opaque host and does not interpret these
-contracts.
+The browser surface is read-only. Its active source session can consume either the
+bundled fixture or an explicitly enabled external read-only source, and refreshed
+projections flow through the same source/session path. The native FSA controls are
+acceptance probes rather than an alternate active source.
+
+Its project-owned action dispatcher and inspection projection live in
+`src/app/actionProtocol.ts` and `src/app/inspection.ts`; Papers remains an opaque host
+and does not interpret these contracts.
 
 ## Status
 
-Early. The domain layer, vault seam, fixture vaults, deterministic browser surface,
-semantic action dispatcher, inspection projection and test suite exist. Both the
-preferred and legacy vault layouts load; real-vault writes remain disabled.
+The domain and vault-read layers, Board/Calendar/Canvas browser surfaces, external
+refresh and projection pipeline, semantic action and inspection seams, conditional
+mutation coordinator, durable recovery machinery, and semantic task/project/event
+mutation surfaces exist. Both the preferred and legacy vault layouts load.
+
+Creator-vault writes remain disabled. Native FSA write authority is explicitly `BLOCKED`,
+and the current owner authority boundary is exact-root-scoped read-only.
 
 Progress is tracked gate by gate in `docs/AUDIT-CHECKLIST.md`.

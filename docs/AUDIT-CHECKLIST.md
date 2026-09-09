@@ -39,12 +39,12 @@ back.”
 
 | Field | Value |
 | --- | --- |
-| Current slice | Gate 6.5B — defined-scope read-only real-vault closeout |
-| Branch | `codex/gate-1b-correction` (local acceptance worktree) |
-| Last audited SHA | `57f1e20` — Gate 6.5A safety invariants PASS; native Papers-hosted and broader native-host acceptance remain OPEN. |
-| Papers changed | No |
-| Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` |
-| Real-vault write authority | **Bootstrap-disabled.** The signed read-only release remains non-mutating. Final owner mode is intended to support creator-authorized create/edit/rename/move/delete after Gates 13–17 prove conditional commits, recovery, bounded authority and coexistence. |
+| Current slice | Documentation truth alignment at `071f8c3`; the latest closed creator-authority gate is Gate 14 - read-only owner boundary. |
+| Branch | `gate6o` |
+| Last audited SHA | `071f8c3` - typecheck clean; 92 test files / 574 tests pass. |
+| Papers changed | No Papers change is recorded by this Proxima commit. |
+| Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` - retained as the repository's recorded machine-local baseline, not a fresh current-Papers acceptance claim. |
+| Real-vault write authority | **Disabled.** Gate 13 contains the conditional mutation and recovery substrate for memory and disposable roots. Gate 13.3 closes native FSA writing as `BLOCKED / fsa-no-compare-and-swap`; Gate 14 closes owner authority as exact-root-scoped read-only with writes disabled. |
 
 ## Baseline, unless deliberately changed later
 
@@ -52,17 +52,53 @@ back.”
 - Proxima repo: `Futahua/proxima-backpack`
 - Obsidian remains a peer application.
 - The vault remains canonical creator data.
-- The current signed foundation is read-only against creator data; that is a bootstrap
-  safety milestone, not the terminal product scope.
+- Creator-data authority is currently read-only; that is a bootstrap safety milestone,
+  not the terminal product scope.
+- The repository contains conditional mutation, semantic record-writing and recovery
+  machinery for memory and disposable roots; no native FSA writer is exposed.
+- Native FSA write authority is CLOSED / NO-GO under D51, because the browser API
+  cannot atomically validate the observed revision at commit.
+- Owner authority is exact-root-scoped read-only under D52; write authority is disabled.
 - Final owner mode is intended to support programmatic create, edit, rename/move and
-  delete anywhere inside an explicitly creator-granted vault.
-- Write authority is enabled only after the mutation engine, conflict, recovery,
-  bounded-authority, native and coexistence gates below pass.
+  delete anywhere inside an explicitly creator-granted vault, and is enabled only after
+  the remaining bounded-authority, native and coexistence gates below pass.
 - KeToan is permanently out of scope.
 - Primary product surfaces: Elastic board, calendar, projects, then arbitrary-file /
   canvas work.
 - Proxima must remain independently programmable and testable without depending on
   Papers or Obsidian internals.
+
+## Open questions the source does not settle
+
+These are recorded as questions, not answered in prose elsewhere. Nothing below may be
+written into `README.md`, `AGENTS.md` or `docs/VAULT-FORMATS.md` as settled behaviour
+until it is decided.
+
+- [ ] **Unsupported frontmatter on load versus on refresh.** `vaultRepository.ts:236-243`
+      emits `unsupported-frontmatter` at severity `warning` and still loads the record;
+      `refreshController.ts:79-83` lists that same code beside the blocking codes, so a
+      refresh carrying it is classified `malformed` and the previously accepted
+      generation is retained as stale. A vault that is acceptable as an initial
+      generation is therefore not acceptable as a subsequent one.
+      *Question:* should an unrepresentable frontmatter construct be acceptable both on
+      initial load and on refresh, or should it block acceptance of a refreshed
+      generation - and if the latter, why is the identical vault acceptable at startup?
+      *Lands in:* `docs/VAULT-FORMATS.md`, since it fixes the meaning and severity of
+      `unsupported-frontmatter`. If the answer deliberately distinguishes startup from
+      refresh, record the rationale as a new decision in `docs/DECISIONS.md`.
+- [ ] **Exact currently validated Papers host SHA.** No fresh running-Papers acceptance
+      artifact exists for the current tree, and source cannot make a newer Papers
+      baseline true.
+      *Question:* which exact Papers SHA, if any, has been run against the `071f8c3`
+      Proxima build with host-integrated acceptance evidence?
+      *Lands in:* the Current status table and a new evidence entry here. Historical gate
+      evidence is not edited to accommodate it.
+- [ ] **Fresh native creator-vault acceptance for `071f8c3`.** Bridge and disposable
+      coexistence runs are not substitutes.
+      *Question:* has the exact `071f8c3` build been accepted in the real Papers-hosted
+      native FSA path against the intended creator-vault grant, and what artifact
+      records that run?
+      *Lands in:* Gate 22R below, once such evidence exists.
 
 ---
 
@@ -1772,6 +1808,11 @@ to the creator's real vault. No UI interaction is required to drive it.
       coexistence remains a separate native integration gate.
 - [ ] Creator-vault/native-FSA mutation authority remains disabled.
 
+> **Later resolution:** Gate 13.3 below closes this as an explicit safety NO-GO rather
+> than an unfinished writer task. The mutation substrate exists; native FSA
+> creator-vault authority remains disabled because the available commit primitive is
+> non-atomic. See D51.
+
 ### 13.B Adversarial commit and recovery status
 
 - [x] Forced external edit between revision check and update is refused without
@@ -1785,6 +1826,12 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Crash injection and conditional recovery restore are verified.
 - [ ] Independent Obsidian writer coexistence is verified for write operations.
 - [ ] Exact residual filesystem race semantics are documented for native/FSA adapters.
+
+> **Superseded by later Gate 13 evidence:** 13D2 closes the actual
+> Obsidian-versus-Proxima conditional-write concurrency claim, and 13.3 classifies the
+> residual native FSA check-to-commit race as unacceptable and closes native writes
+> NO-GO. These original boxes remain unchanged as the state recorded at this earlier
+> Gate 13.B checkpoint.
 
 ### 13.C Crash-durable recovery journal
 
@@ -1866,6 +1913,10 @@ to the creator's real vault. No UI interaction is required to drive it.
       attribution cover peer source disappearance without automatic recreation.
 - [ ] Actual Obsidian application against a disposable vault remains Gate 13.D2.
 
+> **Superseded:** 13D2 below was later executed and closed PASS for the defined actual
+> Obsidian write-concurrency acceptance. It does not establish native FSA atomic-write
+> safety; that question is separately closed NO-GO by 13.3.
+
 ### 13.1P / 17.2A Independent Proxima writer coexistence
 
 - [x] Two independently constructed coordinators sharing one disposable disk vault
@@ -1900,6 +1951,10 @@ Not enabled merely because a UI needs editing.
 - [x] rename conflict behavior
 - [x] deletion conflict behavior
 - [ ] external Obsidian edit during Proxima edit — native Obsidian 13D2 remains OPEN
+
+> **Superseded:** the external-Obsidian-edit case is closed by 13D2 below. This
+> unchecked row is preserved as the state of the conflict-model checklist before that
+> native application acceptance ran.
 - [x] two Proxima surfaces editing same source
 - [x] process-death/restart recovery behavior where relevant; fsync/power-loss
       durability is explicitly not claimed
@@ -1923,6 +1978,10 @@ Not enabled merely because a UI needs editing.
       or fsync guarantees.
 - [ ] Actual Obsidian application edits during Proxima writes remain OPEN at 13D2;
       disposable peer-writer evidence is not substituted.
+
+> **Superseded by 13D2:** actual Obsidian edits during Proxima's conditional-write
+> window were later exercised; Proxima returned `stale` and preserved the Obsidian
+> bytes. This historical OPEN row remains unchanged.
 
 ### 13.2 Writer conformance
 
@@ -2434,6 +2493,12 @@ Fixture only initially.
       OPEN at Gate 13.3/13D2; disposable peer evidence is not substituted.
 - [x] Commits after 83692ff are local-only supplied evidence while GitHub connectivity
       is unavailable; no connector verification is claimed for those SHAs.
+
+> **Superseded immediately below:** 13.2T implements repo-only project and event
+> rename/delete lifecycle, and 13D2 closes actual Obsidian write concurrency while 13.3
+> closes the native FSA atomicity question as NO-GO. `createdAt` mutation remains
+> outside the exposed mutation surface, and neither later result enables creator-vault
+> writes. The rows above are preserved as the state recorded at this checkpoint.
 
 ### 13.2T Project and event lifecycle (repo-only)
 
@@ -3009,6 +3074,24 @@ Current truth stays in-repo.
       `tests/actionProtocol.test.ts`, `tests/refreshIntegration.test.ts`,
       `tests/inspection.test.ts`). Full Papers-host click/capture acceptance remains
       the separate C1 OPEN row.
+
+### 22R Current-tree revalidation
+
+This entry supersedes only those claims in Gate 22 that described its reviewed SHA as
+the "current tree". The original Gate 22 evidence remains unchanged as historical
+evidence for the build it actually recorded.
+
+- [x] `npm run typecheck` passes at `071f8c3`.
+- [x] `npm test` passes at `071f8c3`: 92 test files / 574 tests.
+- [ ] Clean-clone `npm ci` + `npm run build` revalidated at `071f8c3`.
+- [ ] Exact generated fixture-build provenance recorded for `071f8c3`.
+- [ ] Fresh Papers-host C1 acceptance for `071f8c3`.
+- [ ] Fresh native FSA creator-vault read-only acceptance for `071f8c3`.
+- [ ] Fresh representative native creator-vault/Obsidian acceptance for `071f8c3`.
+
+The unchecked host and native rows remain unchecked unless an artifact from the exact
+`071f8c3` build exists. Older bridge, disposable, Gate 7 or Gate 13D2 evidence is not
+silently promoted into current host-integrated acceptance.
 
 ---
 
