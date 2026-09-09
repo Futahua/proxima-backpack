@@ -5,12 +5,13 @@ import type { ProximaState } from '../domain/types.js';
 import { createEventRing, type EventRing, type ProximaEvent } from './eventRing.js';
 import {
   categoryOf,
-  outcomeForErrorCode,
-  isActionCategory,
+  isActionErrorCode,
   isActionOutcome,
+  outcomeForErrorCode,
   type ActionCategory,
   type ActionErrorCode,
   type ActionOutcome,
+  type RegisteredActionType,
 } from './actionTaxonomy.js';
 
 export type { ActionCategory, ActionErrorCode, ActionOutcome } from './actionTaxonomy.js';
@@ -25,6 +26,14 @@ export type ProximaAction =
   | { type: 'surface.select'; surface: Surface }
   | { type: 'calendar.shift-month'; delta: -1 | 1 }
   | { type: 'fixture.reset' };
+
+const ACTION_TAXONOMY_MATCHES_PROTOCOL: [
+  Exclude<ProximaAction['type'], RegisteredActionType>,
+  Exclude<RegisteredActionType, ProximaAction['type']>,
+] extends [never, never]
+  ? true
+  : never = true;
+void ACTION_TAXONOMY_MATCHES_PROTOCOL;
 
 export interface ActionError {
   code: ActionErrorCode;
@@ -101,7 +110,12 @@ export interface ActionDispatcherOptions {
 export interface ProximaActionDispatcher {
   dispatch(input: unknown): ActionResult;
   /** Atomically replace the readable source generation; never writes to the source. */
-  replaceSource(input: { state: ProximaState; problems: LoadProblem[]; revisions: Record<string, string>; sourceRevision: number }): { changed: boolean; stateRevision: number };
+  replaceSource(input: {
+    state: ProximaState;
+    problems: LoadProblem[];
+    revisions: Record<string, string>;
+    sourceRevision: number;
+  }): { changed: boolean; stateRevision: number };
   snapshot(): Readonly<ActionDispatcherState>;
   events(afterSequence?: number): ProximaEvent[];
 }
@@ -127,40 +141,96 @@ function invalidAction(message: string, field?: string, requestId = 'request-inv
 /** Parse and validate the public action shape before dispatching it. */
 export function parseAction(input: unknown): { ok: true; action: ProximaAction } | { ok: false; error: ActionError } {
   if (!isRecord(input) || typeof input.type !== 'string') {
-    return { ok: false, error: { code: 'invalid-action', message: 'action must be an object with a string type', field: 'type' } };
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-action',
+        message: 'action must be an object with a string type',
+        field: 'type',
+      },
+    };
   }
+
   if (input.type === 'project.select') {
     return typeof input.projectId === 'string' && input.projectId.length <= 200
       ? { ok: true, action: { type: input.type, projectId: input.projectId } }
-      : { ok: false, error: { code: 'invalid-action-input', message: 'projectId must be a bounded string', field: 'projectId' } };
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'projectId must be a bounded string',
+            field: 'projectId',
+          },
+        };
   }
+
   if (input.type === 'surface.select') {
     return input.surface === 'board' || input.surface === 'calendar' || input.surface === 'canvas'
       ? { ok: true, action: { type: input.type, surface: input.surface } }
-      : { ok: false, error: { code: 'invalid-action-input', message: 'surface must be board, calendar or canvas', field: 'surface' } };
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'surface must be board, calendar or canvas',
+            field: 'surface',
+          },
+        };
   }
+
   if (input.type === 'calendar.shift-month') {
     return input.delta === -1 || input.delta === 1
       ? { ok: true, action: { type: input.type, delta: input.delta } }
-      : { ok: false, error: { code: 'invalid-action-input', message: 'delta must be -1 or 1', field: 'delta' } };
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'delta must be -1 or 1',
+            field: 'delta',
+          },
+        };
   }
-  if (input.type === 'fixture.reset') return { ok: true, action: { type: input.type } };
-  return { ok: false, error: { code: 'invalid-action', message: `unsupported action type: ${input.type}`, field: 'type' } };
+
+  if (input.type === 'fixture.reset') {
+    return { ok: true, action: { type: input.type } };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: 'invalid-action',
+      message: `unsupported action type: ${input.type}`,
+      field: 'type',
+    },
+  };
 }
 
 function snapshot(state: ActionDispatcherState): ActionSnapshot {
-  return { surface: state.surface, selection: state.selection, calendarMonth: state.calendarMonth };
+  return {
+    surface: state.surface,
+    selection: state.selection,
+    calendarMonth: state.calendarMonth,
+  };
 }
 
-function resultFor(state: ActionDispatcherState, actionType: string, changed: boolean, requestId: string, entityIds: string[] = []): ActionSuccess {
+function resultFor(
+  state: ActionDispatcherState,
+  actionType: ProximaAction['type'],
+  changed: boolean,
+  requestId: string,
+  entityIds: string[] = [],
+): ActionSuccess {
   const category = categoryOf(actionType);
+
   // An accepted action whose type was never registered would report a cost nobody
   // declared, so refuse to invent one rather than defaulting it to 'presentation'.
-  if (category === undefined) throw new Error(`action type is not registered in the taxonomy: ${actionType}`);
+  if (category === undefined) {
+    throw new Error(`action type is not registered in the taxonomy: ${actionType}`);
+  }
+
   return {
     schemaVersion: ACTION_SCHEMA_VERSION,
     ok: true,
-    actionType: actionType as ProximaAction['type'],
+    actionType,
     category,
     outcome: 'accepted',
     changed,
@@ -171,7 +241,13 @@ function resultFor(state: ActionDispatcherState, actionType: string, changed: bo
   };
 }
 
-function failureFor(state: ActionDispatcherState, actionType: string, error: ActionError, requestId: string, entityIds: string[] = []): ActionFailure {
+function failureFor(
+  state: ActionDispatcherState,
+  actionType: string,
+  error: ActionError,
+  requestId: string,
+  entityIds: string[] = [],
+): ActionFailure {
   return {
     schemaVersion: ACTION_SCHEMA_VERSION,
     ok: false,
@@ -186,15 +262,22 @@ function failureFor(state: ActionDispatcherState, actionType: string, error: Act
 }
 
 function isValidCalendarMonth(value: string): boolean {
-  return /^\d{4}-(0[1-9]|1[0-2])-01$/.test(value) && Number.isFinite(new Date(`${value}T00:00:00`).getTime());
+  return /^\d{4}-(0[1-9]|1[0-2])-01$/.test(value)
+    && Number.isFinite(new Date(`${value}T00:00:00`).getTime());
 }
 
 function shiftCalendarMonth(value: string, delta: -1 | 1): string {
   const match = /^(\d{4})-(\d{2})-01$/.exec(value);
-  if (!match) return '2026-09-01';
+  if (!match) {
+    return '2026-09-01';
+  }
+
   const monthIndex = Number(match[1]) * 12 + Number(match[2]) - 1 + delta;
   const year = Math.floor(monthIndex / 12);
-  if (year < 0 || year > 9999) return value;
+  if (year < 0 || year > 9999) {
+    return value;
+  }
+
   const month = monthIndex - year * 12 + 1;
   return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01`;
 }
@@ -203,6 +286,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
   const clock = options.clock ?? systemClock;
   const ids = options.idGenerator ?? randomIdGenerator();
   const ring = createEventRing({ clock, ids, capacity: options.eventCapacity });
+
   const state: ActionDispatcherState = {
     state: options.state,
     problems: [...(options.problems ?? [])],
@@ -217,96 +301,292 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     latestEventSequence: 0,
     sourceRevision: options.initialSourceRevision ?? 1,
   };
-  if (!isValidCalendarMonth(state.calendarMonth)) state.calendarMonth = '2026-09-01';
-  if (state.surface !== 'canvas') state.selection = reconcileSelection(state.state.projects, state.selection, state.surface);
+
+  if (!isValidCalendarMonth(state.calendarMonth)) {
+    state.calendarMonth = '2026-09-01';
+  }
+
+  if (state.surface !== 'canvas') {
+    state.selection = reconcileSelection(state.state.projects, state.selection, state.surface);
+  }
 
   return {
     dispatch(input: unknown): ActionResult {
       const requestId = ids.next('request');
       const parsed = parseAction(input);
+
       if (!parsed.ok) {
-        const result = failureFor(state, isRecord(input) && typeof input.type === 'string' ? input.type : 'unknown', parsed.error, requestId);
-        ring.append({ kind: 'action.rejected', category: 'diagnostic', entityIds: [], requestId, actionType: result.actionType, stateRevision: state.stateRevision, errorCode: result.error.code });
+        const result = failureFor(
+          state,
+          isRecord(input) && typeof input.type === 'string' ? input.type : 'unknown',
+          parsed.error,
+          requestId,
+        );
+
+        ring.append({
+          kind: 'action.rejected',
+          category: 'diagnostic',
+          entityIds: [],
+          requestId,
+          actionType: result.actionType,
+          stateRevision: state.stateRevision,
+          errorCode: result.error.code,
+        });
         state.latestEventSequence = ring.latestSequence();
         return result;
       }
+
       const action = parsed.action;
+
       if (action.type === 'project.select') {
-        if (action.projectId !== ALL_PROJECTS && action.projectId !== UNCATEGORISED && !state.state.projects.some((project) => project.id === action.projectId)) {
-          const result = failureFor(state, action.type, { code: 'project-not-found', message: `project does not exist: ${action.projectId}`, field: 'projectId' }, requestId, [action.projectId]);
-          ring.append({ kind: 'action.rejected', category: 'diagnostic', entityIds: [action.projectId], requestId, actionType: action.type, stateRevision: state.stateRevision, errorCode: result.error.code });
+        if (
+          action.projectId !== ALL_PROJECTS
+          && action.projectId !== UNCATEGORISED
+          && !state.state.projects.some((project) => project.id === action.projectId)
+        ) {
+          const result = failureFor(
+            state,
+            action.type,
+            {
+              code: 'project-not-found',
+              message: `project does not exist: ${action.projectId}`,
+              field: 'projectId',
+            },
+            requestId,
+            [action.projectId],
+          );
+
+          ring.append({
+            kind: 'action.rejected',
+            category: 'diagnostic',
+            entityIds: [action.projectId],
+            requestId,
+            actionType: action.type,
+            stateRevision: state.stateRevision,
+            errorCode: result.error.code,
+          });
           state.latestEventSequence = ring.latestSequence();
           return result;
         }
-        const next = state.surface === 'canvas' ? state.selection : reconcileSelection(state.state.projects, action.projectId, state.surface);
+
+        const next = state.surface === 'canvas'
+          ? state.selection
+          : reconcileSelection(state.state.projects, action.projectId, state.surface);
         const changed = next !== state.selection;
-        if (changed) { state.selection = next; state.stateRevision += 1; }
-        ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [action.projectId], requestId, actionType: action.type, stateRevision: state.stateRevision });
-        ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
-        state.settledRevision = state.stateRevision; state.settled = true;
+
+        if (changed) {
+          state.selection = next;
+          state.stateRevision += 1;
+        }
+
+        ring.append({
+          kind: 'action.accepted',
+          category: 'domain',
+          entityIds: [action.projectId],
+          requestId,
+          actionType: action.type,
+          stateRevision: state.stateRevision,
+        });
+        ring.append({
+          kind: 'state.settled',
+          category: 'lifecycle',
+          entityIds: [],
+          requestId,
+          actionType: action.type,
+          stateRevision: state.stateRevision,
+        });
+        state.settledRevision = state.stateRevision;
+        state.settled = true;
         state.latestEventSequence = ring.latestSequence();
+
         return resultFor(state, action.type, changed, requestId, [action.projectId]);
       }
+
       if (action.type === 'surface.select') {
-        const nextSelection = action.surface === 'canvas' ? state.selection : reconcileSelection(state.state.projects, state.selection, action.surface);
+        const nextSelection = action.surface === 'canvas'
+          ? state.selection
+          : reconcileSelection(state.state.projects, state.selection, action.surface);
         const changed = state.surface !== action.surface || state.selection !== nextSelection;
-        if (changed) { state.surface = action.surface; state.selection = nextSelection; state.stateRevision += 1; }
-        ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [action.surface], requestId, actionType: action.type, stateRevision: state.stateRevision });
-        ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
-        state.settledRevision = state.stateRevision; state.settled = true;
+
+        if (changed) {
+          state.surface = action.surface;
+          state.selection = nextSelection;
+          state.stateRevision += 1;
+        }
+
+        ring.append({
+          kind: 'action.accepted',
+          category: 'domain',
+          entityIds: [action.surface],
+          requestId,
+          actionType: action.type,
+          stateRevision: state.stateRevision,
+        });
+        ring.append({
+          kind: 'state.settled',
+          category: 'lifecycle',
+          entityIds: [],
+          requestId,
+          actionType: action.type,
+          stateRevision: state.stateRevision,
+        });
+        state.settledRevision = state.stateRevision;
+        state.settled = true;
         state.latestEventSequence = ring.latestSequence();
+
         return resultFor(state, action.type, changed, requestId);
       }
+
       if (action.type === 'calendar.shift-month') {
         const next = shiftCalendarMonth(state.calendarMonth, action.delta);
         const changed = next !== state.calendarMonth;
         state.calendarMonth = next;
-        if (changed) state.stateRevision += 1;
-        ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [state.calendarMonth], requestId, actionType: action.type, stateRevision: state.stateRevision });
-        ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
-        state.settledRevision = state.stateRevision; state.settled = true;
+
+        if (changed) {
+          state.stateRevision += 1;
+        }
+
+        ring.append({
+          kind: 'action.accepted',
+          category: 'domain',
+          entityIds: [state.calendarMonth],
+          requestId,
+          actionType: action.type,
+          stateRevision: state.stateRevision,
+        });
+        ring.append({
+          kind: 'state.settled',
+          category: 'lifecycle',
+          entityIds: [],
+          requestId,
+          actionType: action.type,
+          stateRevision: state.stateRevision,
+        });
+        state.settledRevision = state.stateRevision;
+        state.settled = true;
         state.latestEventSequence = ring.latestSequence();
+
         return resultFor(state, action.type, changed, requestId);
       }
+
       if (state.mode !== 'fixture') {
-        const result = failureFor(state, action.type, { code: 'action-not-available', message: 'fixture reset is only available in fixture mode' }, requestId);
-        ring.append({ kind: 'action.rejected', category: 'diagnostic', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision, errorCode: result.error.code });
+        const result = failureFor(
+          state,
+          action.type,
+          {
+            code: 'action-not-available',
+            message: 'fixture reset is only available in fixture mode',
+          },
+          requestId,
+        );
+
+        ring.append({
+          kind: 'action.rejected',
+          category: 'diagnostic',
+          entityIds: [],
+          requestId,
+          actionType: action.type,
+          stateRevision: state.stateRevision,
+          errorCode: result.error.code,
+        });
         state.latestEventSequence = ring.latestSequence();
         return result;
       }
-      const changed = state.surface !== 'board' || state.selection !== ALL_PROJECTS || state.calendarMonth !== '2026-09-01';
-      state.surface = 'board'; state.selection = ALL_PROJECTS; state.calendarMonth = '2026-09-01';
-      if (changed) state.stateRevision += 1;
-      ring.append({ kind: 'action.accepted', category: 'domain', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
-      ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
-      state.settledRevision = state.stateRevision; state.settled = true;
+
+      const changed = state.surface !== 'board'
+        || state.selection !== ALL_PROJECTS
+        || state.calendarMonth !== '2026-09-01';
+
+      state.surface = 'board';
+      state.selection = ALL_PROJECTS;
+      state.calendarMonth = '2026-09-01';
+
+      if (changed) {
+        state.stateRevision += 1;
+      }
+
+      ring.append({
+        kind: 'action.accepted',
+        category: 'domain',
+        entityIds: [],
+        requestId,
+        actionType: action.type,
+        stateRevision: state.stateRevision,
+      });
+      ring.append({
+        kind: 'state.settled',
+        category: 'lifecycle',
+        entityIds: [],
+        requestId,
+        actionType: action.type,
+        stateRevision: state.stateRevision,
+      });
+      state.settledRevision = state.stateRevision;
+      state.settled = true;
       state.latestEventSequence = ring.latestSequence();
+
       return resultFor(state, action.type, changed, requestId);
     },
+
     replaceSource(input) {
       const sourceChanged = input.sourceRevision !== state.sourceRevision;
-      const nextSelection = state.surface === 'canvas' ? state.selection : reconcileSelection(input.state.projects, state.selection, state.surface);
+      const nextSelection = state.surface === 'canvas'
+        ? state.selection
+        : reconcileSelection(input.state.projects, state.selection, state.surface);
       const selectionChanged = nextSelection !== state.selection;
+
       state.state = input.state;
       state.problems = [...input.problems];
       state.revisions = { ...input.revisions };
       state.sourceRevision = input.sourceRevision;
       state.selection = nextSelection;
-      if (sourceChanged || selectionChanged) state.stateRevision += 1;
+
+      if (sourceChanged || selectionChanged) {
+        state.stateRevision += 1;
+      }
+
       state.settledRevision = state.stateRevision;
       state.settled = true;
+
       if (sourceChanged || selectionChanged) {
         const requestId = ids.next('refresh');
-        ring.append({ kind: 'action.accepted', category: 'lifecycle', entityIds: [], requestId, actionType: 'source.refresh', stateRevision: state.stateRevision });
-        ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: 'source.refresh', stateRevision: state.stateRevision });
+
+        ring.append({
+          kind: 'action.accepted',
+          category: 'lifecycle',
+          entityIds: [],
+          requestId,
+          actionType: 'source.refresh',
+          stateRevision: state.stateRevision,
+        });
+        ring.append({
+          kind: 'state.settled',
+          category: 'lifecycle',
+          entityIds: [],
+          requestId,
+          actionType: 'source.refresh',
+          stateRevision: state.stateRevision,
+        });
         state.latestEventSequence = ring.latestSequence();
       }
-      return { changed: sourceChanged || selectionChanged, stateRevision: state.stateRevision };
+
+      return {
+        changed: sourceChanged || selectionChanged,
+        stateRevision: state.stateRevision,
+      };
     },
+
     snapshot(): Readonly<ActionDispatcherState> {
-      return { ...state, problems: [...state.problems], revisions: { ...state.revisions } };
+      return {
+        ...state,
+        problems: [...state.problems],
+        revisions: { ...state.revisions },
+      };
     },
-    events(afterSequence = 0): ProximaEvent[] { return ring.read(afterSequence); },
+
+    events(afterSequence = 0): ProximaEvent[] {
+      return ring.read(afterSequence);
+    },
   };
 }
 
@@ -323,13 +603,67 @@ export function invalidActionResult(message = 'invalid action', requestId = 'req
  * that cannot say what happened is not a result an agent can act on.
  */
 export function isActionResult(value: unknown): value is ActionResult {
-  if (!isRecord(value) || value.schemaVersion !== ACTION_SCHEMA_VERSION || typeof value.ok !== 'boolean' || typeof value.stateRevision !== 'number' || typeof value.actionType !== 'string') return false;
-  if (typeof value.requestId !== 'string' || !isActionOutcome(value.outcome)) return false;
-  if (!Array.isArray(value.entityIds) || value.entityIds.some((id) => typeof id !== 'string')) return false;
-  if (value.ok) {
-    const snapshot = value.snapshot;
-    return value.outcome === 'accepted' && isActionCategory(value.category) && typeof value.changed === 'boolean' && isRecord(snapshot) && (snapshot.surface === 'board' || snapshot.surface === 'calendar' || snapshot.surface === 'canvas') && typeof snapshot.selection === 'string' && typeof snapshot.calendarMonth === 'string';
+  if (
+    !isRecord(value)
+    || value.schemaVersion !== ACTION_SCHEMA_VERSION
+    || typeof value.ok !== 'boolean'
+    || typeof value.stateRevision !== 'number'
+    || typeof value.actionType !== 'string'
+  ) {
+    return false;
   }
-  const error = value.error;
-  return value.outcome !== 'accepted' && (isActionCategory(value.category) || value.category === 'unknown') && isRecord(error) && typeof error.code === 'string' && typeof error.message === 'string';
+
+  if (
+    !Number.isInteger(value.stateRevision)
+    || value.stateRevision < 0
+    || typeof value.requestId !== 'string'
+    || value.requestId.length === 0
+    || !isActionOutcome(value.outcome)
+  ) {
+    return false;
+  }
+
+  if (
+    !Array.isArray(value.entityIds)
+    || value.entityIds.some((id) => typeof id !== 'string')
+  ) {
+    return false;
+  }
+
+  const expectedCategory = categoryOf(value.actionType);
+
+  if (value.ok) {
+    const snapshotValue = value.snapshot;
+
+    return expectedCategory !== undefined
+      && value.category === expectedCategory
+      && value.outcome === 'accepted'
+      && typeof value.changed === 'boolean'
+      && isRecord(snapshotValue)
+      && (
+        snapshotValue.surface === 'board'
+        || snapshotValue.surface === 'calendar'
+        || snapshotValue.surface === 'canvas'
+      )
+      && typeof snapshotValue.selection === 'string'
+      && typeof snapshotValue.calendarMonth === 'string'
+      && isValidCalendarMonth(snapshotValue.calendarMonth);
+  }
+
+  const errorValue = value.error;
+
+  if (value.category !== (expectedCategory ?? 'unknown')) {
+    return false;
+  }
+
+  if (
+    !isRecord(errorValue)
+    || !isActionErrorCode(errorValue.code)
+    || typeof errorValue.message !== 'string'
+    || (errorValue.field !== undefined && typeof errorValue.field !== 'string')
+  ) {
+    return false;
+  }
+
+  return value.outcome === outcomeForErrorCode(errorValue.code);
 }

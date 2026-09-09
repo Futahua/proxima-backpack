@@ -14,7 +14,6 @@
  * and failing to reach storage require three different responses, and only the last is a
  * reason to alarm anyone.
  */
-
 export const ACTION_TAXONOMY_VERSION = 1 as const;
 
 /**
@@ -70,19 +69,23 @@ export const ACTION_OUTCOMES: readonly ActionOutcome[] = [
  * defaulting an unregistered mutation to `presentation` would let a durable write
  * through a boundary that believes nothing durable happens.
  */
-const REGISTRY: Readonly<Record<string, ActionCategory>> = {
+const REGISTRY = {
   'project.select': 'presentation',
   'surface.select': 'presentation',
   'calendar.shift-month': 'presentation',
   'fixture.reset': 'presentation',
-};
+} as const satisfies Readonly<Record<string, ActionCategory>>;
+
+export type RegisteredActionType = keyof typeof REGISTRY;
 
 export function categoryOf(actionType: string): ActionCategory | undefined {
-  return Object.prototype.hasOwnProperty.call(REGISTRY, actionType) ? REGISTRY[actionType] : undefined;
+  return Object.prototype.hasOwnProperty.call(REGISTRY, actionType)
+    ? REGISTRY[actionType as RegisteredActionType]
+    : undefined;
 }
 
-export function registeredActionTypes(): string[] {
-  return Object.keys(REGISTRY).sort();
+export function registeredActionTypes(): RegisteredActionType[] {
+  return (Object.keys(REGISTRY) as RegisteredActionType[]).sort();
 }
 
 /** A category that can change something the creator would miss if it vanished. */
@@ -141,4 +144,21 @@ export function isActionCategory(value: unknown): value is ActionCategory {
 
 export function isActionOutcome(value: unknown): value is ActionOutcome {
   return typeof value === 'string' && (ACTION_OUTCOMES as readonly string[]).includes(value);
+}
+
+export function isActionErrorCode(value: unknown): value is ActionErrorCode {
+  switch (value) {
+    case 'invalid-action':
+    case 'invalid-action-input':
+    case 'project-not-found':
+    case 'record-not-found':
+    case 'action-not-available':
+    case 'stale-revision':
+    case 'semantic-conflict':
+    case 'recovery-required':
+    case 'storage-failure':
+      return true;
+    default:
+      return false;
+  }
 }

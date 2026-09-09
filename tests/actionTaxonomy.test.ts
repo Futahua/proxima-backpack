@@ -171,7 +171,11 @@ describe('Stage 0 dispatcher results', () => {
 describe('Stage 0 boundary guard', () => {
   it('rejects a result that cannot say what happened', async () => {
     const d = await dispatcher();
-    const good = d.dispatch({ type: 'surface.select', surface: 'calendar' });
+    const good = d.dispatch({
+      type: 'surface.select',
+      surface: 'calendar',
+    });
+
     expect(isActionResult(good)).toBe(true);
 
     // Each of these is a shape that would previously have passed and left an agent
@@ -186,8 +190,14 @@ describe('Stage 0 boundary guard', () => {
 
   it('rejects a success claiming a failure outcome, and a failure claiming acceptance', async () => {
     const d = await dispatcher();
-    const ok = d.dispatch({ type: 'surface.select', surface: 'board' });
-    const failed = d.dispatch({ type: 'project.select', projectId: 'missing' });
+    const ok = d.dispatch({
+      type: 'surface.select',
+      surface: 'board',
+    });
+    const failed = d.dispatch({
+      type: 'project.select',
+      projectId: 'missing',
+    });
 
     expect(isActionResult({ ...ok, outcome: 'stale-revision' })).toBe(false);
     expect(isActionResult({ ...failed, outcome: 'accepted' })).toBe(false);
@@ -196,7 +206,115 @@ describe('Stage 0 boundary guard', () => {
   it('allows a failure to report an unknown category, because an unparsed type has none', async () => {
     const d = await dispatcher();
     const result = d.dispatch({ type: 'nonsense.action' });
+
     expect(result).toMatchObject({ category: 'unknown' });
     expect(isActionResult(result)).toBe(true);
+  });
+
+  it('rejects a result whose action type and category disagree', async () => {
+    const d = await dispatcher();
+    const accepted = d.dispatch({
+      type: 'surface.select',
+      surface: 'calendar',
+    });
+    const failed = d.dispatch({
+      type: 'project.select',
+      projectId: 'missing',
+    });
+
+    expect(isActionResult({
+      ...accepted,
+      category: 'record-mutation',
+    })).toBe(false);
+
+    expect(isActionResult({
+      ...accepted,
+      actionType: 'nonsense.action',
+    })).toBe(false);
+
+    expect(isActionResult({
+      ...failed,
+      category: 'artifact-mutation',
+    })).toBe(false);
+  });
+
+  it('rejects a failure whose public error code and outcome disagree', async () => {
+    const d = await dispatcher();
+    const failed = d.dispatch({
+      type: 'project.select',
+      projectId: 'missing',
+    });
+
+    expect(failed.ok).toBe(false);
+    if (failed.ok) {
+      throw new Error('expected project.select to fail');
+    }
+
+    expect(isActionResult({
+      ...failed,
+      outcome: 'storage-failure',
+    })).toBe(false);
+
+    expect(isActionResult({
+      ...failed,
+      error: {
+        ...failed.error,
+        code: 'not-a-real-code',
+      },
+    })).toBe(false);
+
+    expect(isActionResult({
+      ...failed,
+      error: {
+        ...failed.error,
+        field: 42,
+      },
+    })).toBe(false);
+  });
+
+  it('rejects malformed revision, request id and snapshot fields at the public boundary', async () => {
+    const d = await dispatcher();
+    const accepted = d.dispatch({
+      type: 'surface.select',
+      surface: 'calendar',
+    });
+
+    expect(accepted.ok).toBe(true);
+    if (!accepted.ok) {
+      throw new Error('expected surface.select to succeed');
+    }
+
+    expect(isActionResult({
+      ...accepted,
+      stateRevision: Number.NaN,
+    })).toBe(false);
+
+    expect(isActionResult({
+      ...accepted,
+      stateRevision: Number.POSITIVE_INFINITY,
+    })).toBe(false);
+
+    expect(isActionResult({
+      ...accepted,
+      stateRevision: 1.5,
+    })).toBe(false);
+
+    expect(isActionResult({
+      ...accepted,
+      stateRevision: -1,
+    })).toBe(false);
+
+    expect(isActionResult({
+      ...accepted,
+      requestId: '',
+    })).toBe(false);
+
+    expect(isActionResult({
+      ...accepted,
+      snapshot: {
+        ...accepted.snapshot,
+        calendarMonth: '2026-13-01',
+      },
+    })).toBe(false);
   });
 });
