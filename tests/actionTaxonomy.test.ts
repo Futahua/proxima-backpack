@@ -1,0 +1,202 @@
+// Stage 0 of the full-parity checklist: before any surface is rebuilt, every action
+// result has to answer two questions on its own - what did this cost, and what actually
+// happened - because an agent is a first-class caller and cannot infer either from the
+// absence of a thrown error.
+//
+// The rule these tests pin is the one the checklist calls binding: a caller must never
+// have to deduce success. Losing a race, being refused as stale, and failing to reach
+// storage demand three different responses, and only the last is worth alarming anyone
+// about.
+import { describe, expect, it } from 'vitest';
+import { createMemoryVault } from '../src/adapters/memoryVault.js';
+import { loadVaultState } from '../src/app/vaultRepository.js';
+import { createActionDispatcher, isActionResult, parseAction } from '../src/app/actionProtocol.js';
+import {
+  ACTION_CATEGORIES,
+  ACTION_OUTCOMES,
+  categoryOf,
+  isActionCategory,
+  isActionOutcome,
+  isAmbiguousOutcome,
+  isMutationCategory,
+  isRetryableAfterRefetch,
+  isTerminalRefusal,
+  outcomeForErrorCode,
+  registeredActionTypes,
+  type ActionErrorCode,
+  type ActionOutcome,
+} from '../src/app/actionTaxonomy.js';
+
+const SOURCE = '---\nid: p1\nname: Project One\nstatus: active\nprojectType: task\n---\nbody\n';
+
+async function dispatcher(mode: 'fixture' | 'live' = 'fixture') {
+  const vault = createMemoryVault({ 'Proxima/projects/p1.md': SOURCE });
+  const loaded = await loadVaultState(vault);
+  return createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode });
+}
+
+const ERROR_CODES: ActionErrorCode[] = [
+  'invalid-action',
+  'invalid-action-input',
+  'project-not-found',
+  'record-not-found',
+  'action-not-available',
+  'stale-revision',
+  'semantic-conflict',
+  'recovery-required',
+  'storage-failure',
+];
+
+describe('Stage 0 action taxonomy', () => {
+  it('classifies every registered action type; an unregistered one is not defaulted', () => {
+    for (const type of registeredActionTypes()) {
+      expect(isActionCategory(categoryOf(type))).toBe(true);
+    }
+    // Defaulting an unknown type to 'presentation' would let a durable write cross a
+    // boundary that believes nothing durable happens, so undefined is the answer.
+    expect(categoryOf('task.execution.move')).toBeUndefined();
+    expect(categoryOf('')).toBeUndefined();
+    expect(categoryOf('toString')).toBeUndefined();
+  });
+
+  it('maps every error code to exactly one outcome, and never to accepted', () => {
+    const seen = new Set<ActionOutcome>();
+    for (const code of ERROR_CODES) {
+      const outcome = outcomeForErrorCode(code);
+      expect(isActionOutcome(outcome)).toBe(true);
+      expect(outcome).not.toBe('accepted');
+      seen.add(outcome);
+    }
+    // Every non-accepted outcome is reachable from some code: an outcome a caller can
+    // never actually receive is a branch nobody tests.
+    expect([...seen].sort()).toEqual(ACTION_OUTCOMES.filter((o) => o !== 'accepted').slice().sort());
+  });
+
+  it('separates the outcomes that may be retried from the ones that may not', () => {
+    expect(isRetryableAfterRefetch('stale-revision')).toBe(true);
+    expect(isRetryableAfterRefetch('semantic-conflict')).toBe(true);
+
+    // A blind retry of a refused-as-stale toggle is how one silently undoes an edit
+    // somebody else already made, so retry means refetch and re-decide, never resend.
+    expect(isRetryableAfterRefetch('recovery-required')).toBe(false);
+    expect(isAmbiguousOutcome('recovery-required')).toBe(true);
+    expect(isAmbiguousOutcome('storage-failure')).toBe(false);
+
+    for (const outcome of ['validation-refused', 'not-found', 'unavailable'] as const) {
+      expect(isTerminalRefusal(outcome)).toBe(true);
+      expect(isRetryableAfterRefetch(outcome)).toBe(false);
+    }
+    // Ambiguity is neither success nor failure, so it must not read as terminal either.
+    expect(isTerminalRefusal('recovery-required')).toBe(false);
+  });
+
+  it('knows which categories can cost the creator something', () => {
+    expect(ACTION_CATEGORIES.filter(isMutationCategory)).toEqual(['record-mutation', 'artifact-mutation']);
+    expect(isMutationCategory('presentation')).toBe(false);
+    // The Elastic lock lives here: the plugin persisted it to Obsidian settings, but
+    // that was a storage accident, not a reason to charge it against creator data.
+    expect(isMutationCategory('local-state')).toBe(false);
+  });
+});
+
+describe('Stage 0 dispatcher results', () => {
+  it('an accepted action reports its category, outcome and affected records', async () => {
+    const d = await dispatcher();
+    const result = d.dispatch({ type: 'project.select', projectId: 'p1' });
+    expect(result).toMatchObject({ ok: true, outcome: 'accepted', category: 'presentation', entityIds: ['p1'] });
+    expect(isActionResult(result)).toBe(true);
+  });
+
+  it('a presentation action reports no affected records rather than omitting the field', async () => {
+    const d = await dispatcher();
+    const result = d.dispatch({ type: 'calendar.shift-month', delta: 1 });
+    expect(result).toMatchObject({ ok: true, outcome: 'accepted', category: 'presentation' });
+    // Absent and empty must not be the same thing to a caller reading the result.
+    expect(result.entityIds).toEqual([]);
+  });
+
+  it('a missing project is not-found, and names the record it could not find', async () => {
+    const d = await dispatcher();
+    const result = d.dispatch({ type: 'project.select', projectId: 'no-such-project' });
+    expect(result).toMatchObject({
+      ok: false,
+      outcome: 'not-found',
+      category: 'presentation',
+      entityIds: ['no-such-project'],
+      error: { code: 'project-not-found' },
+    });
+    expect(isActionResult(result)).toBe(true);
+  });
+
+  it('an unrecognised action type has no category to report, and says so', async () => {
+    const d = await dispatcher();
+    const result = d.dispatch({ type: 'task.execution.move', taskId: 't1' });
+    expect(result).toMatchObject({ ok: false, outcome: 'validation-refused', category: 'unknown' });
+    expect(isActionResult(result)).toBe(true);
+  });
+
+  it('an unavailable action is refused as unavailable, not as invalid', async () => {
+    const d = await dispatcher('live');
+    const result = d.dispatch({ type: 'fixture.reset' });
+    // The request was well formed; the capability was absent. A caller retries one of
+    // those and not the other.
+    expect(result).toMatchObject({ ok: false, outcome: 'unavailable', error: { code: 'action-not-available' } });
+    expect(isTerminalRefusal('unavailable')).toBe(true);
+  });
+
+  it('malformed input is refused before anything is dispatched', async () => {
+    const d = await dispatcher();
+    const before = d.snapshot();
+    for (const input of [null, 'project.select', { projectId: 'p1' }, { type: 'calendar.shift-month', delta: 2 }]) {
+      const result = d.dispatch(input);
+      expect(result).toMatchObject({ ok: false, outcome: 'validation-refused' });
+      expect(isActionResult(result)).toBe(true);
+    }
+    const after = d.snapshot();
+    expect(after.stateRevision).toBe(before.stateRevision);
+    expect(after.selection).toBe(before.selection);
+    expect(after.surface).toBe(before.surface);
+  });
+
+  it('parseAction keeps its narrow shape, so validation stays separable from dispatch', () => {
+    // The taxonomy lives on results, not on parse: a parse failure has no state
+    // revision, no request id and nothing to report about the world.
+    expect(parseAction({ type: 'surface.select', surface: 'canvas' })).toEqual({
+      ok: true,
+      action: { type: 'surface.select', surface: 'canvas' },
+    });
+  });
+});
+
+describe('Stage 0 boundary guard', () => {
+  it('rejects a result that cannot say what happened', async () => {
+    const d = await dispatcher();
+    const good = d.dispatch({ type: 'surface.select', surface: 'calendar' });
+    expect(isActionResult(good)).toBe(true);
+
+    // Each of these is a shape that would previously have passed and left an agent
+    // guessing from the absence of an error.
+    expect(isActionResult({ ...good, outcome: undefined })).toBe(false);
+    expect(isActionResult({ ...good, outcome: 'done' })).toBe(false);
+    expect(isActionResult({ ...good, category: undefined })).toBe(false);
+    expect(isActionResult({ ...good, category: 'unknown' })).toBe(false);
+    expect(isActionResult({ ...good, entityIds: undefined })).toBe(false);
+    expect(isActionResult({ ...good, entityIds: [1, 2] })).toBe(false);
+  });
+
+  it('rejects a success claiming a failure outcome, and a failure claiming acceptance', async () => {
+    const d = await dispatcher();
+    const ok = d.dispatch({ type: 'surface.select', surface: 'board' });
+    const failed = d.dispatch({ type: 'project.select', projectId: 'missing' });
+
+    expect(isActionResult({ ...ok, outcome: 'stale-revision' })).toBe(false);
+    expect(isActionResult({ ...failed, outcome: 'accepted' })).toBe(false);
+  });
+
+  it('allows a failure to report an unknown category, because an unparsed type has none', async () => {
+    const d = await dispatcher();
+    const result = d.dispatch({ type: 'nonsense.action' });
+    expect(result).toMatchObject({ category: 'unknown' });
+    expect(isActionResult(result)).toBe(true);
+  });
+});

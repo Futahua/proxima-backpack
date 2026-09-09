@@ -3,6 +3,17 @@ import { randomIdGenerator, systemClock, type Clock, type IdGenerator } from '..
 import type { LoadProblem } from '../domain/problems.js';
 import type { ProximaState } from '../domain/types.js';
 import { createEventRing, type EventRing, type ProximaEvent } from './eventRing.js';
+import {
+  categoryOf,
+  outcomeForErrorCode,
+  isActionCategory,
+  isActionOutcome,
+  type ActionCategory,
+  type ActionErrorCode,
+  type ActionOutcome,
+} from './actionTaxonomy.js';
+
+export type { ActionCategory, ActionErrorCode, ActionOutcome } from './actionTaxonomy.js';
 
 /** The wire/schema version for project-owned semantic actions. */
 export const ACTION_SCHEMA_VERSION = 1 as const;
@@ -14,12 +25,6 @@ export type ProximaAction =
   | { type: 'surface.select'; surface: Surface }
   | { type: 'calendar.shift-month'; delta: -1 | 1 }
   | { type: 'fixture.reset' };
-
-export type ActionErrorCode =
-  | 'invalid-action'
-  | 'invalid-action-input'
-  | 'project-not-found'
-  | 'action-not-available';
 
 export interface ActionError {
   code: ActionErrorCode;
@@ -37,9 +42,15 @@ export interface ActionSuccess {
   schemaVersion: typeof ACTION_SCHEMA_VERSION;
   ok: true;
   actionType: ProximaAction['type'];
+  /** What performing this cost. Presentation today; mutation categories arrive with the record store. */
+  category: ActionCategory;
+  /** Always 'accepted' on success, so one field answers "what happened" for every result. */
+  outcome: Extract<ActionOutcome, 'accepted'>;
   changed: boolean;
   stateRevision: number;
   requestId: string;
+  /** Records this action affected. Empty for presentation actions, never absent. */
+  entityIds: string[];
   snapshot: ActionSnapshot;
 }
 
@@ -47,8 +58,12 @@ export interface ActionFailure {
   schemaVersion: typeof ACTION_SCHEMA_VERSION;
   ok: false;
   actionType: string;
+  /** 'unknown' when the action type itself was not recognised, so it has no category. */
+  category: ActionCategory | 'unknown';
+  outcome: Exclude<ActionOutcome, 'accepted'>;
   stateRevision: number;
   requestId: string;
+  entityIds: string[];
   error: ActionError;
 }
 
@@ -100,8 +115,11 @@ function invalidAction(message: string, field?: string, requestId = 'request-inv
     schemaVersion: ACTION_SCHEMA_VERSION,
     ok: false,
     actionType: 'unknown',
+    category: 'unknown',
+    outcome: outcomeForErrorCode('invalid-action'),
     stateRevision: 0,
     requestId,
+    entityIds: [],
     error: { code: 'invalid-action', message, field },
   };
 }
@@ -134,20 +152,37 @@ function snapshot(state: ActionDispatcherState): ActionSnapshot {
   return { surface: state.surface, selection: state.selection, calendarMonth: state.calendarMonth };
 }
 
-function resultFor(state: ActionDispatcherState, actionType: string, changed: boolean, requestId: string): ActionSuccess {
+function resultFor(state: ActionDispatcherState, actionType: string, changed: boolean, requestId: string, entityIds: string[] = []): ActionSuccess {
+  const category = categoryOf(actionType);
+  // An accepted action whose type was never registered would report a cost nobody
+  // declared, so refuse to invent one rather than defaulting it to 'presentation'.
+  if (category === undefined) throw new Error(`action type is not registered in the taxonomy: ${actionType}`);
   return {
     schemaVersion: ACTION_SCHEMA_VERSION,
     ok: true,
     actionType: actionType as ProximaAction['type'],
+    category,
+    outcome: 'accepted',
     changed,
     stateRevision: state.stateRevision,
     requestId,
+    entityIds: [...entityIds],
     snapshot: snapshot(state),
   };
 }
 
-function failureFor(state: ActionDispatcherState, actionType: string, error: ActionError, requestId: string): ActionFailure {
-  return { schemaVersion: ACTION_SCHEMA_VERSION, ok: false, actionType, stateRevision: state.stateRevision, requestId, error };
+function failureFor(state: ActionDispatcherState, actionType: string, error: ActionError, requestId: string, entityIds: string[] = []): ActionFailure {
+  return {
+    schemaVersion: ACTION_SCHEMA_VERSION,
+    ok: false,
+    actionType,
+    category: categoryOf(actionType) ?? 'unknown',
+    outcome: outcomeForErrorCode(error.code),
+    stateRevision: state.stateRevision,
+    requestId,
+    entityIds: [...entityIds],
+    error,
+  };
 }
 
 function isValidCalendarMonth(value: string): boolean {
@@ -198,7 +233,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
       const action = parsed.action;
       if (action.type === 'project.select') {
         if (action.projectId !== ALL_PROJECTS && action.projectId !== UNCATEGORISED && !state.state.projects.some((project) => project.id === action.projectId)) {
-          const result = failureFor(state, action.type, { code: 'project-not-found', message: `project does not exist: ${action.projectId}`, field: 'projectId' }, requestId);
+          const result = failureFor(state, action.type, { code: 'project-not-found', message: `project does not exist: ${action.projectId}`, field: 'projectId' }, requestId, [action.projectId]);
           ring.append({ kind: 'action.rejected', category: 'diagnostic', entityIds: [action.projectId], requestId, actionType: action.type, stateRevision: state.stateRevision, errorCode: result.error.code });
           state.latestEventSequence = ring.latestSequence();
           return result;
@@ -210,7 +245,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         ring.append({ kind: 'state.settled', category: 'lifecycle', entityIds: [], requestId, actionType: action.type, stateRevision: state.stateRevision });
         state.settledRevision = state.stateRevision; state.settled = true;
         state.latestEventSequence = ring.latestSequence();
-        return resultFor(state, action.type, changed, requestId);
+        return resultFor(state, action.type, changed, requestId, [action.projectId]);
       }
       if (action.type === 'surface.select') {
         const nextSelection = action.surface === 'canvas' ? state.selection : reconcileSelection(state.state.projects, state.selection, action.surface);
@@ -280,13 +315,21 @@ export function invalidActionResult(message = 'invalid action', requestId = 'req
   return invalidAction(message, undefined, requestId);
 }
 
-/** Runtime guard for action responses crossing an agent/UI boundary. */
+/**
+ * Runtime guard for action responses crossing an agent/UI boundary.
+ *
+ * An agent gets to trust exactly one thing about a response: that it passed this guard.
+ * So `outcome`, `category` and `entityIds` are required rather than optional - a result
+ * that cannot say what happened is not a result an agent can act on.
+ */
 export function isActionResult(value: unknown): value is ActionResult {
   if (!isRecord(value) || value.schemaVersion !== ACTION_SCHEMA_VERSION || typeof value.ok !== 'boolean' || typeof value.stateRevision !== 'number' || typeof value.actionType !== 'string') return false;
+  if (typeof value.requestId !== 'string' || !isActionOutcome(value.outcome)) return false;
+  if (!Array.isArray(value.entityIds) || value.entityIds.some((id) => typeof id !== 'string')) return false;
   if (value.ok) {
     const snapshot = value.snapshot;
-    return typeof value.changed === 'boolean' && typeof value.requestId === 'string' && isRecord(snapshot) && (snapshot.surface === 'board' || snapshot.surface === 'calendar' || snapshot.surface === 'canvas') && typeof snapshot.selection === 'string' && typeof snapshot.calendarMonth === 'string';
+    return value.outcome === 'accepted' && isActionCategory(value.category) && typeof value.changed === 'boolean' && isRecord(snapshot) && (snapshot.surface === 'board' || snapshot.surface === 'calendar' || snapshot.surface === 'canvas') && typeof snapshot.selection === 'string' && typeof snapshot.calendarMonth === 'string';
   }
   const error = value.error;
-  return typeof value.requestId === 'string' && isRecord(error) && typeof error.code === 'string' && typeof error.message === 'string';
+  return value.outcome !== 'accepted' && (isActionCategory(value.category) || value.category === 'unknown') && isRecord(error) && typeof error.code === 'string' && typeof error.message === 'string';
 }
