@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createActionDispatcher, isActionResult, parseAction } from '../src/app/actionProtocol.js';
 import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
@@ -6,7 +7,27 @@ import { fixtureVault } from './fixtures.js';
 
 async function fixtureDispatcher() {
   const loaded = await loadVaultState(fixtureVault('vault-basic'));
-  return createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture' });
+  return createActionDispatcher({
+    state: loaded.state,
+    problems: loaded.problems,
+    revisions: loaded.revisions,
+    mode: 'fixture',
+    clock: fixedClock('2026-09-06T12:00:00.000Z'),
+  });
+}
+
+async function vaultByteHash(vault: ReturnType<typeof fixtureVault>): Promise<string> {
+  const hash = createHash('sha256');
+
+  for (const path of await vault.walk('')) {
+    const file = await vault.read(path);
+    hash.update(path);
+    hash.update('\0');
+    hash.update(file.text);
+    hash.update('\0');
+  }
+
+  return hash.digest('hex');
 }
 
 describe('Gate 3A semantic action protocol', () => {
@@ -15,29 +36,132 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'calendar.shift-month', delta: 2 })).toEqual({ ok: false, error: { code: 'invalid-action-input', message: 'delta must be -1 or 1', field: 'delta' } });
     expect(parseAction({ type: 'unknown.action' })).toMatchObject({ ok: false, error: { code: 'invalid-action' } });
     expect(parseAction({ type: 'surface.select', surface: 'canvas' })).toEqual({ ok: true, action: { type: 'surface.select', surface: 'canvas' } });
-    expect(parseAction({ type: 'surface.select', surface: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', message: 'surface must be board, calendar or canvas', field: 'surface' } });
+    expect(parseAction({ type: 'surface.select', surface: 'board' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'surface' } });
+    expect(parseAction({ type: 'tasks.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
+    expect(parseAction({ type: 'schedule.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
+    expect(parseAction({ type: 'project.workspace-tab.select', tab: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'tab' } });
+    expect(parseAction({ type: 'calendar.navigate', direction: 'sideways' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'direction' } });
   });
 
-  it('uses one dispatcher for project/surface/calendar intent and increments revision only when state changes', async () => {
+  it('uses one dispatcher for cockpit navigation and keeps project selection across surfaces', async () => {
     const dispatcher = await fixtureDispatcher();
-    expect(dispatcher.snapshot()).toMatchObject({ surface: 'board', selection: 'all', calendarMonth: '2026-09-01', stateRevision: 1 });
 
-    expect(dispatcher.dispatch({ type: 'project.select', projectId: 'proj-backpack' })).toMatchObject({ ok: true, changed: true, stateRevision: 2 });
-    expect(dispatcher.snapshot().selection).toBe('proj-backpack');
+    expect(dispatcher.snapshot()).toMatchObject({
+      surface: 'tasks',
+      selection: 'all',
+      tasksMode: 'elastic',
+      scheduleMode: 'month',
+      projectWorkspaceTab: 'notes',
+      calendarMonth: '2026-09-01',
+      stateRevision: 1,
+    });
 
-    const switched = dispatcher.dispatch({ type: 'surface.select', surface: 'calendar' });
-    expect(switched).toMatchObject({ ok: true, changed: true, stateRevision: 3, snapshot: { selection: 'all', surface: 'calendar' } });
+    expect(dispatcher.dispatch({ type: 'project.select', projectId: 'proj-backpack' })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      changed: true,
+      stateRevision: 2,
+    });
+
+    expect(dispatcher.dispatch({ type: 'surface.select', surface: 'schedule' })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      changed: true,
+      stateRevision: 3,
+      snapshot: {
+        surface: 'schedule',
+        selection: 'proj-backpack',
+      },
+    });
+
+    expect(dispatcher.dispatch({ type: 'schedule.mode.select', mode: 'week' })).toMatchObject({
+      ok: true,
+      changed: true,
+      stateRevision: 4,
+      snapshot: {
+        scheduleMode: 'week',
+      },
+    });
+
+    expect(dispatcher.dispatch({ type: 'calendar.navigate', direction: 'next' })).toMatchObject({
+      ok: true,
+      changed: true,
+      stateRevision: 5,
+      snapshot: {
+        calendarMonth: '2026-10-01',
+      },
+    });
+
+    expect(dispatcher.dispatch({ type: 'calendar.today' })).toMatchObject({
+      ok: true,
+      changed: true,
+      stateRevision: 6,
+      snapshot: {
+        calendarMonth: '2026-09-01',
+      },
+    });
+
+    expect(dispatcher.dispatch({ type: 'surface.select', surface: 'projects' })).toMatchObject({
+      ok: true,
+      changed: true,
+      stateRevision: 7,
+    });
+
+    expect(dispatcher.dispatch({ type: 'project.workspace-tab.select', tab: 'backlog' })).toMatchObject({
+      ok: true,
+      changed: true,
+      stateRevision: 8,
+      snapshot: {
+        projectWorkspaceTab: 'backlog',
+      },
+    });
+
+    expect(dispatcher.dispatch({ type: 'surface.select', surface: 'tasks' })).toMatchObject({
+      ok: true,
+      changed: true,
+      stateRevision: 9,
+      snapshot: {
+        selection: 'proj-backpack',
+      },
+    });
+
+    expect(dispatcher.dispatch({ type: 'tasks.mode.select', mode: 'timekeeping' })).toMatchObject({
+      ok: true,
+      changed: true,
+      stateRevision: 10,
+      snapshot: {
+        tasksMode: 'timekeeping',
+      },
+    });
 
     const canvas = dispatcher.dispatch({ type: 'surface.select', surface: 'canvas' });
-    expect(canvas).toMatchObject({ ok: true, snapshot: { surface: 'canvas', selection: 'all' } });
+    expect(canvas).toMatchObject({
+      ok: true,
+      changed: true,
+      stateRevision: 11,
+      snapshot: {
+        surface: 'canvas',
+        selection: 'proj-backpack',
+      },
+    });
     expect(isActionResult(canvas)).toBe(true);
 
-    expect(dispatcher.dispatch({ type: 'project.select', projectId: 'proj-term' })).toMatchObject({ ok: true, changed: false, stateRevision: 4 });
-    expect(dispatcher.dispatch({ type: 'calendar.shift-month', delta: 1 })).toMatchObject({ ok: true, changed: true, stateRevision: 5, snapshot: { calendarMonth: '2026-10-01' } });
-    expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({ ok: true, changed: true, stateRevision: 6, snapshot: { selection: 'all', surface: 'board', calendarMonth: '2026-09-01' } });
+    expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({
+      ok: true,
+      changed: true,
+      stateRevision: 12,
+      snapshot: {
+        selection: 'all',
+        surface: 'tasks',
+        tasksMode: 'elastic',
+        scheduleMode: 'month',
+        projectWorkspaceTab: 'notes',
+        calendarMonth: '2026-09-01',
+      },
+    });
 
     const noOp = dispatcher.dispatch({ type: 'fixture.reset' });
-    expect(noOp).toMatchObject({ ok: true, changed: false, stateRevision: 6 });
+    expect(noOp).toMatchObject({ ok: true, changed: false, stateRevision: 12 });
     expect(isActionResult(dispatcher.dispatch({ type: 'calendar.shift-month', delta: -1 }))).toBe(true);
   });
 
@@ -67,6 +191,51 @@ describe('Gate 3A semantic action protocol', () => {
       dispatcher.dispatch({ type: 'calendar.shift-month', delta: 1 });
       expect(dispatcher.snapshot().calendarMonth).toMatch(/^\d{4}-(0[1-9]|1[0-2])-01$/);
     }
+  });
+
+  it('leaves every durable fixture byte unchanged across cockpit navigation', async () => {
+    const vault = fixtureVault('vault-basic');
+    const loaded = await loadVaultState(vault);
+    const dispatcher = createActionDispatcher({
+      state: loaded.state,
+      problems: loaded.problems,
+      revisions: loaded.revisions,
+      mode: 'fixture',
+      clock: fixedClock('2026-09-06T12:00:00.000Z'),
+    });
+
+    const before = await vaultByteHash(vault);
+
+    const actions = [
+      { type: 'project.select', projectId: 'proj-term' },
+      { type: 'surface.select', surface: 'projects' },
+      { type: 'project.workspace-tab.select', tab: 'deadlines' },
+      { type: 'surface.select', surface: 'schedule' },
+      { type: 'schedule.mode.select', mode: 'day' },
+      { type: 'schedule.mode.select', mode: 'four-day' },
+      { type: 'schedule.mode.select', mode: 'week' },
+      { type: 'schedule.mode.select', mode: 'month' },
+      { type: 'schedule.mode.select', mode: 'year' },
+      { type: 'schedule.mode.select', mode: 'agenda' },
+      { type: 'calendar.navigate', direction: 'next' },
+      { type: 'calendar.today' },
+      { type: 'surface.select', surface: 'tasks' },
+      { type: 'tasks.mode.select', mode: 'timekeeping' },
+      { type: 'tasks.mode.select', mode: 'elastic' },
+      { type: 'surface.select', surface: 'canvas' },
+    ];
+
+    for (const action of actions) {
+      expect(dispatcher.dispatch(action)).toMatchObject({
+        ok: true,
+        category: 'local-state',
+      });
+    }
+
+    const after = await vaultByteHash(vault);
+
+    expect(after).toBe(before);
+    expect(dispatcher.snapshot().selection).toBe('proj-term');
   });
 
   it('keeps fixture-only reset unavailable for a live dispatcher', async () => {

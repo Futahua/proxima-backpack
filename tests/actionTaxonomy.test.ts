@@ -103,14 +103,14 @@ describe('Stage 0 dispatcher results', () => {
   it('an accepted action reports its category, outcome and affected records', async () => {
     const d = await dispatcher();
     const result = d.dispatch({ type: 'project.select', projectId: 'p1' });
-    expect(result).toMatchObject({ ok: true, outcome: 'accepted', category: 'presentation', entityIds: ['p1'] });
+    expect(result).toMatchObject({ ok: true, outcome: 'accepted', category: 'local-state', entityIds: ['p1'] });
     expect(isActionResult(result)).toBe(true);
   });
 
-  it('a presentation action reports no affected records rather than omitting the field', async () => {
+  it('a local cockpit action reports no affected records rather than omitting the field', async () => {
     const d = await dispatcher();
     const result = d.dispatch({ type: 'calendar.shift-month', delta: 1 });
-    expect(result).toMatchObject({ ok: true, outcome: 'accepted', category: 'presentation' });
+    expect(result).toMatchObject({ ok: true, outcome: 'accepted', category: 'local-state' });
     // Absent and empty must not be the same thing to a caller reading the result.
     expect(result.entityIds).toEqual([]);
   });
@@ -121,7 +121,7 @@ describe('Stage 0 dispatcher results', () => {
     expect(result).toMatchObject({
       ok: false,
       outcome: 'not-found',
-      category: 'presentation',
+      category: 'local-state',
       entityIds: ['no-such-project'],
       error: { code: 'project-not-found' },
     });
@@ -173,7 +173,7 @@ describe('Stage 0 boundary guard', () => {
     const d = await dispatcher();
     const good = d.dispatch({
       type: 'surface.select',
-      surface: 'calendar',
+      surface: 'schedule',
     });
 
     expect(isActionResult(good)).toBe(true);
@@ -192,7 +192,7 @@ describe('Stage 0 boundary guard', () => {
     const d = await dispatcher();
     const ok = d.dispatch({
       type: 'surface.select',
-      surface: 'board',
+      surface: 'tasks',
     });
     const failed = d.dispatch({
       type: 'project.select',
@@ -215,7 +215,7 @@ describe('Stage 0 boundary guard', () => {
     const d = await dispatcher();
     const accepted = d.dispatch({
       type: 'surface.select',
-      surface: 'calendar',
+      surface: 'schedule',
     });
     const failed = d.dispatch({
       type: 'project.select',
@@ -276,7 +276,7 @@ describe('Stage 0 boundary guard', () => {
     const d = await dispatcher();
     const accepted = d.dispatch({
       type: 'surface.select',
-      surface: 'calendar',
+      surface: 'schedule',
     });
 
     expect(accepted.ok).toBe(true);

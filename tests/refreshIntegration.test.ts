@@ -56,7 +56,7 @@ describe('Gate 6E fixture-mode end-to-end refresh wiring', () => {
     const controller = createRefreshController({ vault, initial });
     const policy = createRefreshPolicy({ controller, enabled: false });
     let projection = createReadOnlyProjection(controller.snapshot());
-    const dispatcher = createActionDispatcher({ state: projection.state, problems: projection.problems, revisions: projection.revisions, mode: 'fixture', initialSourceRevision: projection.generation, initialSurface: 'calendar', initialSelection: 'proj-term' });
+    const dispatcher = createActionDispatcher({ state: projection.state, problems: projection.problems, revisions: projection.revisions, mode: 'fixture', initialSourceRevision: projection.generation, initialSurface: 'schedule', initialSelection: 'proj-term' });
     expect(dispatcher.snapshot().selection).toBe('proj-term');
     vault.delete('Proxima/projects/Term Calendar.md');
     const refreshed = await policy.trigger('manual');

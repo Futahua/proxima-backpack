@@ -3,11 +3,11 @@ import { isBlocking, type LoadProblem } from '../domain/problems.js';
 import { elasticBoard, eventsByDay, eventsForSelection, projectsFor, tasksForSelection, type ProjectSelection } from '../domain/selectors.js';
 import { localDateKey } from '../domain/time.js';
 import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
-import type { ActionDispatcherState, Surface } from './actionProtocol.js';
+import type { ActionDispatcherState, ProjectWorkspaceTab, ScheduleMode, Surface, TasksMode } from './actionProtocol.js';
 import { sourceProvenance, type ReadOnlyProjectionHealth, type RecordProvenance } from './readOnlyProjection.js';
 import { createUiHealthModel, type UiHealthModel } from './uiHealth.js';
 
-export const INSPECTION_SCHEMA_VERSION = 2 as const;
+export const INSPECTION_SCHEMA_VERSION = 3 as const;
 export const MAX_INSPECTION_ITEMS = 500;
 export const MAX_INSPECTION_TEXT = 400;
 
@@ -29,10 +29,14 @@ export interface InspectionProjection {
   mode: 'fixture' | 'live';
   applicationStateRevision: number;
   surface: Surface;
-  submode: null;
+  submode: TasksMode | ScheduleMode | ProjectWorkspaceTab | null;
   selection: ProjectSelection;
   localState: {
+    surface: Surface;
     selection: ProjectSelection;
+    tasksMode: TasksMode;
+    scheduleMode: ScheduleMode;
+    projectWorkspaceTab: ProjectWorkspaceTab;
     calendarMonth: string;
   };
   projects: Array<{ id: string; name: string; projectType: 'task' | 'schedule'; status: string; provenance: RecordProvenance }>;
@@ -56,6 +60,13 @@ export interface InspectionProjection {
 }
 
 function safeText(value: string, limit = MAX_INSPECTION_TEXT): string { return value.slice(0, limit); }
+
+function inspectionSubmode(dispatcher: ActionDispatcherState): InspectionProjection['submode'] {
+  if (dispatcher.surface === 'tasks') return dispatcher.tasksMode;
+  if (dispatcher.surface === 'schedule') return dispatcher.scheduleMode;
+  if (dispatcher.surface === 'projects') return dispatcher.projectWorkspaceTab;
+  return null;
+}
 
 function safeProblem(problem: LoadProblem, mode: 'fixture' | 'live'): InspectionProjection['loadProblems'][number] {
   const path = mode === 'fixture' ? safeText(problem.path.replaceAll('\\', '/'), 260) : undefined;
@@ -130,10 +141,14 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     mode: dispatcher.mode,
     applicationStateRevision: dispatcher.stateRevision,
     surface: dispatcher.surface,
-    submode: null,
+    submode: inspectionSubmode(dispatcher),
     selection: dispatcher.selection,
     localState: {
+      surface: dispatcher.surface,
       selection: dispatcher.selection,
+      tasksMode: dispatcher.tasksMode,
+      scheduleMode: dispatcher.scheduleMode,
+      projectWorkspaceTab: dispatcher.projectWorkspaceTab,
       calendarMonth: dispatcher.calendarMonth,
     },
     projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), projectType: project.projectType, status: project.status, provenance: sourceProvenance(project) })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
@@ -161,11 +176,51 @@ export function isInspectionProjection(value: unknown): value is InspectionProje
     && Number.isInteger(candidate.applicationStateRevision)
     && candidate.applicationStateRevision! >= 0
     && (candidate.mode === 'fixture' || candidate.mode === 'live')
-    && (candidate.surface === 'board' || candidate.surface === 'calendar' || candidate.surface === 'canvas')
-    && candidate.submode === null
+    && (
+      candidate.surface === 'tasks'
+      || candidate.surface === 'schedule'
+      || candidate.surface === 'projects'
+      || candidate.surface === 'canvas'
+    )
+    && (
+      (candidate.surface === 'tasks' && (candidate.submode === 'elastic' || candidate.submode === 'timekeeping'))
+      || (candidate.surface === 'schedule' && (
+        candidate.submode === 'day'
+        || candidate.submode === 'four-day'
+        || candidate.submode === 'week'
+        || candidate.submode === 'month'
+        || candidate.submode === 'year'
+        || candidate.submode === 'agenda'
+      ))
+      || (candidate.surface === 'projects' && (
+        candidate.submode === 'notes'
+        || candidate.submode === 'task-board'
+        || candidate.submode === 'backlog'
+        || candidate.submode === 'deadlines'
+        || candidate.submode === 'schedule'
+      ))
+      || (candidate.surface === 'canvas' && candidate.submode === null)
+    )
     && typeof candidate.selection === 'string'
     && candidate.localState !== undefined
+    && candidate.localState.surface === candidate.surface
     && typeof candidate.localState.selection === 'string'
+    && (candidate.localState.tasksMode === 'elastic' || candidate.localState.tasksMode === 'timekeeping')
+    && (
+      candidate.localState.scheduleMode === 'day'
+      || candidate.localState.scheduleMode === 'four-day'
+      || candidate.localState.scheduleMode === 'week'
+      || candidate.localState.scheduleMode === 'month'
+      || candidate.localState.scheduleMode === 'year'
+      || candidate.localState.scheduleMode === 'agenda'
+    )
+    && (
+      candidate.localState.projectWorkspaceTab === 'notes'
+      || candidate.localState.projectWorkspaceTab === 'task-board'
+      || candidate.localState.projectWorkspaceTab === 'backlog'
+      || candidate.localState.projectWorkspaceTab === 'deadlines'
+      || candidate.localState.projectWorkspaceTab === 'schedule'
+    )
     && typeof candidate.localState.calendarMonth === 'string'
     && Array.isArray(candidate.projects)
     && Array.isArray(candidate.board?.tasks)

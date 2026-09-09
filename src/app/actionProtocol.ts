@@ -1,4 +1,4 @@
-import { ALL_PROJECTS, UNCATEGORISED, reconcileSelection } from '../domain/selectors.js';
+import { ALL_PROJECTS, UNCATEGORISED } from '../domain/selectors.js';
 import { randomIdGenerator, systemClock, type Clock, type IdGenerator } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
 import type { ProximaState } from '../domain/types.js';
@@ -17,13 +17,21 @@ import {
 export type { ActionCategory, ActionErrorCode, ActionOutcome } from './actionTaxonomy.js';
 
 /** The wire/schema version for project-owned semantic actions. */
-export const ACTION_SCHEMA_VERSION = 1 as const;
+export const ACTION_SCHEMA_VERSION = 2 as const;
 
-export type Surface = 'board' | 'calendar' | 'canvas';
+export type Surface = 'tasks' | 'schedule' | 'projects' | 'canvas';
+export type TasksMode = 'elastic' | 'timekeeping';
+export type ScheduleMode = 'day' | 'four-day' | 'week' | 'month' | 'year' | 'agenda';
+export type ProjectWorkspaceTab = 'notes' | 'task-board' | 'backlog' | 'deadlines' | 'schedule';
 
 export type ProximaAction =
   | { type: 'project.select'; projectId: string }
   | { type: 'surface.select'; surface: Surface }
+  | { type: 'tasks.mode.select'; mode: TasksMode }
+  | { type: 'schedule.mode.select'; mode: ScheduleMode }
+  | { type: 'project.workspace-tab.select'; tab: ProjectWorkspaceTab }
+  | { type: 'calendar.navigate'; direction: 'previous' | 'next' }
+  | { type: 'calendar.today' }
   | { type: 'calendar.shift-month'; delta: -1 | 1 }
   | { type: 'fixture.reset' };
 
@@ -44,6 +52,9 @@ export interface ActionError {
 export interface ActionSnapshot {
   surface: Surface;
   selection: string;
+  tasksMode: TasksMode;
+  scheduleMode: ScheduleMode;
+  projectWorkspaceTab: ProjectWorkspaceTab;
   calendarMonth: string;
 }
 
@@ -85,6 +96,9 @@ export interface ActionDispatcherState {
   mode: 'fixture' | 'live';
   surface: Surface;
   selection: string;
+  tasksMode: TasksMode;
+  scheduleMode: ScheduleMode;
+  projectWorkspaceTab: ProjectWorkspaceTab;
   calendarMonth: string;
   stateRevision: number;
   settledRevision: number;
@@ -100,6 +114,9 @@ export interface ActionDispatcherOptions {
   mode?: 'fixture' | 'live';
   initialSurface?: Surface;
   initialSelection?: string;
+  initialTasksMode?: TasksMode;
+  initialScheduleMode?: ScheduleMode;
+  initialProjectWorkspaceTab?: ProjectWorkspaceTab;
   initialCalendarMonth?: string;
   clock?: Clock;
   idGenerator?: IdGenerator;
@@ -165,16 +182,84 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
   }
 
   if (input.type === 'surface.select') {
-    return input.surface === 'board' || input.surface === 'calendar' || input.surface === 'canvas'
+    return input.surface === 'tasks'
+      || input.surface === 'schedule'
+      || input.surface === 'projects'
+      || input.surface === 'canvas'
       ? { ok: true, action: { type: input.type, surface: input.surface } }
       : {
           ok: false,
           error: {
             code: 'invalid-action-input',
-            message: 'surface must be board, calendar or canvas',
+            message: 'surface must be tasks, schedule, projects or canvas',
             field: 'surface',
           },
         };
+  }
+
+  if (input.type === 'tasks.mode.select') {
+    return input.mode === 'elastic' || input.mode === 'timekeeping'
+      ? { ok: true, action: { type: input.type, mode: input.mode } }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'tasks mode must be elastic or timekeeping',
+            field: 'mode',
+          },
+        };
+  }
+
+  if (input.type === 'schedule.mode.select') {
+    return input.mode === 'day'
+      || input.mode === 'four-day'
+      || input.mode === 'week'
+      || input.mode === 'month'
+      || input.mode === 'year'
+      || input.mode === 'agenda'
+      ? { ok: true, action: { type: input.type, mode: input.mode } }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'schedule mode must be day, four-day, week, month, year or agenda',
+            field: 'mode',
+          },
+        };
+  }
+
+  if (input.type === 'project.workspace-tab.select') {
+    return input.tab === 'notes'
+      || input.tab === 'task-board'
+      || input.tab === 'backlog'
+      || input.tab === 'deadlines'
+      || input.tab === 'schedule'
+      ? { ok: true, action: { type: input.type, tab: input.tab } }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'project workspace tab must be notes, task-board, backlog, deadlines or schedule',
+            field: 'tab',
+          },
+        };
+  }
+
+  if (input.type === 'calendar.navigate') {
+    return input.direction === 'previous' || input.direction === 'next'
+      ? { ok: true, action: { type: input.type, direction: input.direction } }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'calendar direction must be previous or next',
+            field: 'direction',
+          },
+        };
+  }
+
+  if (input.type === 'calendar.today') {
+    return { ok: true, action: { type: input.type } };
   }
 
   if (input.type === 'calendar.shift-month') {
@@ -208,6 +293,9 @@ function snapshot(state: ActionDispatcherState): ActionSnapshot {
   return {
     surface: state.surface,
     selection: state.selection,
+    tasksMode: state.tasksMode,
+    scheduleMode: state.scheduleMode,
+    projectWorkspaceTab: state.projectWorkspaceTab,
     calendarMonth: state.calendarMonth,
   };
 }
@@ -282,6 +370,48 @@ function shiftCalendarMonth(value: string, delta: -1 | 1): string {
   return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01`;
 }
 
+function calendarMonthForClock(clock: Clock): string {
+  const date = new Date(clock.now());
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01`;
+}
+
+function existingSelection(projects: ProximaState['projects'], selection: string): string {
+  if (selection === ALL_PROJECTS || selection === UNCATEGORISED) return selection;
+  return projects.some((project) => project.id === selection) ? selection : ALL_PROJECTS;
+}
+
+function settleLocalAction(
+  state: ActionDispatcherState,
+  ring: EventRing,
+  actionType: ProximaAction['type'],
+  changed: boolean,
+  requestId: string,
+  entityIds: string[] = [],
+): ActionSuccess {
+  ring.append({
+    kind: 'action.accepted',
+    category: 'domain',
+    entityIds,
+    requestId,
+    actionType,
+    stateRevision: state.stateRevision,
+  });
+  ring.append({
+    kind: 'state.settled',
+    category: 'lifecycle',
+    entityIds: [],
+    requestId,
+    actionType,
+    stateRevision: state.stateRevision,
+  });
+  state.settledRevision = state.stateRevision;
+  state.settled = true;
+  state.latestEventSequence = ring.latestSequence();
+  return resultFor(state, actionType, changed, requestId, entityIds);
+}
+
 export function createActionDispatcher(options: ActionDispatcherOptions): ProximaActionDispatcher {
   const clock = options.clock ?? systemClock;
   const ids = options.idGenerator ?? randomIdGenerator();
@@ -292,8 +422,11 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     problems: [...(options.problems ?? [])],
     revisions: { ...(options.revisions ?? {}) },
     mode: options.mode ?? 'fixture',
-    surface: options.initialSurface ?? 'board',
+    surface: options.initialSurface ?? 'tasks',
     selection: options.initialSelection ?? ALL_PROJECTS,
+    tasksMode: options.initialTasksMode ?? 'elastic',
+    scheduleMode: options.initialScheduleMode ?? 'month',
+    projectWorkspaceTab: options.initialProjectWorkspaceTab ?? 'notes',
     calendarMonth: options.initialCalendarMonth ?? '2026-09-01',
     stateRevision: 1,
     settledRevision: 1,
@@ -306,9 +439,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     state.calendarMonth = '2026-09-01';
   }
 
-  if (state.surface !== 'canvas') {
-    state.selection = reconcileSelection(state.state.projects, state.selection, state.surface);
-  }
+  state.selection = existingSelection(state.state.projects, state.selection);
 
   return {
     dispatch(input: unknown): ActionResult {
@@ -369,13 +500,10 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
           return result;
         }
 
-        const next = state.surface === 'canvas'
-          ? state.selection
-          : reconcileSelection(state.state.projects, action.projectId, state.surface);
-        const changed = next !== state.selection;
+        const changed = action.projectId !== state.selection;
 
         if (changed) {
-          state.selection = next;
+          state.selection = action.projectId;
           state.stateRevision += 1;
         }
 
@@ -403,38 +531,60 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
       }
 
       if (action.type === 'surface.select') {
-        const nextSelection = action.surface === 'canvas'
-          ? state.selection
-          : reconcileSelection(state.state.projects, state.selection, action.surface);
-        const changed = state.surface !== action.surface || state.selection !== nextSelection;
-
+        const changed = state.surface !== action.surface;
         if (changed) {
           state.surface = action.surface;
-          state.selection = nextSelection;
           state.stateRevision += 1;
         }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
 
-        ring.append({
-          kind: 'action.accepted',
-          category: 'domain',
-          entityIds: [action.surface],
-          requestId,
-          actionType: action.type,
-          stateRevision: state.stateRevision,
-        });
-        ring.append({
-          kind: 'state.settled',
-          category: 'lifecycle',
-          entityIds: [],
-          requestId,
-          actionType: action.type,
-          stateRevision: state.stateRevision,
-        });
-        state.settledRevision = state.stateRevision;
-        state.settled = true;
-        state.latestEventSequence = ring.latestSequence();
+      if (action.type === 'tasks.mode.select') {
+        const changed = state.tasksMode !== action.mode;
+        if (changed) {
+          state.tasksMode = action.mode;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
 
-        return resultFor(state, action.type, changed, requestId);
+      if (action.type === 'schedule.mode.select') {
+        const changed = state.scheduleMode !== action.mode;
+        if (changed) {
+          state.scheduleMode = action.mode;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'project.workspace-tab.select') {
+        const changed = state.projectWorkspaceTab !== action.tab;
+        if (changed) {
+          state.projectWorkspaceTab = action.tab;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'calendar.navigate') {
+        const delta = action.direction === 'previous' ? -1 : 1;
+        const next = shiftCalendarMonth(state.calendarMonth, delta);
+        const changed = next !== state.calendarMonth;
+        if (changed) {
+          state.calendarMonth = next;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'calendar.today') {
+        const next = calendarMonthForClock(clock);
+        const changed = next !== state.calendarMonth;
+        if (changed) {
+          state.calendarMonth = next;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
       }
 
       if (action.type === 'calendar.shift-month') {
@@ -493,12 +643,18 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         return result;
       }
 
-      const changed = state.surface !== 'board'
+      const changed = state.surface !== 'tasks'
         || state.selection !== ALL_PROJECTS
+        || state.tasksMode !== 'elastic'
+        || state.scheduleMode !== 'month'
+        || state.projectWorkspaceTab !== 'notes'
         || state.calendarMonth !== '2026-09-01';
 
-      state.surface = 'board';
+      state.surface = 'tasks';
       state.selection = ALL_PROJECTS;
+      state.tasksMode = 'elastic';
+      state.scheduleMode = 'month';
+      state.projectWorkspaceTab = 'notes';
       state.calendarMonth = '2026-09-01';
 
       if (changed) {
@@ -530,9 +686,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
 
     replaceSource(input) {
       const sourceChanged = input.sourceRevision !== state.sourceRevision;
-      const nextSelection = state.surface === 'canvas'
-        ? state.selection
-        : reconcileSelection(input.state.projects, state.selection, state.surface);
+      const nextSelection = existingSelection(input.state.projects, state.selection);
       const selectionChanged = nextSelection !== state.selection;
 
       state.state = input.state;
@@ -641,11 +795,28 @@ export function isActionResult(value: unknown): value is ActionResult {
       && typeof value.changed === 'boolean'
       && isRecord(snapshotValue)
       && (
-        snapshotValue.surface === 'board'
-        || snapshotValue.surface === 'calendar'
+        snapshotValue.surface === 'tasks'
+        || snapshotValue.surface === 'schedule'
+        || snapshotValue.surface === 'projects'
         || snapshotValue.surface === 'canvas'
       )
       && typeof snapshotValue.selection === 'string'
+      && (snapshotValue.tasksMode === 'elastic' || snapshotValue.tasksMode === 'timekeeping')
+      && (
+        snapshotValue.scheduleMode === 'day'
+        || snapshotValue.scheduleMode === 'four-day'
+        || snapshotValue.scheduleMode === 'week'
+        || snapshotValue.scheduleMode === 'month'
+        || snapshotValue.scheduleMode === 'year'
+        || snapshotValue.scheduleMode === 'agenda'
+      )
+      && (
+        snapshotValue.projectWorkspaceTab === 'notes'
+        || snapshotValue.projectWorkspaceTab === 'task-board'
+        || snapshotValue.projectWorkspaceTab === 'backlog'
+        || snapshotValue.projectWorkspaceTab === 'deadlines'
+        || snapshotValue.projectWorkspaceTab === 'schedule'
+      )
       && typeof snapshotValue.calendarMonth === 'string'
       && isValidCalendarMonth(snapshotValue.calendarMonth);
   }

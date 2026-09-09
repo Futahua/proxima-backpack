@@ -24,14 +24,18 @@ describe('Gate 3A inspection projection', () => {
 
     expect(isInspectionProjection(projection)).toBe(true);
     expect(projection).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       mode: 'fixture',
       applicationStateRevision: 1,
-      surface: 'board',
-      submode: null,
+      surface: 'tasks',
+      submode: 'elastic',
       selection: 'all',
       localState: {
+        surface: 'tasks',
         selection: 'all',
+        tasksMode: 'elastic',
+        scheduleMode: 'month',
+        projectWorkspaceTab: 'notes',
         calendarMonth: '2026-09-01',
       },
       board: {
@@ -69,16 +73,20 @@ describe('Gate 3A inspection projection', () => {
     const loaded = await loadVaultState(fixtureVault('vault-basic'));
     const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'live' });
 
-    expect(dispatcher.dispatch({ type: 'surface.select', surface: 'calendar' })).toMatchObject({ ok: true, snapshot: { surface: 'calendar' } });
+    expect(dispatcher.dispatch({ type: 'surface.select', surface: 'schedule' })).toMatchObject({ ok: true, snapshot: { surface: 'schedule' } });
     expect(dispatcher.dispatch({ type: 'project.select', projectId: 'proj-term' })).toMatchObject({ ok: true, snapshot: { selection: 'proj-term' } });
 
     const projection = createInspectionProjection(dispatcher.snapshot(), build);
 
-    expect(projection.surface).toBe('calendar');
-    expect(projection.submode).toBeNull();
+    expect(projection.surface).toBe('schedule');
+    expect(projection.submode).toBe('month');
     expect(projection.selection).toBe('proj-term');
     expect(projection.localState).toEqual({
+      surface: 'schedule',
       selection: 'proj-term',
+      tasksMode: 'elastic',
+      scheduleMode: 'month',
+      projectWorkspaceTab: 'notes',
       calendarMonth: '2026-09-01',
     });
     expect(projection.eventSequences.action).toBe(projection.latestEventSequence);

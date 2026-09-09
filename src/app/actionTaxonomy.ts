@@ -14,7 +14,7 @@
  * and failing to reach storage require three different responses, and only the last is a
  * reason to alarm anyone.
  */
-export const ACTION_TAXONOMY_VERSION = 1 as const;
+export const ACTION_TAXONOMY_VERSION = 2 as const;
 
 /**
  * `presentation` and `local-state` are the two halves that need no write authority.
@@ -70,10 +70,15 @@ export const ACTION_OUTCOMES: readonly ActionOutcome[] = [
  * through a boundary that believes nothing durable happens.
  */
 const REGISTRY = {
-  'project.select': 'presentation',
-  'surface.select': 'presentation',
-  'calendar.shift-month': 'presentation',
-  'fixture.reset': 'presentation',
+  'project.select': 'local-state',
+  'surface.select': 'local-state',
+  'tasks.mode.select': 'local-state',
+  'schedule.mode.select': 'local-state',
+  'project.workspace-tab.select': 'local-state',
+  'calendar.navigate': 'local-state',
+  'calendar.today': 'local-state',
+  'calendar.shift-month': 'local-state',
+  'fixture.reset': 'local-state',
 } as const satisfies Readonly<Record<string, ActionCategory>>;
 
 export type RegisteredActionType = keyof typeof REGISTRY;

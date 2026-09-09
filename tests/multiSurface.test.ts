@@ -27,8 +27,8 @@ describe('Gate 17.1 multiple live Proxima surfaces', () => {
     const initialA = await candidate(vault); const initialB = await candidate(vault);
     const left = createSourceSession({ initial: initialA, scheduler: a.scheduler, intervalMs: 60_000 });
     const right = createSourceSession({ initial: initialB, scheduler: b.scheduler, intervalMs: 60_000 });
-    const leftActions = createActionDispatcher({ state: left.projection().state, problems: left.projection().problems, revisions: left.projection().revisions, mode: 'live', initialSourceRevision: left.projection().generation, initialSurface: 'board' });
-    const rightActions = createActionDispatcher({ state: right.projection().state, problems: right.projection().problems, revisions: right.projection().revisions, mode: 'live', initialSourceRevision: right.projection().generation, initialSurface: 'calendar' });
+    const leftActions = createActionDispatcher({ state: left.projection().state, problems: left.projection().problems, revisions: left.projection().revisions, mode: 'live', initialSourceRevision: left.projection().generation, initialSurface: 'tasks' });
+    const rightActions = createActionDispatcher({ state: right.projection().state, problems: right.projection().problems, revisions: right.projection().revisions, mode: 'live', initialSourceRevision: right.projection().generation, initialSurface: 'schedule' });
 
     expect(leftActions.dispatch({ type: 'project.select', projectId: 'proj-backpack' })).toMatchObject({ ok: true });
     expect(rightActions.dispatch({ type: 'project.select', projectId: 'proj-term' })).toMatchObject({ ok: true });

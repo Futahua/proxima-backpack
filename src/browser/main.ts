@@ -1,4 +1,4 @@
-import { createActionDispatcher, type ProximaActionDispatcher, type Surface } from '../app/actionProtocol.js';
+import { createActionDispatcher, type ProjectWorkspaceTab, type ProximaActionDispatcher, type ScheduleMode, type Surface, type TasksMode } from '../app/actionProtocol.js';
 import { createInspectionProjection } from '../app/inspection.js';
 import type { ReadOnlyProjection } from '../app/readOnlyProjection.js';
 import { evaluateRealVaultAcceptance, isRealVaultAcceptanceReport, type RealVaultAcceptanceReport } from '../app/realVaultAcceptance.js';
@@ -33,6 +33,7 @@ import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
+import { cockpitSubmode, renderCockpitNavigation } from './cockpitNavigation.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -40,7 +41,10 @@ const DETERMINISTIC_IDS = sequentialIdGenerator();
 let appState: ProximaState | null = null;
 let loadProblems: LoadProblem[] = [];
 let selection = ALL_PROJECTS;
-let surface: Surface = 'board';
+let surface: Surface = 'tasks';
+let tasksMode: TasksMode = 'elastic';
+let scheduleMode: ScheduleMode = 'month';
+let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let calendarCursor = new Date(FIXED_CLOCK.now());
 let actionDispatcher: ProximaActionDispatcher | null = null;
 let sourceSession: SourceSession | null = null;
@@ -98,9 +102,14 @@ function projectNavigation(state: ProximaState): string {
   const projects = state.projects.slice().sort((a, b) => a.id.localeCompare(b.id));
   const active = projects.filter((project) => project.status === 'active');
   const items = [
-    { id: ALL_PROJECTS, label: 'All projects', detail: 'Board and calendar', project: undefined },
+    { id: ALL_PROJECTS, label: 'All projects', detail: 'All Proxima work', project: undefined },
     { id: UNCATEGORISED, label: 'Uncategorised', detail: 'Records without a project', project: undefined },
-    ...projects.map((project) => ({ id: project.id, label: project.name, detail: `${project.status === 'archived' ? 'Archived · ' : ''}${project.projectType === 'schedule' ? 'Calendar project' : 'Task project'}`, project })),
+    ...projects.map((project) => ({
+      id: project.id,
+      label: project.name,
+      detail: `${project.status === 'archived' ? 'Archived · ' : ''}Project`,
+      project,
+    })),
   ];
   const selectedProject = state.projects.find((project) => project.id === selection);
   const detail = selectedProject ? projectPresentation(selectedProject) : null;
@@ -108,19 +117,23 @@ function projectNavigation(state: ProximaState): string {
     <div class="region-heading"><span>Projects</span><span class="count">${active.length}</span></div><div class="project-list">
     ${items.map((item) => {
       const activeItem = selection === item.id;
-      const wrongSurface = item.project !== undefined && ((surface === 'board' && item.project.projectType === 'schedule') || (surface === 'calendar' && item.project.projectType === 'task'));
       const disabled = item.project?.status === 'archived';
-      const body = `<span class="project-dot ${item.project?.projectType ?? 'all'}"></span><span class="project-item-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span>${wrongSurface ? '<span class="surface-hint">↗</span>' : ''}`;
+      const body = `<span class="project-dot ${item.project?.projectType ?? 'all'}"></span><span class="project-item-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span>`;
       return disabled
         ? `<div class="project-item archived" data-c1-key="project-item-${escapeHtml(item.id)}" title="${escapeHtml(item.detail)}" aria-label="${escapeHtml(item.label)}">${body}</div>`
         : `<button type="button" class="project-item${activeItem ? ' selected' : ''}" data-action="select-project" data-project-id="${escapeHtml(item.id)}" data-c1-key="project-item-${escapeHtml(item.id || 'uncategorised')}" aria-current="${activeItem ? 'page' : 'false'}" title="${escapeHtml(item.detail)}">${body}</button>`;
     }).join('')}</div>
-    ${detail ? `<section class="project-details" data-c1-key="project-details" aria-label="Project details"><header><strong>${escapeHtml(detail.name)}</strong><small>${escapeHtml(detail.statusLabel)} · ${escapeHtml(detail.typeLabel)}</small></header><p>${escapeHtml(detail.description || 'No description')}</p>${detail.linkedFolders.length > 0 ? `<div><small>Linked folders</small><ul>${detail.linkedFolders.map((folder) => `<li><strong>${escapeHtml(folder.name)}</strong><span>${escapeHtml(folder.path)}</span></li>`).join('')}</ul></div>` : '<small>No linked folders</small>'}<footer><small>Source</small><code>${escapeHtml(detail.sourcePath)}</code><small>ID from ${escapeHtml(detail.sourceIdOrigin)}</small></footer></section>` : '<section class="project-details empty" data-c1-key="project-details"><small>Select a project to inspect its read-only details.</small></section>'}
+    ${detail ? `<section class="project-details" data-c1-key="project-details" aria-label="Project details"><header><strong>${escapeHtml(detail.name)}</strong><small>${escapeHtml(detail.statusLabel)}</small></header><p>${escapeHtml(detail.description || 'No description')}</p>${detail.linkedFolders.length > 0 ? `<div><small>Linked folders</small><ul>${detail.linkedFolders.map((folder) => `<li><strong>${escapeHtml(folder.name)}</strong><span>${escapeHtml(folder.path)}</span></li>`).join('')}</ul></div>` : '<small>No linked folders</small>'}<footer><small>Source</small><code>${escapeHtml(detail.sourcePath)}</code><small>ID from ${escapeHtml(detail.sourceIdOrigin)}</small></footer></section>` : '<section class="project-details empty" data-c1-key="project-details"><small>Select a project to inspect its read-only details.</small></section>'}
   </nav>`;
 }
 
 function surfaceSwitcher(): string {
-  return `<div class="surface-switcher" data-c1-key="surface-switcher" role="tablist" aria-label="Proxima surfaces"><button type="button" class="surface-tab${surface === 'board' ? ' selected' : ''}" data-action="switch-surface" data-surface="board" role="tab" aria-selected="${surface === 'board'}" data-c1-key="surface-tab-board">Elastic board</button><button type="button" class="surface-tab${surface === 'calendar' ? ' selected' : ''}" data-action="switch-surface" data-surface="calendar" role="tab" aria-selected="${surface === 'calendar'}" data-c1-key="surface-tab-calendar">Calendar</button><button type="button" class="surface-tab${surface === 'canvas' ? ' selected' : ''}" data-action="switch-surface" data-surface="canvas" role="tab" aria-selected="${surface === 'canvas'}" data-c1-key="surface-tab-canvas">Canvas</button></div>`;
+  return renderCockpitNavigation({
+    surface,
+    tasksMode,
+    scheduleMode,
+    projectWorkspaceTab,
+  });
 }
 
 function taskCard(state: ProximaState, task: Task, height?: number, deadlineState?: DeadlineState, lookup?: Map<string, string>): string {
@@ -150,7 +163,38 @@ function calendarSurface(state: ProximaState, problems: LoadProblem[], lookup: M
   const byDay = eventsByDay(calendarEvents, problems);
   const days = calendarGridDates(calendarCursor);
   const today = localDateKey(new Date(FIXED_CLOCK.now()));
-  return `<section class="surface calendar-surface" data-c1-key="calendar-region" aria-label="Calendar"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection, lookup))}</p><h2>Calendar</h2><p class="surface-description">Local civil days, inclusive event ranges, and fail-visible diagnostics.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-action="calendar-shift" data-delta="-1" data-c1-key="calendar-previous" aria-label="Previous month">←</button><strong>${escapeHtml(monthTitle(calendarCursor))}</strong><button type="button" class="icon-button" data-action="calendar-shift" data-delta="1" data-c1-key="calendar-next" aria-label="Next month">→</button></div></header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${days.map((day) => { const key = localDateKey(day); const events = byDay.get(key) ?? []; const outside = day.getMonth() !== calendarCursor.getMonth(); return `<div class="calendar-day${outside ? ' outside' : ''}${key === today ? ' today' : ''}" data-c1-key="calendar-day-${escapeHtml(key)}" aria-label="${escapeHtml(key)}"><span class="day-number">${day.getDate()}</span><div class="day-events">${events.map((event) => eventCard(event, state, key, lookup)).join('')}</div></div>`; }).join('')}</div></section>`;
+  return `<section class="surface calendar-surface" data-c1-key="calendar-region" aria-label="Month schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection, lookup))}</p><h2>Month</h2><p class="surface-description">Local civil days, inclusive event ranges, and fail-visible diagnostics.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-action="calendar-navigate" data-direction="previous" data-c1-key="calendar-previous" aria-label="Previous month">←</button><button type="button" class="icon-button" data-action="calendar-today" data-c1-key="calendar-today">Today</button><strong>${escapeHtml(monthTitle(calendarCursor))}</strong><button type="button" class="icon-button" data-action="calendar-navigate" data-direction="next" data-c1-key="calendar-next" aria-label="Next month">→</button></div></header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${days.map((day) => { const key = localDateKey(day); const events = byDay.get(key) ?? []; const outside = day.getMonth() !== calendarCursor.getMonth(); return `<div class="calendar-day${outside ? ' outside' : ''}${key === today ? ' today' : ''}" data-c1-key="calendar-day-${escapeHtml(key)}" aria-label="${escapeHtml(key)}"><span class="day-number">${day.getDate()}</span><div class="day-events">${events.map((event) => eventCard(event, state, key, lookup)).join('')}</div></div>`; }).join('')}</div></section>`;
+}
+
+function timekeepingSurface(state: ProximaState, lookup: Map<string, string>): string {
+  const selectedTasks = tasksForSelection(state.tasks, selection);
+  return `<section class="surface" data-c1-key="tasks-timekeeping-region" aria-label="Timekeeping"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection, lookup))}</p><h2>Timekeeping</h2><p class="surface-description">Calendar, timeline and countdown workspace.</p></div><span class="surface-count">${selectedTasks.length} tasks</span></header></section>`;
+}
+
+function scheduleShellSurface(mode: ScheduleMode): string {
+  const labels: Record<Exclude<ScheduleMode, 'month'>, string> = {
+    day: 'Day',
+    'four-day': '4-Day',
+    week: 'Week',
+    year: 'Year',
+    agenda: 'Agenda',
+  };
+  const label = labels[mode as Exclude<ScheduleMode, 'month'>];
+  return `<section class="surface calendar-surface" data-c1-key="schedule-${escapeHtml(mode)}-region" aria-label="${escapeHtml(label)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(appState!, selection))}</p><h2>${escapeHtml(label)}</h2><p class="surface-description">Schedule workspace.</p></div></header></section>`;
+}
+
+function projectsHubSurface(state: ProximaState): string {
+  const project = state.projects.find((candidate) => candidate.id === selection);
+  const workspaceLabels: Record<ProjectWorkspaceTab, string> = {
+    notes: 'Notes',
+    'task-board': 'Task Board',
+    backlog: 'Backlog',
+    deadlines: 'Deadlines',
+    schedule: 'Schedule',
+  };
+  const selectedLabel = project ? project.name : selection === UNCATEGORISED ? 'Uncategorised' : 'All projects';
+
+  return `<section class="surface" data-c1-key="projects-hub-region" aria-label="Projects Hub"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectedLabel)}</p><h2>Projects Hub</h2><p class="surface-description">Project workspace and working artifacts.</p></div><span class="surface-count">${state.projects.length} projects</span></header><section data-c1-key="project-workspace-${escapeHtml(projectWorkspaceTab)}"><h3>${escapeHtml(workspaceLabels[projectWorkspaceTab])}</h3></section></section>`;
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -234,12 +278,33 @@ function render(): void {
   const root = element<HTMLElement>('#proxima-app');
   const problems = visibleProblems([...loadProblems]);
   root.dataset.proximaSurface = surface;
+  root.dataset.proximaSubmode = cockpitSubmode({ surface, tasksMode, scheduleMode, projectWorkspaceTab }) ?? 'none';
   root.dataset.proximaSelection = selection;
   const health = currentUiHealth();
   const projectNames = createProjectNameLookup(appState);
   root.dataset.proximaHealthGeneration = String(health.sourceRevision);
   const sourceLabel = sourceSession?.snapshot().sourceMode === 'external' ? 'Read-only external source' : 'Read-only fixture';
-  const surfaceMarkup = renderWithBoundary(() => surface === 'board' ? boardSurface(currentState, projectNames) : surface === 'calendar' ? calendarSurface(currentState, problems, projectNames) : renderCanvasSurface(canvasState, canvasPreviewRegistry.snapshot(), canvasExcalidrawPreviewRegistry.snapshot(), canvasTextPreviewRegistry.snapshot()));
+  const surfaceMarkup = renderWithBoundary(() => {
+    if (surface === 'tasks') {
+      return tasksMode === 'elastic'
+        ? boardSurface(currentState, projectNames)
+        : timekeepingSurface(currentState, projectNames);
+    }
+    if (surface === 'schedule') {
+      return scheduleMode === 'month'
+        ? calendarSurface(currentState, problems, projectNames)
+        : scheduleShellSurface(scheduleMode);
+    }
+    if (surface === 'projects') {
+      return projectsHubSurface(currentState);
+    }
+    return renderCanvasSurface(
+      canvasState,
+      canvasPreviewRegistry.snapshot(),
+      canvasExcalidrawPreviewRegistry.snapshot(),
+      canvasTextPreviewRegistry.snapshot(),
+    );
+  });
   if (surfaceMarkup.failure) root.dataset.proximaRendererFailure = surfaceMarkup.failure.code;
   else delete root.dataset.proximaRendererFailure;
   root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
@@ -254,6 +319,9 @@ function dispatchAction(input: unknown): void {
     const next = actionDispatcher.snapshot();
     selection = next.selection;
     surface = next.surface;
+    tasksMode = next.tasksMode;
+    scheduleMode = next.scheduleMode;
+    projectWorkspaceTab = next.projectWorkspaceTab;
     calendarCursor = new Date(`${next.calendarMonth}T00:00:00`);
     render();
   } else {
@@ -316,13 +384,28 @@ function bindInteractions(): void {
       void rereadSelectedDirectory().then((report) => renderFsaProbe(report ?? { error: 'No selected directory handle' }));
     } else if (action === 'switch-surface') {
       const next = button.dataset.surface as Surface;
-      if (next !== 'board' && next !== 'calendar' && next !== 'canvas') return;
+      if (next !== 'tasks' && next !== 'schedule' && next !== 'projects' && next !== 'canvas') return;
       dispatchAction({ type: 'surface.select', surface: next });
+    } else if (action === 'select-tasks-mode') {
+      const mode = button.dataset.tasksMode as TasksMode;
+      if (mode !== 'elastic' && mode !== 'timekeeping') return;
+      dispatchAction({ type: 'tasks.mode.select', mode });
+    } else if (action === 'select-schedule-mode') {
+      const mode = button.dataset.scheduleMode as ScheduleMode;
+      if (mode !== 'day' && mode !== 'four-day' && mode !== 'week' && mode !== 'month' && mode !== 'year' && mode !== 'agenda') return;
+      dispatchAction({ type: 'schedule.mode.select', mode });
+    } else if (action === 'select-project-workspace-tab') {
+      const tab = button.dataset.projectTab as ProjectWorkspaceTab;
+      if (tab !== 'notes' && tab !== 'task-board' && tab !== 'backlog' && tab !== 'deadlines' && tab !== 'schedule') return;
+      dispatchAction({ type: 'project.workspace-tab.select', tab });
     } else if (action === 'select-project') {
       dispatchAction({ type: 'project.select', projectId: button.dataset.projectId ?? ALL_PROJECTS });
-    } else if (action === 'calendar-shift') {
-      const delta = Number(button.dataset.delta ?? 0);
-      if (delta === -1 || delta === 1) dispatchAction({ type: 'calendar.shift-month', delta });
+    } else if (action === 'calendar-navigate') {
+      const direction = button.dataset.direction;
+      if (direction !== 'previous' && direction !== 'next') return;
+      dispatchAction({ type: 'calendar.navigate', direction });
+    } else if (action === 'calendar-today') {
+      dispatchAction({ type: 'calendar.today' });
     } else if (action === 'source-refresh') {
       const reason = refreshReasonForAction(action);
       if (reason) void refreshFromSource(reason);
@@ -361,6 +444,9 @@ async function boot(): Promise<void> {
   const initial = actionDispatcher.snapshot();
   selection = initial.selection;
   surface = initial.surface;
+  tasksMode = initial.tasksMode;
+  scheduleMode = initial.scheduleMode;
+  projectWorkspaceTab = initial.projectWorkspaceTab;
   calendarCursor = new Date(`${initial.calendarMonth}T00:00:00`);
   const root = element<HTMLElement>('#proxima-app');
   root.dataset.proximaFixture = FIXTURE_NAME;
