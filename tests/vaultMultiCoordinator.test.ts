@@ -62,7 +62,7 @@ describe('Gate 13.1P / 17.2A independent Proxima writers', () => {
           : operation === 'delete'
             ? await b.coordinator.execute({ kind: 'delete', path: 'task.md', expectedRevision: revision })
             : await b.coordinator.execute({ kind: 'move', from: 'task.md', to: 'moved.md', expectedRevision: revision });
-        expect(second.ok).toBe(false); expect(second.reason === 'missing' || second.reason === 'stale').toBe(true);
+        expect(second.ok).toBe(false); if (!second.ok) expect(second.reason === 'missing' || second.reason === 'stale').toBe(true);
       } finally { await rm(root, { recursive: true, force: true }); }
     }
     const destinationRoot = await makeRoot();

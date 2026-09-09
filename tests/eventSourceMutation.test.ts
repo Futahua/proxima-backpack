@@ -3,7 +3,7 @@ import { createMemoryVault } from '../src/adapters/memoryVault.js';
 import { createVaultMutationCoordinator } from '../src/app/vaultMutation.js';
 import { createMemoryRecoveryStore } from '../src/app/vaultRecovery.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
-import { updateEventScalar } from '../src/app/eventSourceMutation.js';
+import { updateEventScalar, type EventScalarMutation } from '../src/app/eventSourceMutation.js';
 
 const source = '\uFEFF---\r\nid: e1\r\nname: Event\r\nproject: old\r\nstartDate: 2026-09-01\r\ndeadline: 2026-09-02\r\nisCompleted: false\r\nforeign: &x value\r\n---\r\nbody\r\n';
 function readerFor(vault: ReturnType<typeof createMemoryVault>) { return { ...vault, readBinary: async (path: string, maxBytes: number) => { const file = await vault.read(path); const bytes = new TextEncoder().encode(file.text); if (bytes.byteLength > maxBytes) throw new Error('large'); return { ...file, bytes }; } }; }
@@ -13,7 +13,7 @@ describe('13.2K existing event scalar mutation', () => {
   it('updates all supported fields and reloads only intended event values', async () => {
     const vault = createMemoryVault({ 'Proxima/events/e1.md': source }); const reader = readerFor(vault); const recovery = createMemoryRecoveryStore({ now: () => 0 }); const coordinator = createVaultMutationCoordinator({ reader, writer: vault, recovery });
     const values = [['name', 'Renamed'], ['project', 'next'], ['startDate', '2026-10-01'], ['deadline', '2026-10-03'], ['isCompleted', true]] as const;
-    for (const [field, value] of values) { const observed = await reader.read('Proxima/events/e1.md'); expect(await updateEventScalar({ event: event(observed.revision), path: observed.path, reader, coordinator, mutation: { field, value } })).toMatchObject({ ok: true }); }
+    for (const [field, value] of values) { const observed = await reader.read('Proxima/events/e1.md'); expect(await updateEventScalar({ event: event(observed.revision), path: observed.path, reader, coordinator, mutation: { field, value } as EventScalarMutation })).toMatchObject({ ok: true }); }
     const loaded = (await loadVaultState(reader)).state.events.find((e) => e.id === 'e1'); expect(loaded).toMatchObject({ name: 'Renamed', projectId: 'next', startDate: '2026-10-01', deadline: '2026-10-03', isCompleted: true, source: { path: 'Proxima/events/e1.md' } }); expect((await reader.read('Proxima/events/e1.md')).text).toContain('foreign: &x value\r\n'); expect(recovery.list().every((e) => e.status === 'committed')).toBe(true);
   });
 

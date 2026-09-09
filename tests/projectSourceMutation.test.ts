@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createMemoryVault } from '../src/adapters/memoryVault.js';
-import { createVaultMutationCoordinator } from '../src/app/vaultMutation.js';
+import { createVaultMutationCoordinator, type VaultMutationCoordinator } from '../src/app/vaultMutation.js';
 import { createMemoryRecoveryStore } from '../src/app/vaultRecovery.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
-import { updateProjectScalar } from '../src/app/projectSourceMutation.js';
+import { updateProjectScalar, type ProjectScalarMutation } from '../src/app/projectSourceMutation.js';
 
 const flatSource = '---\nid: project-1\nname: Old project\nstatus: active\nprojectType: task\ntabBgColor: "#111111"\ntabTextColor: white\nlinkedFolders: Notes|Notes\nforeign: &x value\ndescription: |\n  keep this\n---\nbody\n';
 function readerFor(vault: ReturnType<typeof createMemoryVault>) { return { ...vault, readBinary: async (path: string, maxBytes: number) => { const file = await vault.read(path); const bytes = new TextEncoder().encode(file.text); if (bytes.byteLength > maxBytes) throw new Error('too large'); return { ...file, bytes }; } }; }
@@ -18,7 +18,7 @@ describe('13.2G existing project scalar mutation', () => {
     ] as const;
     for (const [field, value] of fields) {
       const observed = await reader.read('Proxima/projects/project-1.md');
-      expect(await updateProjectScalar({ project: project('Proxima/projects/project-1.md', observed.revision), path: 'Proxima/projects/project-1.md', reader, coordinator, mutation: { field, value } })).toMatchObject({ ok: true });
+      expect(await updateProjectScalar({ project: project('Proxima/projects/project-1.md', observed.revision), path: 'Proxima/projects/project-1.md', reader, coordinator, mutation: { field, value } as ProjectScalarMutation })).toMatchObject({ ok: true });
     }
     const text = (await reader.read('Proxima/projects/project-1.md')).text;
     expect(text).toContain('linkedFolders: Notes|Notes\nforeign: &x value\ndescription: |\n  keep this\n---\nbody\n');

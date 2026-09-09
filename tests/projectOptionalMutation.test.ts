@@ -23,7 +23,7 @@ describe('13.2H project optional metadata set/clear', () => {
   it('inserts missing folder/index color and clear becomes a no-op when absent', async () => {
     const vault = createMemoryVault({ 'Proxima/projects/folder/index.md': '---\nid: p2\nname: Folder\nstatus: active\nprojectType: task\n---\nbody' }); const reader = readerFor(vault); const coordinator = createVaultMutationCoordinator({ reader, writer: vault }); let observed = await reader.read('Proxima/projects/folder/index.md');
     expect(await updateProjectOptional({ project: project(observed.revision, observed.path), path: observed.path, reader, coordinator, mutation: { kind: 'set', field: 'tabTextColor', value: 'white' } })).toMatchObject({ ok: true });
-    observed = await reader.read('Proxima/projects/folder/index.md'); expect((await updateProjectOptional({ project: project(observed.revision, observed.path), path: observed.path, reader, coordinator, mutation: { kind: 'clear', field: 'tabBgColor' } })).noOp).toBe(true);
+    observed = await reader.read('Proxima/projects/folder/index.md'); const cleared = await updateProjectOptional({ project: project(observed.revision, observed.path), path: observed.path, reader, coordinator, mutation: { kind: 'clear', field: 'tabBgColor' } }); expect('noOp' in cleared && cleared.noOp).toBe(true);
     expect((await loadVaultState(reader)).state.projects.find((p) => p.id === 'p2')).toMatchObject({ tabTextColor: 'white', source: { path: observed.path } });
   });
 

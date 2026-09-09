@@ -60,7 +60,9 @@ export async function reconcileRecoveryEntries(
 }
 
 /** Bounded in-process recovery store for fixture/owner-mode tests. */
-export function createMemoryRecoveryStore(clock: Clock, capacity = 64): RecoveryStore {
+export function createMemoryRecoveryStore(clock: Clock, capacity = 64): RecoveryStore & {
+  updateStatus(requestId: string, status: RecoveryRecord['status']): Promise<boolean>;
+} {
   const records: RecoveryRecord[] = [];
   const max = Math.max(1, Math.floor(capacity));
   return {
@@ -81,7 +83,10 @@ export function createMemoryRecoveryStore(clock: Clock, capacity = 64): Recovery
  */
 export interface RecoveryJournalBackend { read(): Promise<string | undefined>; write(value: string): Promise<void>; }
 
-export function createDurableRecoveryStore(backend: RecoveryJournalBackend, capacity = 64, maxBytes = 4 * 1024 * 1024): RecoveryStore & { load(): Promise<void> } {
+export function createDurableRecoveryStore(backend: RecoveryJournalBackend, capacity = 64, maxBytes = 4 * 1024 * 1024): RecoveryStore & {
+  load(): Promise<void>;
+  updateStatus(requestId: string, status: RecoveryRecord['status']): Promise<boolean>;
+} {
   const records: RecoveryRecord[] = [];
   const maxRecords = Math.max(1, Math.floor(capacity));
   const persist = async () => {

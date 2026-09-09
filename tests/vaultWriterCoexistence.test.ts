@@ -137,7 +137,7 @@ describe('Gate 13D1 disposable multi-writer coexistence', () => {
               ? await setup.coordinator.execute({ kind: 'delete', path: 'task.md', expectedRevision })
               : await setup.coordinator.execute({ kind: 'move', from: 'task.md', to: 'moved.md', expectedRevision });
           expect(result.ok).toBe(false);
-          expect(result.reason === 'missing' || result.reason === 'stale').toBe(true);
+          if (!result.ok) expect(result.reason === 'missing' || result.reason === 'stale').toBe(true);
           const after = await treeSnapshot(root);
           expect(changedSnapshot(before, after)).toEqual(peerAction === 'rename' ? ['peer-renamed.md', 'task.md'] : ['task.md']);
           expect(await setup.vault.exists('task.md')).toBe(false);
