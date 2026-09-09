@@ -7,7 +7,7 @@ import type { ActionDispatcherState, Surface } from './actionProtocol.js';
 import { sourceProvenance, type ReadOnlyProjectionHealth, type RecordProvenance } from './readOnlyProjection.js';
 import { createUiHealthModel, type UiHealthModel } from './uiHealth.js';
 
-export const INSPECTION_SCHEMA_VERSION = 1 as const;
+export const INSPECTION_SCHEMA_VERSION = 2 as const;
 export const MAX_INSPECTION_ITEMS = 500;
 export const MAX_INSPECTION_TEXT = 400;
 
@@ -29,15 +29,28 @@ export interface InspectionProjection {
   mode: 'fixture' | 'live';
   applicationStateRevision: number;
   surface: Surface;
+  submode: null;
   selection: ProjectSelection;
+  localState: {
+    selection: ProjectSelection;
+    calendarMonth: string;
+  };
   projects: Array<{ id: string; name: string; projectType: 'task' | 'schedule'; status: string; provenance: RecordProvenance }>;
   board: { counts: { backlog: number; running: number; finished: number }; tasks: Array<{ id: string; name: string; projectId: string | null; column: string; deadline: string | null; durationMinutes: number | null; provenance: RecordProvenance }> };
   calendar: { cursorMonth: string; events: Array<{ id: string; name: string; projectId: string | null; startDate: string; deadline: string; dayKeys: string[]; provenance: RecordProvenance }> };
   loadProblems: Array<{ code: string; severity: string; id?: string; path?: string; detail: string }>;
+  recordRevisions: Array<{ kind: string; id: string; revision: string; path?: string }>;
   sourceRevisions: Array<{ kind: string; id: string; revision: string; path?: string }>;
-  pendingOperations: string[];
+  pendingOperations: {
+    tracking: 'unavailable';
+    items: [];
+  };
   degraded: { state: 'healthy' | 'degraded'; blockingProblemCount: number };
   sourceHealth: UiHealthModel;
+  eventSequences: {
+    action: number;
+    mutation: null;
+  };
   latestEventSequence: number;
   settled: { state: 'settled' | 'busy'; revision: number };
 }
@@ -117,15 +130,25 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     mode: dispatcher.mode,
     applicationStateRevision: dispatcher.stateRevision,
     surface: dispatcher.surface,
+    submode: null,
     selection: dispatcher.selection,
+    localState: {
+      selection: dispatcher.selection,
+      calendarMonth: dispatcher.calendarMonth,
+    },
     projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), projectType: project.projectType, status: project.status, provenance: sourceProvenance(project) })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
     board: { counts: { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length }, tasks: taskSummaries.slice(0, MAX_INSPECTION_ITEMS).map((task) => ({ ...task, id: safeText(task.id), name: safeText(task.name), provenance: { ...task.provenance, logicalId: safeText(task.provenance.logicalId), sourceRevision: safeText(task.provenance.sourceRevision) } })) },
     calendar: { cursorMonth: dispatcher.calendarMonth, events: calendarEvents.map((event) => eventSummary(event, dayKeysById)).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS).map((event) => ({ ...event, id: safeText(event.id), name: safeText(event.name) })) },
     loadProblems: problems.slice(0, MAX_INSPECTION_ITEMS).map((problem) => safeProblem(problem, dispatcher.mode)),
+    recordRevisions: sourceRevisions(dispatcher.state, dispatcher),
     sourceRevisions: sourceRevisions(dispatcher.state, dispatcher),
-    pendingOperations: [],
+    pendingOperations: { tracking: 'unavailable', items: [] },
     degraded: { state: problems.some(isBlocking) || health.degraded ? 'degraded' : 'healthy', blockingProblemCount: problems.filter(isBlocking).length },
     sourceHealth: health,
+    eventSequences: {
+      action: dispatcher.latestEventSequence,
+      mutation: null,
+    },
     latestEventSequence: dispatcher.latestEventSequence,
     settled: { state: dispatcher.settled ? 'settled' : 'busy', revision: dispatcher.settledRevision },
   };
@@ -134,5 +157,33 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
 export function isInspectionProjection(value: unknown): value is InspectionProjection {
   if (typeof value !== 'object' || value === null) return false;
   const candidate = value as Partial<InspectionProjection>;
-  return candidate.schemaVersion === INSPECTION_SCHEMA_VERSION && typeof candidate.applicationStateRevision === 'number' && (candidate.mode === 'fixture' || candidate.mode === 'live') && (candidate.surface === 'board' || candidate.surface === 'calendar') && Array.isArray(candidate.projects) && Array.isArray(candidate.board?.tasks) && Array.isArray(candidate.calendar?.events) && Array.isArray(candidate.loadProblems) && Array.isArray(candidate.sourceRevisions) && Array.isArray(candidate.pendingOperations);
+  return candidate.schemaVersion === INSPECTION_SCHEMA_VERSION
+    && Number.isInteger(candidate.applicationStateRevision)
+    && candidate.applicationStateRevision! >= 0
+    && (candidate.mode === 'fixture' || candidate.mode === 'live')
+    && (candidate.surface === 'board' || candidate.surface === 'calendar' || candidate.surface === 'canvas')
+    && candidate.submode === null
+    && typeof candidate.selection === 'string'
+    && candidate.localState !== undefined
+    && typeof candidate.localState.selection === 'string'
+    && typeof candidate.localState.calendarMonth === 'string'
+    && Array.isArray(candidate.projects)
+    && Array.isArray(candidate.board?.tasks)
+    && Array.isArray(candidate.calendar?.events)
+    && Array.isArray(candidate.loadProblems)
+    && Array.isArray(candidate.recordRevisions)
+    && Array.isArray(candidate.sourceRevisions)
+    && candidate.pendingOperations?.tracking === 'unavailable'
+    && Array.isArray(candidate.pendingOperations.items)
+    && candidate.pendingOperations.items.length === 0
+    && candidate.eventSequences !== undefined
+    && Number.isInteger(candidate.eventSequences.action)
+    && candidate.eventSequences.action >= 0
+    && candidate.eventSequences.mutation === null
+    && Number.isInteger(candidate.latestEventSequence)
+    && candidate.latestEventSequence! >= 0
+    && candidate.settled !== undefined
+    && (candidate.settled.state === 'settled' || candidate.settled.state === 'busy')
+    && Number.isInteger(candidate.settled.revision)
+    && candidate.settled.revision >= 0;
 }

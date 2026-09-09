@@ -43,7 +43,10 @@ describe('Gate 6E fixture-mode end-to-end refresh wiring', () => {
     expect(inspection.calendar.events.every((event) => event.provenance.sourceRevision.length > 0)).toBe(true);
     expect(inspection.board.tasks).toHaveLength(7);
     expect(inspection.settled.state).toBe('settled');
-    expect(inspection.pendingOperations).toEqual([]);
+    expect(inspection.pendingOperations).toEqual({
+      tracking: 'unavailable',
+      items: [],
+    });
     expect(dispatcher.events().filter((event) => event.actionType === 'source.refresh')).toHaveLength(2);
   });
 
