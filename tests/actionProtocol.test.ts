@@ -38,6 +38,8 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'surface.select', surface: 'canvas' })).toEqual({ ok: true, action: { type: 'surface.select', surface: 'canvas' } });
     expect(parseAction({ type: 'surface.select', surface: 'board' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'surface' } });
     expect(parseAction({ type: 'tasks.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
+    expect(parseAction({ type: 'timekeeping.panel.set-visible', panel: 'bogus', visible: true })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'panel' } });
+    expect(parseAction({ type: 'timekeeping.panel.set-visible', panel: 'calendar', visible: 'yes' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'visible' } });
     expect(parseAction({ type: 'schedule.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
     expect(parseAction({ type: 'project.workspace-tab.select', tab: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'tab' } });
     expect(parseAction({ type: 'calendar.navigate', direction: 'sideways' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'direction' } });
@@ -223,6 +225,10 @@ describe('Gate 3A semantic action protocol', () => {
       { type: 'calendar.today' },
       { type: 'surface.select', surface: 'tasks' },
       { type: 'tasks.mode.select', mode: 'timekeeping' },
+      { type: 'timekeeping.panel.set-visible', panel: 'timeline', visible: true },
+      { type: 'timekeeping.panel.set-visible', panel: 'countdowns', visible: true },
+      { type: 'timekeeping.panel.set-visible', panel: 'calendar', visible: false },
+      { type: 'timekeeping.panel.set-visible', panel: 'calendar', visible: true },
       { type: 'tasks.mode.select', mode: 'elastic' },
       { type: 'surface.select', surface: 'canvas' },
     ];

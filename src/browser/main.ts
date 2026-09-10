@@ -1,4 +1,4 @@
-import { createActionDispatcher, type ActionResult, type ProjectWorkspaceTab, type ProximaActionDispatcher, type ScheduleMode, type Surface, type TasksMode } from '../app/actionProtocol.js';
+import { createActionDispatcher, type ActionResult, type ProjectWorkspaceTab, type ProximaActionDispatcher, type ScheduleMode, type Surface, type TasksMode, type TimekeepingPanelVisibility } from '../app/actionProtocol.js';
 import { createInspectionProjection } from '../app/inspection.js';
 import type { ReadOnlyProjection } from '../app/readOnlyProjection.js';
 import { evaluateRealVaultAcceptance, isRealVaultAcceptanceReport, type RealVaultAcceptanceReport } from '../app/realVaultAcceptance.js';
@@ -30,6 +30,7 @@ import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } 
 import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
 import { bindElasticCockpitInteractions, renderElasticCockpit, shouldTickElasticProgress } from './elasticCockpit.js';
 import { calendarGridDates } from './calendarGrid.js';
+import { bindTimekeepingCockpitInteractions, renderTimekeepingCockpit } from './timekeepingCockpit.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
@@ -44,6 +45,11 @@ let loadProblems: LoadProblem[] = [];
 let selection = ALL_PROJECTS;
 let surface: Surface = 'tasks';
 let tasksMode: TasksMode = 'elastic';
+let timekeepingPanels: TimekeepingPanelVisibility = {
+  calendar: true,
+  timeline: false,
+  countdowns: false,
+};
 let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let calendarCursor = new Date(FIXED_CLOCK.now());
@@ -196,7 +202,20 @@ function calendarSurface(state: ProximaState, problems: LoadProblem[], lookup: M
 
 function timekeepingSurface(state: ProximaState, lookup: Map<string, string>): string {
   const selectedTasks = tasksForSelection(state.tasks, selection);
-  return `<section class="surface" data-c1-key="tasks-timekeeping-region" aria-label="Timekeeping"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection, lookup))}</p><h2>Timekeeping</h2><p class="surface-description">Calendar, timeline and countdown workspace.</p></div><span class="surface-count">${selectedTasks.length} tasks</span></header></section>`;
+  const now = currentSourceMode() === 'external'
+    ? new Date()
+    : new Date(FIXED_CLOCK.now());
+
+  return renderTimekeepingCockpit({
+    state,
+    tasks: selectedTasks,
+    projectNames: lookup,
+    selectionLabel: selectionLabel(state, selection, lookup),
+    panels: timekeepingPanels,
+    calendarCursor,
+    now,
+    selectedTaskId: elasticSelectedTaskId,
+  });
 }
 
 function scheduleShellSurface(mode: ScheduleMode): string {
@@ -365,6 +384,7 @@ function dispatchAction(input: unknown): ActionResult | null {
     selection = next.selection;
     surface = next.surface;
     tasksMode = next.tasksMode;
+    timekeepingPanels = { ...next.timekeepingPanels };
     scheduleMode = next.scheduleMode;
     projectWorkspaceTab = next.projectWorkspaceTab;
     calendarCursor = new Date(`${next.calendarMonth}T00:00:00`);
@@ -458,6 +478,24 @@ function bindInteractions(): void {
     },
   });
 
+  bindTimekeepingCockpitInteractions(root, {
+    setPanelVisible: (panel, visible) => {
+      dispatchAction({
+        type: 'timekeeping.panel.set-visible',
+        panel,
+        visible,
+      });
+    },
+    navigateMonth: (direction) => {
+      dispatchAction({
+        type: 'calendar.navigate',
+        direction,
+      });
+    },
+    today: () => {
+      dispatchAction({ type: 'calendar.today' });
+    },
+  });
   root.addEventListener('click', (event) => {
     const button = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (!button || !appState) return;
@@ -529,6 +567,7 @@ async function boot(): Promise<void> {
   selection = initial.selection;
   surface = initial.surface;
   tasksMode = initial.tasksMode;
+  timekeepingPanels = { ...initial.timekeepingPanels };
   scheduleMode = initial.scheduleMode;
   projectWorkspaceTab = initial.projectWorkspaceTab;
   calendarCursor = new Date(`${initial.calendarMonth}T00:00:00`);

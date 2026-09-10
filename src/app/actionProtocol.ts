@@ -21,6 +21,8 @@ export const ACTION_SCHEMA_VERSION = 2 as const;
 
 export type Surface = 'tasks' | 'schedule' | 'projects' | 'canvas';
 export type TasksMode = 'elastic' | 'timekeeping';
+export type TimekeepingPanel = 'calendar' | 'timeline' | 'countdowns';
+export type TimekeepingPanelVisibility = Record<TimekeepingPanel, boolean>;
 export type ScheduleMode = 'day' | 'four-day' | 'week' | 'month' | 'year' | 'agenda';
 export type ProjectWorkspaceTab = 'notes' | 'task-board' | 'backlog' | 'deadlines' | 'schedule';
 
@@ -33,6 +35,7 @@ export type ProximaAction =
   | { type: 'project.select'; projectId: string }
   | { type: 'surface.select'; surface: Surface }
   | { type: 'tasks.mode.select'; mode: TasksMode }
+  | { type: 'timekeeping.panel.set-visible'; panel: TimekeepingPanel; visible: boolean }
   | { type: 'elastic.target.set'; targetTime: string }
   | { type: 'elastic.lock' }
   | { type: 'elastic.unlock' }
@@ -62,6 +65,7 @@ export interface ActionSnapshot {
   surface: Surface;
   selection: string;
   tasksMode: TasksMode;
+  timekeepingPanels: TimekeepingPanelVisibility;
   scheduleMode: ScheduleMode;
   projectWorkspaceTab: ProjectWorkspaceTab;
   calendarMonth: string;
@@ -108,6 +112,7 @@ export interface ActionDispatcherState {
   surface: Surface;
   selection: string;
   tasksMode: TasksMode;
+  timekeepingPanels: TimekeepingPanelVisibility;
   scheduleMode: ScheduleMode;
   projectWorkspaceTab: ProjectWorkspaceTab;
   calendarMonth: string;
@@ -223,6 +228,43 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
             field: 'mode',
           },
         };
+  }
+
+  if (input.type === 'timekeeping.panel.set-visible') {
+    if (
+      input.panel !== 'calendar'
+      && input.panel !== 'timeline'
+      && input.panel !== 'countdowns'
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'timekeeping panel must be calendar, timeline or countdowns',
+          field: 'panel',
+        },
+      };
+    }
+
+    if (typeof input.visible !== 'boolean') {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'timekeeping panel visibility must be boolean',
+          field: 'visible',
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      action: {
+        type: input.type,
+        panel: input.panel,
+        visible: input.visible,
+      },
+    };
   }
 
   if (input.type === 'elastic.target.set') {
@@ -352,6 +394,7 @@ function snapshot(state: ActionDispatcherState): ActionSnapshot {
     surface: state.surface,
     selection: state.selection,
     tasksMode: state.tasksMode,
+    timekeepingPanels: { ...state.timekeepingPanels },
     scheduleMode: state.scheduleMode,
     projectWorkspaceTab: state.projectWorkspaceTab,
     calendarMonth: state.calendarMonth,
@@ -417,6 +460,14 @@ function isCanonicalInstant(value: unknown): value is string {
 
 function defaultElasticTargetTime(clock: Clock): string {
   return new Date(clock.now() + 4 * 60 * 60 * 1000).toISOString();
+}
+
+function defaultTimekeepingPanels(): TimekeepingPanelVisibility {
+  return {
+    calendar: true,
+    timeline: false,
+    countdowns: false,
+  };
 }
 
 function isValidCalendarMonth(value: string): boolean {
@@ -517,6 +568,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     surface: options.initialSurface ?? 'tasks',
     selection: options.initialSelection ?? ALL_PROJECTS,
     tasksMode: options.initialTasksMode ?? 'elastic',
+    timekeepingPanels: defaultTimekeepingPanels(),
     scheduleMode: options.initialScheduleMode ?? 'month',
     projectWorkspaceTab: options.initialProjectWorkspaceTab ?? 'notes',
     calendarMonth: options.initialCalendarMonth ?? '2026-09-01',
@@ -643,6 +695,20 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
           state.tasksMode = action.mode;
           state.stateRevision += 1;
         }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'timekeeping.panel.set-visible') {
+        const changed = state.timekeepingPanels[action.panel] !== action.visible;
+
+        if (changed) {
+          state.timekeepingPanels = {
+            ...state.timekeepingPanels,
+            [action.panel]: action.visible,
+          };
+          state.stateRevision += 1;
+        }
+
         return settleLocalAction(state, ring, action.type, changed, requestId);
       }
 
@@ -840,9 +906,13 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
       }
 
       const resetElasticTarget = defaultElasticTargetTime(clock);
+      const resetTimekeepingPanels = defaultTimekeepingPanels();
       const changed = state.surface !== 'tasks'
         || state.selection !== ALL_PROJECTS
         || state.tasksMode !== 'elastic'
+        || state.timekeepingPanels.calendar !== resetTimekeepingPanels.calendar
+        || state.timekeepingPanels.timeline !== resetTimekeepingPanels.timeline
+        || state.timekeepingPanels.countdowns !== resetTimekeepingPanels.countdowns
         || state.scheduleMode !== 'month'
         || state.projectWorkspaceTab !== 'notes'
         || state.calendarMonth !== '2026-09-01'
@@ -852,6 +922,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
       state.surface = 'tasks';
       state.selection = ALL_PROJECTS;
       state.tasksMode = 'elastic';
+      state.timekeepingPanels = resetTimekeepingPanels;
       state.scheduleMode = 'month';
       state.projectWorkspaceTab = 'notes';
       state.calendarMonth = '2026-09-01';
@@ -936,6 +1007,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         ...state,
         problems: [...state.problems],
         revisions: { ...state.revisions },
+        timekeepingPanels: { ...state.timekeepingPanels },
       };
     },
 
@@ -1003,6 +1075,10 @@ export function isActionResult(value: unknown): value is ActionResult {
       )
       && typeof snapshotValue.selection === 'string'
       && (snapshotValue.tasksMode === 'elastic' || snapshotValue.tasksMode === 'timekeeping')
+      && isRecord(snapshotValue.timekeepingPanels)
+      && typeof snapshotValue.timekeepingPanels.calendar === 'boolean'
+      && typeof snapshotValue.timekeepingPanels.timeline === 'boolean'
+      && typeof snapshotValue.timekeepingPanels.countdowns === 'boolean'
       && (
         snapshotValue.scheduleMode === 'day'
         || snapshotValue.scheduleMode === 'four-day'

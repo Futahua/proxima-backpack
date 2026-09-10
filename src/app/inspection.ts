@@ -3,7 +3,7 @@ import { isBlocking, type LoadProblem } from '../domain/problems.js';
 import { elasticBoard, eventsByDay, eventsForSelection, projectsFor, tasksForSelection, type ProjectSelection } from '../domain/selectors.js';
 import { localDateKey } from '../domain/time.js';
 import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
-import type { ActionDispatcherState, ProjectWorkspaceTab, ScheduleMode, Surface, TasksMode } from './actionProtocol.js';
+import type { ActionDispatcherState, ProjectWorkspaceTab, ScheduleMode, Surface, TasksMode, TimekeepingPanelVisibility } from './actionProtocol.js';
 import { sourceProvenance, type ReadOnlyProjectionHealth, type RecordProvenance } from './readOnlyProjection.js';
 import { createUiHealthModel, type UiHealthModel } from './uiHealth.js';
 
@@ -35,6 +35,7 @@ export interface InspectionProjection {
     surface: Surface;
     selection: ProjectSelection;
     tasksMode: TasksMode;
+    timekeepingPanels: TimekeepingPanelVisibility;
     scheduleMode: ScheduleMode;
     projectWorkspaceTab: ProjectWorkspaceTab;
     calendarMonth: string;
@@ -149,6 +150,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
       surface: dispatcher.surface,
       selection: dispatcher.selection,
       tasksMode: dispatcher.tasksMode,
+      timekeepingPanels: { ...dispatcher.timekeepingPanels },
       scheduleMode: dispatcher.scheduleMode,
       projectWorkspaceTab: dispatcher.projectWorkspaceTab,
       calendarMonth: dispatcher.calendarMonth,
@@ -210,6 +212,10 @@ export function isInspectionProjection(value: unknown): value is InspectionProje
     && candidate.localState.surface === candidate.surface
     && typeof candidate.localState.selection === 'string'
     && (candidate.localState.tasksMode === 'elastic' || candidate.localState.tasksMode === 'timekeeping')
+    && candidate.localState.timekeepingPanels !== undefined
+    && typeof candidate.localState.timekeepingPanels.calendar === 'boolean'
+    && typeof candidate.localState.timekeepingPanels.timeline === 'boolean'
+    && typeof candidate.localState.timekeepingPanels.countdowns === 'boolean'
     && (
       candidate.localState.scheduleMode === 'day'
       || candidate.localState.scheduleMode === 'four-day'

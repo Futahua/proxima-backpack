@@ -195,7 +195,7 @@ function renderColumn(
   return `<section class="board-column" data-c1-key="board-column-${column}" data-elastic-column-region="${column}" aria-label="${label} column"><header><h3>${label}</h3><span>${tasks.length}</span></header><div class="column-cards">${tasks.length === 0 ? `<p class="empty-state" data-c1-key="board-empty-${column}">No tasks here.</p>` : ''}${pieces.join('')}</div></section>`;
 }
 
-function renderTaskModal(state: ProximaState, taskId: string | null, projectNames: Map<string, string>): string {
+export function renderTaskModal(state: ProximaState, taskId: string | null, projectNames: Map<string, string>): string {
   if (!taskId) return '';
   const task = state.tasks.find((candidate) => candidate.id === taskId);
   if (!task) return '';

@@ -73,6 +73,7 @@ const REGISTRY = {
   'project.select': 'local-state',
   'surface.select': 'local-state',
   'tasks.mode.select': 'local-state',
+  'timekeeping.panel.set-visible': 'local-state',
   'elastic.target.set': 'local-state',
   'elastic.lock': 'local-state',
   'elastic.unlock': 'local-state',
