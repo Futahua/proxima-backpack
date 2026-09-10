@@ -60,17 +60,64 @@ export function redactDiagnosticSecrets(
     );
 }
 
+const QUOTED_ABSOLUTE_MACHINE_PATH =
+  /(["'`])((?:[A-Za-z]:[\\/]|\\\\|\/)[^"'`\r\n]+)\1/g;
+
+const WINDOWS_ABSOLUTE_MACHINE_PATH =
+  /(?:\b[A-Za-z]:[\\/]|\\\\[^\\/\s]+[\\/])[^\s,;"'`<>(){}\[\]]+/g;
+
+const POSIX_ABSOLUTE_MACHINE_PATH =
+  /(^|[\s=: ("'`])\/(?:[^\/\s,;"'`<>(){}\[\]]+\/)+[^\/\s,;"'`<>(){}\[\]]+/gm;
+
+export function redactDiagnosticMachinePaths(
+  value: string,
+): string {
+  return value
+    .replace(
+      QUOTED_ABSOLUTE_MACHINE_PATH,
+      (_match: string, quote: string) =>
+        `${quote}${REDACTED_DIAGNOSTIC_SECRET}${quote}`,
+    )
+    .replace(
+      WINDOWS_ABSOLUTE_MACHINE_PATH,
+      REDACTED_DIAGNOSTIC_SECRET,
+    )
+    .replace(
+      POSIX_ABSOLUTE_MACHINE_PATH,
+      (_match: string, prefix: string) =>
+        `${prefix}${REDACTED_DIAGNOSTIC_SECRET}`,
+    );
+}
+
+export function redactDiagnosticDisclosure(
+  value: string,
+): string {
+  return redactDiagnosticMachinePaths(
+    redactDiagnosticSecrets(value),
+  );
+}
+
+function redactDiagnosticPath(
+  value: string,
+): string {
+  const normalized = value.replaceAll('\\', '/');
+  if (/^(?:[A-Za-z]:\/|\/\/|\/)/.test(normalized)) {
+    return REDACTED_DIAGNOSTIC_SECRET;
+  }
+  return redactDiagnosticDisclosure(value);
+}
+
 export function redactDiagnosticProblem(
   problem: LoadProblem,
 ): LoadProblem {
   const redacted: LoadProblem = {
     ...problem,
-    path: redactDiagnosticSecrets(problem.path),
-    detail: redactDiagnosticSecrets(problem.detail),
+    path: redactDiagnosticPath(problem.path),
+    detail: redactDiagnosticDisclosure(problem.detail),
   };
 
   if (redacted.id !== undefined) {
-    redacted.id = redactDiagnosticSecrets(redacted.id);
+    redacted.id = redactDiagnosticDisclosure(redacted.id);
   }
 
   return redacted;

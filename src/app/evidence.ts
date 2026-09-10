@@ -1,6 +1,6 @@
 import type { BuildIdentityLike, InspectionProjection } from './inspection.js';
 import type { ProximaEvent } from './eventRing.js';
-import { redactDiagnosticSecrets } from './diagnostics.js';
+import { redactDiagnosticDisclosure } from './diagnostics.js';
 
 export const EVIDENCE_SCHEMA_VERSION = 1 as const;
 export const MAX_EVIDENCE_ITEMS = 500;
@@ -41,7 +41,7 @@ export function createScenarioEvidence(input: ScenarioEvidenceInput): ScenarioEv
     finalStateRevision: input.finalStateRevision,
     domainAssertions: input.domainAssertions.slice(0, MAX_EVIDENCE_ITEMS).map((value) => text(value)),
     c1Assertions: input.c1Assertions.slice(0, MAX_EVIDENCE_ITEMS).map((value) => text(value)),
-    diagnostics: input.diagnostics.slice(0, MAX_EVIDENCE_ITEMS).map((value) => text(redactDiagnosticSecrets(value))),
+    diagnostics: input.diagnostics.slice(0, MAX_EVIDENCE_ITEMS).map((value) => text(redactDiagnosticDisclosure(value))),
     captures: input.captures.slice(0, MAX_EVIDENCE_ITEMS).map((capture) => ({ id: text(capture.id), sha256: text(capture.sha256, 128) })),
     passed: input.passed,
   };
