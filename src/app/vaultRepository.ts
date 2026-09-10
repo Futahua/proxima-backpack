@@ -40,6 +40,7 @@ import type {
   Task,
 } from '../domain/types.js';
 import { declaredTypeVetoesProject, discoverFlatRecords, discoverProjects } from './discovery.js';
+import { redactDiagnosticProblem } from './diagnostics.js';
 import { directoryFor, resolveLayout, type VaultLayout } from './vaultLayout.js';
 
 export interface LoadOptions {
@@ -167,7 +168,7 @@ export async function loadVaultState(
 
   return {
     state: { projects, tasks, events, statuses: DEFAULT_STATUSES, taskSchema: [] },
-    problems,
+    problems: problems.map(redactDiagnosticProblem),
     revisions,
     layout,
     census: {

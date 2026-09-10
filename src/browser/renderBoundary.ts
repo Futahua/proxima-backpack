@@ -1,4 +1,4 @@
-import { DIAGNOSTIC_LIMITS, type DiagnosticCode } from '../app/diagnostics.js';
+import { DIAGNOSTIC_LIMITS, redactDiagnosticSecrets, type DiagnosticCode } from '../app/diagnostics.js';
 
 /**
  * Keep a surface renderer failure inside the visible/agent-readable boundary.
@@ -33,7 +33,10 @@ export function renderWithBoundary(renderSurface: () => string): RenderBoundaryR
 function boundedDetail(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const clean = raw.replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
-  return (clean || 'unknown renderer failure').slice(0, DIAGNOSTIC_LIMITS.rendererDetail);
+  const redacted = redactDiagnosticSecrets(
+    clean || 'unknown renderer failure',
+  );
+  return redacted.slice(0, DIAGNOSTIC_LIMITS.rendererDetail);
 }
 
 function escapeHtml(value: string): string {

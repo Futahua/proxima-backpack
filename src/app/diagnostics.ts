@@ -22,13 +22,68 @@ export const DIAGNOSTIC_LIMITS = {
   rendererDetail: 180,
 } as const;
 
+const REDACTED_DIAGNOSTIC_SECRET = '[redacted]';
+
+const AUTHORIZATION_CREDENTIAL =
+  /(\bauthorization\b["']?\s*[:=]\s*)(?:Bearer|Basic)\s+[^\s,;&}\r\n]+/gi;
+
+const NAMED_CREDENTIAL =
+  /(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|password|passwd|secret|token)\b["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}\r\n]+)/gi;
+
+const URI_USERINFO_CREDENTIAL =
+  /([a-z][a-z0-9+.-]*:\/\/)[^\/\s:@]+:[^@\/\s]+@/gi;
+
+const STANDALONE_CREDENTIAL = new RegExp(
+  String.raw`\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b`,
+  'g',
+);
+
+export function redactDiagnosticSecrets(
+  value: string,
+): string {
+  return value
+    .replace(
+      AUTHORIZATION_CREDENTIAL,
+      `$1${REDACTED_DIAGNOSTIC_SECRET}`,
+    )
+    .replace(
+      NAMED_CREDENTIAL,
+      `$1${REDACTED_DIAGNOSTIC_SECRET}`,
+    )
+    .replace(
+      URI_USERINFO_CREDENTIAL,
+      `$1${REDACTED_DIAGNOSTIC_SECRET}@`,
+    )
+    .replace(
+      STANDALONE_CREDENTIAL,
+      REDACTED_DIAGNOSTIC_SECRET,
+    );
+}
+
+export function redactDiagnosticProblem(
+  problem: LoadProblem,
+): LoadProblem {
+  const redacted: LoadProblem = {
+    ...problem,
+    path: redactDiagnosticSecrets(problem.path),
+    detail: redactDiagnosticSecrets(problem.detail),
+  };
+
+  if (redacted.id !== undefined) {
+    redacted.id = redactDiagnosticSecrets(redacted.id);
+  }
+
+  return redacted;
+}
+
 export function boundDiagnosticProblem(
   problem: LoadProblem,
 ): LoadProblem {
+  const redacted = redactDiagnosticProblem(problem);
   const bounded: LoadProblem = {
-    ...problem,
-    path: problem.path.slice(0, DIAGNOSTIC_LIMITS.problemPath),
-    detail: problem.detail.slice(0, DIAGNOSTIC_LIMITS.problemDetail),
+    ...redacted,
+    path: redacted.path.slice(0, DIAGNOSTIC_LIMITS.problemPath),
+    detail: redacted.detail.slice(0, DIAGNOSTIC_LIMITS.problemDetail),
   };
 
   if (bounded.id !== undefined) {
