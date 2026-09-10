@@ -1,6 +1,5 @@
+import { DIAGNOSTIC_LIMITS } from './diagnostics.js';
 import type { ReadOnlyProjectionHealth } from './readOnlyProjection.js';
-
-const MAX_PROBLEM_CODES = 20;
 
 export interface UiHealthModel {
   sourceRevision: number;
@@ -26,7 +25,7 @@ export function createUiHealthModel(health?: ReadOnlyProjectionHealth): UiHealth
     degraded,
     lastSuccessfulRefreshRevision: health?.lastSuccessfulRefreshRevision ?? sourceRevision,
     lastRefreshReason: health?.lastRefreshReason ?? null,
-    problemCodes: [...new Set(health?.problemCodes ?? [])].slice(0, MAX_PROBLEM_CODES),
+    problemCodes: [...new Set(health?.problemCodes ?? [])].slice(0, DIAGNOSTIC_LIMITS.problemCodes),
     status: degraded ? 'degraded' : stale ? 'stale' : 'healthy',
   };
 }

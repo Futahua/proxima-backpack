@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createActionDispatcher } from '../src/app/actionProtocol.js';
-import { createInspectionProjection, isInspectionProjection, MAX_INSPECTION_ITEMS } from '../src/app/inspection.js';
+import { DIAGNOSTIC_LIMITS } from '../src/app/diagnostics.js';
+import { createInspectionProjection, isInspectionProjection } from '../src/app/inspection.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
 import { fixtureVault } from './fixtures.js';
 
@@ -195,7 +196,7 @@ describe('Gate 3A inspection projection', () => {
     expect(projection.degraded.blockingProblemCount).toBeGreaterThan(0);
     expect(projection.loadProblems.every((problem) => problem.detail.length <= 400)).toBe(true);
 
-    const manyProblems = Array.from({ length: MAX_INSPECTION_ITEMS + 25 }, (_, index) => ({
+    const manyProblems = Array.from({ length: DIAGNOSTIC_LIMITS.problems + 25 }, (_, index) => ({
       code: 'unreadable' as const,
       severity: 'error' as const,
       path: `fixture/${index}.md`,
@@ -203,7 +204,7 @@ describe('Gate 3A inspection projection', () => {
     }));
     const bounded = createInspectionProjection({ ...dispatcher.snapshot(), problems: manyProblems }, build);
 
-    expect(bounded.loadProblems).toHaveLength(MAX_INSPECTION_ITEMS);
+    expect(bounded.loadProblems).toHaveLength(DIAGNOSTIC_LIMITS.problems);
     expect(bounded.loadProblems.every((problem) => problem.detail.length <= 400)).toBe(true);
   });
 });

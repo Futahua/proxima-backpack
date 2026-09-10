@@ -2,9 +2,8 @@ import type { LoadProblem } from '../domain/problems.js';
 import type { SourceRef, SourcedRecord } from '../domain/records.js';
 import type { ProximaState } from '../domain/types.js';
 import type { RefreshControllerSnapshot, RefreshReason } from './refreshController.js';
-import type { SourceDiagnosticCode } from './diagnostics.js';
+import { boundDiagnosticProblems, DIAGNOSTIC_LIMITS, type SourceDiagnosticCode } from './diagnostics.js';
 
-const MAX_PROBLEMS = 100;
 const MAX_TEXT = 400;
 
 export interface RecordProvenance {
@@ -47,7 +46,10 @@ function relativePath(path: string): string {
 }
 
 function boundedProblems(problems: LoadProblem[]): LoadProblem[] {
-  return problems.slice(0, MAX_PROBLEMS).map((problem) => ({ ...problem, path: relativePath(problem.path), detail: bounded(problem.detail) }));
+  return boundDiagnosticProblems(problems).map((problem) => ({
+    ...problem,
+    path: relativePath(problem.path),
+  }));
 }
 
 export function sourceProvenance(record: SourcedRecord): RecordProvenance {
@@ -66,7 +68,7 @@ export function sourceProvenance(record: SourcedRecord): RecordProvenance {
  */
 export function createReadOnlyProjection(snapshot: RefreshControllerSnapshot, applicationRevision = snapshot.sourceRevision): ReadOnlyProjection {
   const problems = boundedProblems(snapshot.load.problems);
-  const problemCodes = [...new Set([...problems.map((problem) => problem.code), ...(snapshot.lastRefreshProblemCode ? [snapshot.lastRefreshProblemCode] : [])])].slice(0, 20);
+  const problemCodes = [...new Set([...problems.map((problem) => problem.code), ...(snapshot.lastRefreshProblemCode ? [snapshot.lastRefreshProblemCode] : [])])].slice(0, DIAGNOSTIC_LIMITS.problemCodes);
   return {
     generation: snapshot.sourceRevision,
     state: clone(snapshot.load.state),

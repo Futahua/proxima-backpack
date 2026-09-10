@@ -1,14 +1,12 @@
 import { isBlocking, type LoadProblem } from '../domain/problems.js';
 import type { VaultReader } from '../ports/vault.js';
 import { loadVaultState, type LoadOptions, type LoadResult } from './vaultRepository.js';
-import type { SourceDiagnosticCode } from './diagnostics.js';
+import { boundDiagnosticProblems, type SourceDiagnosticCode } from './diagnostics.js';
 
 export const REFRESH_REASONS = ['manual', 'focus', 'interval', 'external-signal'] as const;
 export type RefreshReason = (typeof REFRESH_REASONS)[number];
 export type RefreshOutcome = 'unchanged' | 'changed' | 'deleted' | 'renamed' | 'unreadable' | 'malformed';
 export type RefreshState = 'idle' | 'refreshing' | 'degraded';
-
-const MAX_PROBLEMS = 100;
 
 export interface RefreshControllerSnapshot {
   sourceRevision: number;
@@ -40,12 +38,8 @@ export interface RefreshController {
   snapshot(): RefreshControllerSnapshot;
 }
 
-function boundedProblems(problems: LoadProblem[]): LoadProblem[] {
-  return problems.slice(0, MAX_PROBLEMS).map((problem) => ({ ...problem, detail: problem.detail.slice(0, 400) }));
-}
-
 function boundedLoad(load: LoadResult): LoadResult {
-  return { state: load.state, problems: boundedProblems(load.problems), revisions: { ...load.revisions }, layout: load.layout, census: load.census };
+  return { state: load.state, problems: boundDiagnosticProblems(load.problems), revisions: { ...load.revisions }, layout: load.layout, census: load.census };
 }
 
 function revisionMap(load: LoadResult): Map<string, string> {

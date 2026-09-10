@@ -4,6 +4,7 @@ import { elasticBoard, eventsByDay, eventsForSelection, projectsFor, tasksForSel
 import { localDateKey } from '../domain/time.js';
 import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
 import type { ActionDispatcherState, ProjectWorkspaceTab, ScheduleMode, Surface, TasksMode, TimekeepingPanelVisibility } from './actionProtocol.js';
+import { boundDiagnosticProblems, DIAGNOSTIC_LIMITS } from './diagnostics.js';
 import { sourceProvenance, type ReadOnlyProjectionHealth, type RecordProvenance } from './readOnlyProjection.js';
 import { createUiHealthModel, type UiHealthModel } from './uiHealth.js';
 
@@ -137,7 +138,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     degraded: problems.some(isBlocking),
     lastSuccessfulRefreshRevision: 1,
     lastRefreshReason: null,
-    problemCodes: [...new Set(problems.map((problem) => problem.code))].slice(0, 20),
+    problemCodes: [...new Set(problems.map((problem) => problem.code))].slice(0, DIAGNOSTIC_LIMITS.problemCodes),
   });
   return {
     schemaVersion: INSPECTION_SCHEMA_VERSION,
@@ -162,7 +163,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
     projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), projectType: project.projectType, status: project.status, provenance: sourceProvenance(project) })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
     board: { counts: { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length }, tasks: taskSummaries.slice(0, MAX_INSPECTION_ITEMS).map((task) => ({ ...task, id: safeText(task.id), name: safeText(task.name), provenance: { ...task.provenance, logicalId: safeText(task.provenance.logicalId), sourceRevision: safeText(task.provenance.sourceRevision) } })) },
     calendar: { cursorMonth: dispatcher.calendarMonth, events: calendarEvents.map((event) => eventSummary(event, dayKeysById)).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS).map((event) => ({ ...event, id: safeText(event.id), name: safeText(event.name) })) },
-    loadProblems: problems.slice(0, MAX_INSPECTION_ITEMS).map((problem) => safeProblem(problem, dispatcher.mode)),
+    loadProblems: boundDiagnosticProblems(problems).map((problem) => safeProblem(problem, dispatcher.mode)),
     recordRevisions: sourceRevisions(dispatcher.state, dispatcher),
     sourceRevisions: sourceRevisions(dispatcher.state, dispatcher),
     pendingOperations: { tracking: 'unavailable', items: [] },
