@@ -47,6 +47,7 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'elastic.target.set', targetTime: 'not-a-date' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'targetTime' } });
     expect(parseAction({ type: 'task.execution.move', taskId: 'task-1', targetColumn: 'sideways', targetIndex: 0 })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
     expect(parseAction({ type: 'event.schedule.change', eventId: 'event-1', operation: 'resize-start', proposedStartDate: '2026-09-06T10:00:00.000Z', proposedDeadline: '2026-09-06T11:00:00.000Z' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
+    expect(parseAction({ type: 'event.schedule.create', name: '', projectId: null, description: '', startDate: '2026-09-06T10:00:00.000Z', deadline: '2026-09-06T11:00:00.000Z' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
   });
 
   it('uses one dispatcher for cockpit navigation and keeps project selection across surfaces', async () => {
@@ -387,6 +388,43 @@ describe('Gate 3A semantic action protocol', () => {
     }
 
     const after = await vaultByteHash(vault);
+    expect(after).toBe(before);
+  });
+
+  it('refuses Schedule event creation as typed unavailable and leaves every durable fixture byte unchanged', async () => {
+    const vault = fixtureVault('vault-basic');
+    const loaded = await loadVaultState(vault);
+    const dispatcher = createActionDispatcher({
+      state: loaded.state,
+      problems: loaded.problems,
+      revisions: loaded.revisions,
+      mode: 'fixture',
+      clock: fixedClock('2026-09-06T12:00:00.000Z'),
+    });
+    const before = await vaultByteHash(vault);
+
+    const result = dispatcher.dispatch({
+      type: 'event.schedule.create',
+      name: 'New event',
+      projectId: null,
+      description: '',
+      startDate: '2026-09-08T10:15:00.000Z',
+      deadline: '2026-09-08T11:15:00.000Z',
+    });
+
+    const after = await vaultByteHash(vault);
+
+    expect(result).toMatchObject({
+      ok: false,
+      actionType: 'event.schedule.create',
+      category: 'record-mutation',
+      outcome: 'unavailable',
+      entityIds: [],
+      error: {
+        code: 'action-not-available',
+      },
+    });
+    expect(isActionResult(result)).toBe(true);
     expect(after).toBe(before);
   });
 

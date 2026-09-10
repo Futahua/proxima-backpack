@@ -80,6 +80,7 @@ const REGISTRY = {
   'elastic.unlock': 'local-state',
   'task.execution.move': 'record-mutation',
   'event.schedule.change': 'record-mutation',
+  'event.schedule.create': 'record-mutation',
   'schedule.mode.select': 'local-state',
   'project.workspace-tab.select': 'local-state',
   'calendar.navigate': 'local-state',

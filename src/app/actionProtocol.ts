@@ -44,6 +44,7 @@ export type ProximaAction =
   | { type: 'elastic.unlock' }
   | { type: 'task.execution.move'; taskId: string; targetColumn: ElasticColumn; targetIndex: number }
   | { type: 'event.schedule.change'; eventId: string; operation: ScheduleChangeOperation; proposedStartDate: string; proposedDeadline: string }
+  | { type: 'event.schedule.create'; name: string; projectId: string | null; description: string; startDate: string; deadline: string }
   | { type: 'schedule.mode.select'; mode: ScheduleMode }
   | { type: 'project.workspace-tab.select'; tab: ProjectWorkspaceTab }
   | { type: 'calendar.navigate'; direction: 'previous' | 'next' }
@@ -386,6 +387,45 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
         };
   }
 
+  if (input.type === 'event.schedule.create') {
+    if (
+      typeof input.name !== 'string'
+      || input.name.trim().length === 0
+      || input.name.length > 200
+      || !(
+        input.projectId === null
+        || (
+          typeof input.projectId === 'string'
+          && input.projectId.length > 0
+          && input.projectId.length <= 200
+        )
+      )
+      || typeof input.description !== 'string'
+      || input.description.length > 20_000
+      || !isCanonicalInstant(input.startDate)
+      || !isCanonicalInstant(input.deadline)
+      || Date.parse(input.startDate) >= Date.parse(input.deadline)
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'schedule event creation requires a bounded name and project, bounded description, canonical temporal bounds and a positive span',
+        },
+      };
+    }
+    return {
+      ok: true,
+      action: {
+        type: input.type,
+        name: input.name,
+        projectId: input.projectId,
+        description: input.description,
+        startDate: input.startDate,
+        deadline: input.deadline,
+      },
+    };
+  }
   if (input.type === 'event.schedule.change') {
     if (
       typeof input.eventId !== 'string'
@@ -946,6 +986,18 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         );
       }
 
+      if (action.type === 'event.schedule.create') {
+        return rejectAction(
+          state,
+          ring,
+          action.type,
+          {
+            code: 'action-not-available',
+            message: 'schedule event creation remains unavailable before record-store cutover',
+          },
+          requestId,
+        );
+      }
       if (action.type === 'event.schedule.change') {
         if (!state.state.events.some((event) => event.id === action.eventId)) {
           return rejectAction(

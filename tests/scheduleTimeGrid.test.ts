@@ -14,6 +14,8 @@ import {
   scheduleVisibleDays,
   startScheduleTimeTicker,
   type ScheduleEventChangeIntent,
+  type ScheduleEventCreateIntent,
+  type ScheduleEventDraft,
   type ScheduleTimeGridMode,
 } from '../src/browser/scheduleTimeGrid.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
@@ -90,6 +92,7 @@ const events = [timed, overnight, allDay, outside];
 function render(
   mode: ScheduleTimeGridMode,
   selectedEventId: string | null = null,
+  seededEvent: ScheduleEventDraft | null = null,
 ): string {
   return renderScheduleTimeGrid({
     mode,
@@ -99,6 +102,7 @@ function render(
     calendarCursor: CURSOR,
     now: NOW,
     selectedEventId,
+    seededEvent,
   });
 }
 
@@ -140,6 +144,23 @@ function unavailableScheduleResult(eventId: string): ActionResult {
   };
 }
 
+function unavailableScheduleCreateResult(): ActionResult {
+  return {
+    schemaVersion: ACTION_SCHEMA_VERSION,
+    ok: false,
+    actionType: 'event.schedule.create',
+    category: 'record-mutation',
+    outcome: 'unavailable',
+    stateRevision: 1,
+    requestId: 'request-create',
+    entityIds: [],
+    error: {
+      code: 'action-not-available',
+      message: 'schedule event creation remains unavailable before record-store cutover',
+    },
+  };
+}
+
 function mountInteractiveSchedule(
   mode: ScheduleTimeGridMode,
   changes: ScheduleEventChangeIntent[],
@@ -156,6 +177,8 @@ function mountInteractiveSchedule(
   bindScheduleTimeGridInteractions(root, {
     openEvent: () => {},
     closeEvent: () => {},
+    seedEvent: () => {},
+    createEvent: () => null,
     changeEvent: (intent) => {
       changes.push(intent);
       return refusal ? unavailableScheduleResult(intent.eventId)
@@ -588,6 +611,8 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
         selectedEventId = null;
         rerender();
       },
+      seedEvent: () => {},
+      createEvent: () => null,
       changeEvent: () => null,
     });
 
@@ -614,32 +639,173 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
     expect(JSON.stringify(events)).toBe(before);
   });
 
-  it('gives empty 15-minute slots no creation action or silent event side effect', () => {
+  it('seeds an empty Day, 4-Day or Week slot at its clicked civil time with a local one-hour proposal and no Save side effect', () => {
+    const before = JSON.stringify(events);
+    const cases: readonly [
+      ScheduleTimeGridMode,
+      string,
+      number,
+      string,
+      string,
+    ][] = [
+      [
+        'day',
+        '2026-09-06',
+        0,
+        localInstant(2026, 8, 6, 0, 0),
+        localInstant(2026, 8, 6, 1, 0),
+      ],
+      [
+        'four-day',
+        '2026-09-08',
+        41,
+        localInstant(2026, 8, 8, 10, 15),
+        localInstant(2026, 8, 8, 11, 15),
+      ],
+      [
+        'week',
+        '2026-09-12',
+        95,
+        localInstant(2026, 8, 12, 23, 45),
+        localInstant(2026, 8, 13, 0, 45),
+      ],
+    ];
+
+    for (const [
+      mode,
+      dayKey,
+      slotIndex,
+      expectedStart,
+      expectedDeadline,
+    ] of cases) {
+      document.body.innerHTML = '<div id="schedule-root"></div>';
+      const root = document.querySelector<HTMLElement>('#schedule-root')!;
+      let seededEvent: ScheduleEventDraft | null = null;
+      const saves: ScheduleEventCreateIntent[] = [];
+
+      const rerender = () => {
+        root.innerHTML = renderScheduleTimeGrid({
+          mode,
+          events,
+          projectNames: new Map(),
+          selectionLabel: 'All projects',
+          calendarCursor: CURSOR,
+          now: NOW,
+          selectedEventId: null,
+          seededEvent,
+        });
+      };
+
+      bindScheduleTimeGridInteractions(root, {
+        openEvent: () => {},
+        closeEvent: () => {
+          seededEvent = null;
+          rerender();
+        },
+        seedEvent: (draft) => {
+          seededEvent = { ...draft };
+          rerender();
+        },
+        createEvent: (intent) => {
+          saves.push(intent);
+          return null;
+        },
+        changeEvent: () => null,
+      });
+
+      rerender();
+      const harness = createInteractionHarness(root);
+      const slot = harness.target(
+        `schedule-slot-${dayKey}-${slotIndex}`,
+      );
+
+      expect(slot.dataset.scheduleAction).toBe('seed-event');
+      harness.click(`schedule-slot-${dayKey}-${slotIndex}`);
+
+      expect(seededEvent).toEqual({
+        name: 'New event',
+        projectId: null,
+        description: '',
+        startDate: expectedStart,
+        deadline: expectedDeadline,
+      });
+      expect(
+        harness.target('schedule-event-modal')
+          .dataset.scheduleEditorMode,
+      ).toBe('create');
+      expect(
+        (harness.target('schedule-event-start') as HTMLInputElement)
+          .value,
+      ).toBe(expectedStart);
+      expect(
+        (harness.target('schedule-event-end') as HTMLInputElement)
+          .value,
+      ).toBe(expectedDeadline);
+      expect(harness.target('schedule-event-save'))
+        .toBeInstanceOf(HTMLElement);
+      expect(saves).toEqual([]);
+      expect(JSON.stringify(events)).toBe(before);
+    }
+  });
+
+  it('sends a seeded event through Save only and keeps the editor open with the typed unavailable refusal', () => {
+    const before = JSON.stringify(events);
     document.body.innerHTML = '<div id="schedule-root"></div>';
     const root = document.querySelector<HTMLElement>('#schedule-root')!;
-    let openedEventId: string | null = null;
+    let seededEvent: ScheduleEventDraft | null = null;
+    const saves: ScheduleEventCreateIntent[] = [];
 
-    root.innerHTML = render('day');
+    const rerender = () => {
+      root.innerHTML = renderScheduleTimeGrid({
+        mode: 'day',
+        events,
+        projectNames: new Map(),
+        selectionLabel: 'All projects',
+        calendarCursor: CURSOR,
+        now: NOW,
+        selectedEventId: null,
+        seededEvent,
+      });
+    };
 
     bindScheduleTimeGridInteractions(root, {
-      openEvent: (eventId) => {
-        openedEventId = eventId;
-      },
+      openEvent: () => {},
       closeEvent: () => {
-        openedEventId = null;
+        seededEvent = null;
+        rerender();
+      },
+      seedEvent: (draft) => {
+        seededEvent = { ...draft };
+        rerender();
+      },
+      createEvent: (intent) => {
+        saves.push(intent);
+        return unavailableScheduleCreateResult();
       },
       changeEvent: () => null,
     });
 
+    rerender();
     const harness = createInteractionHarness(root);
-    const emptySlot = harness.target(
-      'schedule-slot-2026-09-06-0',
-    );
 
-    expect(emptySlot.dataset.scheduleAction).toBeUndefined();
+    harness.click('schedule-slot-2026-09-06-38');
 
-    harness.click('schedule-slot-2026-09-06-0');
+    expect(saves).toEqual([]);
+    expect(JSON.stringify(events)).toBe(before);
 
-    expect(openedEventId).toBeNull();
+    harness.click('schedule-event-save');
+
+    expect(saves).toEqual([{
+      name: 'New event',
+      projectId: null,
+      description: '',
+      startDate: localInstant(2026, 8, 6, 9, 30),
+      deadline: localInstant(2026, 8, 6, 10, 30),
+    }]);
+    expect(
+      harness.target('schedule-event-modal')
+        .dataset.scheduleRefusal,
+    ).toBe('action-not-available');
+    expect(JSON.stringify(events)).toBe(before);
   });
 });

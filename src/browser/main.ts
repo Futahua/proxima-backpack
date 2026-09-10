@@ -31,7 +31,7 @@ import { boardElasticPresentation, type DeadlineState } from './boardElasticPres
 import { bindElasticCockpitInteractions, renderElasticCockpit, shouldTickElasticProgress } from './elasticCockpit.js';
 import { calendarGridDates } from './calendarGrid.js';
 import { bindTimekeepingCockpitInteractions, renderTimekeepingCockpit, startTimekeepingCountdownTicker } from './timekeepingCockpit.js';
-import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid, startScheduleTimeTicker, type ScheduleTimeGridMode } from './scheduleTimeGrid.js';
+import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid, startScheduleTimeTicker, type ScheduleEventDraft, type ScheduleTimeGridMode } from './scheduleTimeGrid.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
@@ -52,6 +52,7 @@ let timekeepingPanels: TimekeepingPanelVisibility = {
   countdowns: false,
 };
 let selectedScheduleEventId: string | null = null;
+let scheduleEventDraft: ScheduleEventDraft | null = null;
 let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let calendarCursor = new Date(FIXED_CLOCK.now());
@@ -237,6 +238,7 @@ function scheduleTimeGridSurface(
     calendarCursor,
     now,
     selectedEventId: selectedScheduleEventId,
+    seededEvent: scheduleEventDraft,
   });
 }
 
@@ -516,13 +518,34 @@ function bindInteractions(): void {
 
   bindScheduleTimeGridInteractions(root, {
     openEvent: (eventId) => {
+      scheduleEventDraft = null;
       selectedScheduleEventId = eventId;
       render();
     },
     closeEvent: () => {
       selectedScheduleEventId = null;
+      scheduleEventDraft = null;
       render();
     },
+    seedEvent: (draft) => {
+      selectedScheduleEventId = null;
+      scheduleEventDraft = { ...draft };
+      render();
+    },
+    createEvent: ({
+      name,
+      projectId,
+      description,
+      startDate,
+      deadline,
+    }) => dispatchAction({
+      type: 'event.schedule.create',
+      name,
+      projectId,
+      description,
+      startDate,
+      deadline,
+    }),
     changeEvent: ({
       eventId,
       operation,

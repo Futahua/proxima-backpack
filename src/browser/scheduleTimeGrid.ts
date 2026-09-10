@@ -21,6 +21,14 @@ export interface ScheduleAllDayPlacement {
   spanColumns: number;
 }
 
+export interface ScheduleEventDraft {
+  name: string;
+  projectId: string | null;
+  description: string;
+  startDate: string;
+  deadline: string;
+}
+
 export interface ScheduleTimeGridRenderOptions {
   mode: ScheduleTimeGridMode;
   events: CalendarEvent[];
@@ -29,18 +37,21 @@ export interface ScheduleTimeGridRenderOptions {
   calendarCursor: Date;
   now: Date;
   selectedEventId: string | null;
+  seededEvent?: ScheduleEventDraft | null;
 }
-
 export interface ScheduleEventChangeIntent {
   eventId: string;
   operation: ScheduleChangeOperation;
   proposedStartDate: string;
   proposedDeadline: string;
 }
+export interface ScheduleEventCreateIntent extends ScheduleEventDraft {}
 
 export interface ScheduleTimeGridHandlers {
   openEvent(eventId: string): void;
   closeEvent(): void;
+  seedEvent(draft: ScheduleEventDraft): void;
+  createEvent(intent: ScheduleEventCreateIntent): ActionResult | null;
   changeEvent(intent: ScheduleEventChangeIntent): ActionResult | null;
 }
 
@@ -294,8 +305,16 @@ function projectName(
 function renderEventModal(
   events: readonly CalendarEvent[],
   eventId: string | null,
+  seededEvent: ScheduleEventDraft | null,
   projectNames: Map<string, string>,
 ): string {
+  if (seededEvent) {
+    const projectLabel = seededEvent.projectId === null
+      ? 'Uncategorised'
+      : projectNames.get(seededEvent.projectId) ?? seededEvent.projectId;
+
+    return `<div class="modal-backdrop" data-c1-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-schedule-editor-mode="create" data-schedule-draft-project-id="${escapeHtml(seededEvent.projectId ?? '')}" data-c1-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>New event</h3></div><button type="button" class="icon-button" data-schedule-action="close-event" data-c1-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><label>Name<input data-c1-key="schedule-event-name" value="${escapeHtml(seededEvent.name)}"></label><label>Project<input data-c1-key="schedule-event-project" value="${escapeHtml(projectLabel)}" readonly></label><label>Start<input data-c1-key="schedule-event-start" value="${escapeHtml(seededEvent.startDate)}" readonly></label><label>End<input data-c1-key="schedule-event-end" value="${escapeHtml(seededEvent.deadline)}" readonly></label><label>Description<textarea data-c1-key="schedule-event-description">${escapeHtml(seededEvent.description)}</textarea></label><button type="button" data-schedule-action="save-seeded-event" data-c1-key="schedule-event-save">Save</button></section></div>`;
+  }
   if (!eventId) return '';
 
   const event = events.find((candidate) => candidate.id === eventId);
@@ -339,7 +358,13 @@ function renderTimedDay(
 
   const slots = Array.from(
     { length: SLOTS_PER_DAY },
-    (_, slotIndex) => `<div class="schedule-time-slot" data-schedule-slot="${slotIndex}" data-c1-key="schedule-slot-${escapeHtml(dayKey)}-${slotIndex}" style="height:8px;border-top:1px solid currentColor;opacity:0.12;"></div>`,
+    (_, slotIndex) => {
+      const startMinute = slotIndex * SLOT_MINUTES;
+      const hour = Math.floor(startMinute / 60);
+      const minute = startMinute % 60;
+      const timeLabel = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+      return `<div class="schedule-time-slot" role="button" tabindex="0" data-schedule-action="seed-event" data-schedule-day-key="${escapeHtml(dayKey)}" data-schedule-slot="${slotIndex}" data-c1-key="schedule-slot-${escapeHtml(dayKey)}-${slotIndex}" aria-label="Create event at ${escapeHtml(dayKey)} ${timeLabel}" style="height:8px;border-top:1px solid currentColor;opacity:0.12;cursor:pointer;"></div>`;
+    },
   ).join('');
 
   const eventCards = daySegments.map((segment) => {
@@ -401,7 +426,7 @@ export function renderScheduleTimeGrid(
     )
   )).join('');
 
-  return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-c1-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div></header>${renderAllDayRegion(options.events, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-c1-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${renderEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
+  return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-c1-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div></header>${renderAllDayRegion(options.events, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-c1-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${renderEventModal(options.events, options.selectedEventId, options.seededEvent ?? null, options.projectNames)}</section>`;
 }
 
 export function bindScheduleTimeGridInteractions(
@@ -655,6 +680,74 @@ export function bindScheduleTimeGridInteractions(
       }
 
       handlers.openEvent(eventId);
+      return;
+    }
+
+    if (control.dataset.scheduleAction === 'seed-event') {
+      const dayKey = control.dataset.scheduleDayKey;
+      const slotIndex = Number(control.dataset.scheduleSlot);
+      const day = dayKey ? scheduleDayFromKey(dayKey) : null;
+
+      if (
+        !day
+        || !Number.isInteger(slotIndex)
+        || slotIndex < 0
+        || slotIndex >= SLOTS_PER_DAY
+      ) {
+        return;
+      }
+
+      const startMinute = slotIndex * SLOT_MINUTES;
+      const start = scheduleDateAtMinute(day, startMinute);
+      const deadline = scheduleDateAtMinute(
+        day,
+        startMinute + 60,
+      );
+
+      handlers.seedEvent({
+        name: 'New event',
+        projectId: null,
+        description: '',
+        startDate: start.toISOString(),
+        deadline: deadline.toISOString(),
+      });
+      return;
+    }
+
+    if (control.dataset.scheduleAction === 'save-seeded-event') {
+      const modal = control.closest<HTMLElement>(
+        '[data-schedule-editor-mode="create"]',
+      );
+      const name = modal?.querySelector<HTMLInputElement>(
+        '[data-c1-key="schedule-event-name"]',
+      );
+      const start = modal?.querySelector<HTMLInputElement>(
+        '[data-c1-key="schedule-event-start"]',
+      );
+      const deadline = modal?.querySelector<HTMLInputElement>(
+        '[data-c1-key="schedule-event-end"]',
+      );
+      const description = modal?.querySelector<HTMLTextAreaElement>(
+        '[data-c1-key="schedule-event-description"]',
+      );
+
+      if (!modal || !name || !start || !deadline || !description) {
+        return;
+      }
+
+      const result = handlers.createEvent({
+        name: name.value,
+        projectId: modal.dataset.scheduleDraftProjectId || null,
+        description: description.value,
+        startDate: start.value,
+        deadline: deadline.value,
+      });
+
+      if (result && !result.ok) {
+        modal.dataset.scheduleRefusal = result.error.code;
+      } else {
+        delete modal.dataset.scheduleRefusal;
+      }
       return;
     }
 
