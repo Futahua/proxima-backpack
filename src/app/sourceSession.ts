@@ -43,6 +43,7 @@ export interface SourceSession {
   dispose(): void;
   snapshot(): SourceSessionSnapshot;
   projection(): ReadOnlyProjection;
+  reader?(): VaultReader;
 }
 
 interface ActiveSource {
@@ -153,5 +154,6 @@ export function createSourceSession(options: SourceSessionOptions): SourceSessio
     },
     snapshot,
     projection() { return active.projection; },
+    reader() { return active.candidate.reader; },
   };
 }

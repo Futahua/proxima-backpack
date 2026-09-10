@@ -7,6 +7,7 @@ import { coexistenceReadiness, declareCoexistenceReadiness } from './coexistence
 import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
 import type { SourceSession } from '../app/sourceSession.js';
+import { loadProjectNotePreview, loadProjectNotesTree } from '../app/projectNotes.js';
 import { createUiHealthModel, type UiHealthModel } from '../app/uiHealth.js';
 import { evaluateCleanProfileAcceptance } from '../app/fsaEvidence.js';
 import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
@@ -36,6 +37,7 @@ import { scheduleEventsForSelection } from './scheduleSelection.js';
 import { bindScheduleRecurrenceInteractions, type ScheduleRecurrenceScope, type ScheduleRecurringOccurrenceSelection } from './scheduleRecurrence.js';
 import { projectPresentation } from './projectPresentation.js';
 import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter } from './projectsHub.js';
+import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
@@ -62,6 +64,9 @@ let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let projectsHubFilter: ProjectsHubFilter = 'active';
 let projectCreateOpen = false;
+let projectNotesView: ProjectNotesViewState = EMPTY_PROJECT_NOTES_VIEW;
+let projectNotesTreeRequestKey: string | null = null;
+let projectNotesPreviewRequestKey: string | null = null;
 let scheduleCursor = new Date(FIXED_CLOCK.now());
 let calendarCursor = new Date(FIXED_CLOCK.now());
 let elasticTargetTime = new Date(FIXED_CLOCK.now() + 4 * 60 * 60 * 1000).toISOString();
@@ -271,9 +276,33 @@ function scheduleTimeGridSurface(
   });
 }
 
+function projectNotesSourceGeneration(): number { return sourceSession?.snapshot().sourceGeneration ?? 0; }
+function syncProjectNotesTree(state: ProximaState): void {
+  if (surface !== 'projects' || projectWorkspaceTab !== 'notes') return;
+  const project = state.projects.find((candidate) => candidate.id === selection);
+  if (!project) return;
+  const generation = projectNotesSourceGeneration();
+  if (projectNotesView.projectId === project.id && projectNotesView.sourceGeneration === generation && projectNotesView.treeStatus !== 'idle') return;
+  projectNotesPreviewRequestKey = null;
+  if (project.linkedFolders.length === 0) { projectNotesTreeRequestKey = null; projectNotesView = { ...EMPTY_PROJECT_NOTES_VIEW, projectId: project.id, sourceGeneration: generation, treeStatus: 'ready', tree: { projectId: project.id, roots: [], fileCount: 0 } }; return; }
+  const reader = sourceSession?.reader?.();
+  if (!reader) { projectNotesTreeRequestKey = null; projectNotesView = { ...EMPTY_PROJECT_NOTES_VIEW, projectId: project.id, sourceGeneration: generation, treeStatus: 'unavailable' }; return; }
+  const key = `${generation}:${project.id}`;
+  if (projectNotesTreeRequestKey === key) return;
+  projectNotesTreeRequestKey = key;
+  projectNotesView = { ...EMPTY_PROJECT_NOTES_VIEW, projectId: project.id, sourceGeneration: generation, treeStatus: 'loading' };
+  void loadProjectNotesTree(reader, project).then((tree) => { if (projectNotesTreeRequestKey !== key || selection !== project.id || projectNotesSourceGeneration() !== generation) return; projectNotesTreeRequestKey = null; projectNotesView = { ...EMPTY_PROJECT_NOTES_VIEW, projectId: project.id, sourceGeneration: generation, treeStatus: 'ready', tree, expandedPaths: tree.roots.filter((r) => r.status === 'ready').map((r) => r.path) }; render(); }).catch(() => { if (projectNotesTreeRequestKey !== key || selection !== project.id || projectNotesSourceGeneration() !== generation) return; projectNotesTreeRequestKey = null; projectNotesView = { ...EMPTY_PROJECT_NOTES_VIEW, projectId: project.id, sourceGeneration: generation, treeStatus: 'unavailable' }; render(); });
+}
+function selectProjectNote(path: string): void {
+  const projectId = selection; const generation = projectNotesSourceGeneration();
+  const knownFile = projectNotesView.tree?.roots.some((root) => root.entries.some((entry) => entry.kind === 'file' && entry.path === path)) ?? false; if (!knownFile) return;
+  const reader = sourceSession?.reader?.(); projectNotesView = { ...projectNotesView, selectedPath: path, previewStatus: reader ? 'loading' : 'unavailable', preview: null, previewFailure: reader ? null : 'unreadable', contextPath: null, writeRefusal: null, lastRefusedMove: null }; render(); if (!reader) return;
+  const key = `${generation}:${projectId}:${path}`; projectNotesPreviewRequestKey = key;
+  void loadProjectNotePreview(reader, path).then((result) => { if (projectNotesPreviewRequestKey !== key || selection !== projectId || projectNotesSourceGeneration() !== generation || projectNotesView.selectedPath !== path) return; projectNotesPreviewRequestKey = null; projectNotesView = { ...projectNotesView, previewStatus: result.preview ? 'ready' : 'unavailable', preview: result.preview, previewFailure: result.failure }; render(); }).catch(() => { if (projectNotesPreviewRequestKey !== key || selection !== projectId || projectNotesSourceGeneration() !== generation || projectNotesView.selectedPath !== path) return; projectNotesPreviewRequestKey = null; projectNotesView = { ...projectNotesView, previewStatus: 'unavailable', preview: null, previewFailure: 'unreadable' }; render(); });
+}
 function projectsHubSurface(state: ProximaState): string {
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -370,6 +399,7 @@ function syncElasticProgressTimer(): void {
 function render(): void {
   if (!appState) return;
   const currentState = appState;
+  syncProjectNotesTree(currentState);
   const root = element<HTMLElement>('#proxima-app');
   const problems = visibleProblems([...loadProblems]);
   root.dataset.proximaSurface = surface;
@@ -532,6 +562,16 @@ function bindInteractions(): void {
     openNewProject: () => { projectCreateOpen = true; render(); },
     closeNewProject: () => { projectCreateOpen = false; render(); },
     createProject: ({ name, description }) => dispatchAction({ type: 'project.create', name, description }),
+  });
+  bindProjectNotesInteractions(root, {
+    toggleFolder: (path) => { const expanded = new Set(projectNotesView.expandedPaths); if (expanded.has(path)) expanded.delete(path); else expanded.add(path); projectNotesView = { ...projectNotesView, expandedPaths: [...expanded].sort() }; render(); },
+    selectFile: (path) => { selectProjectNote(path); },
+    openContext: (path) => { projectNotesView = { ...projectNotesView, contextPath: path }; render(); },
+    closeContext: () => { projectNotesView = { ...projectNotesView, contextPath: null }; render(); },
+    startDrag: (path) => { projectNotesView = { ...projectNotesView, dragSourcePath: path, dragTargetPath: null, writeRefusal: null, lastRefusedMove: null }; },
+    previewDrag: (sourcePath, targetPath) => { projectNotesView = { ...projectNotesView, dragSourcePath: sourcePath, dragTargetPath: targetPath }; },
+    refuseDrop: (sourcePath, targetPath) => { projectNotesView = { ...projectNotesView, dragSourcePath: null, dragTargetPath: null, writeRefusal: PROJECT_NOTE_WRITE_REFUSAL, lastRefusedMove: { sourcePath, targetPath } }; render(); },
+    clearDrag: () => { projectNotesView = { ...projectNotesView, dragSourcePath: null, dragTargetPath: null }; },
   });
   bindScheduleRecurrenceInteractions(root, {
     openOccurrence: (occurrence) => {
