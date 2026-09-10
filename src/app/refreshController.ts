@@ -1,6 +1,7 @@
 import { isBlocking, type LoadProblem } from '../domain/problems.js';
 import type { VaultReader } from '../ports/vault.js';
 import { loadVaultState, type LoadOptions, type LoadResult } from './vaultRepository.js';
+import type { SourceDiagnosticCode } from './diagnostics.js';
 
 export const REFRESH_REASONS = ['manual', 'focus', 'interval', 'external-signal'] as const;
 export type RefreshReason = (typeof REFRESH_REASONS)[number];
@@ -15,7 +16,7 @@ export interface RefreshControllerSnapshot {
   refreshState: RefreshState;
   stale: boolean;
   lastRefreshReason: RefreshReason | null;
-  lastRefreshProblemCode: string | null;
+  lastRefreshProblemCode: SourceDiagnosticCode | null;
   pendingRefreshCount: number;
   load: LoadResult;
 }
@@ -82,6 +83,12 @@ function refreshFailureOutcome(problems: LoadProblem[]): 'unreadable' | 'malform
   return failure.code === 'unreadable' || failure.code === 'directory-unreadable' ? 'unreadable' : 'malformed';
 }
 
+function refreshFailureCode(problems: LoadProblem[]): SourceDiagnosticCode {
+  return problems.find(isBlocking)?.code
+    ?? problems.find((problem) => problem.code === 'unsupported-frontmatter')?.code
+    ?? 'refresh-failed';
+}
+
 export function createRefreshController(options: RefreshControllerOptions): RefreshController {
   let accepted = boundedLoad(options.initial);
   let sourceRevision = 1;
@@ -89,7 +96,7 @@ export function createRefreshController(options: RefreshControllerOptions): Refr
   let refreshState: RefreshState = 'idle';
   let stale = false;
   let lastRefreshReason: RefreshReason | null = null;
-  let lastRefreshProblemCode: string | null = null;
+  let lastRefreshProblemCode: SourceDiagnosticCode | null = null;
   let pendingRefreshCount = 0;
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -114,7 +121,7 @@ export function createRefreshController(options: RefreshControllerOptions): Refr
       if (failure) {
         refreshState = 'degraded';
         stale = true;
-        lastRefreshProblemCode = next.problems.find(isBlocking)?.code ?? failure;
+        lastRefreshProblemCode = refreshFailureCode(next.problems);
         return { ok: false, reason, outcome: failure, changed: false, snapshot: snapshot() };
       }
       const outcome = classify(accepted, next);
@@ -126,10 +133,10 @@ export function createRefreshController(options: RefreshControllerOptions): Refr
       stale = false;
       lastRefreshProblemCode = null;
       return { ok: true, reason, outcome, changed, snapshot: snapshot() };
-    } catch (error) {
+    } catch {
       refreshState = 'degraded';
       stale = true;
-      lastRefreshProblemCode = error instanceof Error ? error.name : 'refresh-failed';
+      lastRefreshProblemCode = 'refresh-failed';
       return { ok: false, reason, outcome: 'unreadable', changed: false, snapshot: snapshot() };
     }
   };

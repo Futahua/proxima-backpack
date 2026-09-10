@@ -1,7 +1,6 @@
 import type { ReadOnlyProjectionHealth } from './readOnlyProjection.js';
 
 const MAX_PROBLEM_CODES = 20;
-const MAX_CODE_LENGTH = 100;
 
 export interface UiHealthModel {
   sourceRevision: number;
@@ -10,7 +9,7 @@ export interface UiHealthModel {
   degraded: boolean;
   lastSuccessfulRefreshRevision: number;
   lastRefreshReason: ReadOnlyProjectionHealth['lastRefreshReason'];
-  problemCodes: string[];
+  problemCodes: ReadOnlyProjectionHealth['problemCodes'];
   status: 'healthy' | 'stale' | 'degraded';
 }
 
@@ -27,7 +26,7 @@ export function createUiHealthModel(health?: ReadOnlyProjectionHealth): UiHealth
     degraded,
     lastSuccessfulRefreshRevision: health?.lastSuccessfulRefreshRevision ?? sourceRevision,
     lastRefreshReason: health?.lastRefreshReason ?? null,
-    problemCodes: [...new Set((health?.problemCodes ?? []).map((code) => String(code).slice(0, MAX_CODE_LENGTH)))].slice(0, MAX_PROBLEM_CODES),
+    problemCodes: [...new Set(health?.problemCodes ?? [])].slice(0, MAX_PROBLEM_CODES),
     status: degraded ? 'degraded' : stale ? 'stale' : 'healthy',
   };
 }

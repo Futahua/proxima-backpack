@@ -2,6 +2,7 @@ import type { LoadProblem } from '../domain/problems.js';
 import type { SourceRef, SourcedRecord } from '../domain/records.js';
 import type { ProximaState } from '../domain/types.js';
 import type { RefreshControllerSnapshot, RefreshReason } from './refreshController.js';
+import type { SourceDiagnosticCode } from './diagnostics.js';
 
 const MAX_PROBLEMS = 100;
 const MAX_TEXT = 400;
@@ -21,7 +22,7 @@ export interface ReadOnlyProjectionHealth {
   degraded: boolean;
   lastSuccessfulRefreshRevision: number;
   lastRefreshReason: RefreshReason | null;
-  problemCodes: string[];
+  problemCodes: SourceDiagnosticCode[];
 }
 
 export interface ReadOnlyProjection {

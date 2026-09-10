@@ -17,33 +17,36 @@ export type ProblemSeverity =
   /** The record entered state, but something about the source needs saying. */
   | 'warning';
 
-export type ProblemCode =
+export const PROBLEM_CODES = [
   /** The file could not be read at all. */
-  | 'unreadable'
+  'unreadable',
   /** A directory the layout names could not be listed. */
-  | 'directory-unreadable'
+  'directory-unreadable',
   /** Two records of the same kind resolved to the same logical id. */
-  | 'duplicate-id'
+  'duplicate-id',
   /** Markdown sat somewhere the discovery rule does not read records from. */
-  | 'ignored-file'
+  'ignored-file',
   /** Frontmatter declared a `type` that contradicts the directory it sits in. */
-  | 'unexpected-type'
+  'unexpected-type',
   /** Frontmatter used YAML outside the supported subset; the key was left unset. */
-  | 'unsupported-frontmatter'
+  'unsupported-frontmatter',
   /** A date field could not be interpreted. */
-  | 'bad-date'
+  'bad-date',
   /** A numeric field was unreadable or outside the range the field allows. */
-  | 'bad-number'
+  'bad-number',
   /** A boolean field held something that is not true or false. */
-  | 'bad-boolean'
+  'bad-boolean',
   /** A status field held something that is not a usable identifier. */
-  | 'invalid-status'
+  'invalid-status',
   /** A closed-vocabulary field held a value outside its allowed set. */
-  | 'invalid-enum'
+  'invalid-enum',
   /** A record referenced a project id that no loaded project has. */
-  | 'missing-project'
+  'missing-project',
   /** A finite calendar event span exceeds the bounded expansion contract. */
-  | 'event-span-too-large';
+  'event-span-too-large',
+] as const;
+
+export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
 export interface LoadProblem {
   code: ProblemCode;

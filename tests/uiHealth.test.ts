@@ -65,8 +65,8 @@ describe('Gate 6D stale/degraded UI and inspection health', () => {
     expect(failedProjection.health).toMatchObject({ stale: true, degraded: true });
     expect(recoveredProjection.health).toMatchObject({ sourceRevision: 2, stale: false, degraded: false, lastRefreshReason: 'manual' });
     expect(inspection.sourceHealth).toEqual(createUiHealthModel(recoveredProjection.health));
-    inspection.sourceHealth.problemCodes.push('local-only');
-    expect(recoveredProjection.health.problemCodes).not.toContain('local-only');
+    inspection.sourceHealth.problemCodes.push('refresh-failed');
+    expect(recoveredProjection.health.problemCodes).not.toContain('refresh-failed');
     expect(inspection.board.tasks.some((task) => task.name === 'Recovered standup')).toBe(true);
   });
 });

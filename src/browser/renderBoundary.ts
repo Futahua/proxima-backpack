@@ -1,3 +1,5 @@
+import type { DiagnosticCode } from '../app/diagnostics.js';
+
 /**
  * Keep a surface renderer failure inside the visible/agent-readable boundary.
  *
@@ -7,7 +9,7 @@
  */
 
 export interface RendererFailure {
-  code: 'renderer-failure';
+  code: Extract<DiagnosticCode, 'renderer-failure'>;
   detail: string;
 }
 
