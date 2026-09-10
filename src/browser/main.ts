@@ -40,8 +40,8 @@ import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter 
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
-import { bindProjectDeadlinesInteractions, EMPTY_PROJECT_DEADLINES_VIEW, PROJECT_DEADLINES_WRITE_REFUSAL, type ProjectDeadlinesViewState, type ProjectDeadlineFilter } from './projectDeadlines.js';
-import { bindProjectScheduleInteractions, EMPTY_PROJECT_SCHEDULE_VIEW, PROJECT_SCHEDULE_WRITE_REFUSAL, type ProjectScheduleViewState } from './projectSchedule.js';
+import { bindProjectDeadlinesInteractions, EMPTY_PROJECT_DEADLINES_VIEW, type ProjectDeadlinesViewState } from './projectDeadlines.js';
+import { bindProjectScheduleInteractions, EMPTY_PROJECT_SCHEDULE_VIEW, type ProjectScheduleViewState } from './projectSchedule.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
