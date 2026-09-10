@@ -13,6 +13,7 @@ import {
   bindTimekeepingCockpitInteractions,
   deadlineCalendarProjection,
   renderTimekeepingCockpit,
+  timelineGanttProjection,
 } from '../src/browser/timekeepingCockpit.js';
 import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
 import { localDateKey } from '../src/domain/time.js';
@@ -25,7 +26,11 @@ function afterHours(hours: number): string {
   return new Date(NOW.getTime() + hours * 60 * 60 * 1000).toISOString();
 }
 
-function task(id: string, deadline: string | null): Task {
+function task(
+  id: string,
+  deadline: string | null,
+  startDate: string | null = null,
+): Task {
   return {
     id,
     source: sourceRef('task', id),
@@ -40,15 +45,16 @@ function task(id: string, deadline: string | null): Task {
     maxDuration: null,
     isCompleted: false,
     createdAt: afterHours(-24 * 30),
-    startDate: null,
+    startDate,
     deadline,
     properties: {},
   };
 }
 
 const overdue = task('overdue', afterHours(-24));
-const urgent = task('urgent', afterHours(6));
+const urgent = task('urgent', afterHours(6), afterHours(-24));
 const later = task('later', afterHours(24 * 14));
+const startOnly = task('start-only', null, afterHours(24 * 3));
 const noDeadline = task('no-deadline', null);
 
 const state: ProximaState = {
@@ -57,6 +63,7 @@ const state: ProximaState = {
     overdue,
     urgent,
     later,
+    startOnly,
     noDeadline,
   ],
   events: [],
@@ -176,6 +183,47 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
     expect(JSON.stringify(state)).toBe(before);
   });
 
+  it('projects truthful Gantt spans and milestones into the visible civil-day window', () => {
+    const before = JSON.stringify(state);
+    const projection = timelineGanttProjection(
+      state.tasks,
+      new Date(2026, 8, 1),
+      NOW,
+    );
+
+    expect(
+      projection.find((entry) => entry.taskId === 'urgent'),
+    ).toMatchObject({
+      kind: 'span',
+      startKey: localDateKey(urgent.startDate!),
+      endKey: localDateKey(urgent.deadline!),
+    });
+
+    expect(
+      projection.find((entry) => entry.taskId === 'later'),
+    ).toMatchObject({
+      kind: 'deadline',
+      startKey: null,
+      endKey: localDateKey(later.deadline!),
+      spanColumns: 1,
+    });
+
+    expect(
+      projection.find((entry) => entry.taskId === 'start-only'),
+    ).toMatchObject({
+      kind: 'start',
+      startKey: localDateKey(startOnly.startDate!),
+      endKey: null,
+      spanColumns: 1,
+    });
+
+    expect(
+      projection.some((entry) => entry.taskId === 'no-deadline'),
+    ).toBe(false);
+
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
   it('composes panels non-exclusively through machine-key interactions', () => {
     const dispatcher = createDispatcher();
     const mounted = mount(dispatcher);
@@ -191,6 +239,10 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
     expect(mounted.harness.target('timekeeping-panel-timeline'))
       .toBeInstanceOf(HTMLElement);
     expect(mounted.harness.target('timekeeping-panel-countdowns'))
+      .toBeInstanceOf(HTMLElement);
+    expect(mounted.harness.target('timekeeping-gantt-body'))
+      .toBeInstanceOf(HTMLElement);
+    expect(mounted.harness.target('timekeeping-gantt-task-urgent'))
       .toBeInstanceOf(HTMLElement);
 
     expect(dispatcher.snapshot().timekeepingPanels).toEqual({
@@ -250,6 +302,57 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
     expect(emptyCell).toBeDefined();
     expect(emptyCell!.querySelector('[data-timekeeping-action]')).toBeNull();
     expect(emptyCell!.querySelector('[data-elastic-action]')).toBeNull();
+  });
+
+  it('drives Gantt navigation and task entry through the real DOM without record writes', () => {
+    const beforeRecords = JSON.stringify(state);
+    const dispatcher = createDispatcher();
+    const mounted = mount(dispatcher);
+
+    mounted.harness.click('timekeeping-panel-toggle-timeline');
+    mounted.harness.click('timekeeping-panel-toggle-calendar');
+
+    expect(() => mounted.harness.target('timekeeping-panel-calendar'))
+      .toThrow();
+    expect(mounted.harness.target('timekeeping-panel-timeline'))
+      .toBeInstanceOf(HTMLElement);
+
+    const urgentBar = mounted.harness.target(
+      'timekeeping-gantt-task-urgent',
+    );
+
+    expect(urgentBar.dataset.ganttKind).toBe('span');
+    expect(Number(urgentBar.dataset.ganttSpanColumns)).toBeGreaterThan(1);
+
+    const today = mounted.harness.target(
+      `timekeeping-gantt-day-${localDateKey(NOW)}`,
+    );
+
+    expect(today.classList.contains('today')).toBe(true);
+    expect(today.getAttribute('aria-current')).toBe('date');
+
+    mounted.harness.click('timekeeping-gantt-next');
+
+    expect(dispatcher.snapshot().calendarMonth).toBe('2026-10-01');
+    expect(
+      mounted.harness.target('timekeeping-gantt-month')
+        .dataset.calendarMonth,
+    ).toBe('2026-10-01');
+
+    mounted.harness.click('timekeeping-gantt-today');
+
+    expect(dispatcher.snapshot().calendarMonth).toBe('2026-09-01');
+
+    mounted.harness.click('timekeeping-gantt-task-urgent');
+
+    expect(mounted.selectedTaskId()).toBe('urgent');
+    expect(mounted.harness.target('elastic-task-modal'))
+      .toBeInstanceOf(HTMLElement);
+
+    mounted.harness.click('elastic-task-modal-close');
+
+    expect(mounted.selectedTaskId()).toBeNull();
+    expect(JSON.stringify(dispatcher.snapshot().state)).toBe(beforeRecords);
   });
 
   it('styles deadline pressure and overdue state and opens the existing task modal', () => {
