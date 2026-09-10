@@ -30,7 +30,7 @@ import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } 
 import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
 import { bindElasticCockpitInteractions, renderElasticCockpit, shouldTickElasticProgress } from './elasticCockpit.js';
 import { calendarGridDates } from './calendarGrid.js';
-import { bindTimekeepingCockpitInteractions, renderTimekeepingCockpit } from './timekeepingCockpit.js';
+import { bindTimekeepingCockpitInteractions, renderTimekeepingCockpit, startTimekeepingCountdownTicker } from './timekeepingCockpit.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
@@ -513,6 +513,10 @@ function bindInteractions(): void {
       proposedDeadline,
       targetRowIndex,
     }),
+  });
+
+  startTimekeepingCountdownTicker(root, () => {
+    render();
   });
   root.addEventListener('click', (event) => {
     const button = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');

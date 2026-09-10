@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createActionDispatcher,
   type ActionResult,
@@ -12,8 +12,10 @@ import {
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import {
   bindTimekeepingCockpitInteractions,
+  countdownProjection,
   deadlineCalendarProjection,
   renderTimekeepingCockpit,
+  startTimekeepingCountdownTicker,
   timelineGanttProjection,
   type TimelineChangeIntent,
 } from '../src/browser/timekeepingCockpit.js';
@@ -55,6 +57,8 @@ function task(
 
 const overdue = task('overdue', afterHours(-24));
 const urgent = task('urgent', afterHours(6), afterHours(-24));
+const underThreeDays = task('under-three-days', afterHours(36));
+const underOneWeek = task('under-one-week', afterHours(96));
 const later = task('later', afterHours(24 * 14));
 const startOnly = task('start-only', null, afterHours(24 * 3));
 const noDeadline = task('no-deadline', null);
@@ -64,6 +68,8 @@ const state: ProximaState = {
   tasks: [
     overdue,
     urgent,
+    underThreeDays,
+    underOneWeek,
     later,
     startOnly,
     noDeadline,
@@ -91,7 +97,10 @@ function createDispatcher(): ProximaActionDispatcher {
   });
 }
 
-function mount(dispatcher: ProximaActionDispatcher) {
+function mount(
+  dispatcher: ProximaActionDispatcher,
+  now: () => Date = () => NOW,
+) {
   document.body.innerHTML = '<div id="timekeeping-root"></div>';
   const root = document.querySelector<HTMLElement>('#timekeeping-root')!;
   let selectedTaskId: string | null = null;
@@ -108,7 +117,7 @@ function mount(dispatcher: ProximaActionDispatcher) {
       selectionLabel: 'All projects',
       panels: snapshot.timekeepingPanels,
       calendarCursor: new Date(`${snapshot.calendarMonth}T00:00:00`),
-      now: NOW,
+      now: now(),
       selectedTaskId,
     });
   };
@@ -170,6 +179,7 @@ function mount(dispatcher: ProximaActionDispatcher) {
   render();
 
   return {
+    root,
     harness: createInteractionHarness(root),
     render,
     selectedTaskId: () => selectedTaskId,
@@ -190,10 +200,18 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
     expect(projection.map((entry) => entry.taskId)).toEqual([
       'overdue',
       'urgent',
+      'under-three-days',
+      'under-one-week',
       'later',
     ]);
 
-    for (const item of [overdue, urgent, later]) {
+    for (const item of [
+      overdue,
+      urgent,
+      underThreeDays,
+      underOneWeek,
+      later,
+    ]) {
       expect(
         projection.find((entry) => entry.taskId === item.id)?.dayKey,
       ).toBe(localDateKey(item.deadline!));
@@ -618,6 +636,126 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
     expect(bar.style.gridColumn)
       .toBe(`${originalStartColumn} / span ${originalSpanColumns}`);
     expect(row.style.transform).toBe('');
+  });
+
+  it('renders all five countdown buckets and moves items automatically as the injected clock advances', () => {
+    vi.useFakeTimers();
+
+    try {
+      const currentNow = { value: NOW };
+      const dispatcher = createDispatcher();
+      const mounted = mount(dispatcher, () => currentNow.value);
+
+      mounted.harness.click('timekeeping-panel-toggle-countdowns');
+
+      const initialProjection = countdownProjection(state.tasks, currentNow.value);
+
+      expect(
+        initialProjection.find((entry) => entry.taskId === 'overdue')?.bucket,
+      ).toBe('overdue');
+      expect(
+        initialProjection.find((entry) => entry.taskId === 'urgent')?.bucket,
+      ).toBe('under-one-day');
+      expect(
+        initialProjection.find(
+          (entry) => entry.taskId === 'under-three-days',
+        )?.bucket,
+      ).toBe('under-three-days');
+      expect(
+        initialProjection.find(
+          (entry) => entry.taskId === 'under-one-week',
+        )?.bucket,
+      ).toBe('under-one-week');
+      expect(
+        initialProjection.find((entry) => entry.taskId === 'later')?.bucket,
+      ).toBe('later');
+
+      expect(
+        initialProjection.some((entry) => entry.taskId === 'start-only'),
+      ).toBe(false);
+      expect(
+        initialProjection.some((entry) => entry.taskId === 'no-deadline'),
+      ).toBe(false);
+
+      for (const bucket of [
+        'overdue',
+        'under-one-day',
+        'under-three-days',
+        'under-one-week',
+        'later',
+      ]) {
+        expect(
+          mounted.harness.target(`timekeeping-countdown-bucket-${bucket}`),
+        ).toBeInstanceOf(HTMLElement);
+      }
+
+      const urgentBefore = mounted.harness
+        .target('timekeeping-countdown-value-urgent')
+        .textContent;
+
+      const stopTicker = startTimekeepingCountdownTicker(
+        mounted.root,
+        mounted.render,
+      );
+
+      try {
+        currentNow.value = new Date(
+          NOW.getTime() + 30 * 60 * 60 * 1_000,
+        );
+
+        vi.advanceTimersByTime(1_000);
+
+        const urgentCard = mounted.harness.target(
+          'timekeeping-countdown-task-urgent',
+        );
+        const underThreeCard = mounted.harness.target(
+          'timekeeping-countdown-task-under-three-days',
+        );
+        const underWeekCard = mounted.harness.target(
+          'timekeeping-countdown-task-under-one-week',
+        );
+
+        expect(
+          urgentCard.closest<HTMLElement>('[data-countdown-bucket]')
+            ?.dataset.countdownBucket,
+        ).toBe('overdue');
+        expect(
+          underThreeCard.closest<HTMLElement>('[data-countdown-bucket]')
+            ?.dataset.countdownBucket,
+        ).toBe('under-one-day');
+        expect(
+          underWeekCard.closest<HTMLElement>('[data-countdown-bucket]')
+            ?.dataset.countdownBucket,
+        ).toBe('under-three-days');
+
+        expect(
+          mounted.harness.target('timekeeping-countdown-value-urgent')
+            .textContent,
+        ).not.toBe(urgentBefore);
+      } finally {
+        stopTicker();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('opens the existing task editor from a countdown item without writing records', () => {
+    const beforeRecords = JSON.stringify(state);
+    const dispatcher = createDispatcher();
+    const mounted = mount(dispatcher);
+
+    mounted.harness.click('timekeeping-panel-toggle-countdowns');
+    mounted.harness.click('timekeeping-countdown-task-urgent');
+
+    expect(mounted.selectedTaskId()).toBe('urgent');
+    expect(mounted.harness.target('elastic-task-modal'))
+      .toBeInstanceOf(HTMLElement);
+
+    mounted.harness.click('elastic-task-modal-close');
+
+    expect(mounted.selectedTaskId()).toBeNull();
+    expect(JSON.stringify(dispatcher.snapshot().state)).toBe(beforeRecords);
   });
 
   it('styles deadline pressure and overdue state and opens the existing task modal', () => {

@@ -16,6 +16,20 @@ export interface DeadlineCalendarEntry {
   remainingMs: number;
 }
 
+export type CountdownBucket =
+  | 'overdue'
+  | 'under-one-day'
+  | 'under-three-days'
+  | 'under-one-week'
+  | 'later';
+
+export interface CountdownEntry {
+  taskId: string;
+  deadline: string;
+  remainingMs: number;
+  bucket: CountdownBucket;
+}
+
 export type TimelineGanttKind = 'span' | 'start' | 'deadline';
 
 export interface TimelineGanttEntry {
@@ -236,6 +250,71 @@ export function timelineGanttProjection(
   );
 }
 
+const COUNTDOWN_DAY_MS = 86_400_000;
+
+const COUNTDOWN_BUCKETS: ReadonlyArray<{
+  bucket: CountdownBucket;
+  title: string;
+}> = [
+  { bucket: 'overdue', title: 'Overdue' },
+  { bucket: 'under-one-day', title: 'Under one day' },
+  { bucket: 'under-three-days', title: 'Under three days' },
+  { bucket: 'under-one-week', title: 'Under one week' },
+  { bucket: 'later', title: 'Later' },
+];
+
+export function countdownBucketForRemaining(
+  remainingMs: number,
+): CountdownBucket {
+  if (remainingMs < 0) return 'overdue';
+  if (remainingMs < COUNTDOWN_DAY_MS) return 'under-one-day';
+  if (remainingMs < 3 * COUNTDOWN_DAY_MS) return 'under-three-days';
+  if (remainingMs < 7 * COUNTDOWN_DAY_MS) return 'under-one-week';
+  return 'later';
+}
+
+export function countdownProjection(
+  tasks: readonly Task[],
+  now: Date,
+): CountdownEntry[] {
+  const nowMs = now.getTime();
+
+  return tasks
+    .flatMap((task) => {
+      if (task.isCompleted || !task.deadline) return [];
+
+      const deadlineMs = Date.parse(task.deadline);
+      if (!Number.isFinite(deadlineMs)) return [];
+
+      const remainingMs = deadlineMs - nowMs;
+
+      return [{
+        taskId: task.id,
+        deadline: task.deadline,
+        remainingMs,
+        bucket: countdownBucketForRemaining(remainingMs),
+      }];
+    })
+    .sort(
+      (left, right) =>
+        left.remainingMs - right.remainingMs
+        || left.taskId.localeCompare(right.taskId),
+    );
+}
+
+function countdownLabel(remainingMs: number): string {
+  const totalSeconds = Math.floor(Math.abs(remainingMs) / 1_000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  const value = `${days}d ${hours}h ${minutes}m ${seconds}s`;
+
+  return remainingMs < 0
+    ? `Overdue by ${value}`
+    : `${value} remaining`;
+}
+
 function panelToggle(
   panel: TimekeepingPanel,
   label: string,
@@ -359,11 +438,24 @@ function renderTimelineGantt(
   }).join('')}</div></div><div class="timekeeping-gantt-body" data-c1-key="timekeeping-gantt-body" data-gantt-today-column="${todayColumn > 0 ? todayColumn : ''}">${rows || '<p class="empty-state" data-c1-key="timekeeping-gantt-empty">No task starts or deadlines fall in this window.</p>'}</div></section>`;
 }
 
-function renderReservedPanel(
-  panel: 'countdowns',
-  title: string,
+function renderCountdowns(
+  options: TimekeepingCockpitRenderOptions,
 ): string {
-  return `<section class="timekeeping-panel project-details empty" data-c1-key="timekeeping-panel-${panel}" aria-label="${title}"><header><strong>${title}</strong></header></section>`;
+  const entries = countdownProjection(options.tasks, options.now);
+  const tasksById = new Map(options.tasks.map((task) => [task.id, task]));
+
+  const buckets = COUNTDOWN_BUCKETS.map(({ bucket, title }) => {
+    const bucketEntries = entries.filter((entry) => entry.bucket === bucket);
+
+    return `<section class="timekeeping-countdown-bucket" data-countdown-bucket="${bucket}" data-countdown-count="${bucketEntries.length}" data-c1-key="timekeeping-countdown-bucket-${bucket}" aria-label="${escapeHtml(title)}"><header><strong>${escapeHtml(title)}</strong><span>${bucketEntries.length}</span></header><div class="timekeeping-countdown-items">${bucketEntries.map((entry) => {
+      const task = tasksById.get(entry.taskId);
+      if (!task) return '';
+
+      return `<article class="event-card timekeeping-countdown-task${bucket === 'overdue' ? ' task-overdue' : ''}" role="button" tabindex="0" data-timekeeping-action="open-task" data-timekeeping-task-id="${escapeHtml(task.id)}" data-countdown-deadline="${escapeHtml(entry.deadline)}" data-countdown-bucket="${bucket}" data-c1-key="timekeeping-countdown-task-${escapeHtml(task.id)}" style="background-color:${deadlineHue(entry.remainingMs)}"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(projectName(options.projectNames, task))}</small><small data-c1-key="timekeeping-countdown-value-${escapeHtml(task.id)}">${escapeHtml(countdownLabel(entry.remainingMs))}</small></article>`;
+    }).join('')}</div></section>`;
+  }).join('');
+
+  return `<section class="timekeeping-panel project-details" data-c1-key="timekeeping-panel-countdowns" aria-label="Countdowns"><header class="surface-header"><div><h3>Countdowns</h3><p class="surface-description">Live task deadline pressure from the current clock.</p></div></header><div class="timekeeping-countdown-buckets" data-c1-key="timekeeping-countdown-buckets">${buckets}</div></section>`;
 }
 
 export function renderTimekeepingCockpit(
@@ -375,7 +467,7 @@ export function renderTimekeepingCockpit(
       ? renderTimelineGantt(options)
       : '',
     options.panels.countdowns
-      ? renderReservedPanel('countdowns', 'Countdowns')
+      ? renderCountdowns(options)
       : '',
   ].join('');
 
@@ -444,6 +536,23 @@ function clearTimelineRowTargets(root: HTMLElement): void {
       row.style.outline = '';
       row.style.outlineOffset = '';
     });
+}
+
+export function startTimekeepingCountdownTicker(
+  root: HTMLElement,
+  refresh: () => void,
+): () => void {
+  const timer = globalThis.setInterval(() => {
+    if (
+      root.querySelector('[data-c1-key="timekeeping-panel-countdowns"]')
+    ) {
+      refresh();
+    }
+  }, 1_000);
+
+  return () => {
+    globalThis.clearInterval(timer);
+  };
 }
 
 export function bindTimekeepingCockpitInteractions(
