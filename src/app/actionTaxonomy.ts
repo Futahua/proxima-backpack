@@ -74,6 +74,7 @@ const REGISTRY = {
   'surface.select': 'local-state',
   'tasks.mode.select': 'local-state',
   'timekeeping.panel.set-visible': 'local-state',
+  'task.timeline.change': 'record-mutation',
   'elastic.target.set': 'local-state',
   'elastic.lock': 'local-state',
   'elastic.unlock': 'local-state',

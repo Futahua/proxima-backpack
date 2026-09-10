@@ -1,6 +1,8 @@
 import type {
+  ActionResult,
   TimekeepingPanel,
   TimekeepingPanelVisibility,
+  TimelineChangeOperation,
 } from '../app/actionProtocol.js';
 import { deadlineHue, localDateKey } from '../domain/time.js';
 import type { ProximaState, Task } from '../domain/types.js';
@@ -37,10 +39,20 @@ export interface TimekeepingCockpitRenderOptions {
   selectedTaskId: string | null;
 }
 
+export interface TimelineChangeIntent {
+  taskId: string;
+  operation: TimelineChangeOperation;
+  proposedStartDate: string | null;
+  proposedDeadline: string | null;
+  targetRowIndex: number;
+}
+
 export interface TimekeepingCockpitHandlers {
+  openTask(taskId: string): void;
   setPanelVisible(panel: TimekeepingPanel, visible: boolean): void;
   navigateMonth(direction: 'previous' | 'next'): void;
   today(): void;
+  changeTask(intent: TimelineChangeIntent): ActionResult | null;
 }
 
 function escapeHtml(value: unknown): string {
@@ -301,7 +313,7 @@ function renderTimelineGantt(
   );
   const tasksById = new Map(options.tasks.map((task) => [task.id, task]));
 
-  const rows = entries.map((entry) => {
+  const rows = entries.map((entry, rowIndex) => {
     const task = tasksById.get(entry.taskId);
     if (!task) return '';
 
@@ -331,8 +343,14 @@ function renderTimelineGantt(
       : entry.kind === 'start'
         ? `Starts ${entry.startKey}`
         : `Due ${entry.endKey}`;
+    const startHandle = entry.startKey
+      ? `<span data-gantt-edge="start" data-c1-key="timekeeping-gantt-edge-start-${escapeHtml(task.id)}" aria-label="Resize start" title="Shift-drag to resize start" style="position:absolute;left:0;top:0;bottom:0;width:8px;border-left:2px solid currentColor;cursor:col-resize;"></span>`
+      : '';
+    const endHandle = entry.endKey
+      ? `<span data-gantt-edge="end" data-c1-key="timekeeping-gantt-edge-end-${escapeHtml(task.id)}" aria-label="Resize deadline" title="Shift-drag to resize deadline" style="position:absolute;right:0;top:0;bottom:0;width:8px;border-right:2px solid currentColor;cursor:col-resize;"></span>`
+      : '';
 
-    return `<div class="timekeeping-gantt-row" data-c1-key="timekeeping-gantt-row-${escapeHtml(task.id)}"><div class="timekeeping-gantt-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(projectName(options.projectNames, task))} · ${escapeHtml(temporalLabel)}</small></div><div class="timekeeping-gantt-track" style="display:grid;grid-template-columns:repeat(42,minmax(12px,1fr));position:relative;"><article class="${classes}" role="button" tabindex="0" data-elastic-action="open-task" data-elastic-task-id="${escapeHtml(task.id)}" data-gantt-kind="${entry.kind}" data-gantt-start="${escapeHtml(entry.startKey ?? '')}" data-gantt-end="${escapeHtml(entry.endKey ?? '')}" data-gantt-start-column="${entry.startColumn}" data-gantt-span-columns="${entry.spanColumns}" data-c1-key="timekeeping-gantt-task-${escapeHtml(task.id)}" style="grid-column:${entry.startColumn} / span ${entry.spanColumns};${pressureStyle}">${entry.kind === 'span' ? escapeHtml(task.name) : '◆'}</article></div></div>`;
+    return `<div class="timekeeping-gantt-row" data-gantt-row-index="${rowIndex}" data-c1-key="timekeeping-gantt-row-${escapeHtml(task.id)}"><div class="timekeeping-gantt-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(projectName(options.projectNames, task))} · ${escapeHtml(temporalLabel)}</small><small data-gantt-proposal-for="${escapeHtml(task.id)}" data-c1-key="timekeeping-gantt-proposal-${escapeHtml(task.id)}" aria-live="polite" style="opacity:0;"></small></div><div class="timekeeping-gantt-track" data-c1-key="timekeeping-gantt-track-${escapeHtml(task.id)}" style="display:grid;grid-template-columns:repeat(42,minmax(12px,1fr));position:relative;"><article class="${classes}" role="button" tabindex="0" data-timekeeping-action="open-task" data-timekeeping-task-id="${escapeHtml(task.id)}" data-gantt-task-id="${escapeHtml(task.id)}" data-gantt-kind="${entry.kind}" data-gantt-start="${escapeHtml(entry.startKey ?? '')}" data-gantt-end="${escapeHtml(entry.endKey ?? '')}" data-gantt-start-value="${escapeHtml(task.startDate ?? '')}" data-gantt-deadline-value="${escapeHtml(task.deadline ?? '')}" data-gantt-start-column="${entry.startColumn}" data-gantt-span-columns="${entry.spanColumns}" data-c1-key="timekeeping-gantt-task-${escapeHtml(task.id)}" style="grid-column:${entry.startColumn} / span ${entry.spanColumns};position:relative;cursor:grab;${pressureStyle}">${startHandle}${entry.kind === 'span' ? escapeHtml(task.name) : '◆'}${endHandle}</article></div></div>`;
   }).join('');
 
   return `<section class="timekeeping-panel project-details" data-c1-key="timekeeping-panel-timeline" aria-label="Timeline/Gantt"><header class="surface-header"><div><h3>Timeline/Gantt</h3><p class="surface-description">Task starts and deadlines across the active calendar window.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-timekeeping-action="month-navigate" data-direction="previous" data-c1-key="timekeeping-gantt-previous" aria-label="Previous month">←</button><button type="button" class="icon-button" data-timekeeping-action="month-today" data-c1-key="timekeeping-gantt-today">Today</button><strong data-c1-key="timekeeping-gantt-month" data-calendar-month="${monthKey(options.calendarCursor)}">${escapeHtml(monthTitle(options.calendarCursor))}</strong><button type="button" class="icon-button" data-timekeeping-action="month-navigate" data-direction="next" data-c1-key="timekeeping-gantt-next" aria-label="Next month">→</button></div></header><div class="timekeeping-gantt-header" style="display:grid;grid-template-columns:220px 1fr;"><span>Task</span><div style="display:grid;grid-template-columns:repeat(42,minmax(12px,1fr));">${days.map((day) => {
@@ -364,15 +382,238 @@ export function renderTimekeepingCockpit(
   return `<section class="surface" data-c1-key="tasks-timekeeping-region" aria-label="Timekeeping"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Timekeeping</h2><p class="surface-description">Calendar, timeline and countdown workspace.</p></div><span class="surface-count">${options.tasks.length} tasks</span></header><div class="surface-switcher secondary" data-c1-key="timekeeping-panel-controls" role="group" aria-label="Timekeeping panels">${panelToggle('calendar', 'Calendar', options.panels.calendar)}${panelToggle('timeline', 'Timeline/Gantt', options.panels.timeline)}${panelToggle('countdowns', 'Countdowns', options.panels.countdowns)}</div><div data-c1-key="timekeeping-panel-stack">${panels || '<p class="empty-state" data-c1-key="timekeeping-no-panels">No Timekeeping panels are visible.</p>'}</div>${renderTaskModal(options.state, options.selectedTaskId, options.projectNames)}</section>`;
 }
 
+interface TimelineGestureState {
+  taskId: string;
+  operation: TimelineChangeOperation;
+  bar: HTMLElement;
+  row: HTMLElement;
+  proposal: HTMLElement | null;
+  startX: number;
+  startY: number;
+  dayWidth: number;
+  originalGridColumn: string;
+  originalRowTransform: string;
+  originalStartDate: string | null;
+  originalDeadline: string | null;
+  originalStartColumn: number;
+  originalSpanColumns: number;
+  originalRowIndex: number;
+  targetRowIndex: number;
+  proposedStartDate: string | null;
+  proposedDeadline: string | null;
+  changed: boolean;
+  valid: boolean;
+}
+
+function shiftTemporalByCivilDays(
+  value: string | null,
+  dayDelta: number,
+): string | null {
+  if (value === null) return null;
+
+  const shifted = new Date(value);
+  if (!Number.isFinite(shifted.getTime())) {
+    throw new RangeError(`Invalid timeline temporal value: ${value}`);
+  }
+
+  shifted.setDate(shifted.getDate() + dayDelta);
+  return shifted.toISOString();
+}
+
+function snapTimelineDayDelta(deltaX: number, dayWidth: number): number {
+  if (!Number.isFinite(dayWidth) || dayWidth <= 0 || deltaX === 0) return 0;
+
+  return Math.sign(deltaX)
+    * Math.floor((Math.abs(deltaX) / dayWidth) + 0.5);
+}
+
+function timelineProposalLabel(
+  startDate: string | null,
+  deadline: string | null,
+): string {
+  const start = startDate ? localDateKey(startDate) : '—';
+  const deadlineLabel = deadline ? localDateKey(deadline) : '—';
+  return `${start} → ${deadlineLabel}`;
+}
+
+function clearTimelineRowTargets(root: HTMLElement): void {
+  root
+    .querySelectorAll<HTMLElement>('[data-gantt-row-target="true"]')
+    .forEach((row) => {
+      delete row.dataset.ganttRowTarget;
+      row.style.outline = '';
+      row.style.outlineOffset = '';
+    });
+}
+
 export function bindTimekeepingCockpitInteractions(
   root: HTMLElement,
   handlers: TimekeepingCockpitHandlers,
 ): void {
+  let gesture: TimelineGestureState | null = null;
+  let suppressNextClickTaskId: string | null = null;
+
+  const restoreGestureGeometry = (state: TimelineGestureState): void => {
+    state.bar.style.gridColumn = state.originalGridColumn;
+    state.bar.style.opacity = '';
+    state.bar.style.cursor = 'grab';
+    state.row.style.transform = state.originalRowTransform;
+
+    delete state.bar.dataset.ganttPickup;
+    delete state.bar.dataset.ganttInvalid;
+    delete state.bar.dataset.ganttProposedStart;
+    delete state.bar.dataset.ganttProposedDeadline;
+    delete state.bar.dataset.ganttPreviewStartColumn;
+    delete state.bar.dataset.ganttPreviewSpanColumns;
+    delete state.bar.dataset.ganttPreviewRowIndex;
+
+    if (state.proposal) {
+      state.proposal.textContent = '';
+      state.proposal.style.opacity = '0';
+      delete state.proposal.dataset.ganttRefusal;
+    }
+
+    clearTimelineRowTargets(root);
+  };
+
+  const updateGesturePreview = (
+    state: TimelineGestureState,
+    event: PointerEvent,
+  ): void => {
+    const dayDelta = snapTimelineDayDelta(
+      event.clientX - state.startX,
+      state.dayWidth,
+    );
+
+    let proposedStartDate = state.originalStartDate;
+    let proposedDeadline = state.originalDeadline;
+    let previewStartColumn = state.originalStartColumn;
+    let previewSpanColumns = state.originalSpanColumns;
+
+    if (state.operation === 'move') {
+      proposedStartDate = shiftTemporalByCivilDays(
+        state.originalStartDate,
+        dayDelta,
+      );
+      proposedDeadline = shiftTemporalByCivilDays(
+        state.originalDeadline,
+        dayDelta,
+      );
+      previewStartColumn += dayDelta;
+    } else if (state.operation === 'resize-start') {
+      proposedStartDate = shiftTemporalByCivilDays(
+        state.originalStartDate,
+        dayDelta,
+      );
+      previewStartColumn += dayDelta;
+      previewSpanColumns -= dayDelta;
+    } else {
+      proposedDeadline = shiftTemporalByCivilDays(
+        state.originalDeadline,
+        dayDelta,
+      );
+      previewSpanColumns += dayDelta;
+    }
+
+    let targetRowIndex = state.originalRowIndex;
+
+    if (state.operation === 'move') {
+      const targetRow = (event.target as HTMLElement)
+        .closest<HTMLElement>('[data-gantt-row-index]');
+
+      if (targetRow) {
+        const candidateRowIndex = Number(targetRow.dataset.ganttRowIndex);
+
+        if (
+          Number.isInteger(candidateRowIndex)
+          && candidateRowIndex >= 0
+        ) {
+          targetRowIndex = candidateRowIndex;
+          clearTimelineRowTargets(root);
+          targetRow.dataset.ganttRowTarget = 'true';
+          targetRow.style.outline = '2px solid currentColor';
+          targetRow.style.outlineOffset = '2px';
+        }
+      }
+
+      state.row.style.transform = `translateY(${event.clientY - state.startY}px)`;
+    } else {
+      state.row.style.transform = state.originalRowTransform;
+      clearTimelineRowTargets(root);
+    }
+
+    const proposedStartKey = proposedStartDate
+      ? localDateKey(proposedStartDate)
+      : null;
+    const proposedDeadlineKey = proposedDeadline
+      ? localDateKey(proposedDeadline)
+      : null;
+    const validTemporalOrder = (
+      proposedStartKey === null
+      || proposedDeadlineKey === null
+      || civilDayOrdinal(proposedStartKey) <= civilDayOrdinal(proposedDeadlineKey)
+    );
+    const valid = previewSpanColumns >= 1 && validTemporalOrder;
+
+    state.targetRowIndex = targetRowIndex;
+    state.proposedStartDate = proposedStartDate;
+    state.proposedDeadline = proposedDeadline;
+    state.changed = (
+      dayDelta !== 0
+      || (
+        state.operation === 'move'
+        && targetRowIndex !== state.originalRowIndex
+      )
+    );
+    state.valid = valid;
+
+    state.bar.dataset.ganttPreviewRowIndex = String(targetRowIndex);
+
+    if (!valid) {
+      state.bar.dataset.ganttInvalid = 'true';
+
+      if (state.proposal) {
+        state.proposal.textContent = `Invalid: ${timelineProposalLabel(proposedStartDate, proposedDeadline)}`;
+        state.proposal.style.opacity = '1';
+      }
+
+      return;
+    }
+
+    delete state.bar.dataset.ganttInvalid;
+
+    state.bar.style.gridColumn = `${previewStartColumn} / span ${previewSpanColumns}`;
+    state.bar.dataset.ganttProposedStart = proposedStartDate ?? '';
+    state.bar.dataset.ganttProposedDeadline = proposedDeadline ?? '';
+    state.bar.dataset.ganttPreviewStartColumn = String(previewStartColumn);
+    state.bar.dataset.ganttPreviewSpanColumns = String(previewSpanColumns);
+
+    if (state.proposal) {
+      state.proposal.textContent = `Proposed: ${timelineProposalLabel(proposedStartDate, proposedDeadline)}`;
+      state.proposal.style.opacity = '1';
+    }
+  };
+
   root.addEventListener('click', (event) => {
     const control = (event.target as HTMLElement)
       .closest<HTMLElement>('[data-timekeeping-action]');
 
     if (!control) return;
+
+    if (control.dataset.timekeepingAction === 'open-task') {
+      const taskId = control.dataset.timekeepingTaskId;
+      if (!taskId) return;
+
+      if (suppressNextClickTaskId === taskId) {
+        suppressNextClickTaskId = null;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      handlers.openTask(taskId);
+      return;
+    }
 
     if (control.dataset.timekeepingAction === 'panel-set-visible') {
       const panel = control.dataset.timekeepingPanel;
@@ -401,6 +642,146 @@ export function bindTimekeepingCockpitInteractions(
 
     if (control.dataset.timekeepingAction === 'month-today') {
       handlers.today();
+    }
+  });
+
+  root.addEventListener('pointerdown', (event) => {
+    const target = event.target as HTMLElement;
+    const bar = target.closest<HTMLElement>('[data-gantt-task-id]');
+    if (!bar) return;
+
+    const row = bar.closest<HTMLElement>('[data-gantt-row-index]');
+    const track = bar.closest<HTMLElement>('.timekeeping-gantt-track');
+    const taskId = bar.dataset.ganttTaskId;
+    const originalStartColumn = Number(bar.dataset.ganttStartColumn);
+    const originalSpanColumns = Number(bar.dataset.ganttSpanColumns);
+    const originalRowIndex = row
+      ? Number(row.dataset.ganttRowIndex)
+      : Number.NaN;
+
+    if (
+      !row
+      || !track
+      || !taskId
+      || !Number.isInteger(originalStartColumn)
+      || !Number.isInteger(originalSpanColumns)
+      || originalSpanColumns < 1
+      || !Number.isInteger(originalRowIndex)
+      || originalRowIndex < 0
+    ) {
+      return;
+    }
+
+    const trackWidth = track.getBoundingClientRect().width;
+    if (!Number.isFinite(trackWidth) || trackWidth <= 0) return;
+
+    const edge = target.closest<HTMLElement>('[data-gantt-edge]')
+      ?.dataset.ganttEdge;
+    const operation: TimelineChangeOperation = (
+      event.shiftKey && edge === 'start'
+    )
+      ? 'resize-start'
+      : (
+          event.shiftKey && edge === 'end'
+            ? 'resize-end'
+            : 'move'
+        );
+
+    const originalStartDate = bar.dataset.ganttStartValue || null;
+    const originalDeadline = bar.dataset.ganttDeadlineValue || null;
+
+    if (
+      (operation === 'resize-start' && originalStartDate === null)
+      || (operation === 'resize-end' && originalDeadline === null)
+    ) {
+      return;
+    }
+
+    const proposal = Array.from(
+      root.querySelectorAll<HTMLElement>('[data-gantt-proposal-for]'),
+    ).find(
+      (candidate) => candidate.dataset.ganttProposalFor === taskId,
+    ) ?? null;
+
+    delete bar.dataset.ganttRefusal;
+    if (proposal) {
+      proposal.textContent = '';
+      proposal.style.opacity = '0';
+      delete proposal.dataset.ganttRefusal;
+    }
+
+    gesture = {
+      taskId,
+      operation,
+      bar,
+      row,
+      proposal,
+      startX: event.clientX,
+      startY: event.clientY,
+      dayWidth: trackWidth / 42,
+      originalGridColumn: bar.style.gridColumn,
+      originalRowTransform: row.style.transform,
+      originalStartDate,
+      originalDeadline,
+      originalStartColumn,
+      originalSpanColumns,
+      originalRowIndex,
+      targetRowIndex: originalRowIndex,
+      proposedStartDate: originalStartDate,
+      proposedDeadline: originalDeadline,
+      changed: false,
+      valid: true,
+    };
+
+    bar.dataset.ganttPickup = 'true';
+    bar.style.opacity = '0.7';
+    bar.style.cursor = operation === 'move' ? 'grabbing' : 'col-resize';
+  });
+
+  root.addEventListener('pointermove', (event) => {
+    if (!gesture) return;
+
+    event.preventDefault();
+    updateGesturePreview(gesture, event);
+  });
+
+  root.addEventListener('pointerup', (event) => {
+    if (!gesture) return;
+
+    const finished = gesture;
+    updateGesturePreview(finished, event);
+    gesture = null;
+
+    if (!finished.changed) {
+      restoreGestureGeometry(finished);
+      return;
+    }
+
+    suppressNextClickTaskId = finished.taskId;
+
+    if (!finished.valid) {
+      restoreGestureGeometry(finished);
+      return;
+    }
+
+    const result = handlers.changeTask({
+      taskId: finished.taskId,
+      operation: finished.operation,
+      proposedStartDate: finished.proposedStartDate,
+      proposedDeadline: finished.proposedDeadline,
+      targetRowIndex: finished.targetRowIndex,
+    });
+
+    restoreGestureGeometry(finished);
+
+    if (result && !result.ok) {
+      finished.bar.dataset.ganttRefusal = result.error.code;
+
+      if (finished.proposal) {
+        finished.proposal.dataset.ganttRefusal = result.error.code;
+        finished.proposal.textContent = result.error.code;
+        finished.proposal.style.opacity = '1';
+      }
     }
   });
 }

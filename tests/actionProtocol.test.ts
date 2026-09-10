@@ -40,6 +40,7 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'tasks.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
     expect(parseAction({ type: 'timekeeping.panel.set-visible', panel: 'bogus', visible: true })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'panel' } });
     expect(parseAction({ type: 'timekeeping.panel.set-visible', panel: 'calendar', visible: 'yes' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'visible' } });
+    expect(parseAction({ type: 'task.timeline.change', taskId: 'task-a', operation: 'resize-start', proposedStartDate: 'not-a-date', proposedDeadline: null, targetRowIndex: 0 })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
     expect(parseAction({ type: 'schedule.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
     expect(parseAction({ type: 'project.workspace-tab.select', tab: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'tab' } });
     expect(parseAction({ type: 'calendar.navigate', direction: 'sideways' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'direction' } });

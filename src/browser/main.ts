@@ -479,6 +479,10 @@ function bindInteractions(): void {
   });
 
   bindTimekeepingCockpitInteractions(root, {
+    openTask: (taskId) => {
+      elasticSelectedTaskId = taskId;
+      render();
+    },
     setPanelVisible: (panel, visible) => {
       dispatchAction({
         type: 'timekeeping.panel.set-visible',
@@ -495,6 +499,20 @@ function bindInteractions(): void {
     today: () => {
       dispatchAction({ type: 'calendar.today' });
     },
+    changeTask: ({
+      taskId,
+      operation,
+      proposedStartDate,
+      proposedDeadline,
+      targetRowIndex,
+    }) => dispatchAction({
+      type: 'task.timeline.change',
+      taskId,
+      operation,
+      proposedStartDate,
+      proposedDeadline,
+      targetRowIndex,
+    }),
   });
   root.addEventListener('click', (event) => {
     const button = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');

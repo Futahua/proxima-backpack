@@ -23,6 +23,7 @@ export type Surface = 'tasks' | 'schedule' | 'projects' | 'canvas';
 export type TasksMode = 'elastic' | 'timekeeping';
 export type TimekeepingPanel = 'calendar' | 'timeline' | 'countdowns';
 export type TimekeepingPanelVisibility = Record<TimekeepingPanel, boolean>;
+export type TimelineChangeOperation = 'move' | 'resize-start' | 'resize-end';
 export type ScheduleMode = 'day' | 'four-day' | 'week' | 'month' | 'year' | 'agenda';
 export type ProjectWorkspaceTab = 'notes' | 'task-board' | 'backlog' | 'deadlines' | 'schedule';
 
@@ -36,6 +37,7 @@ export type ProximaAction =
   | { type: 'surface.select'; surface: Surface }
   | { type: 'tasks.mode.select'; mode: TasksMode }
   | { type: 'timekeeping.panel.set-visible'; panel: TimekeepingPanel; visible: boolean }
+  | { type: 'task.timeline.change'; taskId: string; operation: TimelineChangeOperation; proposedStartDate: string | null; proposedDeadline: string | null; targetRowIndex: number }
   | { type: 'elastic.target.set'; targetTime: string }
   | { type: 'elastic.lock' }
   | { type: 'elastic.unlock' }
@@ -282,6 +284,78 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
 
   if (input.type === 'elastic.lock' || input.type === 'elastic.unlock') {
     return { ok: true, action: { type: input.type } };
+  }
+
+  if (input.type === 'task.timeline.change') {
+    if (
+      typeof input.taskId !== 'string'
+      || input.taskId.length === 0
+      || input.taskId.length > 200
+      || (
+        input.operation !== 'move'
+        && input.operation !== 'resize-start'
+        && input.operation !== 'resize-end'
+      )
+      || !(
+        input.proposedStartDate === null
+        || (
+          typeof input.proposedStartDate === 'string'
+          && input.proposedStartDate.length > 0
+          && input.proposedStartDate.length <= 100
+          && Number.isFinite(Date.parse(input.proposedStartDate))
+        )
+      )
+      || !(
+        input.proposedDeadline === null
+        || (
+          typeof input.proposedDeadline === 'string'
+          && input.proposedDeadline.length > 0
+          && input.proposedDeadline.length <= 100
+          && Number.isFinite(Date.parse(input.proposedDeadline))
+        )
+      )
+      || (
+        input.proposedStartDate === null
+        && input.proposedDeadline === null
+      )
+      || !Number.isInteger(input.targetRowIndex)
+      || Number(input.targetRowIndex) < 0
+      || Number(input.targetRowIndex) > 100_000
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'task timeline change requires a bounded taskId, valid operation, non-inverted temporal bounds and non-negative targetRowIndex',
+        },
+      };
+    }
+
+    if (
+      input.proposedStartDate !== null
+      && input.proposedDeadline !== null
+      && Date.parse(input.proposedStartDate) > Date.parse(input.proposedDeadline)
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'task timeline change requires a bounded taskId, valid operation, non-inverted temporal bounds and non-negative targetRowIndex',
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      action: {
+        type: input.type,
+        taskId: input.taskId,
+        operation: input.operation,
+        proposedStartDate: input.proposedStartDate,
+        proposedDeadline: input.proposedDeadline,
+        targetRowIndex: Number(input.targetRowIndex),
+      },
+    };
   }
 
   if (input.type === 'task.execution.move') {
@@ -779,6 +853,35 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
           state.stateRevision += 1;
         }
         return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'task.timeline.change') {
+        if (!state.state.tasks.some((task) => task.id === action.taskId)) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'record-not-found',
+              message: `task does not exist: ${action.taskId}`,
+              field: 'taskId',
+            },
+            requestId,
+            [action.taskId],
+          );
+        }
+
+        return rejectAction(
+          state,
+          ring,
+          action.type,
+          {
+            code: 'action-not-available',
+            message: 'task timeline writes remain unavailable before record-store cutover',
+          },
+          requestId,
+          [action.taskId],
+        );
       }
 
       if (action.type === 'task.execution.move') {

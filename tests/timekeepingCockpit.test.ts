@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   createActionDispatcher,
+  type ActionResult,
   type ProximaActionDispatcher,
 } from '../src/app/actionProtocol.js';
 import {
@@ -14,6 +15,7 @@ import {
   deadlineCalendarProjection,
   renderTimekeepingCockpit,
   timelineGanttProjection,
+  type TimelineChangeIntent,
 } from '../src/browser/timekeepingCockpit.js';
 import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
 import { localDateKey } from '../src/domain/time.js';
@@ -93,6 +95,8 @@ function mount(dispatcher: ProximaActionDispatcher) {
   document.body.innerHTML = '<div id="timekeeping-root"></div>';
   const root = document.querySelector<HTMLElement>('#timekeeping-root')!;
   let selectedTaskId: string | null = null;
+  const timelineIntents: TimelineChangeIntent[] = [];
+  const timelineResults: ActionResult[] = [];
 
   const render = () => {
     const snapshot = dispatcher.snapshot();
@@ -110,6 +114,10 @@ function mount(dispatcher: ProximaActionDispatcher) {
   };
 
   bindTimekeepingCockpitInteractions(root, {
+    openTask: (taskId) => {
+      selectedTaskId = taskId;
+      render();
+    },
     setPanelVisible: (panel, visible) => {
       dispatcher.dispatch({
         type: 'timekeeping.panel.set-visible',
@@ -128,6 +136,19 @@ function mount(dispatcher: ProximaActionDispatcher) {
     today: () => {
       dispatcher.dispatch({ type: 'calendar.today' });
       render();
+    },
+    changeTask: (intent) => {
+      timelineIntents.push(intent);
+      const result = dispatcher.dispatch({
+        type: 'task.timeline.change',
+        taskId: intent.taskId,
+        operation: intent.operation,
+        proposedStartDate: intent.proposedStartDate,
+        proposedDeadline: intent.proposedDeadline,
+        targetRowIndex: intent.targetRowIndex,
+      });
+      timelineResults.push(result);
+      return result;
     },
   });
 
@@ -152,6 +173,8 @@ function mount(dispatcher: ProximaActionDispatcher) {
     harness: createInteractionHarness(root),
     render,
     selectedTaskId: () => selectedTaskId,
+    timelineIntents: () => timelineIntents,
+    timelineResults: () => timelineResults,
   };
 }
 
@@ -353,6 +376,248 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
 
     expect(mounted.selectedTaskId()).toBeNull();
     expect(JSON.stringify(dispatcher.snapshot().state)).toBe(beforeRecords);
+  });
+
+  it('previews a phased pointer move by whole days and resolves an occupied row continuously before refusing the write', () => {
+    const beforeRecords = JSON.stringify(state);
+    const dispatcher = createDispatcher();
+    const mounted = mount(dispatcher);
+
+    mounted.harness.click('timekeeping-panel-toggle-timeline');
+    mounted.harness.click('timekeeping-panel-toggle-calendar');
+
+    const bar = mounted.harness.target('timekeeping-gantt-task-urgent');
+    const row = mounted.harness.target('timekeeping-gantt-row-urgent');
+    const targetRow = mounted.harness.target('timekeeping-gantt-row-later');
+    const track = mounted.harness.target('timekeeping-gantt-track-urgent');
+    const proposal = mounted.harness.target('timekeeping-gantt-proposal-urgent');
+    const originalGridColumn = bar.style.gridColumn;
+    const originalStartColumn = Number(bar.dataset.ganttStartColumn);
+    const originalSpanColumns = Number(bar.dataset.ganttSpanColumns);
+    const targetRowIndex = Number(targetRow.dataset.ganttRowIndex);
+
+    track.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      width: 420,
+      height: 40,
+      top: 0,
+      right: 420,
+      bottom: 40,
+      left: 0,
+      toJSON: () => ({}),
+    });
+
+    const drag = mounted.harness.pointerDown(
+      'timekeeping-gantt-task-urgent',
+      { clientX: 100, clientY: 100 },
+    );
+
+    expect(bar.dataset.ganttPickup).toBe('true');
+    expect(mounted.timelineIntents()).toHaveLength(0);
+
+    drag.move(
+      'timekeeping-gantt-row-later',
+      { clientX: 130, clientY: 150 },
+    );
+
+    expect(bar.dataset.ganttPreviewStartColumn)
+      .toBe(String(originalStartColumn + 3));
+    expect(bar.dataset.ganttPreviewSpanColumns)
+      .toBe(String(originalSpanColumns));
+    expect(bar.dataset.ganttPreviewRowIndex)
+      .toBe(String(targetRowIndex));
+    expect(row.style.transform).toBe('translateY(50px)');
+    expect(targetRow.dataset.ganttRowTarget).toBe('true');
+    expect(proposal.textContent).toContain('Proposed:');
+    expect(proposal.textContent).toContain('2026-09-08');
+    expect(proposal.textContent).toContain('2026-09-09');
+    expect(mounted.timelineIntents()).toHaveLength(0);
+
+    drag.release(
+      'timekeeping-gantt-row-later',
+      { clientX: 130, clientY: 150 },
+    );
+
+    expect(mounted.timelineIntents()).toHaveLength(1);
+    expect(mounted.timelineResults()).toHaveLength(1);
+
+    const intent = mounted.timelineIntents()[0];
+    const result = mounted.timelineResults()[0];
+
+    if (!intent || !result) {
+      throw new Error('timeline move did not emit its one release result');
+    }
+
+    expect(intent).toMatchObject({
+      taskId: 'urgent',
+      operation: 'move',
+      targetRowIndex,
+    });
+    expect(localDateKey(intent.proposedStartDate!)).toBe('2026-09-08');
+    expect(localDateKey(intent.proposedDeadline!)).toBe('2026-09-09');
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'action-not-available' },
+    });
+
+    expect(bar.style.gridColumn).toBe(originalGridColumn);
+    expect(row.style.transform).toBe('');
+    expect(targetRow.dataset.ganttRowTarget).toBeUndefined();
+    expect(bar.dataset.ganttPickup).toBeUndefined();
+    expect(bar.dataset.ganttRefusal).toBe('action-not-available');
+    expect(proposal.textContent).toBe('action-not-available');
+    expect(JSON.stringify(dispatcher.snapshot().state)).toBe(beforeRecords);
+  });
+
+  it('distinguishes Shift start-edge and end-edge resize geometry and refuses inverted preview', () => {
+    const dispatcher = createDispatcher();
+    const mounted = mount(dispatcher);
+
+    mounted.harness.click('timekeeping-panel-toggle-timeline');
+    mounted.harness.click('timekeeping-panel-toggle-calendar');
+
+    const bar = mounted.harness.target('timekeeping-gantt-task-urgent');
+    const row = mounted.harness.target('timekeeping-gantt-row-urgent');
+    const track = mounted.harness.target('timekeeping-gantt-track-urgent');
+    const startEdge = mounted.harness.target(
+      'timekeeping-gantt-edge-start-urgent',
+    );
+    const endEdge = mounted.harness.target(
+      'timekeeping-gantt-edge-end-urgent',
+    );
+    const originalStartColumn = Number(bar.dataset.ganttStartColumn);
+    const originalSpanColumns = Number(bar.dataset.ganttSpanColumns);
+
+    track.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      width: 420,
+      height: 40,
+      top: 0,
+      right: 420,
+      bottom: 40,
+      left: 0,
+      toJSON: () => ({}),
+    });
+
+    mounted.harness.hover(
+      'timekeeping-gantt-edge-start-urgent',
+      { clientX: 100, clientY: 100 },
+      { shiftKey: true },
+    );
+    mounted.harness.hover(
+      'timekeeping-gantt-edge-end-urgent',
+      { clientX: 120, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    expect(startEdge.style.cursor).toBe('col-resize');
+    expect(endEdge.style.cursor).toBe('col-resize');
+    expect(startEdge.style.width).toBe('8px');
+    expect(endEdge.style.width).toBe('8px');
+    expect(startEdge.style.borderLeftWidth).toBe('2px');
+    expect(endEdge.style.borderRightWidth).toBe('2px');
+
+    const startResize = mounted.harness.beginResize(
+      'timekeeping-gantt-edge-start-urgent',
+      { clientX: 100, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    startResize.move(
+      'timekeeping-gantt-row-urgent',
+      { clientX: 110, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    expect(bar.dataset.ganttPreviewStartColumn)
+      .toBe(String(originalStartColumn + 1));
+    expect(bar.dataset.ganttPreviewSpanColumns)
+      .toBe(String(originalSpanColumns - 1));
+    expect(localDateKey(bar.dataset.ganttProposedStart!))
+      .toBe('2026-09-06');
+    expect(localDateKey(bar.dataset.ganttProposedDeadline!))
+      .toBe('2026-09-06');
+
+    startResize.release(
+      'timekeeping-gantt-row-urgent',
+      { clientX: 110, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    const startIntent = mounted.timelineIntents()[0];
+    if (!startIntent) {
+      throw new Error('start-edge resize did not emit on release');
+    }
+
+    expect(startIntent.operation).toBe('resize-start');
+    expect(localDateKey(startIntent.proposedStartDate!)).toBe('2026-09-06');
+    expect(localDateKey(startIntent.proposedDeadline!)).toBe('2026-09-06');
+
+    const endResize = mounted.harness.beginResize(
+      'timekeeping-gantt-edge-end-urgent',
+      { clientX: 100, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    endResize.move(
+      'timekeeping-gantt-row-urgent',
+      { clientX: 120, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    expect(bar.dataset.ganttPreviewStartColumn)
+      .toBe(String(originalStartColumn));
+    expect(bar.dataset.ganttPreviewSpanColumns)
+      .toBe(String(originalSpanColumns + 2));
+    expect(localDateKey(bar.dataset.ganttProposedStart!))
+      .toBe('2026-09-05');
+    expect(localDateKey(bar.dataset.ganttProposedDeadline!))
+      .toBe('2026-09-08');
+
+    endResize.release(
+      'timekeeping-gantt-row-urgent',
+      { clientX: 120, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    const endIntent = mounted.timelineIntents()[1];
+    if (!endIntent) {
+      throw new Error('end-edge resize did not emit on release');
+    }
+
+    expect(endIntent.operation).toBe('resize-end');
+    expect(localDateKey(endIntent.proposedStartDate!)).toBe('2026-09-05');
+    expect(localDateKey(endIntent.proposedDeadline!)).toBe('2026-09-08');
+
+    const intentsBeforeInvalid = mounted.timelineIntents().length;
+    const invalidResize = mounted.harness.beginResize(
+      'timekeeping-gantt-edge-start-urgent',
+      { clientX: 100, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    invalidResize.move(
+      'timekeeping-gantt-row-urgent',
+      { clientX: 130, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    expect(bar.dataset.ganttInvalid).toBe('true');
+    expect(bar.dataset.ganttPreviewSpanColumns).toBeUndefined();
+
+    invalidResize.release(
+      'timekeeping-gantt-row-urgent',
+      { clientX: 130, clientY: 100 },
+      { shiftKey: true },
+    );
+
+    expect(mounted.timelineIntents()).toHaveLength(intentsBeforeInvalid);
+    expect(bar.dataset.ganttInvalid).toBeUndefined();
+    expect(bar.style.gridColumn)
+      .toBe(`${originalStartColumn} / span ${originalSpanColumns}`);
+    expect(row.style.transform).toBe('');
   });
 
   it('styles deadline pressure and overdue state and opens the existing task modal', () => {
