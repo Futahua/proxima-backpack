@@ -40,6 +40,7 @@ import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter 
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
+import { bindProjectDeadlinesInteractions, EMPTY_PROJECT_DEADLINES_VIEW, PROJECT_DEADLINES_WRITE_REFUSAL, type ProjectDeadlinesViewState, type ProjectDeadlineFilter } from './projectDeadlines.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
@@ -68,6 +69,7 @@ let projectsHubFilter: ProjectsHubFilter = 'active';
 let projectCreateOpen = false;
 let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_VIEW;
 let projectBacklogView: ProjectBacklogViewState = EMPTY_PROJECT_BACKLOG_VIEW;
+let projectDeadlinesView: ProjectDeadlinesViewState = EMPTY_PROJECT_DEADLINES_VIEW;
 let projectNotesView: ProjectNotesViewState = EMPTY_PROJECT_NOTES_VIEW;
 let projectNotesTreeRequestKey: string | null = null;
 let projectNotesPreviewRequestKey: string | null = null;
@@ -306,7 +308,7 @@ function selectProjectNote(path: string): void {
 }
 function projectsHubSurface(state: ProximaState): string {
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectBacklog: projectBacklogView });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectBacklog: projectBacklogView, projectDeadlines: projectDeadlinesView });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -582,6 +584,11 @@ function bindInteractions(): void {
     previewMove: ({ taskId, targetIndex }) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: taskId, dragTargetIndex: targetIndex }; },
     refuseMove: (intent) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: null, dragTargetIndex: null, writeRefusal: PROJECT_BACKLOG_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
     clearDrag: () => { projectBacklogView = { ...projectBacklogView, dragTaskId: null, dragTargetIndex: null }; },
+  });
+  bindProjectDeadlinesInteractions(root, {
+    setFilter: (filter) => { projectDeadlinesView = { ...projectDeadlinesView, projectId: selection, filter, selectedTaskId: null }; render(); },
+    openTask: (taskId) => { if (!appState?.tasks.some((task) => task.id === taskId && task.projectId === selection)) return; projectDeadlinesView = { ...projectDeadlinesView, projectId: selection, selectedTaskId: taskId }; render(); },
+    closeTask: () => { projectDeadlinesView = { ...projectDeadlinesView, selectedTaskId: null }; render(); },
   });
   bindProjectNotesInteractions(root, {
     toggleFolder: (path) => { const expanded = new Set(projectNotesView.expandedPaths); if (expanded.has(path)) expanded.delete(path); else expanded.add(path); projectNotesView = { ...projectNotesView, expandedPaths: [...expanded].sort() }; render(); },
