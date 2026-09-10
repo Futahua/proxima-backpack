@@ -38,6 +38,7 @@ import { bindScheduleRecurrenceInteractions, type ScheduleRecurrenceScope, type 
 import { projectPresentation } from './projectPresentation.js';
 import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter } from './projectsHub.js';
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
+import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
@@ -64,6 +65,7 @@ let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let projectsHubFilter: ProjectsHubFilter = 'active';
 let projectCreateOpen = false;
+let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_VIEW;
 let projectNotesView: ProjectNotesViewState = EMPTY_PROJECT_NOTES_VIEW;
 let projectNotesTreeRequestKey: string | null = null;
 let projectNotesPreviewRequestKey: string | null = null;
@@ -302,7 +304,7 @@ function selectProjectNote(path: string): void {
 }
 function projectsHubSurface(state: ProximaState): string {
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -562,6 +564,14 @@ function bindInteractions(): void {
     openNewProject: () => { projectCreateOpen = true; render(); },
     closeNewProject: () => { projectCreateOpen = false; render(); },
     createProject: ({ name, description }) => dispatchAction({ type: 'project.create', name, description }),
+  });
+  bindProjectTaskBoardInteractions(root, {
+    openTask: (taskId) => { const task = appState?.tasks.find((candidate) => candidate.id === taskId && candidate.projectId === selection); if (!task) return; projectTaskBoardView = { ...EMPTY_PROJECT_TASK_BOARD_VIEW, projectId: selection, selectedTaskId: taskId }; render(); },
+    closeTask: () => { projectTaskBoardView = { ...projectTaskBoardView, selectedTaskId: null }; render(); },
+    startDrag: (taskId) => { projectTaskBoardView = { ...projectTaskBoardView, projectId: selection, dragTaskId: taskId, dragTargetStatus: null, dragTargetIndex: null, writeRefusal: null, lastRefusedMove: null }; },
+    previewMove: ({ taskId, targetStatus, targetIndex }) => { projectTaskBoardView = { ...projectTaskBoardView, projectId: selection, dragTaskId: taskId, dragTargetStatus: targetStatus, dragTargetIndex: targetIndex }; },
+    refuseMove: (intent) => { projectTaskBoardView = { ...projectTaskBoardView, projectId: selection, dragTaskId: null, dragTargetStatus: null, dragTargetIndex: null, writeRefusal: PROJECT_TASK_BOARD_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
+    clearDrag: () => { projectTaskBoardView = { ...projectTaskBoardView, dragTaskId: null, dragTargetStatus: null, dragTargetIndex: null }; },
   });
   bindProjectNotesInteractions(root, {
     toggleFolder: (path) => { const expanded = new Set(projectNotesView.expandedPaths); if (expanded.has(path)) expanded.delete(path); else expanded.add(path); projectNotesView = { ...projectNotesView, expandedPaths: [...expanded].sort() }; render(); },
