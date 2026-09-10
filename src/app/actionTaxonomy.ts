@@ -14,7 +14,7 @@
  * and failing to reach storage require three different responses, and only the last is a
  * reason to alarm anyone.
  */
-export const ACTION_TAXONOMY_VERSION = 3 as const;
+export const ACTION_TAXONOMY_VERSION = 4 as const;
 
 /**
  * `presentation` and `local-state` are the two halves that need no write authority.
@@ -76,6 +76,7 @@ const REGISTRY = {
   'project.restore': 'record-mutation',
   'project.delete': 'record-mutation',
   'surface.select': 'local-state',
+  'source.refresh': 'local-state',
   'canvas.node.select': 'local-state',
   'canvas.node.geometry.change': 'record-mutation',
   'canvas.node.remove': 'record-mutation',

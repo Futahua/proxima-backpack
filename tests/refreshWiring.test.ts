@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bindRefreshWiring, refreshReasonForAction } from '../src/browser/refreshWiring.js';
+import { bindRefreshWiring } from '../src/browser/refreshWiring.js';
 
 function target(visibilityState: 'visible' | 'hidden') {
   const listeners = new Map<string, Set<() => void>>();
@@ -12,15 +12,13 @@ function target(visibilityState: 'visible' | 'hidden') {
 }
 
 describe('Gate 6.1 browser refresh trigger adapter', () => {
-  it('maps manual action and owns focus refresh while visibility only arms/suspends policy', () => {
+  it('owns focus refresh while visibility only arms/suspends policy', () => {
     const documentTarget = target('visible');
     const windowTarget = target('visible');
     const visibleCalls: Array<{ visible: boolean; refreshOnVisible: boolean }> = [];
     const refreshes: string[] = [];
     const dispose = bindRefreshWiring({ documentTarget, windowTarget, setVisible: (visible, options) => visibleCalls.push({ visible, ...options }), refresh: (reason) => { refreshes.push(reason); } });
     expect(visibleCalls).toEqual([{ visible: true, refreshOnVisible: false }]);
-    expect(refreshReasonForAction('source-refresh')).toBe('manual');
-    expect(refreshReasonForAction('switch-surface')).toBeNull();
     documentTarget.visibilityState = 'hidden';
     documentTarget.emit('visibilitychange');
     windowTarget.emit('focus');

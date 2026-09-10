@@ -7,6 +7,8 @@ import { coexistenceReadiness, declareCoexistenceReadiness } from './coexistence
 import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
 import type { SourceSession } from '../app/sourceSession.js';
+import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
+import { executeSourceRefreshAction } from '../app/sourceRefreshAction.js';
 import { loadProjectNotePreview, loadProjectNotesTree } from '../app/projectNotes.js';
 import { createUiHealthModel, type UiHealthModel } from '../app/uiHealth.js';
 import { evaluateCleanProfileAcceptance } from '../app/fsaEvidence.js';
@@ -19,7 +21,7 @@ import type { ProximaState, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
 import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
-import { bindRefreshWiring, refreshReasonForAction } from './refreshWiring.js';
+import { bindRefreshWiring } from './refreshWiring.js';
 import { createBrowserSource } from './sourceFactory.js';
 import { bindCanvasSurfaceInteractions, CANVAS_SURFACE_WRITE_REFUSAL, createCanvasDropQueue, EMPTY_CANVAS_SURFACE, EMPTY_CANVAS_SURFACE_VIEW, renderCanvasSurface, type CanvasSurfaceState, type CanvasSurfaceViewState } from './canvasSurface.js';
 import type { BrowserFileLike } from './canvasFileAdmission.js';
@@ -502,7 +504,7 @@ function currentSourceMode(): 'fixture' | 'external' {
   return sourceSession?.snapshot().sourceMode === 'external' ? 'external' : 'fixture';
 }
 
-function applyProjection(next: ReadOnlyProjection, mode: 'fixture' | 'external', result?: import('../app/refreshController.js').RefreshResult): void {
+function applyProjection(next: ReadOnlyProjection, mode: 'fixture' | 'external', result?: RefreshResult): void {
   const previous = sourceProjection;
   if (result) {
     lastRefreshEvidence = refreshEvidenceFromProjections(previous, next, result);
@@ -527,8 +529,10 @@ function applyProjection(next: ReadOnlyProjection, mode: 'fixture' | 'external',
   render();
 }
 
-async function refreshFromSource(reason: 'manual' | 'focus' | 'interval' | 'external-signal'): Promise<void> {
-  await sourceSession?.refresh(reason);
+async function refreshFromSource(
+  reason: RefreshReason,
+): Promise<RefreshResult | null> {
+  return await sourceSession?.refresh(reason) ?? null;
 }
 
 function bindInteractions(): void {
@@ -890,8 +894,10 @@ function bindInteractions(): void {
     } else if (action === 'calendar-today') {
       dispatchAction({ type: 'calendar.today' });
     } else if (action === 'source-refresh') {
-      const reason = refreshReasonForAction(action);
-      if (reason) void refreshFromSource(reason);
+      void executeSourceRefreshAction({
+        dispatch: (input) => dispatchAction(input),
+        refresh: refreshFromSource,
+      });
     }
   });
   root.addEventListener('dragover', (event) => {

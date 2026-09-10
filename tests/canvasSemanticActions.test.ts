@@ -29,8 +29,8 @@ async function dispatcherWithCanvas(
 
 describe('Stage 6 slice 4 Canvas semantic action seam', () => {
   it('versions and classifies Canvas selection separately from eventual record mutations', () => {
-    expect(ACTION_SCHEMA_VERSION).toBe(3);
-    expect(ACTION_TAXONOMY_VERSION).toBe(3);
+    expect(ACTION_SCHEMA_VERSION).toBe(4);
+    expect(ACTION_TAXONOMY_VERSION).toBe(4);
 
     expect(categoryOf('canvas.node.select')).toBe('local-state');
     expect(categoryOf('canvas.node.geometry.change'))

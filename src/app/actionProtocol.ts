@@ -17,7 +17,7 @@ import {
 export type { ActionCategory, ActionErrorCode, ActionOutcome } from './actionTaxonomy.js';
 
 /** The wire/schema version for project-owned semantic actions. */
-export const ACTION_SCHEMA_VERSION = 3 as const;
+export const ACTION_SCHEMA_VERSION = 4 as const;
 
 export type Surface = 'tasks' | 'schedule' | 'projects' | 'canvas';
 export type TasksMode = 'elastic' | 'timekeeping';
@@ -41,6 +41,7 @@ export type ProximaAction =
   | { type: 'project.restore'; projectId: string }
   | { type: 'project.delete'; projectId: string }
   | { type: 'surface.select'; surface: Surface }
+  | { type: 'source.refresh' }
   | { type: 'canvas.node.select'; nodeId: string | null }
   | { type: 'canvas.node.geometry.change'; nodeId: string; operation: CanvasGeometryActionOperation; proposedX: number; proposedY: number; proposedWidth: number; proposedHeight: number }
   | { type: 'canvas.node.remove'; nodeId: string }
@@ -300,6 +301,10 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
             field: 'surface',
           },
         };
+  }
+
+  if (input.type === 'source.refresh') {
+    return { ok: true, action: { type: input.type } };
   }
 
   if (input.type === 'canvas.node.select') {
@@ -1083,6 +1088,16 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
           state.stateRevision += 1;
         }
         return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'source.refresh') {
+        return settleLocalAction(
+          state,
+          ring,
+          action.type,
+          false,
+          requestId,
+        );
       }
 
       if (action.type === 'canvas.node.select') {

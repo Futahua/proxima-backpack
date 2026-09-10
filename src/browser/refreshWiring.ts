@@ -29,7 +29,3 @@ export function bindRefreshWiring(options: RefreshWiringOptions): () => void {
     options.windowTarget.removeEventListener?.('focus', onFocus);
   };
 }
-
-export function refreshReasonForAction(action: string | undefined): Extract<RefreshReason, 'manual'> | null {
-  return action === 'source-refresh' ? 'manual' : null;
-}
