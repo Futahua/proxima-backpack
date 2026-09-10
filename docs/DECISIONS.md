@@ -995,3 +995,25 @@ confirmation is implied.
 writes require both an explicit enrollment flow and the stronger native transaction
 primitive required by D51; until then, the safe autonomous behavior is bounded reads,
 refresh, coexistence observation and fail-visible refusal of writes.
+
+---
+
+## D53 — Unsupported-but-recognized frontmatter is generation-acceptable
+
+**Decided:** `unsupported-frontmatter` means the parser recognized a YAML construct
+outside Proxima's interpreted subset and deliberately left the affected key unset. It
+is a warning, not a generation-rejection condition, both on initial load and on
+refresh. `frontmatter-parse-failure` remains a distinct refresh-blocking condition.
+
+**Why:** identical vault bytes must not be acceptable at startup and then become
+unacceptable solely because they were encountered during refresh. The parser already
+protects interpretation by refusing to guess, preserving the raw frontmatter and
+reporting the unsupported construct. Rejecting the whole refreshed generation would
+also discard unrelated supported edits even though the unsupported region was handled
+exactly as it was during initial load.
+
+**Boundary:** acceptance does not make the unsupported value understood and does not
+license serialization from the lossy interpreted projection. The affected key remains
+unset/defaulted exactly as before, the structured warning remains visible, and the D7
+source-preservation requirements still govern any later writer. In the current
+record-store-precutover build, all eventual mutation paths remain unavailable.

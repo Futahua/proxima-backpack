@@ -213,6 +213,17 @@ why.
 Parsing continues after an unsupported construct: one bad key does not cost the rest of
 the file.
 
+`unsupported-frontmatter` is warning-bearing but generation-acceptable. A recognized
+construct outside Proxima's interpreted subset leaves that key unset and remains visible
+as a structured problem, but the same bytes are accepted both on initial load and on
+a later refresh. A refresh is not rejected merely because it contains an unsupported
+construct that the reader already knows how to leave safely uninterpreted.
+
+`frontmatter-parse-failure` is deliberately different: it means the supported grammar
+could not safely parse the affected syntax. Initial loading remains fail-visible and
+non-writing, while refresh retains the previously accepted generation and reports
+`malformed` rather than accepting that parser failure as a new generation.
+
 Double-quoted strings deliberately support only `\"`, `\\`, `\n`, and `\t`. YAML's
 Unicode/hex escapes and any invalid escape are reported rather than partly decoded.
 For example, `"caf\u00e9"`, `"bad\q"`, and `"C:\Users\Ana"` are left unset with an
@@ -299,7 +310,8 @@ Nothing is dropped quietly. A record either enters state or a problem says why n
 | `duplicate-id` | error | a second record claimed an id already taken |
 | `ignored-file` | warning | Markdown sat where records are not read from |
 | `unexpected-type` | warning | a file in `projects/` declared it is not a project |
-| `unsupported-frontmatter` | warning | YAML outside the subset; the key was left unset |
+| `frontmatter-parse-failure` | warning | the supported grammar could not safely parse the affected syntax; the key was left unset and a refreshed generation is not accepted |
+| `unsupported-frontmatter` | warning | recognized YAML outside the interpreted subset; the key is left unset and the generation remains usable |
 | `bad-date` | warning | a date field could not be interpreted |
 | `bad-number` | warning | a numeric field was unreadable or out of range |
 | `bad-boolean` | warning | a boolean field held something else |

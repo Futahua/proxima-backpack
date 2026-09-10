@@ -71,20 +71,21 @@ function classify(previous: LoadResult, next: LoadResult): RefreshOutcome {
   return 'unchanged';
 }
 
+function isFrontmatterParseFailure(problem: LoadProblem): boolean {
+  return problem.code === 'frontmatter-parse-failure';
+}
+
 function refreshFailureOutcome(problems: LoadProblem[]): 'unreadable' | 'malformed' | null {
-  const failure = problems.find((problem) => isBlocking(problem) || isFrontmatterRefreshFailure(problem));
+  const failure = problems.find(
+    (problem) => isBlocking(problem) || isFrontmatterParseFailure(problem),
+  );
   if (!failure) return null;
   return failure.code === 'unreadable' || failure.code === 'directory-unreadable' ? 'unreadable' : 'malformed';
 }
 
-function isFrontmatterRefreshFailure(problem: LoadProblem): boolean {
-  return problem.code === 'frontmatter-parse-failure'
-    || problem.code === 'unsupported-frontmatter';
-}
-
 function refreshFailureCode(problems: LoadProblem[]): SourceDiagnosticCode {
   return problems.find(isBlocking)?.code
-    ?? problems.find(isFrontmatterRefreshFailure)?.code
+    ?? problems.find(isFrontmatterParseFailure)?.code
     ?? 'refresh-failed';
 }
 
