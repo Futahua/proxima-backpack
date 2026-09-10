@@ -39,6 +39,7 @@ import { projectPresentation } from './projectPresentation.js';
 import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter } from './projectsHub.js';
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
+import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
@@ -66,6 +67,7 @@ let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let projectsHubFilter: ProjectsHubFilter = 'active';
 let projectCreateOpen = false;
 let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_VIEW;
+let projectBacklogView: ProjectBacklogViewState = EMPTY_PROJECT_BACKLOG_VIEW;
 let projectNotesView: ProjectNotesViewState = EMPTY_PROJECT_NOTES_VIEW;
 let projectNotesTreeRequestKey: string | null = null;
 let projectNotesPreviewRequestKey: string | null = null;
@@ -304,7 +306,7 @@ function selectProjectNote(path: string): void {
 }
 function projectsHubSurface(state: ProximaState): string {
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectBacklog: projectBacklogView });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -572,6 +574,14 @@ function bindInteractions(): void {
     previewMove: ({ taskId, targetStatus, targetIndex }) => { projectTaskBoardView = { ...projectTaskBoardView, projectId: selection, dragTaskId: taskId, dragTargetStatus: targetStatus, dragTargetIndex: targetIndex }; },
     refuseMove: (intent) => { projectTaskBoardView = { ...projectTaskBoardView, projectId: selection, dragTaskId: null, dragTargetStatus: null, dragTargetIndex: null, writeRefusal: PROJECT_TASK_BOARD_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
     clearDrag: () => { projectTaskBoardView = { ...projectTaskBoardView, dragTaskId: null, dragTargetStatus: null, dragTargetIndex: null }; },
+  });
+  bindProjectBacklogInteractions(root, {
+    openTask: (taskId) => { const task = appState?.tasks.find((candidate) => candidate.id === taskId && candidate.projectId === selection); if (!task) return; projectBacklogView = { ...EMPTY_PROJECT_BACKLOG_VIEW, projectId: selection, selectedTaskId: taskId }; render(); },
+    closeTask: () => { projectBacklogView = { ...projectBacklogView, selectedTaskId: null }; render(); },
+    startDrag: (taskId) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: taskId, dragTargetIndex: null, writeRefusal: null, lastRefusedMove: null }; },
+    previewMove: ({ taskId, targetIndex }) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: taskId, dragTargetIndex: targetIndex }; },
+    refuseMove: (intent) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: null, dragTargetIndex: null, writeRefusal: PROJECT_BACKLOG_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
+    clearDrag: () => { projectBacklogView = { ...projectBacklogView, dragTaskId: null, dragTargetIndex: null }; },
   });
   bindProjectNotesInteractions(root, {
     toggleFolder: (path) => { const expanded = new Set(projectNotesView.expandedPaths); if (expanded.has(path)) expanded.delete(path); else expanded.add(path); projectNotesView = { ...projectNotesView, expandedPaths: [...expanded].sort() }; render(); },
