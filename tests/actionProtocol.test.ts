@@ -174,6 +174,17 @@ describe('Gate 3A semantic action protocol', () => {
     expect(isActionResult(dispatcher.dispatch({ type: 'calendar.shift-month', delta: -1 }))).toBe(true);
   });
 
+  it('opens a project workspace through local project selection without changing fixture bytes', async () => {
+    const vault = fixtureVault('vault-basic');
+    const loaded = await loadVaultState(vault);
+    const before = await vaultByteHash(vault);
+    const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture', initialSurface: 'projects', clock: fixedClock('2026-09-06T12:00:00.000Z') });
+    const result = dispatcher.dispatch({ type: 'project.select', projectId: 'proj-backpack' });
+    expect(result).toMatchObject({ ok: true, category: 'local-state', outcome: 'accepted', entityIds: ['proj-backpack'], snapshot: { surface: 'projects', selection: 'proj-backpack', projectWorkspaceTab: 'notes' } });
+    expect(isActionResult(result)).toBe(true);
+    expect(await vaultByteHash(vault)).toBe(before);
+  });
+
   it('does not turn an unknown project id into an all-projects action', async () => {
     const dispatcher = await fixtureDispatcher();
     expect(dispatcher.dispatch({ type: 'project.select', projectId: 'not-a-project' })).toMatchObject({ ok: false, error: { code: 'project-not-found', field: 'projectId' }, stateRevision: 1 });

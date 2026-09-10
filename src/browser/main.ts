@@ -35,6 +35,7 @@ import { scheduleNavigationDateKey, type ScheduleNavigationDirection } from './s
 import { scheduleEventsForSelection } from './scheduleSelection.js';
 import { bindScheduleRecurrenceInteractions, type ScheduleRecurrenceScope, type ScheduleRecurringOccurrenceSelection } from './scheduleRecurrence.js';
 import { projectPresentation } from './projectPresentation.js';
+import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter } from './projectsHub.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
@@ -59,6 +60,7 @@ let selectedScheduleRecurringOccurrence: ScheduleRecurringOccurrenceSelection | 
 let selectedScheduleRecurringScope: ScheduleRecurrenceScope | null = null;
 let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
+let projectsHubFilter: ProjectsHubFilter = 'active';
 let scheduleCursor = new Date(FIXED_CLOCK.now());
 let calendarCursor = new Date(FIXED_CLOCK.now());
 let elasticTargetTime = new Date(FIXED_CLOCK.now() + 4 * 60 * 60 * 1000).toISOString();
@@ -269,17 +271,8 @@ function scheduleTimeGridSurface(
 }
 
 function projectsHubSurface(state: ProximaState): string {
-  const project = state.projects.find((candidate) => candidate.id === selection);
-  const workspaceLabels: Record<ProjectWorkspaceTab, string> = {
-    notes: 'Notes',
-    'task-board': 'Task Board',
-    backlog: 'Backlog',
-    deadlines: 'Deadlines',
-    schedule: 'Schedule',
-  };
-  const selectedLabel = project ? project.name : selection === UNCATEGORISED ? 'Uncategorised' : 'All projects';
-
-  return `<section class="surface" data-c1-key="projects-hub-region" aria-label="Projects Hub"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectedLabel)}</p><h2>Projects Hub</h2><p class="surface-description">Project workspace and working artifacts.</p></div><span class="surface-count">${state.projects.length} projects</span></header><section data-c1-key="project-workspace-${escapeHtml(projectWorkspaceTab)}"><h3>${escapeHtml(workspaceLabels[projectWorkspaceTab])}</h3></section></section>`;
+  const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -531,6 +524,11 @@ function bindInteractions(): void {
     },
   });
 
+  bindProjectsHubInteractions(root, {
+    setFilter: (filter) => { projectsHubFilter = filter; render(); },
+    openProject: (projectId) => { dispatchAction({ type: 'project.select', projectId }); },
+    showHub: () => { dispatchAction({ type: 'project.select', projectId: ALL_PROJECTS }); },
+  });
   bindScheduleRecurrenceInteractions(root, {
     openOccurrence: (occurrence) => {
       selectedScheduleEventId = null;
