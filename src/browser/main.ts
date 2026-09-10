@@ -31,6 +31,7 @@ import { boardElasticPresentation, type DeadlineState } from './boardElasticPres
 import { bindElasticCockpitInteractions, renderElasticCockpit, shouldTickElasticProgress } from './elasticCockpit.js';
 import { calendarGridDates } from './calendarGrid.js';
 import { bindTimekeepingCockpitInteractions, renderTimekeepingCockpit, startTimekeepingCountdownTicker } from './timekeepingCockpit.js';
+import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid, startScheduleTimeTicker, type ScheduleTimeGridMode } from './scheduleTimeGrid.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
@@ -50,6 +51,7 @@ let timekeepingPanels: TimekeepingPanelVisibility = {
   timeline: false,
   countdowns: false,
 };
+let selectedScheduleEventId: string | null = null;
 let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let calendarCursor = new Date(FIXED_CLOCK.now());
@@ -218,15 +220,35 @@ function timekeepingSurface(state: ProximaState, lookup: Map<string, string>): s
   });
 }
 
-function scheduleShellSurface(mode: ScheduleMode): string {
-  const labels: Record<Exclude<ScheduleMode, 'month'>, string> = {
-    day: 'Day',
-    'four-day': '4-Day',
-    week: 'Week',
+function scheduleTimeGridSurface(
+  mode: ScheduleTimeGridMode,
+  state: ProximaState,
+  lookup: Map<string, string>,
+): string {
+  const now = currentSourceMode() === 'external'
+    ? new Date()
+    : new Date(FIXED_CLOCK.now());
+
+  return renderScheduleTimeGrid({
+    mode,
+    events: state.events,
+    projectNames: lookup,
+    selectionLabel: selectionLabel(appState!, selection),
+    calendarCursor,
+    now,
+    selectedEventId: selectedScheduleEventId,
+  });
+}
+
+function scheduleShellSurface(
+  mode: 'year' | 'agenda',
+): string {
+  const labels: Record<'year' | 'agenda', string> = {
     year: 'Year',
     agenda: 'Agenda',
   };
-  const label = labels[mode as Exclude<ScheduleMode, 'month'>];
+  const label = labels[mode];
+
   return `<section class="surface calendar-surface" data-c1-key="schedule-${escapeHtml(mode)}-region" aria-label="${escapeHtml(label)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(appState!, selection))}</p><h2>${escapeHtml(label)}</h2><p class="surface-description">Schedule workspace.</p></div></header></section>`;
 }
 
@@ -354,9 +376,23 @@ function render(): void {
         : timekeepingSurface(currentState, projectNames);
     }
     if (surface === 'schedule') {
-      return scheduleMode === 'month'
-        ? calendarSurface(currentState, problems, projectNames)
-        : scheduleShellSurface(scheduleMode);
+      if (scheduleMode === 'month') {
+        return calendarSurface(currentState, problems, projectNames);
+      }
+
+      if (
+        scheduleMode === 'day'
+        || scheduleMode === 'four-day'
+        || scheduleMode === 'week'
+      ) {
+        return scheduleTimeGridSurface(
+          scheduleMode,
+          currentState,
+          projectNames,
+        );
+      }
+
+      return scheduleShellSurface(scheduleMode);
     }
     if (surface === 'projects') {
       return projectsHubSurface(currentState);
@@ -478,6 +514,17 @@ function bindInteractions(): void {
     },
   });
 
+  bindScheduleTimeGridInteractions(root, {
+    openEvent: (eventId) => {
+      selectedScheduleEventId = eventId;
+      render();
+    },
+    closeEvent: () => {
+      selectedScheduleEventId = null;
+      render();
+    },
+  });
+
   bindTimekeepingCockpitInteractions(root, {
     openTask: (taskId) => {
       elasticSelectedTaskId = taskId;
@@ -518,6 +565,14 @@ function bindInteractions(): void {
   startTimekeepingCountdownTicker(root, () => {
     render();
   });
+
+  startScheduleTimeTicker(
+    root,
+    () => currentSourceMode() === 'external',
+    () => {
+      render();
+    },
+  );
   root.addEventListener('click', (event) => {
     const button = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (!button || !appState) return;
