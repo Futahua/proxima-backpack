@@ -17,7 +17,7 @@ import {
 export type { ActionCategory, ActionErrorCode, ActionOutcome } from './actionTaxonomy.js';
 
 /** The wire/schema version for project-owned semantic actions. */
-export const ACTION_SCHEMA_VERSION = 2 as const;
+export const ACTION_SCHEMA_VERSION = 3 as const;
 
 export type Surface = 'tasks' | 'schedule' | 'projects' | 'canvas';
 export type TasksMode = 'elastic' | 'timekeeping';
@@ -25,6 +25,7 @@ export type TimekeepingPanel = 'calendar' | 'timeline' | 'countdowns';
 export type TimekeepingPanelVisibility = Record<TimekeepingPanel, boolean>;
 export type TimelineChangeOperation = 'move' | 'resize-start' | 'resize-end';
 export type ScheduleChangeOperation = 'move' | 'resize-end';
+export type CanvasGeometryActionOperation = 'move' | 'resize';
 export type ScheduleMode = 'day' | 'four-day' | 'week' | 'month' | 'year' | 'agenda';
 export type ProjectWorkspaceTab = 'notes' | 'task-board' | 'backlog' | 'deadlines' | 'schedule';
 
@@ -40,6 +41,9 @@ export type ProximaAction =
   | { type: 'project.restore'; projectId: string }
   | { type: 'project.delete'; projectId: string }
   | { type: 'surface.select'; surface: Surface }
+  | { type: 'canvas.node.select'; nodeId: string | null }
+  | { type: 'canvas.node.geometry.change'; nodeId: string; operation: CanvasGeometryActionOperation; proposedX: number; proposedY: number; proposedWidth: number; proposedHeight: number }
+  | { type: 'canvas.node.remove'; nodeId: string }
   | { type: 'tasks.mode.select'; mode: TasksMode }
   | { type: 'timekeeping.panel.set-visible'; panel: TimekeepingPanel; visible: boolean }
   | { type: 'task.timeline.change'; taskId: string; operation: TimelineChangeOperation; proposedStartDate: string | null; proposedDeadline: string | null; targetRowIndex: number }
@@ -84,6 +88,7 @@ export interface ActionSnapshot {
   calendarMonth: string;
   elasticTargetTime: string;
   elasticLockedAt: string | null;
+  canvasSelectedNodeId: string | null;
 }
 
 export interface ActionSuccess {
@@ -132,6 +137,7 @@ export interface ActionDispatcherState {
   calendarMonth: string;
   elasticTargetTime: string;
   elasticLockedAt: string | null;
+  canvasSelectedNodeId: string | null;
   stateRevision: number;
   settledRevision: number;
   settled: boolean;
@@ -157,6 +163,8 @@ export interface ActionDispatcherOptions {
   idGenerator?: IdGenerator;
   eventCapacity?: number;
   initialSourceRevision?: number;
+  /** Read-only inventory query supplied by the Canvas owner; never grants mutation authority. */
+  canvasNodeExists?: (nodeId: string) => boolean;
 }
 
 export interface ProximaActionDispatcher {
@@ -174,6 +182,21 @@ export interface ProximaActionDispatcher {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function isBoundedCanvasNodeId(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 200;
+}
+function isFiniteCanvasNumber(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): value is number {
+  return typeof value === 'number'
+    && Number.isFinite(value)
+    && value >= minimum
+    && value <= maximum;
 }
 
 function invalidAction(message: string, field?: string, requestId = 'request-invalid'): ActionFailure {
@@ -277,6 +300,64 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
             field: 'surface',
           },
         };
+  }
+
+  if (input.type === 'canvas.node.select') {
+    if (input.nodeId === null) {
+      return { ok: true, action: { type: input.type, nodeId: null } };
+    }
+    return isBoundedCanvasNodeId(input.nodeId)
+      ? { ok: true, action: { type: input.type, nodeId: input.nodeId } }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'canvas node selection requires null or a non-empty bounded nodeId',
+            field: 'nodeId',
+          },
+        };
+  }
+  if (input.type === 'canvas.node.remove') {
+    return isBoundedCanvasNodeId(input.nodeId)
+      ? { ok: true, action: { type: input.type, nodeId: input.nodeId } }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'canvas node removal requires a non-empty bounded nodeId',
+            field: 'nodeId',
+          },
+        };
+  }
+  if (input.type === 'canvas.node.geometry.change') {
+    if (
+      !isBoundedCanvasNodeId(input.nodeId)
+      || (input.operation !== 'move' && input.operation !== 'resize')
+      || !isFiniteCanvasNumber(input.proposedX, -100_000, 100_000)
+      || !isFiniteCanvasNumber(input.proposedY, -100_000, 100_000)
+      || !isFiniteCanvasNumber(input.proposedWidth, 160, 1_600)
+      || !isFiniteCanvasNumber(input.proposedHeight, 120, 1_200)
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'canvas geometry change requires a bounded nodeId, move or resize operation, bounded position and bounded dimensions',
+        },
+      };
+    }
+    return {
+      ok: true,
+      action: {
+        type: input.type,
+        nodeId: input.nodeId,
+        operation: input.operation,
+        proposedX: input.proposedX,
+        proposedY: input.proposedY,
+        proposedWidth: input.proposedWidth,
+        proposedHeight: input.proposedHeight,
+      },
+    };
   }
 
   if (input.type === 'tasks.mode.select') {
@@ -665,6 +746,7 @@ function snapshot(state: ActionDispatcherState): ActionSnapshot {
     calendarMonth: state.calendarMonth,
     elasticTargetTime: state.elasticTargetTime,
     elasticLockedAt: state.elasticLockedAt,
+    canvasSelectedNodeId: state.canvasSelectedNodeId,
   };
 }
 
@@ -845,6 +927,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
   const clock = options.clock ?? systemClock;
   const ids = options.idGenerator ?? randomIdGenerator();
   const ring = createEventRing({ clock, ids, capacity: options.eventCapacity });
+  const canvasNodeExists = options.canvasNodeExists;
 
   const state: ActionDispatcherState = {
     state: options.state,
@@ -868,6 +951,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     elasticLockedAt: isCanonicalInstant(options.initialElasticLockedAt)
       ? options.initialElasticLockedAt
       : null,
+    canvasSelectedNodeId: null,
     stateRevision: 1,
     settledRevision: 1,
     settled: true,
@@ -999,6 +1083,84 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
           state.stateRevision += 1;
         }
         return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'canvas.node.select') {
+        if (action.nodeId === null) {
+          const changed = state.canvasSelectedNodeId !== null;
+          if (changed) {
+            state.canvasSelectedNodeId = null;
+            state.stateRevision += 1;
+          }
+          return settleLocalAction(state, ring, action.type, changed, requestId);
+        }
+
+        if (canvasNodeExists === undefined) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'action-not-available',
+              message: 'canvas node inventory is unavailable to the semantic action dispatcher',
+              field: 'nodeId',
+            },
+            requestId,
+            [action.nodeId],
+          );
+        }
+
+        if (!canvasNodeExists(action.nodeId)) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'record-not-found',
+              message: `canvas node does not exist: ${action.nodeId}`,
+              field: 'nodeId',
+            },
+            requestId,
+            [action.nodeId],
+          );
+        }
+
+        const changed = state.canvasSelectedNodeId !== action.nodeId;
+        if (changed) {
+          state.canvasSelectedNodeId = action.nodeId;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId, [action.nodeId]);
+      }
+
+      if (action.type === 'canvas.node.geometry.change' || action.type === 'canvas.node.remove') {
+        if (canvasNodeExists !== undefined && !canvasNodeExists(action.nodeId)) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'record-not-found',
+              message: `canvas node does not exist: ${action.nodeId}`,
+              field: 'nodeId',
+            },
+            requestId,
+            [action.nodeId],
+          );
+        }
+        return rejectAction(
+          state,
+          ring,
+          action.type,
+          {
+            code: 'action-not-available',
+              message: action.type === 'canvas.node.geometry.change'
+                ? 'canvas geometry mutation is unavailable until record-store cutover'
+                : 'canvas node removal is unavailable until record-store cutover',
+          },
+          requestId,
+          [action.nodeId],
+        );
       }
 
       if (action.type === 'tasks.mode.select') {
@@ -1345,7 +1507,8 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         || state.projectWorkspaceTab !== 'notes'
         || state.calendarMonth !== '2026-09-01'
         || state.elasticTargetTime !== resetElasticTarget
-        || state.elasticLockedAt !== null;
+        || state.elasticLockedAt !== null
+        || state.canvasSelectedNodeId !== null;
 
       state.surface = 'tasks';
       state.selection = ALL_PROJECTS;
@@ -1357,6 +1520,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
       state.calendarMonth = '2026-09-01';
       state.elasticTargetTime = resetElasticTarget;
       state.elasticLockedAt = null;
+      state.canvasSelectedNodeId = null;
 
       if (changed) {
         state.stateRevision += 1;
@@ -1527,8 +1691,9 @@ export function isActionResult(value: unknown): value is ActionResult {
       )
       && typeof snapshotValue.calendarMonth === 'string'
       && isValidCalendarMonth(snapshotValue.calendarMonth)
-      && isCanonicalInstant(snapshotValue.elasticTargetTime)
-      && (snapshotValue.elasticLockedAt === null || isCanonicalInstant(snapshotValue.elasticLockedAt));
+       && isCanonicalInstant(snapshotValue.elasticTargetTime)
+       && (snapshotValue.elasticLockedAt === null || isCanonicalInstant(snapshotValue.elasticLockedAt))
+       && (snapshotValue.canvasSelectedNodeId === null || isBoundedCanvasNodeId(snapshotValue.canvasSelectedNodeId));
   }
 
   const errorValue = value.error;

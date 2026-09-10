@@ -7,7 +7,7 @@ import type { ActionDispatcherState, ProjectWorkspaceTab, ScheduleMode, Surface,
 import { sourceProvenance, type ReadOnlyProjectionHealth, type RecordProvenance } from './readOnlyProjection.js';
 import { createUiHealthModel, type UiHealthModel } from './uiHealth.js';
 
-export const INSPECTION_SCHEMA_VERSION = 3 as const;
+export const INSPECTION_SCHEMA_VERSION = 4 as const;
 export const MAX_INSPECTION_ITEMS = 500;
 export const MAX_INSPECTION_TEXT = 400;
 
@@ -41,6 +41,7 @@ export interface InspectionProjection {
     calendarMonth: string;
     elasticTargetTime: string;
     elasticLockedAt: string | null;
+    canvasSelectedNodeId: string | null;
   };
   projects: Array<{ id: string; name: string; projectType: 'task' | 'schedule'; status: string; provenance: RecordProvenance }>;
   board: { counts: { backlog: number; running: number; finished: number }; tasks: Array<{ id: string; name: string; projectId: string | null; column: string; deadline: string | null; durationMinutes: number | null; provenance: RecordProvenance }> };
@@ -156,6 +157,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
       calendarMonth: dispatcher.calendarMonth,
       elasticTargetTime: dispatcher.elasticTargetTime,
       elasticLockedAt: dispatcher.elasticLockedAt,
+      canvasSelectedNodeId: dispatcher.canvasSelectedNodeId,
     },
     projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), projectType: project.projectType, status: project.status, provenance: sourceProvenance(project) })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
     board: { counts: { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length }, tasks: taskSummaries.slice(0, MAX_INSPECTION_ITEMS).map((task) => ({ ...task, id: safeText(task.id), name: safeText(task.name), provenance: { ...task.provenance, logicalId: safeText(task.provenance.logicalId), sourceRevision: safeText(task.provenance.sourceRevision) } })) },
@@ -239,6 +241,14 @@ export function isInspectionProjection(value: unknown): value is InspectionProje
       || (
         typeof candidate.localState.elasticLockedAt === 'string'
         && Number.isFinite(Date.parse(candidate.localState.elasticLockedAt))
+      )
+    )
+    && (
+      candidate.localState.canvasSelectedNodeId === null
+      || (
+        typeof candidate.localState.canvasSelectedNodeId === 'string'
+        && candidate.localState.canvasSelectedNodeId.length > 0
+        && candidate.localState.canvasSelectedNodeId.length <= 200
       )
     )
     && Array.isArray(candidate.projects)

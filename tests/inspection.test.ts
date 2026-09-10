@@ -24,7 +24,7 @@ describe('Gate 3A inspection projection', () => {
 
     expect(isInspectionProjection(projection)).toBe(true);
     expect(projection).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       mode: 'fixture',
       applicationStateRevision: 1,
       surface: 'tasks',
@@ -125,9 +125,15 @@ describe('Gate 3A inspection projection', () => {
     expect(projection.applicationStateRevision).toBe(state.stateRevision);
   });
 
-  it('accepts canvas inspection and rejects dishonest pending or mutation state', async () => {
+  it('accepts semantic canvas selection in inspection and rejects dishonest pending or mutation state', async () => {
     const loaded = await loadVaultState(fixtureVault('vault-basic'));
-    const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture' });
+    const dispatcher = createActionDispatcher({
+      state: loaded.state,
+      problems: loaded.problems,
+      revisions: loaded.revisions,
+      mode: 'fixture',
+      canvasNodeExists: (nodeId) => nodeId === 'canvas-node-0001',
+    });
 
     expect(dispatcher.dispatch({ type: 'surface.select', surface: 'canvas' })).toMatchObject({
       ok: true,
@@ -136,10 +142,30 @@ describe('Gate 3A inspection projection', () => {
       },
     });
 
+    expect(dispatcher.dispatch({
+      type: 'canvas.node.select',
+      nodeId: 'canvas-node-0001',
+    })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      entityIds: ['canvas-node-0001'],
+      snapshot: {
+        canvasSelectedNodeId: 'canvas-node-0001',
+      },
+    });
+
     const projection = createInspectionProjection(dispatcher.snapshot(), build);
 
     expect(projection.surface).toBe('canvas');
+    expect(projection.localState.canvasSelectedNodeId).toBe('canvas-node-0001');
     expect(isInspectionProjection(projection)).toBe(true);
+    expect(isInspectionProjection({
+      ...projection,
+      localState: {
+        ...projection.localState,
+        canvasSelectedNodeId: 123,
+      },
+    })).toBe(false);
     expect(isInspectionProjection({
       ...projection,
       pendingOperations: [],

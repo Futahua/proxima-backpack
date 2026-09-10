@@ -477,6 +477,12 @@ function dispatchAction(input: unknown): ActionResult | null {
     calendarCursor = new Date(`${next.calendarMonth}T00:00:00`);
     elasticTargetTime = next.elasticTargetTime;
     elasticLockedAt = next.elasticLockedAt;
+    if (canvasView.selectedNodeId !== next.canvasSelectedNodeId) {
+      canvasView = {
+        ...EMPTY_CANVAS_SURFACE_VIEW,
+        selectedNodeId: next.canvasSelectedNodeId,
+      };
+    }
     render();
   } else {
     setText('#boot-status', `Action failed: ${result.error.code}`);
@@ -531,16 +537,28 @@ function bindInteractions(): void {
   root.dataset.interactionsBound = 'true';
   bindCanvasSurfaceInteractions(root, {
     openNode: (nodeId) => {
-      if (!canvasState.items.some((item) => item.node.id === nodeId)) return;
-      canvasView = { selectedNodeId: nodeId };
-      render();
+      dispatchAction({ type: 'canvas.node.select', nodeId });
     },
     closeNode: () => {
-      canvasView = EMPTY_CANVAS_SURFACE_VIEW;
-      render();
+      dispatchAction({ type: 'canvas.node.select', nodeId: null });
     },
     refuseGeometry: (intent) => {
-      if (!canvasState.items.some((item) => item.node.id === intent.nodeId)) return;
+      const selected = dispatchAction({
+        type: 'canvas.node.select',
+        nodeId: intent.nodeId,
+      });
+      if (!selected?.ok) return;
+
+      const result = dispatchAction({
+        type: 'canvas.node.geometry.change',
+        nodeId: intent.nodeId,
+        operation: intent.kind,
+        proposedX: intent.proposed.x,
+        proposedY: intent.proposed.y,
+        proposedWidth: intent.proposed.width,
+        proposedHeight: intent.proposed.height,
+      });
+      if (!result || result.ok || result.error.code !== CANVAS_SURFACE_WRITE_REFUSAL) return;
       canvasView = {
         ...EMPTY_CANVAS_SURFACE_VIEW,
         selectedNodeId: intent.nodeId,
@@ -577,7 +595,8 @@ function bindInteractions(): void {
       render();
     },
     refuseRemove: (nodeId) => {
-      if (!canvasState.items.some((item) => item.node.id === nodeId)) return;
+      const result = dispatchAction({ type: 'canvas.node.remove', nodeId });
+      if (!result || result.ok || result.error.code !== CANVAS_SURFACE_WRITE_REFUSAL) return;
       canvasView = {
         ...EMPTY_CANVAS_SURFACE_VIEW,
         selectedNodeId: nodeId,
@@ -904,7 +923,7 @@ async function boot(): Promise<void> {
   sourceSession = started.session;
   startupInspection = started.inspection;
   applyProjection(sourceSession.projection(), sourceSession.snapshot().sourceMode);
-  actionDispatcher = createActionDispatcher({ state: appState!, problems: loadProblems, revisions: sourceProjection!.revisions, mode: sourceSession.snapshot().sourceMode === 'external' ? 'live' : 'fixture', initialSourceRevision: sourceProjection!.generation, initialCalendarMonth: '2026-09-01', clock: sourceSession.snapshot().sourceMode === 'external' ? systemClock : FIXED_CLOCK, idGenerator: DETERMINISTIC_IDS });
+  actionDispatcher = createActionDispatcher({ state: appState!, problems: loadProblems, revisions: sourceProjection!.revisions, mode: sourceSession.snapshot().sourceMode === 'external' ? 'live' : 'fixture', initialSourceRevision: sourceProjection!.generation, initialCalendarMonth: '2026-09-01', clock: sourceSession.snapshot().sourceMode === 'external' ? systemClock : FIXED_CLOCK, idGenerator: DETERMINISTIC_IDS, canvasNodeExists: (nodeId) => canvasState.items.some((item) => item.node.id === nodeId) });
   const initial = actionDispatcher.snapshot();
   selection = initial.selection;
   surface = initial.surface;
