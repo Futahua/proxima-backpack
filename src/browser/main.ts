@@ -21,7 +21,7 @@ import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
 import { bindRefreshWiring, refreshReasonForAction } from './refreshWiring.js';
 import { createBrowserSource } from './sourceFactory.js';
-import { bindCanvasSurfaceInteractions, createCanvasDropQueue, EMPTY_CANVAS_SURFACE, EMPTY_CANVAS_SURFACE_VIEW, renderCanvasSurface, type CanvasSurfaceState, type CanvasSurfaceViewState } from './canvasSurface.js';
+import { bindCanvasSurfaceInteractions, CANVAS_SURFACE_WRITE_REFUSAL, createCanvasDropQueue, EMPTY_CANVAS_SURFACE, EMPTY_CANVAS_SURFACE_VIEW, renderCanvasSurface, type CanvasSurfaceState, type CanvasSurfaceViewState } from './canvasSurface.js';
 import type { BrowserFileLike } from './canvasFileAdmission.js';
 import { createCanvasPreviewRegistry, disposeCanvasPreviewsOnPageHide } from './canvasPreview.js';
 import { createCanvasExcalidrawPreviewRegistry, disposeCanvasExcalidrawPreviewsOnPageHide } from './canvasExcalidrawPreview.js';
@@ -537,6 +537,20 @@ function bindInteractions(): void {
     },
     closeNode: () => {
       canvasView = EMPTY_CANVAS_SURFACE_VIEW;
+      render();
+    },
+    refuseGeometry: (intent) => {
+      if (!canvasState.items.some((item) => item.node.id === intent.nodeId)) return;
+      canvasView = {
+        ...EMPTY_CANVAS_SURFACE_VIEW,
+        selectedNodeId: intent.nodeId,
+        writeRefusal: CANVAS_SURFACE_WRITE_REFUSAL,
+        lastRefusedGeometry: {
+          nodeId: intent.nodeId,
+          kind: intent.kind,
+          proposed: { ...intent.proposed },
+        },
+      };
       render();
     },
   });

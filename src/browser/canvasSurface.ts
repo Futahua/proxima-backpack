@@ -2,7 +2,7 @@
 
 import type { ActionErrorCode } from '../app/actionProtocol.js';
 import type { IdGenerator } from '../domain/clock.js';
-import type { CanvasNode } from '../domain/canvas.js';
+import type { CanvasLayout, CanvasNode } from '../domain/canvas.js';
 import type { CanvasRepresentationSelection } from '../domain/canvasRenderer.js';
 import { admitCanvasFile, admitCanvasFileForPresentation, type BrowserFileLike, type CanvasFileAdmissionResult } from './canvasFileAdmission.js';
 import type { CanvasPreviewRegistry } from './canvasPreview.js';
@@ -18,18 +18,37 @@ export type CanvasSurfaceWriteRefusal =
 export const CANVAS_SURFACE_WRITE_REFUSAL:
   CanvasSurfaceWriteRefusal = 'action-not-available';
 
+export type CanvasGeometryGestureKind = 'move' | 'resize';
+
+export interface CanvasGeometryRefusal {
+  nodeId: string;
+  kind: CanvasGeometryGestureKind;
+  proposed: CanvasLayout;
+}
+
 export interface CanvasSurfaceViewState {
   selectedNodeId: string | null;
+  writeRefusal?: CanvasSurfaceWriteRefusal | null;
+  lastRefusedGeometry?: CanvasGeometryRefusal | null;
 }
 
 export const EMPTY_CANVAS_SURFACE_VIEW: CanvasSurfaceViewState = {
   selectedNodeId: null,
+  writeRefusal: null,
+  lastRefusedGeometry: null,
 };
 
 export interface CanvasSurfaceHandlers {
   openNode(nodeId: string): void;
   closeNode(): void;
+  refuseGeometry?(intent: CanvasGeometryRefusal): void;
 }
+
+export const CANVAS_MIN_NODE_WIDTH = 160;
+export const CANVAS_MIN_NODE_HEIGHT = 120;
+export const CANVAS_MAX_NODE_WIDTH = 1_600;
+export const CANVAS_MAX_NODE_HEIGHT = 1_200;
+export const CANVAS_MAX_ABS_POSITION = 100_000;
 
 export interface CanvasSurfaceItem {
   node: CanvasNode;
@@ -122,7 +141,7 @@ export function renderCanvasSurface(
     )
     .join('');
 
-  return `<section class="surface canvas-surface" data-c1-key="canvas-region" aria-label="Canvas" data-canvas-write-authority="unavailable"><header class="surface-header"><div><p class="eyebrow">Workspace canvas</p><h2>Canvas</h2><p class="surface-description">Drop files to create passive, one-shot file cards. Select a card to inspect it.</p></div><span class="surface-count">${state.items.length} items</span></header><div class="canvas-drop-zone" data-c1-key="canvas-drop-zone" aria-label="Canvas drop zone">${cards || '<p class="empty-state">Drop a file here.</p>'}</div>${diagnostic}${canvasInspector(state, selectedNodeId)}</section>`;
+  return `<section class="surface canvas-surface" data-c1-key="canvas-region" aria-label="Canvas" data-canvas-write-authority="unavailable"><header class="surface-header"><div><p class="eyebrow">Workspace canvas</p><h2>Canvas</h2><p class="surface-description">Drop files to create passive, one-shot file cards. Select a card to inspect it.</p></div><span class="surface-count">${state.items.length} items</span></header><div class="canvas-drop-zone" data-c1-key="canvas-drop-zone" aria-label="Canvas drop zone">${cards || '<p class="empty-state">Drop a file here.</p>'}</div>${diagnostic}${canvasGeometryRefusal(state, view)}${canvasInspector(state, selectedNodeId)}</section>`;
 }
 
 function canvasCard(
@@ -196,7 +215,24 @@ function canvasCard(
     ? `<span class="canvas-fallback-icon" aria-label="${escapeHtml(icon.label)}">${icon.token}</span>`
     : '';
 
-  return `<article class="canvas-card${selected ? ' selected' : ''}" role="button" tabindex="0" aria-pressed="${selected}" data-canvas-action="open-node" data-c1-key="canvas-card-${escapeHtml(node.id)}" data-canvas-node-id="${escapeHtml(node.id)}" data-canvas-source-kind="${escapeHtml(node.source.kind)}"><header>${iconMarkup}<strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}${escapeHtml(previewFailure)}</span></header>${image}${drawingSvg}${textMarkup}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(sourceState)}${escapeHtml(reason)}</span></footer></article>`;
+  return `<article class="canvas-card${selected ? ' selected' : ''}" role="button" tabindex="0" aria-pressed="${selected}" data-canvas-action="open-node" data-c1-key="canvas-card-${escapeHtml(node.id)}" data-canvas-node-id="${escapeHtml(node.id)}" data-canvas-source-kind="${escapeHtml(node.source.kind)}" data-canvas-layout-x="${node.layout.x}" data-canvas-layout-y="${node.layout.y}" data-canvas-layout-width="${node.layout.width}" data-canvas-layout-height="${node.layout.height}"><header><span class="canvas-move-handle" data-canvas-action="geometry-preview" data-canvas-geometry-handle="move" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-c1-key="canvas-move-${escapeHtml(node.id)}" title="Preview move; write unavailable">⋮⋮</span>${iconMarkup}<strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}${escapeHtml(previewFailure)}</span></header>${image}${drawingSvg}${textMarkup}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(sourceState)}${escapeHtml(reason)}</span></footer><span class="canvas-resize-handle" data-canvas-action="geometry-preview" data-canvas-geometry-handle="resize" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-c1-key="canvas-resize-${escapeHtml(node.id)}" title="Preview resize; write unavailable">↘</span></article>`;
+}
+
+function canvasGeometryRefusal(
+  state: CanvasSurfaceState,
+  view: CanvasSurfaceViewState,
+): string {
+  const refusal = view.lastRefusedGeometry ?? null;
+  if (
+    view.writeRefusal !== CANVAS_SURFACE_WRITE_REFUSAL
+    || refusal === null
+    || !state.items.some((item) => item.node.id === refusal.nodeId)
+  ) {
+    return '';
+  }
+
+  const proposed = refusal.proposed;
+  return `<p class="canvas-geometry-refusal" data-canvas-geometry-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-canvas-geometry-kind="${refusal.kind}" data-canvas-geometry-node-id="${escapeHtml(refusal.nodeId)}" data-c1-key="canvas-geometry-refusal">${refusal.kind === 'move' ? 'Move' : 'Resize'} unavailable until record-store cutover · proposed x ${proposed.x}, y ${proposed.y}, ${proposed.width} × ${proposed.height}. Canvas data was not changed.</p>`;
 }
 
 function canvasInspector(
@@ -222,10 +258,126 @@ function canvasInspector(
   return `<section class="canvas-node-inspector" role="dialog" aria-modal="false" aria-label="Canvas item details" data-canvas-inspector-node-id="${escapeHtml(node.id)}" data-c1-key="canvas-node-inspector"><header><div><small>Canvas item</small><h3>${escapeHtml(selection.filename)}</h3></div><button type="button" class="icon-button" data-canvas-action="close-node" data-c1-key="canvas-node-inspector-close" aria-label="Close canvas item details">×</button></header><dl class="canvas-node-fields">${field('Node ID', node.id)}${field('Representation', selection.kind)}${field('Admission', item.status)}${field('Source kind', node.source.kind)}${field(node.source.kind === 'vault-file' ? 'Source path' : 'Ephemeral source ID', sourceIdentity)}${field('Source state', node.source.state)}${field('Revision', node.source.revision)}${field('Size', node.source.size)}${field('Modified', node.source.modifiedAt)}${field('X', node.layout.x)}${field('Y', node.layout.y)}${field('Width', node.layout.width)}${field('Height', node.layout.height)}</dl><footer><button type="button" disabled aria-disabled="true" data-canvas-write-action="move-resize" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Move / resize unavailable</button><button type="button" disabled aria-disabled="true" data-canvas-write-action="remove" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Remove unavailable</button><small data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Unavailable until record-store cutover</small></footer></section>`;
 }
 
+interface ActiveCanvasGeometryGesture {
+  nodeId: string;
+  kind: CanvasGeometryGestureKind;
+  startX: number;
+  startY: number;
+  original: CanvasLayout;
+  card: HTMLElement;
+}
+
+function finiteDatasetNumber(
+  card: HTMLElement,
+  key: 'canvasLayoutX' | 'canvasLayoutY' | 'canvasLayoutWidth' | 'canvasLayoutHeight',
+): number | null {
+  const value = Number(card.dataset[key]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function layoutFromCard(card: HTMLElement): CanvasLayout | null {
+  const x = finiteDatasetNumber(card, 'canvasLayoutX');
+  const y = finiteDatasetNumber(card, 'canvasLayoutY');
+  const width = finiteDatasetNumber(card, 'canvasLayoutWidth');
+  const height = finiteDatasetNumber(card, 'canvasLayoutHeight');
+
+  if (
+    x === null
+    || y === null
+    || width === null
+    || height === null
+    || width <= 0
+    || height <= 0
+  ) {
+    return null;
+  }
+
+  return { x, y, width, height };
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function proposedCanvasGeometry(
+  gesture: ActiveCanvasGeometryGesture,
+  clientX: number,
+  clientY: number,
+): CanvasLayout {
+  const dx = clientX - gesture.startX;
+  const dy = clientY - gesture.startY;
+
+  if (gesture.kind === 'move') {
+    return {
+      ...gesture.original,
+      x: clamp(
+        gesture.original.x + dx,
+        -CANVAS_MAX_ABS_POSITION,
+        CANVAS_MAX_ABS_POSITION,
+      ),
+      y: clamp(
+        gesture.original.y + dy,
+        -CANVAS_MAX_ABS_POSITION,
+        CANVAS_MAX_ABS_POSITION,
+      ),
+    };
+  }
+
+  return {
+    ...gesture.original,
+    width: clamp(
+      gesture.original.width + dx,
+      CANVAS_MIN_NODE_WIDTH,
+      CANVAS_MAX_NODE_WIDTH,
+    ),
+    height: clamp(
+      gesture.original.height + dy,
+      CANVAS_MIN_NODE_HEIGHT,
+      CANVAS_MAX_NODE_HEIGHT,
+    ),
+  };
+}
+
+function applyCanvasGeometryPreview(
+  gesture: ActiveCanvasGeometryGesture,
+  proposed: CanvasLayout,
+): void {
+  const { card } = gesture;
+  card.dataset.canvasGeometryPreview = gesture.kind;
+  card.dataset.canvasPreviewX = String(proposed.x);
+  card.dataset.canvasPreviewY = String(proposed.y);
+  card.dataset.canvasPreviewWidth = String(proposed.width);
+  card.dataset.canvasPreviewHeight = String(proposed.height);
+
+  if (gesture.kind === 'move') {
+    card.style.transform = `translate(${proposed.x - gesture.original.x}px, ${proposed.y - gesture.original.y}px)`;
+    return;
+  }
+
+  card.style.width = `${proposed.width}px`;
+  card.style.height = `${proposed.height}px`;
+}
+
+function clearCanvasGeometryPreview(
+  gesture: ActiveCanvasGeometryGesture,
+): void {
+  const { card } = gesture;
+  delete card.dataset.canvasGeometryPreview;
+  delete card.dataset.canvasPreviewX;
+  delete card.dataset.canvasPreviewY;
+  delete card.dataset.canvasPreviewWidth;
+  delete card.dataset.canvasPreviewHeight;
+  card.style.transform = '';
+  card.style.width = '';
+  card.style.height = '';
+}
+
 export function bindCanvasSurfaceInteractions(
   root: HTMLElement,
   handlers: CanvasSurfaceHandlers,
 ): void {
+  let activeGeometry: ActiveCanvasGeometryGesture | null = null;
+
   root.addEventListener('click', (event) => {
     const control = (event.target as HTMLElement)
       .closest<HTMLElement>('[data-canvas-action]');
@@ -276,6 +428,77 @@ export function bindCanvasSurfaceInteractions(
         bindInspectorEscape();
       });
     });
+
+  root.addEventListener('pointerdown', (event) => {
+    const handle = (event.target as HTMLElement)
+      .closest<HTMLElement>('[data-canvas-geometry-handle]');
+    if (!handle || !root.contains(handle)) return;
+
+    const kind = handle.dataset.canvasGeometryHandle;
+    if (kind !== 'move' && kind !== 'resize') return;
+
+    const card = handle.closest<HTMLElement>(
+      '[data-canvas-node-id][data-canvas-layout-x][data-canvas-layout-y][data-canvas-layout-width][data-canvas-layout-height]',
+    );
+    if (!card || !root.contains(card)) return;
+
+    const nodeId = card.dataset.canvasNodeId;
+    const original = layoutFromCard(card);
+    if (!nodeId || original === null) return;
+
+    event.preventDefault();
+    activeGeometry = {
+      nodeId,
+      kind,
+      startX: event.clientX,
+      startY: event.clientY,
+      original,
+      card,
+    };
+  });
+
+  root.addEventListener('pointermove', (event) => {
+    if (activeGeometry === null) return;
+
+    event.preventDefault();
+    applyCanvasGeometryPreview(
+      activeGeometry,
+      proposedCanvasGeometry(
+        activeGeometry,
+        event.clientX,
+        event.clientY,
+      ),
+    );
+  });
+
+  root.addEventListener('pointerup', (event) => {
+    if (activeGeometry === null) return;
+
+    event.preventDefault();
+    const gesture = activeGeometry;
+    activeGeometry = null;
+
+    const proposed = proposedCanvasGeometry(
+      gesture,
+      event.clientX,
+      event.clientY,
+    );
+    clearCanvasGeometryPreview(gesture);
+
+    handlers.refuseGeometry?.({
+      nodeId: gesture.nodeId,
+      kind: gesture.kind,
+      proposed,
+    });
+  });
+
+  root.addEventListener('pointercancel', () => {
+    if (activeGeometry === null) return;
+
+    const gesture = activeGeometry;
+    activeGeometry = null;
+    clearCanvasGeometryPreview(gesture);
+  });
 }
 
 function escapeHtml(value: unknown): string {
