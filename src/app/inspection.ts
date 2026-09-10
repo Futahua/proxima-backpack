@@ -124,7 +124,17 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
   const now = new Date(build.fixedClock);
   const firstDeadline = board.running.map((task) => task.deadline ? new Date(task.deadline) : null).filter((date): date is Date => date !== null && Number.isFinite(date.getTime()) && date.getTime() > now.getTime()).sort((a, b) => a.getTime() - b.getTime())[0] ?? new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const heights = elasticCardHeights(board.running, calculateElasticTimeline(board.running, now, firstDeadline), 460);
-  const taskSummaries = boardGroups.flatMap(([column, tasks]) => tasks.map((task) => ({ id: task.id, name: task.name, projectId: task.projectId, column, deadline: task.deadline, durationMinutes: column === 'running' ? Math.round(heights[task.id] ?? taskDuration(task) ?? 0) : taskDuration(task), provenance: sourceProvenance(task) })));
+  const invalidFixedDurationTaskIds = new Set(
+    dispatcher.problems
+      .filter(
+        (problem) =>
+          problem.code === 'bad-number'
+          && problem.kind === 'task'
+          && problem.detail.startsWith('fixedDuration:'),
+      )
+      .flatMap((problem) => problem.id === undefined ? [] : [problem.id]),
+  );
+  const taskSummaries = boardGroups.flatMap(([column, tasks]) => tasks.map((task) => ({ id: task.id, name: task.name, projectId: task.projectId, column, deadline: task.deadline, durationMinutes: invalidFixedDurationTaskIds.has(task.id) ? null : column === 'running' ? Math.round(heights[task.id] ?? taskDuration(task) ?? 0) : taskDuration(task), provenance: sourceProvenance(task) })));
   const scheduleProjects = new Set(projectsFor(dispatcher.state.projects, 'schedule').map((project) => project.id));
   const calendarEvents = eventsForSelection(dispatcher.state.events.filter((event) => event.projectId === null || scheduleProjects.has(event.projectId)), dispatcher.selection);
   const calendarProblems: LoadProblem[] = [];
