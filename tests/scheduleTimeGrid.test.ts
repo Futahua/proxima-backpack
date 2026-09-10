@@ -19,6 +19,7 @@ import {
   type ScheduleTimeGridMode,
 } from '../src/browser/scheduleTimeGrid.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
+import { scheduleNavigationDateKey } from '../src/browser/scheduleNavigation.js';
 import type { CalendarEvent } from '../src/domain/types.js';
 import { localDateKey } from '../src/domain/time.js';
 import { sourceRef } from './fixtures.js';
@@ -197,6 +198,42 @@ beforeEach(() => {
 });
 
 describe('Schedule Day, 4-Day and Week presentation', () => {
+  it('renders the shared Previous Today Next contract in Day, 4-Day and Week without changing the time-grid interaction surface', () => {
+    for (const mode of [
+      'day',
+      'four-day',
+      'week',
+    ] as const) {
+      document.body.innerHTML = render(mode);
+      const harness = createInteractionHarness(document);
+
+      expect(
+        harness.target('schedule-previous').dataset.action,
+      ).toBe('schedule-navigate');
+      expect(
+        harness.target('schedule-previous').dataset.direction,
+      ).toBe('previous');
+      expect(
+        harness.target('schedule-today').dataset.direction,
+      ).toBe('today');
+      expect(
+        harness.target('schedule-next').dataset.direction,
+      ).toBe('next');
+      expect(
+        document.querySelector<HTMLElement>(
+          '[data-schedule-navigation]',
+        )?.dataset.scheduleNavigationMode,
+      ).toBe(mode);
+
+      expect(
+        document.querySelectorAll('[data-schedule-slot]'),
+      ).toHaveLength(
+        (mode === 'day' ? 1 : mode === 'four-day' ? 4 : 7)
+          * 96,
+      );
+    }
+  });
+
   it('uses one, four and seven adjacent civil-day columns over the same 96-slot grid', () => {
     for (const [mode, expectedDays] of [
       ['day', 1],

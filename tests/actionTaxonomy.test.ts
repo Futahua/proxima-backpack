@@ -57,6 +57,7 @@ describe('Stage 0 action taxonomy', () => {
     expect(categoryOf('task.execution.move')).toBe('record-mutation');
     expect(categoryOf('event.schedule.change')).toBe('record-mutation');
     expect(categoryOf('event.schedule.create')).toBe('record-mutation');
+    expect(categoryOf('schedule.cursor.set')).toBe('local-state');
     expect(categoryOf('calendar.select-month')).toBe('local-state');
     expect(categoryOf('elastic.target.set')).toBe('local-state');
     expect(categoryOf('elastic.lock')).toBe('local-state');
@@ -320,6 +321,13 @@ describe('Stage 0 boundary guard', () => {
       snapshot: {
         ...accepted.snapshot,
         calendarMonth: '2026-13-01',
+      },
+    })).toBe(false);
+    expect(isActionResult({
+      ...accepted,
+      snapshot: {
+        ...accepted.snapshot,
+        scheduleDate: '2026-02-30',
       },
     })).toBe(false);
   });

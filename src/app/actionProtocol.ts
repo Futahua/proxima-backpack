@@ -46,6 +46,7 @@ export type ProximaAction =
   | { type: 'event.schedule.change'; eventId: string; operation: ScheduleChangeOperation; proposedStartDate: string; proposedDeadline: string }
   | { type: 'event.schedule.create'; name: string; projectId: string | null; description: string; startDate: string; deadline: string }
   | { type: 'schedule.mode.select'; mode: ScheduleMode }
+  | { type: 'schedule.cursor.set'; date: string }
   | { type: 'project.workspace-tab.select'; tab: ProjectWorkspaceTab }
   | { type: 'calendar.navigate'; direction: 'previous' | 'next' }
   | { type: 'calendar.today' }
@@ -73,6 +74,7 @@ export interface ActionSnapshot {
   tasksMode: TasksMode;
   timekeepingPanels: TimekeepingPanelVisibility;
   scheduleMode: ScheduleMode;
+  scheduleDate: string;
   projectWorkspaceTab: ProjectWorkspaceTab;
   calendarMonth: string;
   elasticTargetTime: string;
@@ -120,6 +122,7 @@ export interface ActionDispatcherState {
   tasksMode: TasksMode;
   timekeepingPanels: TimekeepingPanelVisibility;
   scheduleMode: ScheduleMode;
+  scheduleDate: string;
   projectWorkspaceTab: ProjectWorkspaceTab;
   calendarMonth: string;
   elasticTargetTime: string;
@@ -140,6 +143,7 @@ export interface ActionDispatcherOptions {
   initialSelection?: string;
   initialTasksMode?: TasksMode;
   initialScheduleMode?: ScheduleMode;
+  initialScheduleDate?: string;
   initialProjectWorkspaceTab?: ProjectWorkspaceTab;
   initialCalendarMonth?: string;
   initialElasticTargetTime?: string;
@@ -476,6 +480,20 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
         };
   }
 
+  if (input.type === 'schedule.cursor.set') {
+    return typeof input.date === 'string'
+      && isValidScheduleDate(input.date)
+      ? { ok: true, action: { type: input.type, date: input.date } }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'schedule date must be a canonical local YYYY-MM-DD',
+            field: 'date',
+          },
+        };
+  }
+
   if (input.type === 'project.workspace-tab.select') {
     return input.tab === 'notes'
       || input.tab === 'task-board'
@@ -558,6 +576,7 @@ function snapshot(state: ActionDispatcherState): ActionSnapshot {
     tasksMode: state.tasksMode,
     timekeepingPanels: { ...state.timekeepingPanels },
     scheduleMode: state.scheduleMode,
+    scheduleDate: state.scheduleDate,
     projectWorkspaceTab: state.projectWorkspaceTab,
     calendarMonth: state.calendarMonth,
     elasticTargetTime: state.elasticTargetTime,
@@ -660,6 +679,27 @@ function calendarMonthForClock(clock: Clock): string {
   return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01`;
 }
 
+function isValidScheduleDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(0);
+  date.setHours(0, 0, 0, 0);
+  date.setFullYear(year, month - 1, day);
+
+  return date.getFullYear() === year
+    && date.getMonth() === month - 1
+    && date.getDate() === day;
+}
+
+function scheduleDateForClock(clock: Clock): string {
+  const date = new Date(clock.now());
+  return `${date.getFullYear().toString().padStart(4, '0')}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+}
+
 function existingSelection(projects: ProximaState['projects'], selection: string): string {
   if (selection === ALL_PROJECTS || selection === UNCATEGORISED) return selection;
   return projects.some((project) => project.id === selection) ? selection : ALL_PROJECTS;
@@ -732,6 +772,10 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     tasksMode: options.initialTasksMode ?? 'elastic',
     timekeepingPanels: defaultTimekeepingPanels(),
     scheduleMode: options.initialScheduleMode ?? 'month',
+    scheduleDate: typeof options.initialScheduleDate === 'string'
+      && isValidScheduleDate(options.initialScheduleDate)
+      ? options.initialScheduleDate
+      : scheduleDateForClock(clock),
     projectWorkspaceTab: options.initialProjectWorkspaceTab ?? 'notes',
     calendarMonth: options.initialCalendarMonth ?? '2026-09-01',
     elasticTargetTime: isCanonicalInstant(options.initialElasticTargetTime)
@@ -1050,6 +1094,15 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         return settleLocalAction(state, ring, action.type, changed, requestId);
       }
 
+      if (action.type === 'schedule.cursor.set') {
+        const changed = state.scheduleDate !== action.date;
+        if (changed) {
+          state.scheduleDate = action.date;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
       if (action.type === 'project.workspace-tab.select') {
         const changed = state.projectWorkspaceTab !== action.tab;
         if (changed) {
@@ -1147,6 +1200,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
 
       const resetElasticTarget = defaultElasticTargetTime(clock);
       const resetTimekeepingPanels = defaultTimekeepingPanels();
+      const resetScheduleDate = scheduleDateForClock(clock);
       const changed = state.surface !== 'tasks'
         || state.selection !== ALL_PROJECTS
         || state.tasksMode !== 'elastic'
@@ -1154,6 +1208,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         || state.timekeepingPanels.timeline !== resetTimekeepingPanels.timeline
         || state.timekeepingPanels.countdowns !== resetTimekeepingPanels.countdowns
         || state.scheduleMode !== 'month'
+        || state.scheduleDate !== resetScheduleDate
         || state.projectWorkspaceTab !== 'notes'
         || state.calendarMonth !== '2026-09-01'
         || state.elasticTargetTime !== resetElasticTarget
@@ -1164,6 +1219,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
       state.tasksMode = 'elastic';
       state.timekeepingPanels = resetTimekeepingPanels;
       state.scheduleMode = 'month';
+      state.scheduleDate = resetScheduleDate;
       state.projectWorkspaceTab = 'notes';
       state.calendarMonth = '2026-09-01';
       state.elasticTargetTime = resetElasticTarget;
@@ -1327,6 +1383,8 @@ export function isActionResult(value: unknown): value is ActionResult {
         || snapshotValue.scheduleMode === 'year'
         || snapshotValue.scheduleMode === 'agenda'
       )
+      && typeof snapshotValue.scheduleDate === 'string'
+      && isValidScheduleDate(snapshotValue.scheduleDate)
       && (
         snapshotValue.projectWorkspaceTab === 'notes'
         || snapshotValue.projectWorkspaceTab === 'task-board'

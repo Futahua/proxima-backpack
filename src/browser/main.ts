@@ -13,7 +13,7 @@ import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirector
 import { loadVaultState } from '../app/vaultRepository.js';
 import { fixedClock, sequentialIdGenerator, systemClock } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
-import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, eventsForSelection, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
+import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
 import type { ProximaState, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
 import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
@@ -31,6 +31,8 @@ import { bindElasticCockpitInteractions, renderElasticCockpit, shouldTickElastic
 import { bindTimekeepingCockpitInteractions, renderTimekeepingCockpit, startTimekeepingCountdownTicker } from './timekeepingCockpit.js';
 import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid, startScheduleTimeTicker, type ScheduleEventDraft, type ScheduleTimeGridMode } from './scheduleTimeGrid.js';
 import { bindScheduleProjectionInteractions, renderScheduleProjection, type ScheduleProjectionMode } from './scheduleProjection.js';
+import { scheduleNavigationDateKey, type ScheduleNavigationDirection } from './scheduleNavigation.js';
+import { scheduleEventsForSelection } from './scheduleSelection.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
@@ -54,6 +56,7 @@ let selectedScheduleEventId: string | null = null;
 let scheduleEventDraft: ScheduleEventDraft | null = null;
 let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
+let scheduleCursor = new Date(FIXED_CLOCK.now());
 let calendarCursor = new Date(FIXED_CLOCK.now());
 let elasticTargetTime = new Date(FIXED_CLOCK.now() + 4 * 60 * 60 * 1000).toISOString();
 let elasticLockedAt: string | null = null;
@@ -195,16 +198,8 @@ function scheduleProjectionSurface(
   problems: LoadProblem[],
   lookup: Map<string, string>,
 ): string {
-  const scheduleIds = new Set(
-    projectsFor(state.projects, 'schedule')
-      .map((project) => project.id),
-  );
-  const scheduleEvents = eventsForSelection(
-    state.events.filter(
-      (event) =>
-        event.projectId === null
-        || scheduleIds.has(event.projectId),
-    ),
+  const scheduleEvents = scheduleEventsForSelection(
+    state,
     selection,
   );
   const now = currentSourceMode() === 'external'
@@ -216,7 +211,7 @@ function scheduleProjectionSurface(
     events: scheduleEvents,
     projectNames: lookup,
     selectionLabel: selectionLabel(state, selection, lookup),
-    calendarCursor,
+    calendarCursor: scheduleCursor,
     now,
     selectedEventId: selectedScheduleEventId,
     problems,
@@ -249,13 +244,17 @@ function scheduleTimeGridSurface(
   const now = currentSourceMode() === 'external'
     ? new Date()
     : new Date(FIXED_CLOCK.now());
+  const scheduleEvents = scheduleEventsForSelection(
+    state,
+    selection,
+  );
 
   return renderScheduleTimeGrid({
     mode,
-    events: state.events,
+    events: scheduleEvents,
     projectNames: lookup,
-    selectionLabel: selectionLabel(appState!, selection),
-    calendarCursor,
+    selectionLabel: selectionLabel(state, selection, lookup),
+    calendarCursor: scheduleCursor,
     now,
     selectedEventId: selectedScheduleEventId,
     seededEvent: scheduleEventDraft,
@@ -432,6 +431,7 @@ function dispatchAction(input: unknown): ActionResult | null {
     tasksMode = next.tasksMode;
     timekeepingPanels = { ...next.timekeepingPanels };
     scheduleMode = next.scheduleMode;
+    scheduleCursor = new Date(`${next.scheduleDate}T00:00:00`);
     projectWorkspaceTab = next.projectWorkspaceTab;
     calendarCursor = new Date(`${next.calendarMonth}T00:00:00`);
     elasticTargetTime = next.elasticTargetTime;
@@ -537,14 +537,14 @@ function bindInteractions(): void {
     },
     selectMonth: (month) => {
       dispatchAction({
-        type: 'calendar.select-month',
-        month,
+        type: 'schedule.cursor.set',
+        date: month,
       });
     },
     drillMonth: (month) => {
       const selected = dispatchAction({
-        type: 'calendar.select-month',
-        month,
+        type: 'schedule.cursor.set',
+        date: month,
       });
       if (selected?.ok) {
         dispatchAction({
@@ -672,6 +672,27 @@ function bindInteractions(): void {
       dispatchAction({ type: 'project.workspace-tab.select', tab });
     } else if (action === 'select-project') {
       dispatchAction({ type: 'project.select', projectId: button.dataset.projectId ?? ALL_PROJECTS });
+    } else if (action === 'schedule-navigate') {
+      const direction = button.dataset.direction as ScheduleNavigationDirection;
+      if (
+        direction !== 'previous'
+        && direction !== 'today'
+        && direction !== 'next'
+      ) {
+        return;
+      }
+      const today = currentSourceMode() === 'external'
+        ? new Date()
+        : new Date(FIXED_CLOCK.now());
+      dispatchAction({
+        type: 'schedule.cursor.set',
+        date: scheduleNavigationDateKey(
+          scheduleCursor,
+          scheduleMode,
+          direction,
+          today,
+        ),
+      });
     } else if (action === 'calendar-navigate') {
       const direction = button.dataset.direction;
       if (direction !== 'previous' && direction !== 'next') return;
@@ -719,6 +740,7 @@ async function boot(): Promise<void> {
   tasksMode = initial.tasksMode;
   timekeepingPanels = { ...initial.timekeepingPanels };
   scheduleMode = initial.scheduleMode;
+  scheduleCursor = new Date(`${initial.scheduleDate}T00:00:00`);
   projectWorkspaceTab = initial.projectWorkspaceTab;
   calendarCursor = new Date(`${initial.calendarMonth}T00:00:00`);
   elasticTargetTime = initial.elasticTargetTime;

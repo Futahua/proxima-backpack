@@ -6,6 +6,7 @@ import {
   calendarGridDates,
   localCalendarDate,
 } from './calendarGrid.js';
+import { renderScheduleNavigation } from './scheduleNavigation.js';
 
 export type ScheduleProjectionMode = 'month' | 'year' | 'agenda';
 
@@ -131,13 +132,6 @@ function renderMonth(
 ): string {
   const days = calendarGridDates(options.calendarCursor);
   const todayKey = localDateKey(options.now);
-  const title = options.calendarCursor.toLocaleDateString(
-    undefined,
-    {
-      month: 'long',
-      year: 'numeric',
-    },
-  );
 
   const cells = days.map((day) => {
     const key = localDateKey(day);
@@ -155,7 +149,7 @@ function renderMonth(
     return `<div class="calendar-day${outside ? ' outside' : ''}${key === todayKey ? ' today' : ''}" data-schedule-month-day="${escapeHtml(key)}" data-schedule-occurrence-count="${dayEvents.length}" data-c1-key="schedule-month-day-${escapeHtml(key)}" aria-label="${escapeHtml(key)}"${key === todayKey ? ' aria-current="date"' : ''}><span class="day-number">${day.getDate()}</span><div class="day-events">${events}</div></div>`;
   }).join('');
 
-  return `<section class="surface calendar-surface schedule-month-projection" data-schedule-projection-mode="month" data-c1-key="schedule-month-region" aria-label="Month schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Month</h2><p class="surface-description">Date-level event occurrences on local civil days.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-action="calendar-navigate" data-direction="previous" data-c1-key="calendar-previous" aria-label="Previous month">←</button><button type="button" class="icon-button" data-action="calendar-today" data-c1-key="calendar-today">Today</button><strong>${escapeHtml(title)}</strong><button type="button" class="icon-button" data-action="calendar-navigate" data-direction="next" data-c1-key="calendar-next" aria-label="Next month">→</button></div></header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${cells}</div>${renderReadOnlyEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
+  return `<section class="surface calendar-surface schedule-month-projection" data-schedule-projection-mode="month" data-c1-key="schedule-month-region" aria-label="Month schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Month</h2><p class="surface-description">Date-level event occurrences on local civil days.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${cells}</div>${renderReadOnlyEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
 }
 
 function renderYear(
@@ -163,14 +157,7 @@ function renderYear(
   byDay: Map<string, CalendarEvent[]>,
 ): string {
   const year = options.calendarCursor.getFullYear();
-  const cursorMonth = options.calendarCursor.getMonth();
   const todayKey = localDateKey(options.now);
-  const previousTarget = year > 0
-    ? calendarMonthKey(year - 1, cursorMonth)
-    : null;
-  const nextTarget = year < 9999
-    ? calendarMonthKey(year + 1, cursorMonth)
-    : null;
 
   const months = Array.from(
     { length: 12 },
@@ -198,14 +185,7 @@ function renderYear(
     },
   ).join('');
 
-  const previous = previousTarget
-    ? `<button type="button" class="icon-button" data-schedule-projection-action="select-month" data-schedule-target-month="${previousTarget}" data-c1-key="schedule-year-previous" aria-label="Previous year">←</button>`
-    : '<button type="button" class="icon-button" data-c1-key="schedule-year-previous" aria-label="Previous year" disabled>←</button>';
-  const next = nextTarget
-    ? `<button type="button" class="icon-button" data-schedule-projection-action="select-month" data-schedule-target-month="${nextTarget}" data-c1-key="schedule-year-next" aria-label="Next year">→</button>`
-    : '<button type="button" class="icon-button" data-c1-key="schedule-year-next" aria-label="Next year" disabled>→</button>';
-
-  return `<section class="surface calendar-surface schedule-year-projection" data-schedule-projection-mode="year" data-c1-key="schedule-year-region" aria-label="Year schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Year</h2><p class="surface-description">Twelve mini-months with date-level event indicators.</p></div><div class="calendar-controls">${previous}<strong>${year}</strong>${next}</div></header><div class="schedule-year-grid">${months}</div>${renderReadOnlyEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
+  return `<section class="surface calendar-surface schedule-year-projection" data-schedule-projection-mode="year" data-c1-key="schedule-year-region" aria-label="Year schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Year</h2><p class="surface-description">Twelve mini-months with date-level event indicators.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="schedule-year-grid">${months}</div>${renderReadOnlyEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
 }
 
 function renderAgenda(
@@ -220,7 +200,7 @@ function renderAgenda(
     return `<section class="schedule-agenda-date-group" data-schedule-agenda-date="${escapeHtml(dayKey)}" data-c1-key="schedule-agenda-date-${escapeHtml(dayKey)}"><header><h3>${escapeHtml(dayKey)}</h3><span>${dayEvents.length}</span></header>${rows}</section>`;
   }).join('');
 
-  return `<section class="surface calendar-surface schedule-agenda-projection" data-schedule-projection-mode="agenda" data-c1-key="schedule-agenda-region" aria-label="Agenda schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Agenda</h2><p class="surface-description">Chronological local-date groups of event occurrences.</p></div></header><div class="schedule-agenda-groups">${groups || '<p class="empty-state" data-c1-key="schedule-agenda-empty">No dated events.</p>'}</div>${renderReadOnlyEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
+  return `<section class="surface calendar-surface schedule-agenda-projection" data-schedule-projection-mode="agenda" data-c1-key="schedule-agenda-region" aria-label="Agenda schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Agenda</h2><p class="surface-description">Chronological local-date groups of event occurrences.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="schedule-agenda-groups">${groups || '<p class="empty-state" data-c1-key="schedule-agenda-empty">No dated events.</p>'}</div>${renderReadOnlyEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
 }
 
 export function renderScheduleProjection(

@@ -42,6 +42,7 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'timekeeping.panel.set-visible', panel: 'calendar', visible: 'yes' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'visible' } });
     expect(parseAction({ type: 'task.timeline.change', taskId: 'task-a', operation: 'resize-start', proposedStartDate: 'not-a-date', proposedDeadline: null, targetRowIndex: 0 })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
     expect(parseAction({ type: 'schedule.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
+    expect(parseAction({ type: 'schedule.cursor.set', date: '2026-02-30' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'date' } });
     expect(parseAction({ type: 'project.workspace-tab.select', tab: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'tab' } });
     expect(parseAction({ type: 'calendar.navigate', direction: 'sideways' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'direction' } });
     expect(parseAction({ type: 'elastic.target.set', targetTime: 'not-a-date' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'targetTime' } });
@@ -206,6 +207,48 @@ describe('Gate 3A semantic action protocol', () => {
     });
   });
 
+  it('keeps the exact Schedule civil-date cursor as disposable local state', async () => {
+    const vault = fixtureVault('vault-basic');
+    const loaded = await loadVaultState(vault);
+    const before = await vaultByteHash(vault);
+    const dispatcher = createActionDispatcher({
+      state: loaded.state,
+      problems: loaded.problems,
+      revisions: loaded.revisions,
+      mode: 'fixture',
+      initialScheduleDate: '2026-09-06',
+    });
+
+    expect(dispatcher.snapshot().scheduleDate)
+      .toBe('2026-09-06');
+
+    expect(dispatcher.dispatch({
+      type: 'schedule.cursor.set',
+      date: '2027-02-28',
+    })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      changed: true,
+      snapshot: {
+        scheduleDate: '2027-02-28',
+      },
+    });
+
+    expect(dispatcher.dispatch({
+      type: 'schedule.cursor.set',
+      date: '2027-02-28',
+    })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      changed: false,
+      snapshot: {
+        scheduleDate: '2027-02-28',
+      },
+    });
+
+    expect(await vaultByteHash(vault)).toBe(before);
+  });
+
   it('falls back invalid initial months and remains canonical through repeated shifts', async () => {
     const loaded = await loadVaultState(fixtureVault('vault-basic'));
     const dispatcher = createActionDispatcher({ state: loaded.state, initialCalendarMonth: '2026-13-40', idGenerator: sequentialIdGenerator() });
@@ -235,13 +278,18 @@ describe('Gate 3A semantic action protocol', () => {
       { type: 'project.workspace-tab.select', tab: 'deadlines' },
       { type: 'surface.select', surface: 'schedule' },
       { type: 'schedule.mode.select', mode: 'day' },
+      { type: 'schedule.cursor.set', date: '2026-09-05' },
       { type: 'schedule.mode.select', mode: 'four-day' },
+      { type: 'schedule.cursor.set', date: '2026-09-09' },
       { type: 'schedule.mode.select', mode: 'week' },
+      { type: 'schedule.cursor.set', date: '2026-09-16' },
       { type: 'schedule.mode.select', mode: 'month' },
+      { type: 'schedule.cursor.set', date: '2026-10-16' },
       { type: 'schedule.mode.select', mode: 'year' },
+      { type: 'schedule.cursor.set', date: '2027-10-16' },
       { type: 'schedule.mode.select', mode: 'agenda' },
+      { type: 'schedule.cursor.set', date: '2027-11-16' },
       { type: 'calendar.navigate', direction: 'next' },
-      { type: 'calendar.select-month', month: '2027-04-01' },
       { type: 'calendar.today' },
       { type: 'surface.select', surface: 'tasks' },
       { type: 'tasks.mode.select', mode: 'timekeeping' },

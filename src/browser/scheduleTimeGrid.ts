@@ -5,6 +5,7 @@ import type {
 import type { CalendarEvent } from '../domain/types.js';
 import { localDateKey } from '../domain/time.js';
 import { localCalendarDate } from './calendarGrid.js';
+import { renderScheduleNavigation } from './scheduleNavigation.js';
 
 export type ScheduleTimeGridMode = 'day' | 'four-day' | 'week';
 
@@ -426,7 +427,7 @@ export function renderScheduleTimeGrid(
     )
   )).join('');
 
-  return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-c1-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div></header>${renderAllDayRegion(options.events, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-c1-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${renderEventModal(options.events, options.selectedEventId, options.seededEvent ?? null, options.projectNames)}</section>`;
+  return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-c1-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header>${renderAllDayRegion(options.events, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-c1-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${renderEventModal(options.events, options.selectedEventId, options.seededEvent ?? null, options.projectNames)}</section>`;
 }
 
 export function bindScheduleTimeGridInteractions(

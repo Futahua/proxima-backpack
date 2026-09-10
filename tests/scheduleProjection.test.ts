@@ -9,6 +9,7 @@ import {
 } from '../src/browser/scheduleProjection.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import { localCalendarDate } from '../src/browser/calendarGrid.js';
+import { scheduleNavigationDateKey } from '../src/browser/scheduleNavigation.js';
 import type { CalendarEvent } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
 
@@ -153,6 +154,72 @@ beforeEach(() => {
 });
 
 describe('Schedule Month, Year and Agenda projection', () => {
+  it('shares deterministic Previous Today Next navigation semantics across all six Schedule modes', () => {
+    const cursor = localCalendarDate(2026, 8, 6);
+    const today = localCalendarDate(2026, 10, 19);
+    const cases = [
+      ['day', '2026-09-05', '2026-09-07'],
+      ['four-day', '2026-09-02', '2026-09-10'],
+      ['week', '2026-08-30', '2026-09-13'],
+      ['month', '2026-08-06', '2026-10-06'],
+      ['year', '2025-09-06', '2027-09-06'],
+      ['agenda', '2026-08-06', '2026-10-06'],
+    ] as const;
+
+    for (const [mode, previous, next] of cases) {
+      expect(
+        scheduleNavigationDateKey(
+          cursor,
+          mode,
+          'previous',
+          today,
+        ),
+      ).toBe(previous);
+      expect(
+        scheduleNavigationDateKey(
+          cursor,
+          mode,
+          'today',
+          today,
+        ),
+      ).toBe('2026-11-19');
+      expect(
+        scheduleNavigationDateKey(
+          cursor,
+          mode,
+          'next',
+          today,
+        ),
+      ).toBe(next);
+    }
+
+    for (const mode of [
+      'month',
+      'year',
+      'agenda',
+    ] as const) {
+      document.body.innerHTML = render(mode);
+      const harness = createInteractionHarness(document);
+
+      expect(
+        harness.target('schedule-previous').dataset.action,
+      ).toBe('schedule-navigate');
+      expect(
+        harness.target('schedule-today').dataset.direction,
+      ).toBe('today');
+      expect(
+        harness.target('schedule-next').dataset.direction,
+      ).toBe('next');
+
+      expect(
+        document.querySelector('[data-schedule-timed-event]'),
+      ).toBeNull();
+      expect(
+        document.querySelector('[data-schedule-resize-edge]'),
+      ).toBeNull();
+    }
+  });
+
   it('projects event occurrences onto deterministic local civil dates', () => {
     expect(
       scheduleDateOccurrenceProjection(events),
@@ -260,12 +327,15 @@ describe('Schedule Month, Year and Agenda projection', () => {
       '2026-09-01',
     ]);
 
-    mounted.harness.click('schedule-year-previous');
-    mounted.harness.click('schedule-year-next');
-    expect(mounted.selectedMonths).toEqual([
-      '2025-09-01',
-      '2027-09-01',
-    ]);
+    expect(mounted.selectedMonths).toEqual([]);
+    expect(
+      mounted.harness.target('schedule-previous')
+        .dataset.direction,
+    ).toBe('previous');
+    expect(
+      mounted.harness.target('schedule-next')
+        .dataset.direction,
+    ).toBe('next');
 
     expect(JSON.stringify(events)).toBe(before);
   });
