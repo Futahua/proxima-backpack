@@ -119,15 +119,23 @@ describe('Stage 6 slice 1 Canvas selection and inspection', () => {
       ) ?? [],
     );
     expect(writes).toHaveLength(2);
-    expect(
-      writes.every(
-        (control) =>
-          control.disabled
-          && control.getAttribute('aria-disabled') === 'true'
-          && control.dataset.canvasWriteRefusal
-            === CANVAS_SURFACE_WRITE_REFUSAL,
-      ),
-    ).toBe(true);
+
+    const moveResize = writes.find(
+      (control) => control.dataset.canvasWriteAction === 'move-resize',
+    );
+    expect(moveResize?.disabled).toBe(true);
+    expect(moveResize?.getAttribute('aria-disabled')).toBe('true');
+    expect(moveResize?.dataset.canvasAction).toBeUndefined();
+    expect(moveResize?.dataset.canvasWriteRefusal)
+      .toBe(CANVAS_SURFACE_WRITE_REFUSAL);
+
+    const removePreview = writes.find(
+      (control) => control.dataset.canvasWriteAction === 'remove-preview',
+    );
+    expect(removePreview?.disabled).toBe(false);
+    expect(removePreview?.dataset.canvasAction).toBe('request-remove');
+    expect(removePreview?.dataset.canvasWriteRefusal)
+      .toBe(CANVAS_SURFACE_WRITE_REFUSAL);
 
     expect(
       inspector?.querySelector('input, textarea, select'),
@@ -210,7 +218,7 @@ describe('Stage 6 slice 1 Canvas selection and inspection', () => {
     expect(JSON.stringify(state)).toBe(before);
   });
 
-  it('does not expose a mutation action through the new Canvas interaction controls', async () => {
+  it('exposes only typed-unavailable mutation paths while allowing remove intent preview', async () => {
     const state = await admitCanvasDrop(
       [file('readonly.txt', 'readonly')],
       undefined,
@@ -240,10 +248,27 @@ describe('Stage 6 slice 1 Canvas selection and inspection', () => {
     expect(
       writes.every(
         (control) =>
-          control.dataset.canvasAction === undefined
-          && control.dataset.canvasWriteRefusal
+          control.dataset.canvasWriteRefusal
             === 'action-not-available',
       ),
     ).toBe(true);
+
+    const moveResize = document.querySelector<HTMLButtonElement>(
+      '[data-canvas-write-action="move-resize"]',
+    );
+    expect(moveResize?.disabled).toBe(true);
+    expect(moveResize?.dataset.canvasAction).toBeUndefined();
+
+    const removePreview = document.querySelector<HTMLButtonElement>(
+      '[data-canvas-write-action="remove-preview"]',
+    );
+    expect(removePreview?.disabled).toBe(false);
+    expect(removePreview?.dataset.canvasAction).toBe('request-remove');
+
+    expect(
+      document.querySelector(
+        '[data-canvas-action="remove-node"], [data-canvas-action="delete-node"]',
+      ),
+    ).toBeNull();
   });
 });

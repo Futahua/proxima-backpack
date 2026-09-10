@@ -553,6 +553,39 @@ function bindInteractions(): void {
       };
       render();
     },
+    requestRemove: (nodeId) => {
+      if (!canvasState.items.some((item) => item.node.id === nodeId)) return;
+      canvasView = {
+        ...EMPTY_CANVAS_SURFACE_VIEW,
+        selectedNodeId: nodeId,
+        removeCandidateNodeId: nodeId,
+      };
+      render();
+    },
+    cancelRemove: () => {
+      const selectedNodeId =
+        canvasView.selectedNodeId !== null
+        && canvasState.items.some(
+          (item) => item.node.id === canvasView.selectedNodeId,
+        )
+          ? canvasView.selectedNodeId
+          : null;
+      canvasView = {
+        ...EMPTY_CANVAS_SURFACE_VIEW,
+        selectedNodeId,
+      };
+      render();
+    },
+    refuseRemove: (nodeId) => {
+      if (!canvasState.items.some((item) => item.node.id === nodeId)) return;
+      canvasView = {
+        ...EMPTY_CANVAS_SURFACE_VIEW,
+        selectedNodeId: nodeId,
+        writeRefusal: CANVAS_SURFACE_WRITE_REFUSAL,
+        lastRefusedRemovalNodeId: nodeId,
+      };
+      render();
+    },
   });
 
   bindElasticCockpitInteractions(root, {
