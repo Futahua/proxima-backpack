@@ -72,14 +72,19 @@ function classify(previous: LoadResult, next: LoadResult): RefreshOutcome {
 }
 
 function refreshFailureOutcome(problems: LoadProblem[]): 'unreadable' | 'malformed' | null {
-  const failure = problems.find((problem) => isBlocking(problem) || problem.code === 'unsupported-frontmatter');
+  const failure = problems.find((problem) => isBlocking(problem) || isFrontmatterRefreshFailure(problem));
   if (!failure) return null;
   return failure.code === 'unreadable' || failure.code === 'directory-unreadable' ? 'unreadable' : 'malformed';
 }
 
+function isFrontmatterRefreshFailure(problem: LoadProblem): boolean {
+  return problem.code === 'frontmatter-parse-failure'
+    || problem.code === 'unsupported-frontmatter';
+}
+
 function refreshFailureCode(problems: LoadProblem[]): SourceDiagnosticCode {
   return problems.find(isBlocking)?.code
-    ?? problems.find((problem) => problem.code === 'unsupported-frontmatter')?.code
+    ?? problems.find(isFrontmatterRefreshFailure)?.code
     ?? 'refresh-failed';
 }
 

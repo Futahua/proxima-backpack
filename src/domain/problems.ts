@@ -28,6 +28,8 @@ export const PROBLEM_CODES = [
   'ignored-file',
   /** Frontmatter declared a `type` that contradicts the directory it sits in. */
   'unexpected-type',
+  /** Frontmatter could not be safely parsed by the supported grammar; the affected value was left unset. */
+  'frontmatter-parse-failure',
   /** Frontmatter used YAML outside the supported subset; the key was left unset. */
   'unsupported-frontmatter',
   /** A date field could not be interpreted. */

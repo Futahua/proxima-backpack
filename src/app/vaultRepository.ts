@@ -16,7 +16,7 @@
  *
  * Layouts and discovery rules live in `vaultLayout.ts` and `discovery.ts`.
  */
-import { asString, asStringOrNull, parseDocument } from '../domain/frontmatter.js';
+import { asString, asStringOrNull, parseDocument, type FrontmatterIssueCode } from '../domain/frontmatter.js';
 import { DEFAULT_STATUSES } from '../domain/elastic.js';
 import { problemCodeForField, type LoadProblem } from '../domain/problems.js';
 import {
@@ -100,6 +100,22 @@ export interface KindCensus {
  * that never became a record belongs here.
  */
 const REJECTING_CODES = new Set(['unreadable', 'duplicate-id', 'unexpected-type']);
+
+const FRONTMATTER_PARSE_FAILURE_CODES = new Set<FrontmatterIssueCode>([
+  'unterminated-list',
+  'unterminated-quote',
+  'malformed-quote',
+  'duplicate-key',
+  'unparsable-line',
+]);
+
+function problemCodeForFrontmatterIssue(
+  code: FrontmatterIssueCode,
+): 'frontmatter-parse-failure' | 'unsupported-frontmatter' {
+  return FRONTMATTER_PARSE_FAILURE_CODES.has(code)
+    ? 'frontmatter-parse-failure'
+    : 'unsupported-frontmatter';
+}
 
 function census(
   scan: KindScan,
@@ -235,7 +251,7 @@ async function readKind(
     // problem saying which line made it missing.
     for (const issue of parsed.issues) {
       problems.push({
-        code: 'unsupported-frontmatter',
+        code: problemCodeForFrontmatterIssue(issue.code),
         severity: 'warning',
         path: candidate.path,
         kind,

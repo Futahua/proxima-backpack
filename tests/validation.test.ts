@@ -288,7 +288,7 @@ describe('the malformed fixture vault', () => {
     const task = state.tasks.find((t) => t.source.path.endsWith('task-quoted-id-junk.md'));
     expect(task?.id).toBe('task-quoted-id-junk');
     expect(state.tasks.some((t) => t.id === 'corrupt')).toBe(false);
-    expect(problemsFor(problems, 'unsupported-frontmatter').filter((p) =>
+    expect(problemsFor(problems, 'frontmatter-parse-failure').filter((p) =>
       p.path.endsWith('task-quoted-id-junk.md'),
     )).toEqual(
       expect.arrayContaining([

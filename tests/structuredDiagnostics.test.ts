@@ -31,7 +31,7 @@ describe('Stage 6 slice 6 structured diagnostic code catalog', () => {
     }
   });
 
-  it('keeps malformed as an outcome while exposing the actual unsupported-frontmatter diagnostic code', async () => {
+  it('keeps malformed as an outcome while exposing the actual frontmatter parse-failure diagnostic code', async () => {
     const vault = createMemoryVault(fixtureFiles('vault-basic'));
     const initial = await loadVaultState(vault);
     const controller = createRefreshController({
@@ -50,14 +50,14 @@ describe('Stage 6 slice 6 structured diagnostic code catalog', () => {
       outcome: 'malformed',
       changed: false,
       snapshot: {
-        lastRefreshProblemCode: 'unsupported-frontmatter',
+        lastRefreshProblemCode: 'frontmatter-parse-failure',
       },
     });
     expect(
       isDiagnosticCode(degraded.snapshot.lastRefreshProblemCode),
     ).toBe(true);
     expect(projection.health.problemCodes)
-      .toContain('unsupported-frontmatter');
+      .toContain('frontmatter-parse-failure');
     expect(projection.health.problemCodes)
       .not.toContain('malformed');
   });
