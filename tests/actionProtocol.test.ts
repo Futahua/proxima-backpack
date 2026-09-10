@@ -43,6 +43,7 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'task.timeline.change', taskId: 'task-a', operation: 'resize-start', proposedStartDate: 'not-a-date', proposedDeadline: null, targetRowIndex: 0 })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
     expect(parseAction({ type: 'schedule.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
     expect(parseAction({ type: 'schedule.cursor.set', date: '2026-02-30' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'date' } });
+    expect(parseAction({ type: 'project.create', name: '', description: '' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
     expect(parseAction({ type: 'project.workspace-tab.select', tab: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'tab' } });
     expect(parseAction({ type: 'calendar.navigate', direction: 'sideways' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'direction' } });
     expect(parseAction({ type: 'elastic.target.set', targetTime: 'not-a-date' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'targetTime' } });
@@ -181,6 +182,17 @@ describe('Gate 3A semantic action protocol', () => {
     const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture', initialSurface: 'projects', clock: fixedClock('2026-09-06T12:00:00.000Z') });
     const result = dispatcher.dispatch({ type: 'project.select', projectId: 'proj-backpack' });
     expect(result).toMatchObject({ ok: true, category: 'local-state', outcome: 'accepted', entityIds: ['proj-backpack'], snapshot: { surface: 'projects', selection: 'proj-backpack', projectWorkspaceTab: 'notes' } });
+    expect(isActionResult(result)).toBe(true);
+    expect(await vaultByteHash(vault)).toBe(before);
+  });
+
+  it('refuses project creation as typed unavailable and leaves every durable fixture byte unchanged', async () => {
+    const vault = fixtureVault('vault-basic');
+    const loaded = await loadVaultState(vault);
+    const before = await vaultByteHash(vault);
+    const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture', clock: fixedClock('2026-09-06T12:00:00.000Z') });
+    const result = dispatcher.dispatch({ type: 'project.create', name: 'Future combined project', description: 'Provisional project creation' });
+    expect(result).toMatchObject({ ok: false, actionType: 'project.create', category: 'record-mutation', outcome: 'unavailable', entityIds: [], error: { code: 'action-not-available' } });
     expect(isActionResult(result)).toBe(true);
     expect(await vaultByteHash(vault)).toBe(before);
   });

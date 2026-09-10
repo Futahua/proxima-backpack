@@ -71,6 +71,7 @@ export const ACTION_OUTCOMES: readonly ActionOutcome[] = [
  */
 const REGISTRY = {
   'project.select': 'local-state',
+  'project.create': 'record-mutation',
   'surface.select': 'local-state',
   'tasks.mode.select': 'local-state',
   'timekeeping.panel.set-visible': 'local-state',

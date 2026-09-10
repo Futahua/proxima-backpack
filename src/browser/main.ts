@@ -61,6 +61,7 @@ let selectedScheduleRecurringScope: ScheduleRecurrenceScope | null = null;
 let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let projectsHubFilter: ProjectsHubFilter = 'active';
+let projectCreateOpen = false;
 let scheduleCursor = new Date(FIXED_CLOCK.now());
 let calendarCursor = new Date(FIXED_CLOCK.now());
 let elasticTargetTime = new Date(FIXED_CLOCK.now() + 4 * 60 * 60 * 1000).toISOString();
@@ -272,7 +273,7 @@ function scheduleTimeGridSurface(
 
 function projectsHubSurface(state: ProximaState): string {
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -528,6 +529,9 @@ function bindInteractions(): void {
     setFilter: (filter) => { projectsHubFilter = filter; render(); },
     openProject: (projectId) => { dispatchAction({ type: 'project.select', projectId }); },
     showHub: () => { dispatchAction({ type: 'project.select', projectId: ALL_PROJECTS }); },
+    openNewProject: () => { projectCreateOpen = true; render(); },
+    closeNewProject: () => { projectCreateOpen = false; render(); },
+    createProject: ({ name, description }) => dispatchAction({ type: 'project.create', name, description }),
   });
   bindScheduleRecurrenceInteractions(root, {
     openOccurrence: (occurrence) => {

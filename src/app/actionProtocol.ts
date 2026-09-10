@@ -35,6 +35,7 @@ export interface ElasticSessionState {
 
 export type ProximaAction =
   | { type: 'project.select'; projectId: string }
+  | { type: 'project.create'; name: string; description: string }
   | { type: 'surface.select'; surface: Surface }
   | { type: 'tasks.mode.select'; mode: TasksMode }
   | { type: 'timekeeping.panel.set-visible'; panel: TimekeepingPanel; visible: boolean }
@@ -212,6 +213,32 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
         };
   }
 
+  if (input.type === 'project.create') {
+    if (
+      typeof input.name !== 'string'
+      || input.name.trim().length === 0
+      || input.name.length > 200
+      || typeof input.description !== 'string'
+      || input.description.length > 20_000
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'project creation requires a non-empty bounded name and bounded description',
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      action: {
+        type: input.type,
+        name: input.name,
+        description: input.description,
+      },
+    };
+  }
   if (input.type === 'surface.select') {
     return input.surface === 'tasks'
       || input.surface === 'schedule'
@@ -858,6 +885,18 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
 
       const action = parsed.action;
 
+      if (action.type === 'project.create') {
+        return rejectAction(
+          state,
+          ring,
+          action.type,
+          {
+            code: 'action-not-available',
+            message: 'project creation remains unavailable before record-store cutover',
+          },
+          requestId,
+        );
+      }
       if (action.type === 'project.select') {
         if (
           action.projectId !== ALL_PROJECTS
