@@ -44,6 +44,9 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'schedule.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
     expect(parseAction({ type: 'schedule.cursor.set', date: '2026-02-30' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'date' } });
     expect(parseAction({ type: 'project.create', name: '', description: '' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
+    expect(parseAction({ type: 'project.archive', projectId: '' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'projectId' } });
+    expect(parseAction({ type: 'project.restore', projectId: 42 })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'projectId' } });
+    expect(parseAction({ type: 'project.delete', projectId: '' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'projectId' } });
     expect(parseAction({ type: 'project.workspace-tab.select', tab: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'tab' } });
     expect(parseAction({ type: 'calendar.navigate', direction: 'sideways' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'direction' } });
     expect(parseAction({ type: 'elastic.target.set', targetTime: 'not-a-date' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'targetTime' } });
@@ -183,6 +186,24 @@ describe('Gate 3A semantic action protocol', () => {
     const result = dispatcher.dispatch({ type: 'project.select', projectId: 'proj-backpack' });
     expect(result).toMatchObject({ ok: true, category: 'local-state', outcome: 'accepted', entityIds: ['proj-backpack'], snapshot: { surface: 'projects', selection: 'proj-backpack', projectWorkspaceTab: 'notes' } });
     expect(isActionResult(result)).toBe(true);
+    expect(await vaultByteHash(vault)).toBe(before);
+  });
+
+  it('refuses archive restore and delete as existing-record mutations without choosing post-cutover lifecycle semantics or changing bytes', async () => {
+    const vault = fixtureVault('vault-basic');
+    const loaded = await loadVaultState(vault);
+    const project = loaded.state.projects[0]!;
+    const before = await vaultByteHash(vault);
+    const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture', clock: fixedClock('2026-09-06T12:00:00.000Z') });
+    const beforeRevision = dispatcher.snapshot().stateRevision;
+    for (const type of ['project.archive', 'project.restore', 'project.delete'] as const) {
+      const result = dispatcher.dispatch({ type, projectId: project.id });
+      expect(result).toMatchObject({ ok: false, actionType: type, category: 'record-mutation', outcome: 'unavailable', stateRevision: beforeRevision, entityIds: [project.id], error: { code: 'action-not-available' } });
+      expect(isActionResult(result)).toBe(true);
+    }
+    for (const type of ['project.archive', 'project.restore', 'project.delete'] as const) {
+      expect(dispatcher.dispatch({ type, projectId: 'missing-project' })).toMatchObject({ ok: false, actionType: type, category: 'record-mutation', outcome: 'not-found', stateRevision: beforeRevision, entityIds: ['missing-project'], error: { code: 'project-not-found', field: 'projectId' } });
+    }
     expect(await vaultByteHash(vault)).toBe(before);
   });
 

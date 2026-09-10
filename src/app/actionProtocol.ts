@@ -36,6 +36,9 @@ export interface ElasticSessionState {
 export type ProximaAction =
   | { type: 'project.select'; projectId: string }
   | { type: 'project.create'; name: string; description: string }
+  | { type: 'project.archive'; projectId: string }
+  | { type: 'project.restore'; projectId: string }
+  | { type: 'project.delete'; projectId: string }
   | { type: 'surface.select'; surface: Surface }
   | { type: 'tasks.mode.select'; mode: TasksMode }
   | { type: 'timekeeping.panel.set-visible'; panel: TimekeepingPanel; visible: boolean }
@@ -213,6 +216,27 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
         };
   }
 
+  if (
+    input.type === 'project.archive'
+    || input.type === 'project.restore'
+    || input.type === 'project.delete'
+  ) {
+    if (
+      typeof input.projectId !== 'string'
+      || input.projectId.length === 0
+      || input.projectId.length > 200
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'project lifecycle action requires a non-empty bounded projectId',
+          field: 'projectId',
+        },
+      };
+    }
+    return { ok: true, action: { type: input.type, projectId: input.projectId } };
+  }
   if (input.type === 'project.create') {
     if (
       typeof input.name !== 'string'
@@ -885,6 +909,16 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
 
       const action = parsed.action;
 
+      if (
+        action.type === 'project.archive'
+        || action.type === 'project.restore'
+        || action.type === 'project.delete'
+      ) {
+        if (!state.state.projects.some((project) => project.id === action.projectId)) {
+          return rejectAction(state, ring, action.type, { code: 'project-not-found', message: `project does not exist: ${action.projectId}`, field: 'projectId' }, requestId, [action.projectId]);
+        }
+        return rejectAction(state, ring, action.type, { code: 'action-not-available', message: 'project lifecycle writes remain unavailable before record-store cutover' }, requestId, [action.projectId]);
+      }
       if (action.type === 'project.create') {
         return rejectAction(
           state,
