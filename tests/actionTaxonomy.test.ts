@@ -55,6 +55,7 @@ describe('Stage 0 action taxonomy', () => {
     // Defaulting an unknown type to 'presentation' would let a durable write cross a
     // boundary that believes nothing durable happens, so undefined is the answer.
     expect(categoryOf('task.execution.move')).toBe('record-mutation');
+    expect(categoryOf('event.schedule.change')).toBe('record-mutation');
     expect(categoryOf('elastic.target.set')).toBe('local-state');
     expect(categoryOf('elastic.lock')).toBe('local-state');
     expect(categoryOf('elastic.unlock')).toBe('local-state');

@@ -24,6 +24,7 @@ export type TasksMode = 'elastic' | 'timekeeping';
 export type TimekeepingPanel = 'calendar' | 'timeline' | 'countdowns';
 export type TimekeepingPanelVisibility = Record<TimekeepingPanel, boolean>;
 export type TimelineChangeOperation = 'move' | 'resize-start' | 'resize-end';
+export type ScheduleChangeOperation = 'move' | 'resize-end';
 export type ScheduleMode = 'day' | 'four-day' | 'week' | 'month' | 'year' | 'agenda';
 export type ProjectWorkspaceTab = 'notes' | 'task-board' | 'backlog' | 'deadlines' | 'schedule';
 
@@ -42,6 +43,7 @@ export type ProximaAction =
   | { type: 'elastic.lock' }
   | { type: 'elastic.unlock' }
   | { type: 'task.execution.move'; taskId: string; targetColumn: ElasticColumn; targetIndex: number }
+  | { type: 'event.schedule.change'; eventId: string; operation: ScheduleChangeOperation; proposedStartDate: string; proposedDeadline: string }
   | { type: 'schedule.mode.select'; mode: ScheduleMode }
   | { type: 'project.workspace-tab.select'; tab: ProjectWorkspaceTab }
   | { type: 'calendar.navigate'; direction: 'previous' | 'next' }
@@ -382,6 +384,37 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
             message: 'task execution move requires a bounded taskId, execution column and non-negative targetIndex',
           },
         };
+  }
+
+  if (input.type === 'event.schedule.change') {
+    if (
+      typeof input.eventId !== 'string'
+      || input.eventId.length === 0
+      || input.eventId.length > 200
+      || (input.operation !== 'move' && input.operation !== 'resize-end')
+      || !isCanonicalInstant(input.proposedStartDate)
+      || !isCanonicalInstant(input.proposedDeadline)
+      || Date.parse(input.proposedStartDate) >= Date.parse(input.proposedDeadline)
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'schedule event change requires a bounded eventId, move or resize-end operation, canonical temporal bounds and a positive span',
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      action: {
+        type: input.type,
+        eventId: input.eventId,
+        operation: input.operation,
+        proposedStartDate: input.proposedStartDate,
+        proposedDeadline: input.proposedDeadline,
+      },
+    };
   }
 
   if (input.type === 'schedule.mode.select') {
@@ -910,6 +943,34 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
           },
           requestId,
           [action.taskId],
+        );
+      }
+
+      if (action.type === 'event.schedule.change') {
+        if (!state.state.events.some((event) => event.id === action.eventId)) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'record-not-found',
+              message: `event does not exist: ${action.eventId}`,
+              field: 'eventId',
+            },
+            requestId,
+            [action.eventId],
+          );
+        }
+        return rejectAction(
+          state,
+          ring,
+          action.type,
+          {
+            code: 'action-not-available',
+            message: 'schedule event writes remain unavailable before record-store cutover',
+          },
+          requestId,
+          [action.eventId],
         );
       }
 

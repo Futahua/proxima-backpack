@@ -1,5 +1,10 @@
+import type {
+  ActionResult,
+  ScheduleChangeOperation,
+} from '../app/actionProtocol.js';
 import type { CalendarEvent } from '../domain/types.js';
 import { localDateKey } from '../domain/time.js';
+import { localCalendarDate } from './calendarGrid.js';
 
 export type ScheduleTimeGridMode = 'day' | 'four-day' | 'week';
 
@@ -26,9 +31,17 @@ export interface ScheduleTimeGridRenderOptions {
   selectedEventId: string | null;
 }
 
+export interface ScheduleEventChangeIntent {
+  eventId: string;
+  operation: ScheduleChangeOperation;
+  proposedStartDate: string;
+  proposedDeadline: string;
+}
+
 export interface ScheduleTimeGridHandlers {
   openEvent(eventId: string): void;
   closeEvent(): void;
+  changeEvent(intent: ScheduleEventChangeIntent): ActionResult | null;
 }
 
 const MINUTES_PER_DAY = 1_440;
@@ -78,6 +91,53 @@ function nextLocalMidnight(date: Date): Date {
     date.getFullYear(),
     date.getMonth(),
     date.getDate() + 1,
+  );
+}
+
+function scheduleDayFromKey(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = localCalendarDate(year, month - 1, day);
+
+  return localDateKey(date) === value ? date : null;
+}
+
+function civilDayOrdinal(date: Date): number {
+  const utc = new Date(0);
+  utc.setUTCHours(0, 0, 0, 0);
+  utc.setUTCFullYear(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+  return Math.floor(utc.getTime() / 86_400_000);
+}
+
+function civilMinuteDistance(start: Date, end: Date): number {
+  return (
+    (civilDayOrdinal(end) - civilDayOrdinal(start)) * MINUTES_PER_DAY
+    + minuteOfDay(end)
+    - minuteOfDay(start)
+  );
+}
+
+function scheduleDateAtMinute(day: Date, minute: number): Date {
+  const value = localMidnight(day);
+  value.setMinutes(minute, 0, 0);
+  return value;
+}
+
+function snapScheduleMinutes(value: number): number {
+  if (!Number.isFinite(value) || value === 0) return 0;
+
+  return (
+    Math.sign(value)
+    * Math.floor((Math.abs(value) / SLOT_MINUTES) + 0.5)
+    * SLOT_MINUTES
   );
 }
 
@@ -288,7 +348,15 @@ function renderTimedDay(
 
     const durationMinutes = segment.endMinute - segment.startMinute;
 
-    return `<article class="event-card schedule-timed-event${event.isCompleted ? ' completed' : ''}" role="button" tabindex="0" data-schedule-action="open-event" data-schedule-event-id="${escapeHtml(event.id)}" data-schedule-start-minute="${segment.startMinute}" data-schedule-end-minute="${segment.endMinute}" data-c1-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}" style="position:absolute;left:4px;right:4px;top:${(segment.startMinute / MINUTES_PER_DAY) * 100}%;height:${(durationMinutes / MINUTES_PER_DAY) * 100}%;z-index:2;"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
+    const deadline = new Date(event.deadline);
+    const finalSegmentDayKey = Number.isFinite(deadline.getTime())
+      ? localDateKey(new Date(deadline.getTime() - 1))
+      : '';
+    const resizeHandle = finalSegmentDayKey === dayKey
+      ? `<span data-schedule-resize-edge="end" data-c1-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}-resize-end" aria-label="Resize event end" style="position:absolute;left:0;right:0;bottom:0;height:8px;border-bottom:2px solid currentColor;cursor:ns-resize;z-index:4;"></span>`
+      : '';
+
+    return `<article class="event-card schedule-timed-event${event.isCompleted ? ' completed' : ''}" role="button" tabindex="0" data-schedule-action="open-event" data-schedule-timed-event="true" data-schedule-event-id="${escapeHtml(event.id)}" data-schedule-start-value="${escapeHtml(event.startDate)}" data-schedule-deadline-value="${escapeHtml(event.deadline)}" data-schedule-start-minute="${segment.startMinute}" data-schedule-end-minute="${segment.endMinute}" data-c1-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}" style="position:absolute;left:4px;right:4px;top:${(segment.startMinute / MINUTES_PER_DAY) * 100}%;height:${(durationMinutes / MINUTES_PER_DAY) * 100}%;z-index:2;cursor:grab;">${resizeHandle}<strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
   }).join('');
 
   return `<div class="schedule-day-column" data-schedule-day="${escapeHtml(dayKey)}" data-c1-key="schedule-day-${escapeHtml(dayKey)}"><div class="schedule-time-track" data-c1-key="schedule-time-track-${escapeHtml(dayKey)}" style="position:relative;height:${SLOTS_PER_DAY * 8}px;">${slots}${eventCards}${currentTime}</div></div>`;
@@ -340,6 +408,236 @@ export function bindScheduleTimeGridInteractions(
   root: HTMLElement,
   handlers: ScheduleTimeGridHandlers,
 ): void {
+  interface ScheduleGestureState {
+    eventId: string;
+    operation: ScheduleChangeOperation;
+    sourceCard: HTMLElement;
+    originalCards: HTMLElement[];
+    sourceDayKey: string;
+    startClientX: number;
+    startClientY: number;
+    originalStart: Date;
+    originalDeadline: Date;
+    originalStartValue: string;
+    originalDeadlineValue: string;
+    durationMs: number;
+    pickupOffsetMinutes: number;
+    proposedStartDate: string;
+    proposedDeadline: string;
+    changed: boolean;
+    valid: boolean;
+  }
+
+  interface SchedulePointerTarget {
+    day: Date;
+    dayKey: string;
+    minute: number;
+  }
+
+  function scheduleEventCards(eventId: string): HTMLElement[] {
+    return Array.from(
+      root.querySelectorAll<HTMLElement>('[data-schedule-timed-event="true"]'),
+    ).filter((card) => card.dataset.scheduleEventId === eventId);
+  }
+
+  function schedulePointerTarget(event: PointerEvent): SchedulePointerTarget | null {
+    const column = (event.target as HTMLElement)
+      .closest<HTMLElement>('[data-schedule-day]');
+    if (!column || !root.contains(column)) return null;
+
+    const dayKey = column.dataset.scheduleDay;
+    const track = column.querySelector<HTMLElement>('.schedule-time-track');
+    if (!dayKey || !track) return null;
+
+    const day = scheduleDayFromKey(dayKey);
+    const rect = track.getBoundingClientRect();
+    if (
+      !day
+      || !Number.isFinite(rect.height)
+      || rect.height <= 0
+    ) {
+      return null;
+    }
+
+    const y = Math.min(
+      Math.max(event.clientY - rect.top, 0),
+      rect.height,
+    );
+
+    return {
+      day,
+      dayKey,
+      minute: (y / rect.height) * MINUTES_PER_DAY,
+    };
+  }
+
+  function clearSchedulePreview(): void {
+    root
+      .querySelectorAll<HTMLElement>('[data-schedule-preview-for]')
+      .forEach((preview) => {
+        preview.remove();
+      });
+  }
+
+  function renderSchedulePreview(
+    state: ScheduleGestureState,
+    start: Date,
+    deadline: Date,
+  ): void {
+    clearSchedulePreview();
+
+    const startMs = start.getTime();
+    const deadlineMs = deadline.getTime();
+    const label = state.sourceCard.querySelector('strong')?.textContent ?? '';
+
+    root
+      .querySelectorAll<HTMLElement>('[data-schedule-day]')
+      .forEach((column) => {
+        const dayKey = column.dataset.scheduleDay;
+        if (!dayKey) return;
+
+        const day = scheduleDayFromKey(dayKey);
+        const track = column.querySelector<HTMLElement>('.schedule-time-track');
+        if (!day || !track) return;
+
+        const dayStart = localMidnight(day);
+        const dayEnd = nextLocalMidnight(day);
+        const dayStartMs = dayStart.getTime();
+        const dayEndMs = dayEnd.getTime();
+
+        if (deadlineMs <= dayStartMs || startMs >= dayEndMs) return;
+
+        const segmentStartMs = Math.max(startMs, dayStartMs);
+        const segmentEndMs = Math.min(deadlineMs, dayEndMs);
+        const startMinute = segmentStartMs <= dayStartMs
+          ? 0
+          : minuteOfDay(new Date(segmentStartMs));
+        const endMinute = segmentEndMs >= dayEndMs
+          ? MINUTES_PER_DAY
+          : minuteOfDay(new Date(segmentEndMs));
+        const durationMinutes = endMinute - startMinute;
+
+        if (durationMinutes <= 0) return;
+
+        const preview = root.ownerDocument.createElement('article');
+        preview.className = 'event-card schedule-timed-event schedule-gesture-preview';
+        preview.dataset.schedulePreviewFor = state.eventId;
+        preview.dataset.schedulePreviewOperation = state.operation;
+        preview.dataset.schedulePreviewStartMinute = String(startMinute);
+        preview.dataset.schedulePreviewEndMinute = String(endMinute);
+        preview.dataset.schedulePreviewDurationMinutes = String(durationMinutes);
+        preview.setAttribute(
+          'data-c1-key',
+          `schedule-preview-${state.eventId}-${dayKey}`,
+        );
+        preview.setAttribute('aria-hidden', 'true');
+        preview.style.position = 'absolute';
+        preview.style.left = '4px';
+        preview.style.right = '4px';
+        preview.style.top = `${(startMinute / MINUTES_PER_DAY) * 100}%`;
+        preview.style.height = `${(durationMinutes / MINUTES_PER_DAY) * 100}%`;
+        preview.style.zIndex = '5';
+        preview.style.pointerEvents = 'none';
+        preview.textContent = label;
+        track.append(preview);
+      });
+  }
+
+  function restoreScheduleGesture(state: ScheduleGestureState): void {
+    clearSchedulePreview();
+
+    state.originalCards.forEach((card) => {
+      card.style.opacity = '';
+      card.style.cursor = 'grab';
+      delete card.dataset.schedulePickup;
+      delete card.dataset.scheduleInvalid;
+      delete card.dataset.scheduleProposedStart;
+      delete card.dataset.scheduleProposedDeadline;
+    });
+  }
+
+  function updateScheduleGesture(
+    state: ScheduleGestureState,
+    event: PointerEvent,
+  ): void {
+    const target = schedulePointerTarget(event);
+    if (!target) return;
+
+    const samePointer = (
+      event.clientX === state.startClientX
+      && event.clientY === state.startClientY
+      && target.dayKey === state.sourceDayKey
+    );
+
+    let proposedStart = new Date(state.originalStart);
+    let proposedDeadline = new Date(state.originalDeadline);
+
+    if (!samePointer && state.operation === 'move') {
+      const snappedStartMinute = snapScheduleMinutes(
+        target.minute - state.pickupOffsetMinutes,
+      );
+      proposedStart = scheduleDateAtMinute(
+        target.day,
+        snappedStartMinute,
+      );
+      proposedDeadline = new Date(
+        proposedStart.getTime() + state.durationMs,
+      );
+    } else if (!samePointer && state.operation === 'resize-end') {
+      proposedDeadline = scheduleDateAtMinute(
+        target.day,
+        snapScheduleMinutes(target.minute),
+      );
+    }
+
+    const valid = (
+      Number.isFinite(proposedStart.getTime())
+      && Number.isFinite(proposedDeadline.getTime())
+      && proposedDeadline.getTime() > proposedStart.getTime()
+      && (
+        state.operation !== 'resize-end'
+        || civilMinuteDistance(proposedStart, proposedDeadline) >= SLOT_MINUTES
+      )
+    );
+    const proposedStartDate = proposedStart.toISOString();
+    const proposedDeadlineValue = proposedDeadline.toISOString();
+    const changed = (
+      proposedStartDate !== state.originalStartValue
+      || proposedDeadlineValue !== state.originalDeadlineValue
+    );
+
+    state.proposedStartDate = proposedStartDate;
+    state.proposedDeadline = proposedDeadlineValue;
+    state.changed = changed;
+    state.valid = valid;
+
+    state.originalCards.forEach((card) => {
+      card.dataset.scheduleProposedStart = proposedStartDate;
+      card.dataset.scheduleProposedDeadline = proposedDeadlineValue;
+    });
+
+    if (!valid) {
+      clearSchedulePreview();
+      state.originalCards.forEach((card) => {
+        card.dataset.scheduleInvalid = 'true';
+      });
+      return;
+    }
+
+    state.originalCards.forEach((card) => {
+      delete card.dataset.scheduleInvalid;
+    });
+
+    renderSchedulePreview(
+      state,
+      proposedStart,
+      proposedDeadline,
+    );
+  }
+
+  let gesture: ScheduleGestureState | null = null;
+  let suppressNextClickEventId: string | null = null;
+
   root.addEventListener('click', (event) => {
     const control = (event.target as HTMLElement)
       .closest<HTMLElement>('[data-schedule-action]');
@@ -347,13 +645,153 @@ export function bindScheduleTimeGridInteractions(
 
     if (control.dataset.scheduleAction === 'open-event') {
       const eventId = control.dataset.scheduleEventId;
-      if (eventId) handlers.openEvent(eventId);
+      if (!eventId) return;
+
+      if (suppressNextClickEventId === eventId) {
+        suppressNextClickEventId = null;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      handlers.openEvent(eventId);
       return;
     }
 
     if (control.dataset.scheduleAction === 'close-event') {
       handlers.closeEvent();
     }
+  });
+
+  root.addEventListener('pointerdown', (event) => {
+    const target = event.target as HTMLElement;
+    const card = target.closest<HTMLElement>(
+      '[data-schedule-timed-event="true"]',
+    );
+    if (!card) return;
+
+    const eventId = card.dataset.scheduleEventId;
+    const originalStartValue = card.dataset.scheduleStartValue;
+    const originalDeadlineValue = card.dataset.scheduleDeadlineValue;
+    const sourceTarget = schedulePointerTarget(event);
+
+    if (
+      !eventId
+      || !originalStartValue
+      || !originalDeadlineValue
+      || !sourceTarget
+    ) {
+      return;
+    }
+
+    const originalStart = new Date(originalStartValue);
+    const originalDeadline = new Date(originalDeadlineValue);
+    const durationMs = (
+      originalDeadline.getTime()
+      - originalStart.getTime()
+    );
+
+    if (
+      !Number.isFinite(originalStart.getTime())
+      || !Number.isFinite(originalDeadline.getTime())
+      || durationMs <= 0
+    ) {
+      return;
+    }
+
+    const operation: ScheduleChangeOperation = (
+      target.closest<HTMLElement>('[data-schedule-resize-edge="end"]')
+    )
+      ? 'resize-end'
+      : 'move';
+    const pickupOffsetMinutes = (
+      (
+        civilDayOrdinal(sourceTarget.day)
+        - civilDayOrdinal(originalStart)
+      ) * MINUTES_PER_DAY
+      + sourceTarget.minute
+      - minuteOfDay(originalStart)
+    );
+    const originalCards = scheduleEventCards(eventId);
+
+    originalCards.forEach((eventCard) => {
+      delete eventCard.dataset.scheduleRefusal;
+      eventCard.style.opacity = '0.35';
+      eventCard.dataset.schedulePickup = operation;
+    });
+    card.style.cursor = operation === 'move'
+      ? 'grabbing'
+      : 'ns-resize';
+
+    gesture = {
+      eventId,
+      operation,
+      sourceCard: card,
+      originalCards,
+      sourceDayKey: sourceTarget.dayKey,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      originalStart,
+      originalDeadline,
+      originalStartValue,
+      originalDeadlineValue,
+      durationMs,
+      pickupOffsetMinutes,
+      proposedStartDate: originalStartValue,
+      proposedDeadline: originalDeadlineValue,
+      changed: false,
+      valid: true,
+    };
+  });
+
+  root.addEventListener('pointermove', (event) => {
+    if (!gesture) return;
+
+    event.preventDefault();
+    updateScheduleGesture(gesture, event);
+  });
+
+  root.addEventListener('pointerup', (event) => {
+    if (!gesture) return;
+
+    const finished = gesture;
+    updateScheduleGesture(finished, event);
+    gesture = null;
+
+    if (!finished.changed) {
+      restoreScheduleGesture(finished);
+      return;
+    }
+
+    suppressNextClickEventId = finished.eventId;
+
+    if (!finished.valid) {
+      restoreScheduleGesture(finished);
+      return;
+    }
+
+    const result = handlers.changeEvent({
+      eventId: finished.eventId,
+      operation: finished.operation,
+      proposedStartDate: finished.proposedStartDate,
+      proposedDeadline: finished.proposedDeadline,
+    });
+
+    restoreScheduleGesture(finished);
+
+    if (result && !result.ok) {
+      scheduleEventCards(finished.eventId).forEach((card) => {
+        card.dataset.scheduleRefusal = result.error.code;
+      });
+    }
+  });
+
+  root.addEventListener('pointercancel', () => {
+    if (!gesture) return;
+
+    const cancelled = gesture;
+    gesture = null;
+    restoreScheduleGesture(cancelled);
   });
 }
 

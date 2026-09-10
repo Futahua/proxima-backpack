@@ -46,6 +46,7 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'calendar.navigate', direction: 'sideways' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'direction' } });
     expect(parseAction({ type: 'elastic.target.set', targetTime: 'not-a-date' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'targetTime' } });
     expect(parseAction({ type: 'task.execution.move', taskId: 'task-1', targetColumn: 'sideways', targetIndex: 0 })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
+    expect(parseAction({ type: 'event.schedule.change', eventId: 'event-1', operation: 'resize-start', proposedStartDate: '2026-09-06T10:00:00.000Z', proposedDeadline: '2026-09-06T11:00:00.000Z' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
   });
 
   it('uses one dispatcher for cockpit navigation and keeps project selection across surfaces', async () => {
@@ -347,6 +348,45 @@ describe('Gate 3A semantic action protocol', () => {
         code: 'action-not-available',
       },
     });
+    expect(after).toBe(before);
+  });
+
+  it('refuses Schedule move and bottom-edge resize writes as typed unavailable mutations without changing fixture bytes', async () => {
+    const vault = fixtureVault('vault-basic');
+    const loaded = await loadVaultState(vault);
+    const dispatcher = createActionDispatcher({
+      state: loaded.state,
+      problems: loaded.problems,
+      revisions: loaded.revisions,
+      mode: 'fixture',
+      clock: fixedClock('2026-09-06T12:00:00.000Z'),
+    });
+    const event = loaded.state.events[0]!;
+    const before = await vaultByteHash(vault);
+
+    for (const operation of ['move', 'resize-end'] as const) {
+      const result = dispatcher.dispatch({
+        type: 'event.schedule.change',
+        eventId: event.id,
+        operation,
+        proposedStartDate: '2026-09-07T10:00:00.000Z',
+        proposedDeadline: '2026-09-07T11:00:00.000Z',
+      });
+
+      expect(result).toMatchObject({
+        ok: false,
+        actionType: 'event.schedule.change',
+        category: 'record-mutation',
+        outcome: 'unavailable',
+        entityIds: [event.id],
+        error: {
+          code: 'action-not-available',
+        },
+      });
+      expect(isActionResult(result)).toBe(true);
+    }
+
+    const after = await vaultByteHash(vault);
     expect(after).toBe(before);
   });
 

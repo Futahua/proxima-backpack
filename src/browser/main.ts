@@ -523,6 +523,18 @@ function bindInteractions(): void {
       selectedScheduleEventId = null;
       render();
     },
+    changeEvent: ({
+      eventId,
+      operation,
+      proposedStartDate,
+      proposedDeadline,
+    }) => dispatchAction({
+      type: 'event.schedule.change',
+      eventId,
+      operation,
+      proposedStartDate,
+      proposedDeadline,
+    }),
   });
 
   bindTimekeepingCockpitInteractions(root, {

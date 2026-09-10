@@ -2,6 +2,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  ACTION_SCHEMA_VERSION,
+  type ActionResult,
+} from '../src/app/actionProtocol.js';
+import {
   bindScheduleTimeGridInteractions,
   isAllDayScheduleEvent,
   renderScheduleTimeGrid,
@@ -9,6 +13,7 @@ import {
   scheduleTimedProjection,
   scheduleVisibleDays,
   startScheduleTimeTicker,
+  type ScheduleEventChangeIntent,
   type ScheduleTimeGridMode,
 } from '../src/browser/scheduleTimeGrid.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
@@ -95,6 +100,73 @@ function render(
     now: NOW,
     selectedEventId,
   });
+}
+
+function setScheduleTrackGeometry(root: ParentNode): void {
+  root
+    .querySelectorAll<HTMLElement>('.schedule-time-track')
+    .forEach((track) => {
+      Object.defineProperty(track, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: 160,
+          bottom: 768,
+          width: 160,
+          height: 768,
+          toJSON: () => ({}),
+        }),
+      });
+    });
+}
+
+function unavailableScheduleResult(eventId: string): ActionResult {
+  return {
+    schemaVersion: ACTION_SCHEMA_VERSION,
+    ok: false,
+    actionType: 'event.schedule.change',
+    category: 'record-mutation',
+    outcome: 'unavailable',
+    stateRevision: 1,
+    requestId: `request-${eventId}`,
+    entityIds: [eventId],
+    error: {
+      code: 'action-not-available',
+      message: 'schedule event writes remain unavailable before record-store cutover',
+    },
+  };
+}
+
+function mountInteractiveSchedule(
+  mode: ScheduleTimeGridMode,
+  changes: ScheduleEventChangeIntent[],
+  refusal = false,
+): {
+  root: HTMLElement;
+  harness: ReturnType<typeof createInteractionHarness>;
+} {
+  document.body.innerHTML = '<div id="schedule-root"></div>';
+  const root = document.querySelector<HTMLElement>('#schedule-root')!;
+  root.innerHTML = render(mode);
+  setScheduleTrackGeometry(root);
+
+  bindScheduleTimeGridInteractions(root, {
+    openEvent: () => {},
+    closeEvent: () => {},
+    changeEvent: (intent) => {
+      changes.push(intent);
+      return refusal ? unavailableScheduleResult(intent.eventId)
+        : null;
+    },
+  });
+
+  return {
+    root,
+    harness: createInteractionHarness(root),
+  };
 }
 
 beforeEach(() => {
@@ -214,6 +286,281 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
     }
   });
 
+  it('renders timed height as local duration over 1440 and exposes only the actual bottom resize edge', () => {
+    document.body.innerHTML = render('four-day');
+    const harness = createInteractionHarness(document);
+    const timedCard = harness.target(
+      'schedule-event-timed-2026-09-06',
+    );
+
+    expect(parseFloat(timedCard.style.top)).toBeCloseTo(
+      (570 / 1_440) * 100,
+    );
+    expect(parseFloat(timedCard.style.height)).toBeCloseTo(
+      (75 / 1_440) * 100,
+    );
+
+    expect(
+      harness
+        .target('schedule-event-timed-2026-09-06-resize-end')
+        .dataset.scheduleResizeEdge,
+    ).toBe('end');
+
+    expect(() => (
+      harness.target(
+        'schedule-event-overnight-2026-09-06-resize-end',
+      )
+    )).toThrow();
+
+    expect(
+      harness
+        .target('schedule-event-overnight-2026-09-07-resize-end')
+        .dataset.scheduleResizeEdge,
+    ).toBe('end');
+
+    expect(
+      document.querySelector('[data-schedule-resize-edge="start"]'),
+    ).toBeNull();
+  });
+
+  it('follows the pointer and snaps moves to Schedule-specific 15-minute slots in Day, 4-Day and Week', () => {
+    for (const mode of ['day', 'four-day', 'week'] as const) {
+      const changes: ScheduleEventChangeIntent[] = [];
+      const { harness } = mountInteractiveSchedule(
+        mode,
+        changes,
+      );
+      const gesture = harness.pointerDown(
+        'schedule-event-timed-2026-09-06',
+        {
+          clientX: 40,
+          clientY: 312,
+        },
+      );
+
+      gesture.move(
+        'schedule-time-track-2026-09-06',
+        {
+          clientX: 40,
+          clientY: 326,
+        },
+      );
+
+      const preview = harness.target(
+        'schedule-preview-timed-2026-09-06',
+      );
+      expect(preview.dataset.schedulePreviewStartMinute)
+        .toBe('600');
+      expect(preview.dataset.schedulePreviewEndMinute)
+        .toBe('675');
+      expect(
+        preview.dataset.schedulePreviewDurationMinutes,
+      ).toBe('75');
+      expect(parseFloat(preview.style.top)).toBeCloseTo(
+        (600 / 1_440) * 100,
+      );
+      expect(parseFloat(preview.style.height)).toBeCloseTo(
+        (75 / 1_440) * 100,
+      );
+
+      gesture.release(
+        'schedule-time-track-2026-09-06',
+        {
+          clientX: 40,
+          clientY: 326,
+        },
+      );
+
+      expect(changes).toEqual([{
+        eventId: 'timed',
+        operation: 'move',
+        proposedStartDate: localInstant(
+          2026,
+          8,
+          6,
+          10,
+          0,
+        ),
+        proposedDeadline: localInstant(
+          2026,
+          8,
+          6,
+          11,
+          15,
+        ),
+      }]);
+
+      expect(() => (
+        harness.target('schedule-preview-timed-2026-09-06')
+      )).toThrow();
+    }
+  });
+
+  it('moves a multi-day timed event across civil days with a segmented live preview and restores it after typed refusal', () => {
+    for (const mode of ['four-day', 'week'] as const) {
+      const changes: ScheduleEventChangeIntent[] = [];
+      const { harness } = mountInteractiveSchedule(
+        mode,
+        changes,
+        true,
+      );
+      const sourceFirst = harness.target(
+        'schedule-event-overnight-2026-09-06',
+      );
+      const sourceLast = harness.target(
+        'schedule-event-overnight-2026-09-07',
+      );
+      const gesture = harness.pointerDown(
+        'schedule-event-overnight-2026-09-06',
+        {
+          clientX: 40,
+          clientY: 720,
+        },
+      );
+
+      gesture.move(
+        'schedule-time-track-2026-09-07',
+        {
+          clientX: 40,
+          clientY: 720,
+        },
+      );
+
+      const firstPreview = harness.target(
+        'schedule-preview-overnight-2026-09-07',
+      );
+      const secondPreview = harness.target(
+        'schedule-preview-overnight-2026-09-08',
+      );
+
+      expect(firstPreview.dataset.schedulePreviewStartMinute)
+        .toBe('1320');
+      expect(firstPreview.dataset.schedulePreviewEndMinute)
+        .toBe('1440');
+      expect(firstPreview.dataset.schedulePreviewDurationMinutes)
+        .toBe('120');
+      expect(secondPreview.dataset.schedulePreviewStartMinute)
+        .toBe('0');
+      expect(secondPreview.dataset.schedulePreviewEndMinute)
+        .toBe('60');
+      expect(secondPreview.dataset.schedulePreviewDurationMinutes)
+        .toBe('60');
+
+      gesture.release(
+        'schedule-time-track-2026-09-07',
+        {
+          clientX: 40,
+          clientY: 720,
+        },
+      );
+
+      expect(changes).toEqual([{
+        eventId: 'overnight',
+        operation: 'move',
+        proposedStartDate: localInstant(
+          2026,
+          8,
+          7,
+          22,
+          0,
+        ),
+        proposedDeadline: localInstant(
+          2026,
+          8,
+          8,
+          1,
+          0,
+        ),
+      }]);
+
+      expect(sourceFirst.dataset.scheduleRefusal)
+        .toBe('action-not-available');
+      expect(sourceLast.dataset.scheduleRefusal)
+        .toBe('action-not-available');
+      expect(sourceFirst.style.opacity).toBe('');
+      expect(sourceLast.style.opacity).toBe('');
+      expect(() => (
+        harness.target('schedule-preview-overnight-2026-09-07')
+      )).toThrow();
+      expect(() => (
+        harness.target('schedule-preview-overnight-2026-09-08')
+      )).toThrow();
+    }
+  });
+
+  it('resizes only from the bottom edge with a live 15-minute snapped deadline preview', () => {
+    const changes: ScheduleEventChangeIntent[] = [];
+    const { harness } = mountInteractiveSchedule(
+      'day',
+      changes,
+      true,
+    );
+    const source = harness.target(
+      'schedule-event-timed-2026-09-06',
+    );
+    const gesture = harness.beginResize(
+      'schedule-event-timed-2026-09-06-resize-end',
+      {
+        clientX: 40,
+        clientY: 344,
+      },
+    );
+
+    gesture.move(
+      'schedule-time-track-2026-09-06',
+      {
+        clientX: 40,
+        clientY: 370,
+      },
+    );
+
+    const preview = harness.target(
+      'schedule-preview-timed-2026-09-06',
+    );
+    expect(preview.dataset.schedulePreviewStartMinute)
+      .toBe('570');
+    expect(preview.dataset.schedulePreviewEndMinute)
+      .toBe('690');
+    expect(preview.dataset.schedulePreviewDurationMinutes)
+      .toBe('120');
+    expect(parseFloat(preview.style.height)).toBeCloseTo(
+      (120 / 1_440) * 100,
+    );
+
+    gesture.release(
+      'schedule-time-track-2026-09-06',
+      {
+        clientX: 40,
+        clientY: 370,
+      },
+    );
+
+    expect(changes).toEqual([{
+      eventId: 'timed',
+      operation: 'resize-end',
+      proposedStartDate: localInstant(
+        2026,
+        8,
+        6,
+        9,
+        30,
+      ),
+      proposedDeadline: localInstant(
+        2026,
+        8,
+        6,
+        11,
+        30,
+      ),
+    }]);
+    expect(source.dataset.scheduleRefusal)
+      .toBe('action-not-available');
+    expect(source.style.opacity).toBe('');
+    expect(() => (
+      harness.target('schedule-preview-timed-2026-09-06')
+    )).toThrow();
+  });
+
   it('opens and closes the local read-only event editor through machine-key clicks without changing event data', () => {
     const before = JSON.stringify(events);
     document.body.innerHTML = '<div id="schedule-root"></div>';
@@ -241,6 +588,7 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
         selectedEventId = null;
         rerender();
       },
+      changeEvent: () => null,
     });
 
     rerender();
@@ -280,6 +628,7 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
       closeEvent: () => {
         openedEventId = null;
       },
+      changeEvent: () => null,
     });
 
     const harness = createInteractionHarness(root);
