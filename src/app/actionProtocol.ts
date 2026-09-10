@@ -1,7 +1,7 @@
 import { ALL_PROJECTS, UNCATEGORISED } from '../domain/selectors.js';
 import { randomIdGenerator, systemClock, type Clock, type IdGenerator } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
-import type { ProximaState } from '../domain/types.js';
+import type { ElasticColumn, ProximaState } from '../domain/types.js';
 import { createEventRing, type EventRing, type ProximaEvent } from './eventRing.js';
 import {
   categoryOf,
@@ -24,10 +24,19 @@ export type TasksMode = 'elastic' | 'timekeeping';
 export type ScheduleMode = 'day' | 'four-day' | 'week' | 'month' | 'year' | 'agenda';
 export type ProjectWorkspaceTab = 'notes' | 'task-board' | 'backlog' | 'deadlines' | 'schedule';
 
+export interface ElasticSessionState {
+  targetTime: string;
+  lockedAt: string | null;
+}
+
 export type ProximaAction =
   | { type: 'project.select'; projectId: string }
   | { type: 'surface.select'; surface: Surface }
   | { type: 'tasks.mode.select'; mode: TasksMode }
+  | { type: 'elastic.target.set'; targetTime: string }
+  | { type: 'elastic.lock' }
+  | { type: 'elastic.unlock' }
+  | { type: 'task.execution.move'; taskId: string; targetColumn: ElasticColumn; targetIndex: number }
   | { type: 'schedule.mode.select'; mode: ScheduleMode }
   | { type: 'project.workspace-tab.select'; tab: ProjectWorkspaceTab }
   | { type: 'calendar.navigate'; direction: 'previous' | 'next' }
@@ -56,6 +65,8 @@ export interface ActionSnapshot {
   scheduleMode: ScheduleMode;
   projectWorkspaceTab: ProjectWorkspaceTab;
   calendarMonth: string;
+  elasticTargetTime: string;
+  elasticLockedAt: string | null;
 }
 
 export interface ActionSuccess {
@@ -100,6 +111,8 @@ export interface ActionDispatcherState {
   scheduleMode: ScheduleMode;
   projectWorkspaceTab: ProjectWorkspaceTab;
   calendarMonth: string;
+  elasticTargetTime: string;
+  elasticLockedAt: string | null;
   stateRevision: number;
   settledRevision: number;
   settled: boolean;
@@ -118,6 +131,8 @@ export interface ActionDispatcherOptions {
   initialScheduleMode?: ScheduleMode;
   initialProjectWorkspaceTab?: ProjectWorkspaceTab;
   initialCalendarMonth?: string;
+  initialElasticTargetTime?: string;
+  initialElasticLockedAt?: string | null;
   clock?: Clock;
   idGenerator?: IdGenerator;
   eventCapacity?: number;
@@ -210,6 +225,49 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
         };
   }
 
+  if (input.type === 'elastic.target.set') {
+    return isCanonicalInstant(input.targetTime)
+      ? { ok: true, action: { type: input.type, targetTime: input.targetTime } }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'targetTime must be a canonical ISO instant',
+            field: 'targetTime',
+          },
+        };
+  }
+
+  if (input.type === 'elastic.lock' || input.type === 'elastic.unlock') {
+    return { ok: true, action: { type: input.type } };
+  }
+
+  if (input.type === 'task.execution.move') {
+    return typeof input.taskId === 'string'
+      && input.taskId.length > 0
+      && input.taskId.length <= 200
+      && (input.targetColumn === 'backlog' || input.targetColumn === 'running' || input.targetColumn === 'finished')
+      && Number.isInteger(input.targetIndex)
+      && Number(input.targetIndex) >= 0
+      && Number(input.targetIndex) <= 100_000
+      ? {
+          ok: true,
+          action: {
+            type: input.type,
+            taskId: input.taskId,
+            targetColumn: input.targetColumn,
+            targetIndex: Number(input.targetIndex),
+          },
+        }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'task execution move requires a bounded taskId, execution column and non-negative targetIndex',
+          },
+        };
+  }
+
   if (input.type === 'schedule.mode.select') {
     return input.mode === 'day'
       || input.mode === 'four-day'
@@ -297,6 +355,8 @@ function snapshot(state: ActionDispatcherState): ActionSnapshot {
     scheduleMode: state.scheduleMode,
     projectWorkspaceTab: state.projectWorkspaceTab,
     calendarMonth: state.calendarMonth,
+    elasticTargetTime: state.elasticTargetTime,
+    elasticLockedAt: state.elasticLockedAt,
   };
 }
 
@@ -349,6 +409,16 @@ function failureFor(
   };
 }
 
+function isCanonicalInstant(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 64) return false;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
+}
+
+function defaultElasticTargetTime(clock: Clock): string {
+  return new Date(clock.now() + 4 * 60 * 60 * 1000).toISOString();
+}
+
 function isValidCalendarMonth(value: string): boolean {
   return /^\d{4}-(0[1-9]|1[0-2])-01$/.test(value)
     && Number.isFinite(new Date(`${value}T00:00:00`).getTime());
@@ -380,6 +450,28 @@ function calendarMonthForClock(clock: Clock): string {
 function existingSelection(projects: ProximaState['projects'], selection: string): string {
   if (selection === ALL_PROJECTS || selection === UNCATEGORISED) return selection;
   return projects.some((project) => project.id === selection) ? selection : ALL_PROJECTS;
+}
+
+function rejectAction(
+  state: ActionDispatcherState,
+  ring: EventRing,
+  actionType: ProximaAction['type'],
+  error: ActionError,
+  requestId: string,
+  entityIds: string[] = [],
+): ActionFailure {
+  const result = failureFor(state, actionType, error, requestId, entityIds);
+  ring.append({
+    kind: 'action.rejected',
+    category: 'diagnostic',
+    entityIds,
+    requestId,
+    actionType,
+    stateRevision: state.stateRevision,
+    errorCode: result.error.code,
+  });
+  state.latestEventSequence = ring.latestSequence();
+  return result;
 }
 
 function settleLocalAction(
@@ -428,6 +520,12 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     scheduleMode: options.initialScheduleMode ?? 'month',
     projectWorkspaceTab: options.initialProjectWorkspaceTab ?? 'notes',
     calendarMonth: options.initialCalendarMonth ?? '2026-09-01',
+    elasticTargetTime: isCanonicalInstant(options.initialElasticTargetTime)
+      ? options.initialElasticTargetTime
+      : defaultElasticTargetTime(clock),
+    elasticLockedAt: isCanonicalInstant(options.initialElasticLockedAt)
+      ? options.initialElasticLockedAt
+      : null,
     stateRevision: 1,
     settledRevision: 1,
     settled: true,
@@ -548,6 +646,104 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         return settleLocalAction(state, ring, action.type, changed, requestId);
       }
 
+      if (action.type === 'elastic.target.set') {
+        if (state.elasticLockedAt !== null) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'semantic-conflict',
+              message: 'unlock the Elastic run before changing its target',
+              field: 'targetTime',
+            },
+            requestId,
+          );
+        }
+
+        if (Date.parse(action.targetTime) <= clock.now()) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'invalid-action-input',
+              message: 'Elastic target must be in the future',
+              field: 'targetTime',
+            },
+            requestId,
+          );
+        }
+
+        const changed = state.elasticTargetTime !== action.targetTime;
+        if (changed) {
+          state.elasticTargetTime = action.targetTime;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'elastic.lock') {
+        if (Date.parse(state.elasticTargetTime) <= clock.now()) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'invalid-action-input',
+              message: 'Elastic target must be in the future before locking',
+              field: 'targetTime',
+            },
+            requestId,
+          );
+        }
+
+        const changed = state.elasticLockedAt === null;
+        if (changed) {
+          state.elasticLockedAt = new Date(clock.now()).toISOString();
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'elastic.unlock') {
+        const changed = state.elasticLockedAt !== null;
+        if (changed) {
+          state.elasticLockedAt = null;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'task.execution.move') {
+        if (!state.state.tasks.some((task) => task.id === action.taskId)) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'record-not-found',
+              message: `task does not exist: ${action.taskId}`,
+              field: 'taskId',
+            },
+            requestId,
+            [action.taskId],
+          );
+        }
+
+        return rejectAction(
+          state,
+          ring,
+          action.type,
+          {
+            code: 'action-not-available',
+            message: 'task execution writes remain unavailable before record-store cutover',
+          },
+          requestId,
+          [action.taskId],
+        );
+      }
+
       if (action.type === 'schedule.mode.select') {
         const changed = state.scheduleMode !== action.mode;
         if (changed) {
@@ -643,12 +839,15 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         return result;
       }
 
+      const resetElasticTarget = defaultElasticTargetTime(clock);
       const changed = state.surface !== 'tasks'
         || state.selection !== ALL_PROJECTS
         || state.tasksMode !== 'elastic'
         || state.scheduleMode !== 'month'
         || state.projectWorkspaceTab !== 'notes'
-        || state.calendarMonth !== '2026-09-01';
+        || state.calendarMonth !== '2026-09-01'
+        || state.elasticTargetTime !== resetElasticTarget
+        || state.elasticLockedAt !== null;
 
       state.surface = 'tasks';
       state.selection = ALL_PROJECTS;
@@ -656,6 +855,8 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
       state.scheduleMode = 'month';
       state.projectWorkspaceTab = 'notes';
       state.calendarMonth = '2026-09-01';
+      state.elasticTargetTime = resetElasticTarget;
+      state.elasticLockedAt = null;
 
       if (changed) {
         state.stateRevision += 1;
@@ -818,7 +1019,9 @@ export function isActionResult(value: unknown): value is ActionResult {
         || snapshotValue.projectWorkspaceTab === 'schedule'
       )
       && typeof snapshotValue.calendarMonth === 'string'
-      && isValidCalendarMonth(snapshotValue.calendarMonth);
+      && isValidCalendarMonth(snapshotValue.calendarMonth)
+      && isCanonicalInstant(snapshotValue.elasticTargetTime)
+      && (snapshotValue.elasticLockedAt === null || isCanonicalInstant(snapshotValue.elasticLockedAt));
   }
 
   const errorValue = value.error;
