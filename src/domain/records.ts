@@ -1,27 +1,27 @@
 /**
- * Record identity and provenance.
+ * Legacy Markdown record identity and source provenance.
  *
- * A record's logical id and the path of the file it was read from are two different
- * things, and conflating them is the defect this module exists to prevent. The plugin
- * treated the path as the identity, so moving a file silently created a new record and
- * renaming one silently destroyed the old one.
+ * `SourcedRecord.id` is the compatibility key produced by the existing Markdown
+ * reader. It may come from frontmatter, a filename or a folder because legacy
+ * discovery must remain truthful to the creator's existing vault.
  *
- * Here the logical id is what the rest of Proxima refers to — selections, board keys,
- * agent-visible ids, future visual keys — and the source reference is separate
- * metadata describing where those bytes came from.
+ * It is not the future canonical record identity. HARD GATE A assigns a separate
+ * opaque canonical id before import. Legacy ids remain aliases/provenance only, and
+ * the source reference remains separate metadata describing where legacy bytes came
+ * from.
  */
 
 export type RecordKind = 'project' | 'task' | 'event';
 
 /**
- * How a record's logical id was decided.
+ * How the legacy Markdown reader obtained its compatibility id.
  *
- * - `frontmatter` — the file declared `id:`. Authoritative; a rename cannot change it.
- * - `filename`    — derived from the file's own basename, the legacy convention.
+ * - `frontmatter` — the file declared `id:`.
+ * - `filename`    — derived from the file's own basename.
  * - `folder`      — derived from the containing folder, for `projects/{id}/index.md`.
  *
- * Only `frontmatter` survives a rename. That is a property of the data, not a bug:
- * a file with no declared id has nothing else to be identified by.
+ * These origins are import provenance only. None is authority for a future canonical
+ * opaque record id, including an explicit frontmatter id.
  */
 export type IdOrigin = 'frontmatter' | 'filename' | 'folder';
 
@@ -39,6 +39,7 @@ export interface SourceRef {
 
 /** Anything loaded out of the vault can be traced back to its file. */
 export interface SourcedRecord {
+  /** Legacy compatibility/import alias. Never promote directly to a canonical record id. */
   id: string;
   source: SourceRef;
 }
