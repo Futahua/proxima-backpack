@@ -1,4 +1,4 @@
-import { createActionDispatcher, type ProjectWorkspaceTab, type ProximaActionDispatcher, type ScheduleMode, type Surface, type TasksMode } from '../app/actionProtocol.js';
+import { createActionDispatcher, type ActionResult, type ProjectWorkspaceTab, type ProximaActionDispatcher, type ScheduleMode, type Surface, type TasksMode } from '../app/actionProtocol.js';
 import { createInspectionProjection } from '../app/inspection.js';
 import type { ReadOnlyProjection } from '../app/readOnlyProjection.js';
 import { evaluateRealVaultAcceptance, isRealVaultAcceptanceReport, type RealVaultAcceptanceReport } from '../app/realVaultAcceptance.js';
@@ -11,7 +11,7 @@ import { createUiHealthModel, type UiHealthModel } from '../app/uiHealth.js';
 import { evaluateCleanProfileAcceptance } from '../app/fsaEvidence.js';
 import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
 import { loadVaultState } from '../app/vaultRepository.js';
-import { fixedClock, sequentialIdGenerator } from '../domain/clock.js';
+import { fixedClock, sequentialIdGenerator, systemClock } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
 import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, eventsByDay, eventsForSelection, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
 import { localDateKey } from '../domain/time.js';
@@ -28,6 +28,7 @@ import { createCanvasExcalidrawPreviewRegistry, disposeCanvasExcalidrawPreviewsO
 import { renderWithBoundary } from './renderBoundary.js';
 import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } from './canvasTextPreview.js';
 import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
+import { bindElasticCockpitInteractions, renderElasticCockpit, shouldTickElasticProgress } from './elasticCockpit.js';
 import { calendarGridDates } from './calendarGrid.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
@@ -46,6 +47,11 @@ let tasksMode: TasksMode = 'elastic';
 let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let calendarCursor = new Date(FIXED_CLOCK.now());
+let elasticTargetTime = new Date(FIXED_CLOCK.now() + 4 * 60 * 60 * 1000).toISOString();
+let elasticLockedAt: string | null = null;
+let elasticSelectedTaskId: string | null = null;
+let elasticDropRefusal: string | null = null;
+let elasticProgressTimer: number | null = null;
 let actionDispatcher: ProximaActionDispatcher | null = null;
 let sourceSession: SourceSession | null = null;
 let startupInspection: StartupInspection | null = null;
@@ -143,7 +149,7 @@ function taskCard(state: ProximaState, task: Task, height?: number, deadlineStat
   return `<article class="task-card" data-c1-key="task-card-${escapeHtml(task.id)}"${style}><div class="task-card-top"><span class="task-status">${escapeHtml(task.status)}</span>${task.isCompleted ? '<span class="task-complete">Done</span>' : ''}</div><h3>${escapeHtml(task.name)}</h3><p>${escapeHtml(task.description || 'No description')}</p><footer><span>${escapeHtml(projectName(state, task.projectId, lookup))}</span><span${deadlineState === 'expired' ? ' class="task-overdue"' : ''}>${escapeHtml(deadlineText)}</span></footer></article>`;
 }
 
-function boardSurface(state: ProximaState, lookup: Map<string, string>): string {
+function legacyBoardSurface(state: ProximaState, lookup: Map<string, string>): string {
   const taskProjectIds = new Set(projectsFor(state.projects, 'task').map((project) => project.id));
   const boardTasks = state.tasks.filter((task) => task.projectId === null || taskProjectIds.has(task.projectId));
   const selectedTasks = tasksForSelection(boardTasks, selection);
@@ -151,6 +157,28 @@ function boardSurface(state: ProximaState, lookup: Map<string, string>): string 
   const presentation = boardElasticPresentation(board.running, new Date(FIXED_CLOCK.now()), 460);
   const columns: Array<{ id: 'backlog' | 'running' | 'finished'; label: string; tasks: Task[] }> = [{ id: 'backlog', label: 'Backlog', tasks: board.backlog }, { id: 'running', label: 'Running', tasks: board.running }, { id: 'finished', label: 'Finished', tasks: board.finished }];
   return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection, lookup))}</p><h2>Elastic board</h2><p class="surface-description">Running work expands by time remaining; status determines the column.</p></div><span class="surface-count">${selectedTasks.length} tasks</span></header><div class="board-grid">${columns.map((column) => `<section class="board-column" data-c1-key="board-column-${column.id}" aria-label="${column.label} column"><header><h3>${column.label}</h3><span>${column.tasks.length}</span></header><div class="column-cards">${column.tasks.length === 0 ? `<p class="empty-state" data-c1-key="board-empty-${column.id}">No tasks here.</p>` : column.tasks.map((task) => taskCard(state, task, column.id === 'running' ? presentation.heights[task.id] : undefined, column.id === 'running' ? presentation.deadlineState[task.id] : undefined, lookup)).join('')}</div></section>`).join('')}</div></section>`;
+}
+
+function boardSurface(state: ProximaState, lookup: Map<string, string>): string {
+  const taskProjectIds = new Set(projectsFor(state.projects, 'task').map((project) => project.id));
+  const boardTasks = state.tasks.filter((task) => task.projectId === null || taskProjectIds.has(task.projectId));
+  const selectedTasks = tasksForSelection(boardTasks, selection);
+  const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
+
+  return renderElasticCockpit({
+    state,
+    tasks: selectedTasks,
+    projectNames: lookup,
+    selectionLabel: selectionLabel(state, selection, lookup),
+    session: {
+      targetTime: elasticTargetTime,
+      lockedAt: elasticLockedAt,
+    },
+    now,
+    selectedTaskId: elasticSelectedTaskId,
+    dropRefusal: elasticDropRefusal,
+    containerHeight: 460,
+  });
 }
 
 function monthTitle(date: Date): string { return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }); }
@@ -272,6 +300,22 @@ async function runFsaProbe(): Promise<void> {
   catch (error) { renderFsaProbe({ error: error instanceof Error ? error.message : String(error) }); }
 }
 
+function syncElasticProgressTimer(): void {
+  const shouldTick = shouldTickElasticProgress(
+    currentSourceMode(),
+    surface,
+    tasksMode,
+    elasticLockedAt,
+  );
+
+  if (shouldTick && elasticProgressTimer === null) {
+    elasticProgressTimer = window.setInterval(() => render(), 1_000);
+  } else if (!shouldTick && elasticProgressTimer !== null) {
+    window.clearInterval(elasticProgressTimer);
+    elasticProgressTimer = null;
+  }
+}
+
 function render(): void {
   if (!appState) return;
   const currentState = appState;
@@ -308,12 +352,13 @@ function render(): void {
   if (surfaceMarkup.failure) root.dataset.proximaRendererFailure = surfaceMarkup.failure.code;
   else delete root.dataset.proximaRendererFailure;
   root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span>Read-only workspace</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
+  syncElasticProgressTimer();
   updateHydrationSummary(appState, problems);
   exposeInspection();
 }
 
-function dispatchAction(input: unknown): void {
-  if (!actionDispatcher) return;
+function dispatchAction(input: unknown): ActionResult | null {
+  if (!actionDispatcher) return null;
   const result = actionDispatcher.dispatch(input);
   if (result.ok) {
     const next = actionDispatcher.snapshot();
@@ -323,10 +368,13 @@ function dispatchAction(input: unknown): void {
     scheduleMode = next.scheduleMode;
     projectWorkspaceTab = next.projectWorkspaceTab;
     calendarCursor = new Date(`${next.calendarMonth}T00:00:00`);
+    elasticTargetTime = next.elasticTargetTime;
+    elasticLockedAt = next.elasticLockedAt;
     render();
   } else {
     setText('#boot-status', `Action failed: ${result.error.code}`);
   }
+  return result;
 }
 
 /**
@@ -374,6 +422,42 @@ function bindInteractions(): void {
   const root = element<HTMLElement>('#proxima-app');
   if (root.dataset.interactionsBound === 'true') return;
   root.dataset.interactionsBound = 'true';
+
+  bindElasticCockpitInteractions(root, {
+    openTask: (taskId) => {
+      elasticSelectedTaskId = taskId;
+      render();
+    },
+    closeTask: () => {
+      elasticSelectedTaskId = null;
+      render();
+    },
+    setTarget: (targetTime) => {
+      elasticDropRefusal = null;
+      dispatchAction({ type: 'elastic.target.set', targetTime });
+    },
+    lock: () => {
+      elasticDropRefusal = null;
+      dispatchAction({ type: 'elastic.lock' });
+    },
+    unlock: () => {
+      elasticDropRefusal = null;
+      dispatchAction({ type: 'elastic.unlock' });
+    },
+    moveTask: ({ taskId, targetColumn, targetIndex }) => {
+      const result = dispatchAction({
+        type: 'task.execution.move',
+        taskId,
+        targetColumn,
+        targetIndex,
+      });
+      if (result && !result.ok) {
+        elasticDropRefusal = result.error.code;
+        render();
+      }
+    },
+  });
+
   root.addEventListener('click', (event) => {
     const button = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (!button || !appState) return;
@@ -440,7 +524,7 @@ async function boot(): Promise<void> {
   sourceSession = started.session;
   startupInspection = started.inspection;
   applyProjection(sourceSession.projection(), sourceSession.snapshot().sourceMode);
-  actionDispatcher = createActionDispatcher({ state: appState!, problems: loadProblems, revisions: sourceProjection!.revisions, mode: sourceSession.snapshot().sourceMode === 'external' ? 'live' : 'fixture', initialSourceRevision: sourceProjection!.generation, initialCalendarMonth: '2026-09-01', clock: FIXED_CLOCK, idGenerator: DETERMINISTIC_IDS });
+  actionDispatcher = createActionDispatcher({ state: appState!, problems: loadProblems, revisions: sourceProjection!.revisions, mode: sourceSession.snapshot().sourceMode === 'external' ? 'live' : 'fixture', initialSourceRevision: sourceProjection!.generation, initialCalendarMonth: '2026-09-01', clock: sourceSession.snapshot().sourceMode === 'external' ? systemClock : FIXED_CLOCK, idGenerator: DETERMINISTIC_IDS });
   const initial = actionDispatcher.snapshot();
   selection = initial.selection;
   surface = initial.surface;
@@ -448,6 +532,8 @@ async function boot(): Promise<void> {
   scheduleMode = initial.scheduleMode;
   projectWorkspaceTab = initial.projectWorkspaceTab;
   calendarCursor = new Date(`${initial.calendarMonth}T00:00:00`);
+  elasticTargetTime = initial.elasticTargetTime;
+  elasticLockedAt = initial.elasticLockedAt;
   const root = element<HTMLElement>('#proxima-app');
   root.dataset.proximaFixture = FIXTURE_NAME;
   root.dataset.proximaMode = sourceSession.snapshot().sourceMode;

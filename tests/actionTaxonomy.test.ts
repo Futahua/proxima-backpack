@@ -54,7 +54,10 @@ describe('Stage 0 action taxonomy', () => {
     }
     // Defaulting an unknown type to 'presentation' would let a durable write cross a
     // boundary that believes nothing durable happens, so undefined is the answer.
-    expect(categoryOf('task.execution.move')).toBeUndefined();
+    expect(categoryOf('task.execution.move')).toBe('record-mutation');
+    expect(categoryOf('elastic.target.set')).toBe('local-state');
+    expect(categoryOf('elastic.lock')).toBe('local-state');
+    expect(categoryOf('elastic.unlock')).toBe('local-state');
     expect(categoryOf('')).toBeUndefined();
     expect(categoryOf('toString')).toBeUndefined();
   });
@@ -130,7 +133,7 @@ describe('Stage 0 dispatcher results', () => {
 
   it('an unrecognised action type has no category to report, and says so', async () => {
     const d = await dispatcher();
-    const result = d.dispatch({ type: 'task.execution.move', taskId: 't1' });
+    const result = d.dispatch({ type: 'stage0.unregistered-probe' });
     expect(result).toMatchObject({ ok: false, outcome: 'validation-refused', category: 'unknown' });
     expect(isActionResult(result)).toBe(true);
   });

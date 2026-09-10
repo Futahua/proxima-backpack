@@ -81,14 +81,16 @@ describe('Gate 3A inspection projection', () => {
     expect(projection.surface).toBe('schedule');
     expect(projection.submode).toBe('month');
     expect(projection.selection).toBe('proj-term');
-    expect(projection.localState).toEqual({
+    expect(projection.localState).toMatchObject({
       surface: 'schedule',
       selection: 'proj-term',
       tasksMode: 'elastic',
       scheduleMode: 'month',
       projectWorkspaceTab: 'notes',
       calendarMonth: '2026-09-01',
+      elasticLockedAt: null,
     });
+    expect(Number.isFinite(Date.parse(projection.localState.elasticTargetTime))).toBe(true);
     expect(projection.eventSequences.action).toBe(projection.latestEventSequence);
     expect(projection.eventSequences.action).toBeGreaterThan(0);
     expect(projection.eventSequences.mutation).toBeNull();

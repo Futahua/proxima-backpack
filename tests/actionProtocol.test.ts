@@ -41,6 +41,8 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'schedule.mode.select', mode: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'mode' } });
     expect(parseAction({ type: 'project.workspace-tab.select', tab: 'bogus' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'tab' } });
     expect(parseAction({ type: 'calendar.navigate', direction: 'sideways' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'direction' } });
+    expect(parseAction({ type: 'elastic.target.set', targetTime: 'not-a-date' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input', field: 'targetTime' } });
+    expect(parseAction({ type: 'task.execution.move', taskId: 'task-1', targetColumn: 'sideways', targetIndex: 0 })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
   });
 
   it('uses one dispatcher for cockpit navigation and keeps project selection across surfaces', async () => {
@@ -236,6 +238,109 @@ describe('Gate 3A semantic action protocol', () => {
 
     expect(after).toBe(before);
     expect(dispatcher.snapshot().selection).toBe('proj-term');
+  });
+
+  it('keeps Elastic target, lock and unlock as disposable local state', async () => {
+    const loaded = await loadVaultState(fixtureVault('vault-basic'));
+    const clock = fixedClock('2026-09-06T12:00:00.000Z');
+    const dispatcher = createActionDispatcher({
+      state: loaded.state,
+      problems: loaded.problems,
+      revisions: loaded.revisions,
+      mode: 'fixture',
+      clock,
+    });
+
+    expect(dispatcher.snapshot()).toMatchObject({
+      elasticTargetTime: '2026-09-06T16:00:00.000Z',
+      elasticLockedAt: null,
+    });
+
+    expect(dispatcher.dispatch({
+      type: 'elastic.target.set',
+      targetTime: '2026-09-06T18:00:00.000Z',
+    })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      snapshot: {
+        elasticTargetTime: '2026-09-06T18:00:00.000Z',
+        elasticLockedAt: null,
+      },
+    });
+
+    expect(dispatcher.dispatch({ type: 'elastic.lock' })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      snapshot: {
+        elasticTargetTime: '2026-09-06T18:00:00.000Z',
+        elasticLockedAt: '2026-09-06T12:00:00.000Z',
+      },
+    });
+
+    expect(dispatcher.dispatch({
+      type: 'elastic.target.set',
+      targetTime: '2026-09-06T19:00:00.000Z',
+    })).toMatchObject({
+      ok: false,
+      category: 'local-state',
+      outcome: 'semantic-conflict',
+    });
+
+    clock.advance(60 * 60 * 1000);
+
+    expect(dispatcher.dispatch({ type: 'elastic.unlock' })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      snapshot: {
+        elasticTargetTime: '2026-09-06T18:00:00.000Z',
+        elasticLockedAt: null,
+      },
+    });
+  });
+
+  it('refuses task execution writes and leaves every durable fixture byte unchanged', async () => {
+    const vault = fixtureVault('vault-basic');
+    const loaded = await loadVaultState(vault);
+    const dispatcher = createActionDispatcher({
+      state: loaded.state,
+      problems: loaded.problems,
+      revisions: loaded.revisions,
+      mode: 'fixture',
+      clock: fixedClock('2026-09-06T12:00:00.000Z'),
+    });
+    const task = loaded.state.tasks[0]!;
+    const before = await vaultByteHash(vault);
+
+    dispatcher.dispatch({
+      type: 'elastic.target.set',
+      targetTime: '2026-09-06T17:00:00.000Z',
+    });
+    dispatcher.dispatch({ type: 'elastic.lock' });
+    dispatcher.dispatch({ type: 'elastic.unlock' });
+    expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+    });
+
+    const move = dispatcher.dispatch({
+      type: 'task.execution.move',
+      taskId: task.id,
+      targetColumn: 'running',
+      targetIndex: 0,
+    });
+
+    const after = await vaultByteHash(vault);
+
+    expect(move).toMatchObject({
+      ok: false,
+      category: 'record-mutation',
+      outcome: 'unavailable',
+      entityIds: [task.id],
+      error: {
+        code: 'action-not-available',
+      },
+    });
+    expect(after).toBe(before);
   });
 
   it('keeps fixture-only reset unavailable for a live dispatcher', async () => {
