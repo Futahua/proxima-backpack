@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createActionDispatcher,
@@ -25,6 +26,12 @@ import type { ProximaState, Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
 
 const NOW = new Date(2026, 8, 6, 12, 0, 0, 0);
+
+function durableStateHash(state: ProximaState): string {
+  return createHash('sha256')
+    .update(JSON.stringify(state))
+    .digest('hex');
+}
 
 function afterHours(hours: number): string {
   return new Date(NOW.getTime() + hours * 60 * 60 * 1000).toISOString();
@@ -756,6 +763,102 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
 
     expect(mounted.selectedTaskId()).toBeNull();
     expect(JSON.stringify(dispatcher.snapshot().state)).toBe(beforeRecords);
+  });
+
+  it('observes the same task simultaneously in every Timekeeping panel where its temporal data applies', () => {
+    const dispatcher = createDispatcher();
+    const mounted = mount(dispatcher);
+
+    mounted.harness.click('timekeeping-panel-toggle-timeline');
+    mounted.harness.click('timekeeping-panel-toggle-countdowns');
+
+    expect(mounted.harness.target('timekeeping-calendar-task-urgent'))
+      .toBeInstanceOf(HTMLElement);
+    expect(mounted.harness.target('timekeeping-gantt-task-urgent'))
+      .toBeInstanceOf(HTMLElement);
+    expect(mounted.harness.target('timekeeping-countdown-task-urgent'))
+      .toBeInstanceOf(HTMLElement);
+
+    expect(mounted.harness.target('timekeeping-gantt-task-start-only'))
+      .toBeInstanceOf(HTMLElement);
+    expect(() => mounted.harness.target('timekeeping-calendar-task-start-only'))
+      .toThrow();
+    expect(() => mounted.harness.target('timekeeping-countdown-task-start-only'))
+      .toThrow();
+
+    expect(() => mounted.harness.target('timekeeping-calendar-task-no-deadline'))
+      .toThrow();
+    expect(() => mounted.harness.target('timekeeping-gantt-task-no-deadline'))
+      .toThrow();
+    expect(() => mounted.harness.target('timekeeping-countdown-task-no-deadline'))
+      .toThrow();
+  });
+
+  it('keeps durable state byte-identical when the injected clock alone advances', () => {
+    vi.useFakeTimers();
+
+    try {
+      const currentNow = { value: NOW };
+      const dispatcher = createDispatcher();
+
+      document.body.innerHTML = '<div id="clock-only-root"></div>';
+      const root = document.querySelector<HTMLElement>('#clock-only-root')!;
+
+      const render = () => {
+        const snapshot = dispatcher.snapshot();
+
+        root.innerHTML = renderTimekeepingCockpit({
+          state: snapshot.state,
+          tasks: snapshot.state.tasks,
+          projectNames: new Map(),
+          selectionLabel: 'All projects',
+          panels: {
+            calendar: false,
+            timeline: false,
+            countdowns: true,
+          },
+          calendarCursor: new Date(`${snapshot.calendarMonth}T00:00:00`),
+          now: currentNow.value,
+          selectedTaskId: null,
+        });
+      };
+
+      render();
+
+      const harness = createInteractionHarness(root);
+      const beforeHash = durableStateHash(dispatcher.snapshot().state);
+      const beforeCountdown = harness
+        .target('timekeeping-countdown-value-urgent')
+        .textContent;
+
+      const stopTicker = startTimekeepingCountdownTicker(root, render);
+
+      try {
+        currentNow.value = new Date(
+          NOW.getTime() + 30 * 60 * 60 * 1_000,
+        );
+
+        vi.advanceTimersByTime(1_000);
+
+        const afterCountdown = harness
+          .target('timekeeping-countdown-value-urgent')
+          .textContent;
+        const afterHash = durableStateHash(dispatcher.snapshot().state);
+
+        expect(afterCountdown).not.toBe(beforeCountdown);
+        expect(
+          harness
+            .target('timekeeping-countdown-task-urgent')
+            .closest<HTMLElement>('[data-countdown-bucket]')
+            ?.dataset.countdownBucket,
+        ).toBe('overdue');
+        expect(afterHash).toBe(beforeHash);
+      } finally {
+        stopTicker();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('styles deadline pressure and overdue state and opens the existing task modal', () => {
