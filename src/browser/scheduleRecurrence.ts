@@ -1,0 +1,473 @@
+import type { CalendarEvent } from '../domain/types.js';
+
+export type ScheduleRecurrenceFrequency =
+  | 'daily'
+  | 'weekly'
+  | 'monthly'
+  | 'yearly';
+
+export type ScheduleRecurrenceScope =
+  | 'occurrence'
+  | 'series';
+
+export interface ScheduleRecurrenceRule {
+  frequency: ScheduleRecurrenceFrequency;
+  interval: number;
+  count: number | null;
+  until: string | null;
+}
+
+export interface ScheduleRecurrenceWindow {
+  start: Date;
+  end: Date;
+}
+
+export interface ScheduleRecurringOccurrence {
+  eventId: string;
+  occurrenceKey: string;
+  startDate: string;
+  deadline: string;
+  event: CalendarEvent;
+}
+
+export interface ScheduleRecurringOccurrenceSelection {
+  eventId: string;
+  startDate: string;
+  deadline: string;
+}
+
+export interface ScheduleRecurrenceInteractionHandlers {
+  openOccurrence(
+    selection: ScheduleRecurringOccurrenceSelection,
+  ): void;
+  closeOccurrence(): void;
+  selectScope(scope: ScheduleRecurrenceScope): void;
+}
+
+export const MAX_SCHEDULE_RECURRENCE_EXPANSION = 10_000;
+
+function isRecord(
+  value: unknown,
+): value is Record<string, unknown> {
+  return (
+    typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+  );
+}
+
+function localDate(
+  year: number,
+  monthIndex: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  millisecond = 0,
+): Date {
+  const result = new Date(0);
+  result.setHours(0, 0, 0, 0);
+  result.setFullYear(year, monthIndex, day);
+  result.setHours(hour, minute, second, millisecond);
+  return result;
+}
+
+function parseTemporal(value: string): Date | null {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (dateOnly) {
+    const year = Number(dateOnly[1]);
+    const month = Number(dateOnly[2]);
+    const day = Number(dateOnly[3]);
+    const result = localDate(year, month - 1, day);
+
+    return (
+      result.getFullYear() === year
+      && result.getMonth() === month - 1
+      && result.getDate() === day
+    )
+      ? result : null;
+  }
+
+  const result = new Date(value);
+  return Number.isFinite(result.getTime()) ? result : null;
+}
+
+function recurrenceUntilMs(value: string | null): number | null {
+  if (value === null) return null;
+
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (dateOnly) {
+    const date = parseTemporal(value);
+    if (!date) return null;
+    date.setHours(23, 59, 59, 999);
+    return date.getTime();
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function daysInMonth(
+  year: number,
+  monthIndex: number,
+): number {
+  return localDate(year, monthIndex + 1, 0).getDate();
+}
+
+function civilDayOrdinal(date: Date): number {
+  const utc = new Date(0);
+  utc.setUTCHours(0, 0, 0, 0);
+  utc.setUTCFullYear(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+  return Math.floor(utc.getTime() / 86_400_000);
+}
+
+function shiftAnchor(
+  anchor: Date,
+  frequency: ScheduleRecurrenceFrequency,
+  amount: number,
+): Date | null {
+  const hour = anchor.getHours();
+  const minute = anchor.getMinutes();
+  const second = anchor.getSeconds();
+  const millisecond = anchor.getMilliseconds();
+
+  if (frequency === 'daily' || frequency === 'weekly') {
+    const days = amount * (frequency === 'weekly' ? 7 : 1);
+    return localDate(
+      anchor.getFullYear(),
+      anchor.getMonth(),
+      anchor.getDate() + days,
+      hour,
+      minute,
+      second,
+      millisecond,
+    );
+  }
+
+  if (frequency === 'monthly') {
+    const absoluteMonth = (
+      anchor.getFullYear() * 12
+      + anchor.getMonth()
+      + amount
+    );
+    const year = Math.floor(absoluteMonth / 12);
+    if (year < 0 || year > 9999) return null;
+
+    const month = absoluteMonth - year * 12;
+    return localDate(
+      year,
+      month,
+      Math.min(
+        anchor.getDate(),
+        daysInMonth(year, month),
+      ),
+      hour,
+      minute,
+      second,
+      millisecond,
+    );
+  }
+
+  const year = anchor.getFullYear() + amount;
+  if (year < 0 || year > 9999) return null;
+
+  return localDate(
+    year,
+    anchor.getMonth(),
+    Math.min(
+      anchor.getDate(),
+      daysInMonth(year, anchor.getMonth()),
+    ),
+    hour,
+    minute,
+    second,
+    millisecond,
+  );
+}
+
+function distanceInFrequencyUnits(
+  anchor: Date,
+  target: Date,
+  frequency: ScheduleRecurrenceFrequency,
+): number {
+  if (frequency === 'daily') {
+    return civilDayOrdinal(target) - civilDayOrdinal(anchor);
+  }
+  if (frequency === 'weekly') {
+    return (
+      civilDayOrdinal(target) - civilDayOrdinal(anchor)
+    ) / 7;
+  }
+  if (frequency === 'monthly') {
+    return (
+      (target.getFullYear() - anchor.getFullYear()) * 12
+      + target.getMonth()
+      - anchor.getMonth()
+    );
+  }
+  return target.getFullYear() - anchor.getFullYear();
+}
+
+export function scheduleRecurrenceRule(
+  event: CalendarEvent,
+): ScheduleRecurrenceRule | null {
+  const raw = event.properties.recurrence;
+  if (!isRecord(raw)) return null;
+
+  const frequency = raw.frequency;
+  if (
+    frequency !== 'daily'
+    && frequency !== 'weekly'
+    && frequency !== 'monthly'
+    && frequency !== 'yearly'
+  ) {
+    return null;
+  }
+
+  const interval = raw.interval === undefined
+    ? 1
+    : raw.interval;
+  if (
+    !Number.isInteger(interval)
+    || Number(interval) < 1
+    || Number(interval) > 36_600
+  ) {
+    return null;
+  }
+
+  const count = raw.count === undefined
+    ? null
+    : raw.count;
+  if (
+    count !== null
+    && (
+      !Number.isInteger(count)
+      || Number(count) < 1
+      || Number(count) > 1_000_000
+    )
+  ) {
+    return null;
+  }
+
+  const until = raw.until === undefined
+    ? null
+    : raw.until;
+  if (
+    until !== null
+    && (
+      typeof until !== 'string'
+      || recurrenceUntilMs(until) === null
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    frequency,
+    interval: Number(interval),
+    count: count === null ? null : Number(count),
+    until,
+  };
+}
+
+export function hasScheduleRecurrence(
+  event: CalendarEvent,
+): boolean {
+  return scheduleRecurrenceRule(event) !== null;
+}
+
+export function expandScheduleRecurringOccurrences(
+  events: readonly CalendarEvent[],
+  window: ScheduleRecurrenceWindow,
+): ScheduleRecurringOccurrence[] {
+  const rangeStart = window.start.getTime();
+  const rangeEnd = window.end.getTime();
+
+  if (
+    !Number.isFinite(rangeStart)
+    || !Number.isFinite(rangeEnd)
+    || rangeEnd <= rangeStart
+  ) {
+    return [];
+  }
+
+  const result: ScheduleRecurringOccurrence[] = [];
+
+  for (const event of events) {
+    const rule = scheduleRecurrenceRule(event);
+    if (!rule) continue;
+
+    const startAnchor = parseTemporal(event.startDate);
+    const deadlineAnchor = parseTemporal(event.deadline);
+    if (
+      !startAnchor
+      || !deadlineAnchor
+      || deadlineAnchor.getTime() <= startAnchor.getTime()
+    ) {
+      continue;
+    }
+
+    const estimated = Math.floor(
+      distanceInFrequencyUnits(
+        deadlineAnchor,
+        window.start,
+        rule.frequency,
+      ) / rule.interval,
+    );
+    let sequence = Math.max(0, estimated - 1);
+    let examined = 0;
+    const untilMs = recurrenceUntilMs(rule.until);
+
+    while (true) {
+      if (
+        rule.count !== null
+        && sequence >= rule.count
+      ) {
+        break;
+      }
+      if (examined >= MAX_SCHEDULE_RECURRENCE_EXPANSION) {
+        throw new RangeError(
+          `schedule recurrence expansion exceeded ${MAX_SCHEDULE_RECURRENCE_EXPANSION} occurrences for ${event.id}`,
+        );
+      }
+      examined += 1;
+
+      const amount = sequence * rule.interval;
+      const occurrenceStart = shiftAnchor(
+        startAnchor,
+        rule.frequency,
+        amount,
+      );
+      const occurrenceDeadline = shiftAnchor(
+        deadlineAnchor,
+        rule.frequency,
+        amount,
+      );
+
+      if (!occurrenceStart || !occurrenceDeadline) break;
+
+      const startMs = occurrenceStart.getTime();
+      const deadlineMs = occurrenceDeadline.getTime();
+
+      if (untilMs !== null && startMs > untilMs) break;
+      if (startMs >= rangeEnd) break;
+
+      if (
+        deadlineMs > rangeStart
+        && startMs < rangeEnd
+        && deadlineMs > startMs
+      ) {
+        const startDate = occurrenceStart.toISOString();
+        result.push({
+          eventId: event.id,
+          occurrenceKey: `${event.id}@${startDate}`,
+          startDate,
+          deadline: occurrenceDeadline.toISOString(),
+          event,
+        });
+      }
+
+      sequence += 1;
+    }
+  }
+
+  return result.sort(
+    (left, right) => (
+      left.startDate.localeCompare(right.startDate)
+      || left.deadline.localeCompare(right.deadline)
+      || left.eventId.localeCompare(right.eventId)
+    ),
+  );
+}
+
+export function scheduleRecurringOccurrenceToken(
+  occurrence: Pick<ScheduleRecurringOccurrence, 'startDate'>,
+): string {
+  return occurrence.startDate.replace(/[^0-9A-Za-z]/g, '');
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+export function renderScheduleRecurrenceScopeModal(
+  events: readonly CalendarEvent[],
+  selection: ScheduleRecurringOccurrenceSelection | null,
+  selectedScope: ScheduleRecurrenceScope | null,
+  projectNames: Map<string, string>,
+): string {
+  if (!selection) return '';
+
+  const event = events.find(
+    (candidate) => candidate.id === selection.eventId,
+  );
+  if (!event) return '';
+
+  const projectLabel = event.projectId === null
+    ? 'Uncategorised'
+    : projectNames.get(event.projectId) ?? event.projectId;
+
+  return `<div class="modal-backdrop" data-c1-key="schedule-recurrence-scope-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Recurring event scope" data-schedule-editor-mode="recurrence-scope" data-schedule-recurring-event-id="${escapeHtml(event.id)}" data-schedule-selected-scope="${escapeHtml(selectedScope ?? '')}" data-c1-key="schedule-recurrence-scope-modal"><header class="surface-header"><div><p class="eyebrow">Recurring event</p><h3>${escapeHtml(event.name)}</h3></div><button type="button" class="icon-button" data-schedule-recurring-action="close-occurrence" data-c1-key="schedule-recurrence-scope-close" aria-label="Close recurrence scope">×</button></header><p>Choose the scope for a later edit.</p><div class="calendar-controls"><button type="button" data-schedule-recurring-action="select-scope" data-schedule-recurrence-scope="occurrence" data-c1-key="schedule-recurrence-scope-occurrence" aria-pressed="${selectedScope === 'occurrence'}">This occurrence</button><button type="button" data-schedule-recurring-action="select-scope" data-schedule-recurrence-scope="series" data-c1-key="schedule-recurrence-scope-series" aria-pressed="${selectedScope === 'series'}">Entire series</button></div><label>Project<input value="${escapeHtml(projectLabel)}" readonly></label><label>Occurrence start<input data-c1-key="schedule-recurrence-occurrence-start" value="${escapeHtml(selection.startDate)}" readonly></label><label>Occurrence end<input data-c1-key="schedule-recurrence-occurrence-end" value="${escapeHtml(selection.deadline)}" readonly></label><label>Description<textarea readonly>${escapeHtml(event.description)}</textarea></label></section></div>`;
+}
+
+export function bindScheduleRecurrenceInteractions(
+  root: HTMLElement,
+  handlers: ScheduleRecurrenceInteractionHandlers,
+): void {
+  root.addEventListener('click', (event) => {
+    const control = (event.target as HTMLElement)
+      .closest<HTMLElement>('[data-schedule-recurring-action]');
+    if (!control || !root.contains(control)) return;
+
+    if (
+      control.dataset.scheduleRecurringAction === 'open-occurrence'
+    ) {
+      const eventId = control.dataset.scheduleRecurringEventId;
+      const startDate = control.dataset.scheduleOccurrenceStart;
+      const deadline = control.dataset.scheduleOccurrenceDeadline;
+
+      if (
+        !eventId
+        || !startDate
+        || !deadline
+        || !Number.isFinite(Date.parse(startDate))
+        || !Number.isFinite(Date.parse(deadline))
+        || Date.parse(deadline) <= Date.parse(startDate)
+      ) {
+        return;
+      }
+
+      handlers.openOccurrence({
+        eventId,
+        startDate,
+        deadline,
+      });
+      return;
+    }
+
+    if (
+      control.dataset.scheduleRecurringAction === 'close-occurrence'
+    ) {
+      handlers.closeOccurrence();
+      return;
+    }
+
+    if (
+      control.dataset.scheduleRecurringAction === 'select-scope'
+    ) {
+      const scope = control.dataset.scheduleRecurrenceScope;
+      if (scope === 'occurrence' || scope === 'series') {
+        handlers.selectScope(scope);
+      }
+    }
+  });
+}

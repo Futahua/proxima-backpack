@@ -6,6 +6,15 @@ import type { CalendarEvent } from '../domain/types.js';
 import { localDateKey } from '../domain/time.js';
 import { localCalendarDate } from './calendarGrid.js';
 import { renderScheduleNavigation } from './scheduleNavigation.js';
+import {
+  expandScheduleRecurringOccurrences,
+  hasScheduleRecurrence,
+  renderScheduleRecurrenceScopeModal,
+  scheduleRecurringOccurrenceToken,
+  type ScheduleRecurrenceScope,
+  type ScheduleRecurringOccurrence,
+  type ScheduleRecurringOccurrenceSelection,
+} from './scheduleRecurrence.js';
 
 export type ScheduleTimeGridMode = 'day' | 'four-day' | 'week';
 
@@ -20,6 +29,12 @@ export interface ScheduleAllDayPlacement {
   eventId: string;
   startColumn: number;
   spanColumns: number;
+}
+
+interface ScheduleTemporalEvent {
+  id: string;
+  startDate: string;
+  deadline: string;
 }
 
 export interface ScheduleEventDraft {
@@ -39,6 +54,8 @@ export interface ScheduleTimeGridRenderOptions {
   now: Date;
   selectedEventId: string | null;
   seededEvent?: ScheduleEventDraft | null;
+  selectedRecurringOccurrence?: ScheduleRecurringOccurrenceSelection | null;
+  selectedRecurringScope?: ScheduleRecurrenceScope | null;
 }
 export interface ScheduleEventChangeIntent {
   eventId: string;
@@ -181,7 +198,7 @@ export function scheduleVisibleDays(
 }
 
 export function isAllDayScheduleEvent(
-  event: CalendarEvent,
+  event: Pick<ScheduleTemporalEvent, 'startDate' | 'deadline'>,
 ): boolean {
   const start = new Date(event.startDate);
   const end = new Date(event.deadline);
@@ -196,7 +213,7 @@ export function isAllDayScheduleEvent(
 }
 
 export function scheduleTimedProjection(
-  events: readonly CalendarEvent[],
+  events: readonly ScheduleTemporalEvent[],
   visibleDays: readonly Date[],
 ): ScheduleTimedSegment[] {
   const segments: ScheduleTimedSegment[] = [];
@@ -255,7 +272,7 @@ export function scheduleTimedProjection(
 }
 
 export function scheduleAllDayProjection(
-  events: readonly CalendarEvent[],
+  events: readonly ScheduleTemporalEvent[],
   visibleDays: readonly Date[],
 ): ScheduleAllDayPlacement[] {
   const placements: ScheduleAllDayPlacement[] = [];
@@ -326,13 +343,32 @@ function renderEventModal(
 
 function renderAllDayRegion(
   events: readonly CalendarEvent[],
+  recurringOccurrences: readonly ScheduleRecurringOccurrence[],
   visibleDays: readonly Date[],
   projectNames: Map<string, string>,
 ): string {
   const eventsById = new Map(events.map((event) => [event.id, event]));
-  const placements = scheduleAllDayProjection(events, visibleDays);
+  const recurringByKey = new Map(
+    recurringOccurrences.map((occurrence) => [occurrence.occurrenceKey, occurrence]),
+  );
+  const temporalEvents: ScheduleTemporalEvent[] = [
+    ...events,
+    ...recurringOccurrences.map((occurrence) => ({
+      id: occurrence.occurrenceKey,
+      startDate: occurrence.startDate,
+      deadline: occurrence.deadline,
+    })),
+  ];
+  const placements = scheduleAllDayProjection(temporalEvents, visibleDays);
 
   const items = placements.map((placement) => {
+    const recurring = recurringByKey.get(placement.eventId);
+    if (recurring) {
+      const event = recurring.event;
+      const token = scheduleRecurringOccurrenceToken(recurring);
+      return `<article class="event-card schedule-all-day-event schedule-recurring-occurrence" role="button" tabindex="0" data-schedule-recurring-action="open-occurrence" data-schedule-recurring-event-id="${escapeHtml(event.id)}" data-schedule-occurrence-start="${escapeHtml(recurring.startDate)}" data-schedule-occurrence-deadline="${escapeHtml(recurring.deadline)}" data-schedule-all-day-start-column="${placement.startColumn}" data-schedule-all-day-span-columns="${placement.spanColumns}" data-c1-key="schedule-all-day-recurring-${escapeHtml(event.id)}-${token}" style="grid-column:${placement.startColumn + 1} / span ${placement.spanColumns};"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
+    }
+
     const event = eventsById.get(placement.eventId);
     if (!event) return '';
 
@@ -346,6 +382,7 @@ function renderTimedDay(
   day: Date,
   segments: readonly ScheduleTimedSegment[],
   eventsById: Map<string, CalendarEvent>,
+  recurringByKey: Map<string, ScheduleRecurringOccurrence>,
   projectNames: Map<string, string>,
   now: Date,
 ): string {
@@ -369,10 +406,17 @@ function renderTimedDay(
   ).join('');
 
   const eventCards = daySegments.map((segment) => {
+    const durationMinutes = segment.endMinute - segment.startMinute;
+
+    const recurring = recurringByKey.get(segment.eventId);
+    if (recurring) {
+      const event = recurring.event;
+      const token = scheduleRecurringOccurrenceToken(recurring);
+      return `<article class="event-card schedule-timed-event schedule-recurring-occurrence${event.isCompleted ? ' completed' : ''}" role="button" tabindex="0" data-schedule-recurring-action="open-occurrence" data-schedule-recurring-event-id="${escapeHtml(event.id)}" data-schedule-occurrence-start="${escapeHtml(recurring.startDate)}" data-schedule-occurrence-deadline="${escapeHtml(recurring.deadline)}" data-schedule-start-minute="${segment.startMinute}" data-schedule-end-minute="${segment.endMinute}" data-c1-key="schedule-recurring-${escapeHtml(event.id)}-${token}-${escapeHtml(dayKey)}" style="position:absolute;left:4px;right:4px;top:${(segment.startMinute / MINUTES_PER_DAY) * 100}%;height:${(durationMinutes / MINUTES_PER_DAY) * 100}%;z-index:2;cursor:pointer;"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
+    }
+
     const event = eventsById.get(segment.eventId);
     if (!event) return '';
-
-    const durationMinutes = segment.endMinute - segment.startMinute;
 
     const deadline = new Date(event.deadline);
     const finalSegmentDayKey = Number.isFinite(deadline.getTime())
@@ -404,9 +448,32 @@ export function renderScheduleTimeGrid(
     options.calendarCursor,
     options.mode,
   );
-  const segments = scheduleTimedProjection(options.events, visibleDays);
+  const firstDay = visibleDays[0]!;
+  const lastDay = visibleDays[visibleDays.length - 1]!;
+  const ordinaryEvents = options.events.filter(
+    (event) => !hasScheduleRecurrence(event),
+  );
+  const recurringOccurrences = expandScheduleRecurringOccurrences(
+    options.events,
+    {
+      start: localMidnight(firstDay),
+      end: nextLocalMidnight(lastDay),
+    },
+  );
+  const recurringByKey = new Map(
+    recurringOccurrences.map((occurrence) => [occurrence.occurrenceKey, occurrence]),
+  );
+  const temporalEvents: ScheduleTemporalEvent[] = [
+    ...ordinaryEvents,
+    ...recurringOccurrences.map((occurrence) => ({
+      id: occurrence.occurrenceKey,
+      startDate: occurrence.startDate,
+      deadline: occurrence.deadline,
+    })),
+  ];
+  const segments = scheduleTimedProjection(temporalEvents, visibleDays);
   const eventsById = new Map(
-    options.events.map((event) => [event.id, event]),
+    ordinaryEvents.map((event) => [event.id, event]),
   );
   const title = modeTitle(options.mode);
 
@@ -422,12 +489,27 @@ export function renderScheduleTimeGrid(
       day,
       segments,
       eventsById,
+      recurringByKey,
       options.projectNames,
       options.now,
     )
   )).join('');
 
-  return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-c1-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header>${renderAllDayRegion(options.events, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-c1-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${renderEventModal(options.events, options.selectedEventId, options.seededEvent ?? null, options.projectNames)}</section>`;
+  const modal = options.selectedRecurringOccurrence
+    ? renderScheduleRecurrenceScopeModal(
+      options.events,
+      options.selectedRecurringOccurrence,
+      options.selectedRecurringScope ?? null,
+      options.projectNames,
+    )
+    : renderEventModal(
+      options.events,
+      options.selectedEventId,
+      options.seededEvent ?? null,
+      options.projectNames,
+    );
+
+  return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-c1-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header>${renderAllDayRegion(ordinaryEvents, recurringOccurrences, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-c1-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${modal}</section>`;
 }
 
 export function bindScheduleTimeGridInteractions(

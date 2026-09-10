@@ -33,6 +33,7 @@ import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid, startSchedule
 import { bindScheduleProjectionInteractions, renderScheduleProjection, type ScheduleProjectionMode } from './scheduleProjection.js';
 import { scheduleNavigationDateKey, type ScheduleNavigationDirection } from './scheduleNavigation.js';
 import { scheduleEventsForSelection } from './scheduleSelection.js';
+import { bindScheduleRecurrenceInteractions, type ScheduleRecurrenceScope, type ScheduleRecurringOccurrenceSelection } from './scheduleRecurrence.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
@@ -54,6 +55,8 @@ let timekeepingPanels: TimekeepingPanelVisibility = {
 };
 let selectedScheduleEventId: string | null = null;
 let scheduleEventDraft: ScheduleEventDraft | null = null;
+let selectedScheduleRecurringOccurrence: ScheduleRecurringOccurrenceSelection | null = null;
+let selectedScheduleRecurringScope: ScheduleRecurrenceScope | null = null;
 let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let scheduleCursor = new Date(FIXED_CLOCK.now());
@@ -214,6 +217,8 @@ function scheduleProjectionSurface(
     calendarCursor: scheduleCursor,
     now,
     selectedEventId: selectedScheduleEventId,
+    selectedRecurringOccurrence: selectedScheduleRecurringOccurrence,
+    selectedRecurringScope: selectedScheduleRecurringScope,
     problems,
   });
 }
@@ -258,6 +263,8 @@ function scheduleTimeGridSurface(
     now,
     selectedEventId: selectedScheduleEventId,
     seededEvent: scheduleEventDraft,
+    selectedRecurringOccurrence: selectedScheduleRecurringOccurrence,
+    selectedRecurringScope: selectedScheduleRecurringScope,
   });
 }
 
@@ -524,15 +531,37 @@ function bindInteractions(): void {
     },
   });
 
+  bindScheduleRecurrenceInteractions(root, {
+    openOccurrence: (occurrence) => {
+      selectedScheduleEventId = null;
+      scheduleEventDraft = null;
+      selectedScheduleRecurringOccurrence = { ...occurrence };
+      selectedScheduleRecurringScope = null;
+      render();
+    },
+    closeOccurrence: () => {
+      selectedScheduleRecurringOccurrence = null;
+      selectedScheduleRecurringScope = null;
+      render();
+    },
+    selectScope: (scope) => {
+      selectedScheduleRecurringScope = scope;
+      render();
+    },
+  });
   bindScheduleProjectionInteractions(root, {
     openEvent: (eventId) => {
       scheduleEventDraft = null;
+      selectedScheduleRecurringOccurrence = null;
+      selectedScheduleRecurringScope = null;
       selectedScheduleEventId = eventId;
       render();
     },
     closeEvent: () => {
       selectedScheduleEventId = null;
       scheduleEventDraft = null;
+      selectedScheduleRecurringOccurrence = null;
+      selectedScheduleRecurringScope = null;
       render();
     },
     selectMonth: (month) => {
@@ -557,16 +586,22 @@ function bindInteractions(): void {
   bindScheduleTimeGridInteractions(root, {
     openEvent: (eventId) => {
       scheduleEventDraft = null;
+      selectedScheduleRecurringOccurrence = null;
+      selectedScheduleRecurringScope = null;
       selectedScheduleEventId = eventId;
       render();
     },
     closeEvent: () => {
       selectedScheduleEventId = null;
       scheduleEventDraft = null;
+      selectedScheduleRecurringOccurrence = null;
+      selectedScheduleRecurringScope = null;
       render();
     },
     seedEvent: (draft) => {
       selectedScheduleEventId = null;
+      selectedScheduleRecurringOccurrence = null;
+      selectedScheduleRecurringScope = null;
       scheduleEventDraft = { ...draft };
       render();
     },

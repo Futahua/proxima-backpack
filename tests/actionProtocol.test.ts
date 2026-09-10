@@ -49,6 +49,7 @@ describe('Gate 3A semantic action protocol', () => {
     expect(parseAction({ type: 'task.execution.move', taskId: 'task-1', targetColumn: 'sideways', targetIndex: 0 })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
     expect(parseAction({ type: 'event.schedule.change', eventId: 'event-1', operation: 'resize-start', proposedStartDate: '2026-09-06T10:00:00.000Z', proposedDeadline: '2026-09-06T11:00:00.000Z' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
     expect(parseAction({ type: 'event.schedule.create', name: '', projectId: null, description: '', startDate: '2026-09-06T10:00:00.000Z', deadline: '2026-09-06T11:00:00.000Z' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
+    expect(parseAction({ type: 'event.schedule.recurrence.change', eventId: 'event-1', scope: 'future', occurrenceStartDate: '2026-09-06T10:00:00.000Z', proposedStartDate: '2026-09-06T10:00:00.000Z', proposedDeadline: '2026-09-06T11:00:00.000Z' })).toMatchObject({ ok: false, error: { code: 'invalid-action-input' } });
   });
 
   it('uses one dispatcher for cockpit navigation and keeps project selection across surfaces', async () => {
@@ -491,6 +492,20 @@ describe('Gate 3A semantic action protocol', () => {
     });
     expect(isActionResult(result)).toBe(true);
     expect(after).toBe(before);
+  });
+
+  it('refuses eventual recurring-occurrence or series writes as typed unavailable and leaves fixture bytes unchanged', async () => {
+    const vault = fixtureVault('vault-basic');
+    const loaded = await loadVaultState(vault);
+    const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture', clock: fixedClock('2026-09-06T12:00:00.000Z') });
+    const event = loaded.state.events[0]!;
+    const before = await vaultByteHash(vault);
+    for (const scope of ['occurrence', 'series'] as const) {
+      const result = dispatcher.dispatch({ type: 'event.schedule.recurrence.change', eventId: event.id, scope, occurrenceStartDate: '2026-09-08T10:00:00.000Z', proposedStartDate: '2026-09-08T10:15:00.000Z', proposedDeadline: '2026-09-08T11:15:00.000Z' });
+      expect(result).toMatchObject({ ok: false, actionType: 'event.schedule.recurrence.change', category: 'record-mutation', outcome: 'unavailable', entityIds: [event.id], error: { code: 'action-not-available' } });
+      expect(isActionResult(result)).toBe(true);
+    }
+    expect(await vaultByteHash(vault)).toBe(before);
   });
 
   it('keeps fixture-only reset unavailable for a live dispatcher', async () => {

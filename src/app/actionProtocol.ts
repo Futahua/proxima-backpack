@@ -45,6 +45,7 @@ export type ProximaAction =
   | { type: 'task.execution.move'; taskId: string; targetColumn: ElasticColumn; targetIndex: number }
   | { type: 'event.schedule.change'; eventId: string; operation: ScheduleChangeOperation; proposedStartDate: string; proposedDeadline: string }
   | { type: 'event.schedule.create'; name: string; projectId: string | null; description: string; startDate: string; deadline: string }
+  | { type: 'event.schedule.recurrence.change'; eventId: string; scope: 'occurrence' | 'series'; occurrenceStartDate: string; proposedStartDate: string; proposedDeadline: string }
   | { type: 'schedule.mode.select'; mode: ScheduleMode }
   | { type: 'schedule.cursor.set'; date: string }
   | { type: 'project.workspace-tab.select'; tab: ProjectWorkspaceTab }
@@ -428,6 +429,38 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
         description: input.description,
         startDate: input.startDate,
         deadline: input.deadline,
+      },
+    };
+  }
+  if (input.type === 'event.schedule.recurrence.change') {
+    if (
+      typeof input.eventId !== 'string'
+      || input.eventId.length === 0
+      || input.eventId.length > 200
+      || (input.scope !== 'occurrence' && input.scope !== 'series')
+      || !isCanonicalInstant(input.occurrenceStartDate)
+      || !isCanonicalInstant(input.proposedStartDate)
+      || !isCanonicalInstant(input.proposedDeadline)
+      || Date.parse(input.proposedStartDate) >= Date.parse(input.proposedDeadline)
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'recurring schedule change requires a bounded eventId, occurrence or series scope, canonical occurrence identity and positive proposed temporal bounds',
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      action: {
+        type: input.type,
+        eventId: input.eventId,
+        scope: input.scope,
+        occurrenceStartDate: input.occurrenceStartDate,
+        proposedStartDate: input.proposedStartDate,
+        proposedDeadline: input.proposedDeadline,
       },
     };
   }
@@ -1055,6 +1088,33 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
             message: 'schedule event creation remains unavailable before record-store cutover',
           },
           requestId,
+        );
+      }
+      if (action.type === 'event.schedule.recurrence.change') {
+        if (!state.state.events.some((event) => event.id === action.eventId)) {
+          return rejectAction(
+            state,
+            ring,
+            action.type,
+            {
+              code: 'record-not-found',
+              message: `event does not exist: ${action.eventId}`,
+              field: 'eventId',
+            },
+            requestId,
+            [action.eventId],
+          );
+        }
+        return rejectAction(
+          state,
+          ring,
+          action.type,
+          {
+            code: 'action-not-available',
+            message: 'recurring schedule writes remain unavailable before record-store cutover',
+          },
+          requestId,
+          [action.eventId],
         );
       }
       if (action.type === 'event.schedule.change') {

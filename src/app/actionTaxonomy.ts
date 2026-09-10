@@ -81,6 +81,7 @@ const REGISTRY = {
   'task.execution.move': 'record-mutation',
   'event.schedule.change': 'record-mutation',
   'event.schedule.create': 'record-mutation',
+  'event.schedule.recurrence.change': 'record-mutation',
   'schedule.mode.select': 'local-state',
   'schedule.cursor.set': 'local-state',
   'project.workspace-tab.select': 'local-state',
