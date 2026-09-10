@@ -49,6 +49,7 @@ export type ProximaAction =
   | { type: 'project.workspace-tab.select'; tab: ProjectWorkspaceTab }
   | { type: 'calendar.navigate'; direction: 'previous' | 'next' }
   | { type: 'calendar.today' }
+  | { type: 'calendar.select-month'; month: string }
   | { type: 'calendar.shift-month'; delta: -1 | 1 }
   | { type: 'fixture.reset' };
 
@@ -507,6 +508,20 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
 
   if (input.type === 'calendar.today') {
     return { ok: true, action: { type: input.type } };
+  }
+
+  if (input.type === 'calendar.select-month') {
+    return typeof input.month === 'string'
+      && isValidCalendarMonth(input.month)
+      ? { ok: true, action: { type: input.type, month: input.month } }
+      : {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: 'calendar month must be canonical YYYY-MM-01',
+            field: 'month',
+          },
+        };
   }
 
   if (input.type === 'calendar.shift-month') {
@@ -1060,6 +1075,15 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         const changed = next !== state.calendarMonth;
         if (changed) {
           state.calendarMonth = next;
+          state.stateRevision += 1;
+        }
+        return settleLocalAction(state, ring, action.type, changed, requestId);
+      }
+
+      if (action.type === 'calendar.select-month') {
+        const changed = action.month !== state.calendarMonth;
+        if (changed) {
+          state.calendarMonth = action.month;
           state.stateRevision += 1;
         }
         return settleLocalAction(state, ring, action.type, changed, requestId);

@@ -1,0 +1,334 @@
+// @vitest-environment happy-dom
+
+import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  bindScheduleProjectionInteractions,
+  renderScheduleProjection,
+  scheduleDateOccurrenceProjection,
+  type ScheduleProjectionMode,
+} from '../src/browser/scheduleProjection.js';
+import { createInteractionHarness } from '../src/browser/interactionHarness.js';
+import { localCalendarDate } from '../src/browser/calendarGrid.js';
+import type { CalendarEvent } from '../src/domain/types.js';
+import { sourceRef } from './fixtures.js';
+
+const CURSOR = localCalendarDate(2026, 8, 1);
+const NOW = new Date(2026, 8, 6, 12, 0, 0, 0);
+
+function localInstant(
+  year: number,
+  monthIndex: number,
+  day: number,
+  hour: number,
+  minute: number,
+): string {
+  return new Date(
+    year,
+    monthIndex,
+    day,
+    hour,
+    minute,
+    0,
+    0,
+  ).toISOString();
+}
+
+function event(
+  id: string,
+  startDate: string,
+  deadline: string,
+): CalendarEvent {
+  return {
+    id,
+    source: sourceRef('event', id),
+    name: `Event ${id}`,
+    description: `Description ${id}`,
+    projectId: null,
+    createdAt: localInstant(2026, 0, 1, 0, 0),
+    startDate,
+    deadline,
+    isCompleted: false,
+    properties: {},
+  };
+}
+
+const timed = event(
+  'timed',
+  localInstant(2026, 8, 6, 9, 30),
+  localInstant(2026, 8, 6, 10, 45),
+);
+
+const multi = event(
+  'multi',
+  localInstant(2026, 8, 6, 22, 0),
+  localInstant(2026, 8, 7, 1, 0),
+);
+
+const october = event(
+  'october',
+  localInstant(2026, 9, 2, 8, 0),
+  localInstant(2026, 9, 2, 9, 0),
+);
+
+const january = event(
+  'january',
+  localInstant(2026, 0, 15, 13, 0),
+  localInstant(2026, 0, 15, 14, 0),
+);
+
+const events = [
+  october,
+  multi,
+  january,
+  timed,
+];
+
+function render(
+  mode: ScheduleProjectionMode,
+  selectedEventId: string | null = null,
+): string {
+  return renderScheduleProjection({
+    mode,
+    events,
+    projectNames: new Map(),
+    selectionLabel: 'All projects',
+    calendarCursor: CURSOR,
+    now: NOW,
+    selectedEventId,
+    problems: [],
+  });
+}
+
+function mount(
+  mode: ScheduleProjectionMode,
+): {
+  root: HTMLElement;
+  harness: ReturnType<typeof createInteractionHarness>;
+  selectedEventId(): string | null;
+  selectedMonths: string[];
+  drilledMonths: string[];
+} {
+  document.body.innerHTML = '<div id="schedule-root"></div>';
+  const root = document.querySelector<HTMLElement>(
+    '#schedule-root',
+  )!;
+  let selectedEventId: string | null = null;
+  const selectedMonths: string[] = [];
+  const drilledMonths: string[] = [];
+
+  const rerender = () => {
+    root.innerHTML = render(mode, selectedEventId);
+  };
+
+  bindScheduleProjectionInteractions(root, {
+    openEvent: (eventId) => {
+      selectedEventId = eventId;
+      rerender();
+    },
+    closeEvent: () => {
+      selectedEventId = null;
+      rerender();
+    },
+    selectMonth: (month) => {
+      selectedMonths.push(month);
+    },
+    drillMonth: (month) => {
+      drilledMonths.push(month);
+    },
+  });
+
+  rerender();
+
+  return {
+    root,
+    harness: createInteractionHarness(root),
+    selectedEventId: () => selectedEventId,
+    selectedMonths,
+    drilledMonths,
+  };
+}
+
+beforeEach(() => {
+  document.body.innerHTML = '';
+});
+
+describe('Schedule Month, Year and Agenda projection', () => {
+  it('projects event occurrences onto deterministic local civil dates', () => {
+    expect(
+      scheduleDateOccurrenceProjection(events),
+    ).toEqual([
+      {
+        dayKey: '2026-01-15',
+        eventId: 'january',
+      },
+      {
+        dayKey: '2026-09-06',
+        eventId: 'timed',
+      },
+      {
+        dayKey: '2026-09-06',
+        eventId: 'multi',
+      },
+      {
+        dayKey: '2026-09-07',
+        eventId: 'multi',
+      },
+      {
+        dayKey: '2026-10-02',
+        eventId: 'october',
+      },
+    ]);
+  });
+
+  it('renders Month as a 42-date occurrence grid and opens an event read-only without writes', () => {
+    const before = JSON.stringify(events);
+    const mounted = mount('month');
+
+    expect(
+      document.querySelectorAll('[data-schedule-month-day]'),
+    ).toHaveLength(42);
+
+    expect(
+      mounted.harness
+        .target('schedule-month-day-2026-09-06')
+        .dataset.scheduleOccurrenceCount,
+    ).toBe('2');
+    expect(
+      mounted.harness
+        .target('schedule-month-day-2026-09-07')
+        .dataset.scheduleOccurrenceCount,
+    ).toBe('1');
+
+    expect(
+      mounted.harness
+        .target('schedule-month-event-multi-2026-09-06')
+        .dataset.scheduleOccurrenceDate,
+    ).toBe('2026-09-06');
+    expect(
+      mounted.harness
+        .target('schedule-month-event-multi-2026-09-07')
+        .dataset.scheduleOccurrenceDate,
+    ).toBe('2026-09-07');
+
+    mounted.harness.click(
+      'schedule-month-event-timed-2026-09-06',
+    );
+
+    expect(mounted.selectedEventId()).toBe('timed');
+    expect(
+      mounted.harness.target('schedule-event-modal')
+        .dataset.scheduleEditorMode,
+    ).toBe('read-only');
+    expect(
+      (mounted.harness.target(
+        'schedule-event-name',
+      ) as HTMLInputElement).readOnly,
+    ).toBe(true);
+    expect(JSON.stringify(events)).toBe(before);
+  });
+
+  it('renders Year as twelve mini-months with date indicators and exact-month local drill-down', () => {
+    const before = JSON.stringify(events);
+    const mounted = mount('year');
+
+    expect(
+      document.querySelectorAll('[data-schedule-year-month]'),
+    ).toHaveLength(12);
+
+    expect(
+      mounted.harness
+        .target('schedule-year-month-2026-01-01')
+        .dataset.scheduleYearMonth,
+    ).toBe('2026-01-01');
+    expect(
+      mounted.harness
+        .target('schedule-year-month-2026-12-01')
+        .dataset.scheduleYearMonth,
+    ).toBe('2026-12-01');
+
+    const indicator = document.querySelector<HTMLElement>(
+      '[data-schedule-year-event-indicator="2026-09-06"]',
+    );
+    expect(indicator).not.toBeNull();
+    expect(indicator!.dataset.scheduleOccurrenceCount)
+      .toBe('2');
+
+    mounted.harness.click(
+      'schedule-year-day-2026-09-07',
+    );
+    expect(mounted.drilledMonths).toEqual([
+      '2026-09-01',
+    ]);
+
+    mounted.harness.click('schedule-year-previous');
+    mounted.harness.click('schedule-year-next');
+    expect(mounted.selectedMonths).toEqual([
+      '2025-09-01',
+      '2027-09-01',
+    ]);
+
+    expect(JSON.stringify(events)).toBe(before);
+  });
+
+  it('renders Agenda as chronological date groups with editable event entry but no time-grid gesture semantics', () => {
+    const before = JSON.stringify(events);
+    const mounted = mount('agenda');
+
+    const groupKeys = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-schedule-agenda-date]',
+      ),
+    ).map((group) => group.dataset.scheduleAgendaDate);
+
+    expect(groupKeys).toEqual([
+      '2026-01-15',
+      '2026-09-06',
+      '2026-09-07',
+      '2026-10-02',
+    ]);
+
+    expect(
+      mounted.harness
+        .target('schedule-agenda-event-multi-2026-09-06')
+        .dataset.scheduleOccurrenceDate,
+    ).toBe('2026-09-06');
+    expect(
+      mounted.harness
+        .target('schedule-agenda-event-multi-2026-09-07')
+        .dataset.scheduleOccurrenceDate,
+    ).toBe('2026-09-07');
+
+    mounted.harness.click(
+      'schedule-agenda-event-october-2026-10-02',
+    );
+
+    expect(mounted.selectedEventId()).toBe('october');
+    expect(
+      mounted.harness.target('schedule-event-modal')
+        .dataset.scheduleEditorMode,
+    ).toBe('read-only');
+
+    for (const mode of [
+      'month',
+      'year',
+      'agenda',
+    ] as const) {
+      document.body.innerHTML = render(mode);
+
+      expect(
+        document.querySelector('[data-schedule-timed-event]'),
+      ).toBeNull();
+      expect(
+        document.querySelector('[data-schedule-resize-edge]'),
+      ).toBeNull();
+      expect(
+        document.querySelector('[data-schedule-slot]'),
+      ).toBeNull();
+      expect(
+        document.querySelector('[draggable="true"]'),
+      ).toBeNull();
+    }
+
+    expect(JSON.stringify(events)).toBe(before);
+  });
+});

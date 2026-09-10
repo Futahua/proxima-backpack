@@ -57,6 +57,7 @@ describe('Stage 0 action taxonomy', () => {
     expect(categoryOf('task.execution.move')).toBe('record-mutation');
     expect(categoryOf('event.schedule.change')).toBe('record-mutation');
     expect(categoryOf('event.schedule.create')).toBe('record-mutation');
+    expect(categoryOf('calendar.select-month')).toBe('local-state');
     expect(categoryOf('elastic.target.set')).toBe('local-state');
     expect(categoryOf('elastic.lock')).toBe('local-state');
     expect(categoryOf('elastic.unlock')).toBe('local-state');

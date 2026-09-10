@@ -13,9 +13,8 @@ import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirector
 import { loadVaultState } from '../app/vaultRepository.js';
 import { fixedClock, sequentialIdGenerator, systemClock } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
-import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, eventsByDay, eventsForSelection, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
-import { localDateKey } from '../domain/time.js';
-import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
+import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, eventsForSelection, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
+import type { ProximaState, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
 import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
@@ -29,9 +28,9 @@ import { renderWithBoundary } from './renderBoundary.js';
 import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } from './canvasTextPreview.js';
 import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
 import { bindElasticCockpitInteractions, renderElasticCockpit, shouldTickElasticProgress } from './elasticCockpit.js';
-import { calendarGridDates } from './calendarGrid.js';
 import { bindTimekeepingCockpitInteractions, renderTimekeepingCockpit, startTimekeepingCountdownTicker } from './timekeepingCockpit.js';
 import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid, startScheduleTimeTicker, type ScheduleEventDraft, type ScheduleTimeGridMode } from './scheduleTimeGrid.js';
+import { bindScheduleProjectionInteractions, renderScheduleProjection, type ScheduleProjectionMode } from './scheduleProjection.js';
 import { projectPresentation } from './projectPresentation.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
@@ -190,17 +189,38 @@ function boardSurface(state: ProximaState, lookup: Map<string, string>): string 
   });
 }
 
-function monthTitle(date: Date): string { return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }); }
+function scheduleProjectionSurface(
+  mode: ScheduleProjectionMode,
+  state: ProximaState,
+  problems: LoadProblem[],
+  lookup: Map<string, string>,
+): string {
+  const scheduleIds = new Set(
+    projectsFor(state.projects, 'schedule')
+      .map((project) => project.id),
+  );
+  const scheduleEvents = eventsForSelection(
+    state.events.filter(
+      (event) =>
+        event.projectId === null
+        || scheduleIds.has(event.projectId),
+    ),
+    selection,
+  );
+  const now = currentSourceMode() === 'external'
+    ? new Date()
+    : new Date(FIXED_CLOCK.now());
 
-function eventCard(event: CalendarEvent, state: ProximaState, dayKey: string, lookup: Map<string, string>): string { return `<article class="event-card" data-c1-key="event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}" title="${escapeHtml(event.description || event.name)}"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(state, event.projectId, lookup))}</small></article>`; }
-
-function calendarSurface(state: ProximaState, problems: LoadProblem[], lookup: Map<string, string>): string {
-  const scheduleIds = new Set(projectsFor(state.projects, 'schedule').map((project) => project.id));
-  const calendarEvents = eventsForSelection(state.events.filter((event) => event.projectId === null || scheduleIds.has(event.projectId)), selection);
-  const byDay = eventsByDay(calendarEvents, problems);
-  const days = calendarGridDates(calendarCursor);
-  const today = localDateKey(new Date(FIXED_CLOCK.now()));
-  return `<section class="surface calendar-surface" data-c1-key="calendar-region" aria-label="Month schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(state, selection, lookup))}</p><h2>Month</h2><p class="surface-description">Local civil days, inclusive event ranges, and fail-visible diagnostics.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-action="calendar-navigate" data-direction="previous" data-c1-key="calendar-previous" aria-label="Previous month">←</button><button type="button" class="icon-button" data-action="calendar-today" data-c1-key="calendar-today">Today</button><strong>${escapeHtml(monthTitle(calendarCursor))}</strong><button type="button" class="icon-button" data-action="calendar-navigate" data-direction="next" data-c1-key="calendar-next" aria-label="Next month">→</button></div></header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${days.map((day) => { const key = localDateKey(day); const events = byDay.get(key) ?? []; const outside = day.getMonth() !== calendarCursor.getMonth(); return `<div class="calendar-day${outside ? ' outside' : ''}${key === today ? ' today' : ''}" data-c1-key="calendar-day-${escapeHtml(key)}" aria-label="${escapeHtml(key)}"><span class="day-number">${day.getDate()}</span><div class="day-events">${events.map((event) => eventCard(event, state, key, lookup)).join('')}</div></div>`; }).join('')}</div></section>`;
+  return renderScheduleProjection({
+    mode,
+    events: scheduleEvents,
+    projectNames: lookup,
+    selectionLabel: selectionLabel(state, selection, lookup),
+    calendarCursor,
+    now,
+    selectedEventId: selectedScheduleEventId,
+    problems,
+  });
 }
 
 function timekeepingSurface(state: ProximaState, lookup: Map<string, string>): string {
@@ -240,18 +260,6 @@ function scheduleTimeGridSurface(
     selectedEventId: selectedScheduleEventId,
     seededEvent: scheduleEventDraft,
   });
-}
-
-function scheduleShellSurface(
-  mode: 'year' | 'agenda',
-): string {
-  const labels: Record<'year' | 'agenda', string> = {
-    year: 'Year',
-    agenda: 'Agenda',
-  };
-  const label = labels[mode];
-
-  return `<section class="surface calendar-surface" data-c1-key="schedule-${escapeHtml(mode)}-region" aria-label="${escapeHtml(label)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(selectionLabel(appState!, selection))}</p><h2>${escapeHtml(label)}</h2><p class="surface-description">Schedule workspace.</p></div></header></section>`;
 }
 
 function projectsHubSurface(state: ProximaState): string {
@@ -378,23 +386,23 @@ function render(): void {
         : timekeepingSurface(currentState, projectNames);
     }
     if (surface === 'schedule') {
-      if (scheduleMode === 'month') {
-        return calendarSurface(currentState, problems, projectNames);
-      }
-
       if (
-        scheduleMode === 'day'
-        || scheduleMode === 'four-day'
-        || scheduleMode === 'week'
+        scheduleMode === 'month'
+        || scheduleMode === 'year'
+        || scheduleMode === 'agenda'
       ) {
-        return scheduleTimeGridSurface(
+        return scheduleProjectionSurface(
           scheduleMode,
           currentState,
+          problems,
           projectNames,
         );
       }
-
-      return scheduleShellSurface(scheduleMode);
+      return scheduleTimeGridSurface(
+        scheduleMode,
+        currentState,
+        projectNames,
+      );
     }
     if (surface === 'projects') {
       return projectsHubSurface(currentState);
@@ -516,6 +524,36 @@ function bindInteractions(): void {
     },
   });
 
+  bindScheduleProjectionInteractions(root, {
+    openEvent: (eventId) => {
+      scheduleEventDraft = null;
+      selectedScheduleEventId = eventId;
+      render();
+    },
+    closeEvent: () => {
+      selectedScheduleEventId = null;
+      scheduleEventDraft = null;
+      render();
+    },
+    selectMonth: (month) => {
+      dispatchAction({
+        type: 'calendar.select-month',
+        month,
+      });
+    },
+    drillMonth: (month) => {
+      const selected = dispatchAction({
+        type: 'calendar.select-month',
+        month,
+      });
+      if (selected?.ok) {
+        dispatchAction({
+          type: 'schedule.mode.select',
+          mode: 'month',
+        });
+      }
+    },
+  });
   bindScheduleTimeGridInteractions(root, {
     openEvent: (eventId) => {
       scheduleEventDraft = null;

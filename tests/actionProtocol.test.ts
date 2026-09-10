@@ -188,6 +188,22 @@ describe('Gate 3A semantic action protocol', () => {
     expect(floor.dispatch({ type: 'calendar.shift-month', delta: -1 })).toMatchObject({ changed: false, snapshot: { calendarMonth: '0000-01-01' } });
     const ceiling = createActionDispatcher({ state: loaded.state, initialCalendarMonth: '9999-12-01', idGenerator: sequentialIdGenerator() });
     expect(ceiling.dispatch({ type: 'calendar.shift-month', delta: 1 })).toMatchObject({ changed: false, snapshot: { calendarMonth: '9999-12-01' } });
+    expect(dispatcher.dispatch({ type: 'calendar.select-month', month: '2031-04-01' })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      changed: true,
+      snapshot: {
+        calendarMonth: '2031-04-01',
+      },
+    });
+    expect(dispatcher.dispatch({ type: 'calendar.select-month', month: '2031-04-01' })).toMatchObject({
+      ok: true,
+      category: 'local-state',
+      changed: false,
+      snapshot: {
+        calendarMonth: '2031-04-01',
+      },
+    });
   });
 
   it('falls back invalid initial months and remains canonical through repeated shifts', async () => {
@@ -225,6 +241,7 @@ describe('Gate 3A semantic action protocol', () => {
       { type: 'schedule.mode.select', mode: 'year' },
       { type: 'schedule.mode.select', mode: 'agenda' },
       { type: 'calendar.navigate', direction: 'next' },
+      { type: 'calendar.select-month', month: '2027-04-01' },
       { type: 'calendar.today' },
       { type: 'surface.select', surface: 'tasks' },
       { type: 'tasks.mode.select', mode: 'timekeeping' },
