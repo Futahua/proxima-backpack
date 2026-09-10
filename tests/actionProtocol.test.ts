@@ -320,7 +320,11 @@ describe('Gate 3A semantic action protocol', () => {
     const actions = [
       { type: 'project.select', projectId: 'proj-term' },
       { type: 'surface.select', surface: 'projects' },
+      { type: 'project.workspace-tab.select', tab: 'notes' },
+      { type: 'project.workspace-tab.select', tab: 'task-board' },
+      { type: 'project.workspace-tab.select', tab: 'backlog' },
       { type: 'project.workspace-tab.select', tab: 'deadlines' },
+      { type: 'project.workspace-tab.select', tab: 'schedule' },
       { type: 'surface.select', surface: 'schedule' },
       { type: 'schedule.mode.select', mode: 'day' },
       { type: 'schedule.cursor.set', date: '2026-09-05' },
