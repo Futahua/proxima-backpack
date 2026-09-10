@@ -21,7 +21,7 @@ import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
 import { bindRefreshWiring, refreshReasonForAction } from './refreshWiring.js';
 import { createBrowserSource } from './sourceFactory.js';
-import { createCanvasDropQueue, EMPTY_CANVAS_SURFACE, renderCanvasSurface, type CanvasSurfaceState } from './canvasSurface.js';
+import { bindCanvasSurfaceInteractions, createCanvasDropQueue, EMPTY_CANVAS_SURFACE, EMPTY_CANVAS_SURFACE_VIEW, renderCanvasSurface, type CanvasSurfaceState, type CanvasSurfaceViewState } from './canvasSurface.js';
 import type { BrowserFileLike } from './canvasFileAdmission.js';
 import { createCanvasPreviewRegistry, disposeCanvasPreviewsOnPageHide } from './canvasPreview.js';
 import { createCanvasExcalidrawPreviewRegistry, disposeCanvasExcalidrawPreviewsOnPageHide } from './canvasExcalidrawPreview.js';
@@ -89,6 +89,7 @@ let sourceProjection: ReadOnlyProjection | null = null;
 let lastRefreshEvidence: Parameters<typeof evaluateRealVaultAcceptance>[0]['refreshEvidence'];
 let lastRenameDeleteEvidence: Parameters<typeof evaluateRealVaultAcceptance>[0]['renameDeleteEvidence'];
 let canvasState: CanvasSurfaceState = EMPTY_CANVAS_SURFACE;
+let canvasView: CanvasSurfaceViewState = EMPTY_CANVAS_SURFACE_VIEW;
 const canvasPreviewRegistry = createCanvasPreviewRegistry({ createObjectURL: (blob) => URL.createObjectURL(blob), revokeObjectURL: (url) => URL.revokeObjectURL(url) });
 const canvasExcalidrawPreviewRegistry = createCanvasExcalidrawPreviewRegistry();
 const canvasTextPreviewRegistry = createCanvasTextPreviewRegistry();
@@ -450,6 +451,7 @@ function render(): void {
       canvasPreviewRegistry.snapshot(),
       canvasExcalidrawPreviewRegistry.snapshot(),
       canvasTextPreviewRegistry.snapshot(),
+      canvasView,
     );
   });
   if (surfaceMarkup.failure) root.dataset.proximaRendererFailure = surfaceMarkup.failure.code;
@@ -527,6 +529,17 @@ function bindInteractions(): void {
   const root = element<HTMLElement>('#proxima-app');
   if (root.dataset.interactionsBound === 'true') return;
   root.dataset.interactionsBound = 'true';
+  bindCanvasSurfaceInteractions(root, {
+    openNode: (nodeId) => {
+      if (!canvasState.items.some((item) => item.node.id === nodeId)) return;
+      canvasView = { selectedNodeId: nodeId };
+      render();
+    },
+    closeNode: () => {
+      canvasView = EMPTY_CANVAS_SURFACE_VIEW;
+      render();
+    },
+  });
 
   bindElasticCockpitInteractions(root, {
     openTask: (taskId) => {

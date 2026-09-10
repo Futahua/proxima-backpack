@@ -1,5 +1,6 @@
-/** Capability-free visible canvas surface state and passive card rendering. */
+/** Capability-free visible canvas surface state and detailed read-only card interactions. */
 
+import type { ActionErrorCode } from '../app/actionProtocol.js';
 import type { IdGenerator } from '../domain/clock.js';
 import type { CanvasNode } from '../domain/canvas.js';
 import type { CanvasRepresentationSelection } from '../domain/canvasRenderer.js';
@@ -10,6 +11,25 @@ import type { CanvasTextPreviewRegistry, CanvasTextPreviewSnapshot } from './can
 import { canvasFallbackIcon } from './canvasFallbackIcon.js';
 
 export const MAX_CANVAS_DROP_FILES = 32;
+
+export type CanvasSurfaceWriteRefusal =
+  Extract<ActionErrorCode, 'action-not-available'>;
+
+export const CANVAS_SURFACE_WRITE_REFUSAL:
+  CanvasSurfaceWriteRefusal = 'action-not-available';
+
+export interface CanvasSurfaceViewState {
+  selectedNodeId: string | null;
+}
+
+export const EMPTY_CANVAS_SURFACE_VIEW: CanvasSurfaceViewState = {
+  selectedNodeId: null,
+};
+
+export interface CanvasSurfaceHandlers {
+  openNode(nodeId: string): void;
+  closeNode(): void;
+}
 
 export interface CanvasSurfaceItem {
   node: CanvasNode;
@@ -72,34 +92,197 @@ export async function admitCanvasDrop(
   return { items: nextItems, lastDropDiagnostic: diagnostic };
 }
 
-/** Render escaped metadata plus an optional registry-owned raster URL. */
-export function renderCanvasSurface(state: CanvasSurfaceState, previews?: ReadonlyMap<string, { url: string; mediaType: string }>, excalidrawPreviews?: ReadonlyMap<string, CanvasExcalidrawPresentation>, textPreviews?: ReadonlyMap<string, CanvasTextPreviewSnapshot>): string {
+/** Render escaped metadata plus optional registry-owned previews and local selection. */
+export function renderCanvasSurface(
+  state: CanvasSurfaceState,
+  previews?: ReadonlyMap<string, { url: string; mediaType: string }>,
+  excalidrawPreviews?: ReadonlyMap<string, CanvasExcalidrawPresentation>,
+  textPreviews?: ReadonlyMap<string, CanvasTextPreviewSnapshot>,
+  view: CanvasSurfaceViewState = EMPTY_CANVAS_SURFACE_VIEW,
+): string {
+  const selectedNodeId =
+    view.selectedNodeId !== null
+    && state.items.some((item) => item.node.id === view.selectedNodeId)
+      ? view.selectedNodeId
+      : null;
+
   const diagnostic = state.lastDropDiagnostic
     ? `<p class="canvas-diagnostic" data-c1-key="canvas-drop-diagnostic">${escapeHtml(state.lastDropDiagnostic)}</p>`
     : '';
-  const cards = state.items.map((item, index) => canvasCard(item, index, previews, excalidrawPreviews, textPreviews)).join('');
-  return `<section class="surface canvas-surface" data-c1-key="canvas-region" aria-label="Canvas"><header class="surface-header"><div><p class="eyebrow">Workspace canvas</p><h2>Canvas</h2><p class="surface-description">Drop files to create passive, one-shot file cards.</p></div><span class="surface-count">${state.items.length} items</span></header><div class="canvas-drop-zone" data-c1-key="canvas-drop-zone" aria-label="Canvas drop zone">${cards || '<p class="empty-state">Drop a file here.</p>'}</div>${diagnostic}</section>`;
+
+  const cards = state.items
+    .map((item) =>
+      canvasCard(
+        item,
+        selectedNodeId,
+        previews,
+        excalidrawPreviews,
+        textPreviews,
+      ),
+    )
+    .join('');
+
+  return `<section class="surface canvas-surface" data-c1-key="canvas-region" aria-label="Canvas" data-canvas-write-authority="unavailable"><header class="surface-header"><div><p class="eyebrow">Workspace canvas</p><h2>Canvas</h2><p class="surface-description">Drop files to create passive, one-shot file cards. Select a card to inspect it.</p></div><span class="surface-count">${state.items.length} items</span></header><div class="canvas-drop-zone" data-c1-key="canvas-drop-zone" aria-label="Canvas drop zone">${cards || '<p class="empty-state">Drop a file here.</p>'}</div>${diagnostic}${canvasInspector(state, selectedNodeId)}</section>`;
 }
 
-function canvasCard(item: CanvasSurfaceItem, index: number, previews?: ReadonlyMap<string, { url: string; mediaType: string }>, excalidrawPreviews?: ReadonlyMap<string, CanvasExcalidrawPresentation>, textPreviews?: ReadonlyMap<string, CanvasTextPreviewSnapshot>): string {
+function canvasCard(
+  item: CanvasSurfaceItem,
+  selectedNodeId: string | null,
+  previews?: ReadonlyMap<string, { url: string; mediaType: string }>,
+  excalidrawPreviews?: ReadonlyMap<string, CanvasExcalidrawPresentation>,
+  textPreviews?: ReadonlyMap<string, CanvasTextPreviewSnapshot>,
+): string {
   const { selection, node } = item;
-  const preview = selection.kind === 'raster-image' ? previews?.get(node.id) : undefined;
-  const drawing = selection.kind === 'excalidraw' ? excalidrawPreviews?.get(node.id) : undefined;
-  const textPreview = selection.kind === 'text' ? textPreviews?.get(node.id) : undefined;
-  const label = selection.kind === 'fallback' ? 'Fallback file' : selection.kind === 'raster-image' && preview ? 'raster-image — inline preview mounted' : selection.kind === 'excalidraw' && drawing ? 'excalidraw — inline preview mounted' : selection.kind === 'text' && textPreview?.presentation ? 'text — inline preview mounted' : `${selection.kind} — inline preview not mounted`;
-  const reason = selection.reason ? ` · ${selection.reason.replaceAll('-', ' ')}` : '';
-  const size = selection.size === null ? 'size unavailable' : `${selection.size} bytes`;
-  const modified = selection.modifiedAt ?? 'modified time unavailable';
-  const state = selection.sourceState;
-  const image = preview && preview.url.startsWith('blob:') ? `<img src="${escapeHtml(preview.url)}" alt="${escapeHtml(selection.filename)}">` : '';
-  const drawingSvg = drawing ? `<div class="canvas-excalidraw-preview" aria-label="Generated Excalidraw preview">${drawing.svg}</div><small>scene ${drawing.census.sceneElements} · rendered ${drawing.census.rendered} · problems ${drawing.problems.length}</small>` : '';
-  const textMarkup = textPreview?.presentation ? `<pre class="canvas-text-preview">${escapeHtml(textPreview.presentation.text)}</pre>` : '';
-  const previewFailure = item.presentationDiagnostic ? ` · ${item.presentationDiagnostic.replaceAll('-', ' ')}` : textPreview?.failure ? ` · ${textPreview.failure.replaceAll('-', ' ')}` : '';
-  const icon = selection.kind === 'fallback' ? canvasFallbackIcon(selection.extension) : null;
-  const iconMarkup = icon ? `<span class="canvas-fallback-icon" aria-label="${escapeHtml(icon.label)}">${icon.token}</span>` : '';
-  return `<article class="canvas-card" data-c1-key="canvas-card-${index}" data-canvas-node-id="${escapeHtml(node.id)}"><header>${iconMarkup}<strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}${escapeHtml(previewFailure)}</span></header>${image}${drawingSvg}${textMarkup}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(state)}${escapeHtml(reason)}</span></footer></article>`;
+  const selected = selectedNodeId === node.id;
+  const preview =
+    selection.kind === 'raster-image'
+      ? previews?.get(node.id)
+      : undefined;
+  const drawing =
+    selection.kind === 'excalidraw'
+      ? excalidrawPreviews?.get(node.id)
+      : undefined;
+  const textPreview =
+    selection.kind === 'text'
+      ? textPreviews?.get(node.id)
+      : undefined;
+
+  const label =
+    selection.kind === 'fallback'
+      ? 'Fallback file'
+      : selection.kind === 'raster-image' && preview
+        ? 'raster-image — inline preview mounted'
+        : selection.kind === 'excalidraw' && drawing
+          ? 'excalidraw — inline preview mounted'
+          : selection.kind === 'text' && textPreview?.presentation
+            ? 'text — inline preview mounted'
+            : `${selection.kind} — inline preview not mounted`;
+
+  const reason = selection.reason
+    ? ` · ${selection.reason.replaceAll('-', ' ')}`
+    : '';
+  const size =
+    selection.size === null
+      ? 'size unavailable'
+      : `${selection.size} bytes`;
+  const modified =
+    selection.modifiedAt ?? 'modified time unavailable';
+  const sourceState = selection.sourceState;
+
+  const image =
+    preview && preview.url.startsWith('blob:')
+      ? `<img src="${escapeHtml(preview.url)}" alt="${escapeHtml(selection.filename)}">`
+      : '';
+
+  const drawingSvg = drawing
+    ? `<div class="canvas-excalidraw-preview" aria-label="Generated Excalidraw preview">${drawing.svg}</div><small>scene ${drawing.census.sceneElements} · rendered ${drawing.census.rendered} · problems ${drawing.problems.length}</small>`
+    : '';
+
+  const textMarkup = textPreview?.presentation
+    ? `<pre class="canvas-text-preview">${escapeHtml(textPreview.presentation.text)}</pre>`
+    : '';
+
+  const previewFailure = item.presentationDiagnostic
+    ? ` · ${item.presentationDiagnostic.replaceAll('-', ' ')}`
+    : textPreview?.failure
+      ? ` · ${textPreview.failure.replaceAll('-', ' ')}`
+      : '';
+
+  const icon =
+    selection.kind === 'fallback'
+      ? canvasFallbackIcon(selection.extension)
+      : null;
+  const iconMarkup = icon
+    ? `<span class="canvas-fallback-icon" aria-label="${escapeHtml(icon.label)}">${icon.token}</span>`
+    : '';
+
+  return `<article class="canvas-card${selected ? ' selected' : ''}" role="button" tabindex="0" aria-pressed="${selected}" data-canvas-action="open-node" data-c1-key="canvas-card-${escapeHtml(node.id)}" data-canvas-node-id="${escapeHtml(node.id)}" data-canvas-source-kind="${escapeHtml(node.source.kind)}"><header>${iconMarkup}<strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}${escapeHtml(previewFailure)}</span></header>${image}${drawingSvg}${textMarkup}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(sourceState)}${escapeHtml(reason)}</span></footer></article>`;
+}
+
+function canvasInspector(
+  state: CanvasSurfaceState,
+  selectedNodeId: string | null,
+): string {
+  if (selectedNodeId === null) return '';
+
+  const item = state.items.find(
+    (candidate) => candidate.node.id === selectedNodeId,
+  );
+  if (!item) return '';
+
+  const { node, selection } = item;
+  const sourceIdentity =
+    node.source.kind === 'vault-file'
+      ? node.source.path
+      : node.source.sourceId;
+
+  const field = (label: string, value: unknown): string =>
+    `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? '—')}</dd></div>`;
+
+  return `<section class="canvas-node-inspector" role="dialog" aria-modal="false" aria-label="Canvas item details" data-canvas-inspector-node-id="${escapeHtml(node.id)}" data-c1-key="canvas-node-inspector"><header><div><small>Canvas item</small><h3>${escapeHtml(selection.filename)}</h3></div><button type="button" class="icon-button" data-canvas-action="close-node" data-c1-key="canvas-node-inspector-close" aria-label="Close canvas item details">×</button></header><dl class="canvas-node-fields">${field('Node ID', node.id)}${field('Representation', selection.kind)}${field('Admission', item.status)}${field('Source kind', node.source.kind)}${field(node.source.kind === 'vault-file' ? 'Source path' : 'Ephemeral source ID', sourceIdentity)}${field('Source state', node.source.state)}${field('Revision', node.source.revision)}${field('Size', node.source.size)}${field('Modified', node.source.modifiedAt)}${field('X', node.layout.x)}${field('Y', node.layout.y)}${field('Width', node.layout.width)}${field('Height', node.layout.height)}</dl><footer><button type="button" disabled aria-disabled="true" data-canvas-write-action="move-resize" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Move / resize unavailable</button><button type="button" disabled aria-disabled="true" data-canvas-write-action="remove" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Remove unavailable</button><small data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Unavailable until record-store cutover</small></footer></section>`;
+}
+
+export function bindCanvasSurfaceInteractions(
+  root: HTMLElement,
+  handlers: CanvasSurfaceHandlers,
+): void {
+  root.addEventListener('click', (event) => {
+    const control = (event.target as HTMLElement)
+      .closest<HTMLElement>('[data-canvas-action]');
+    if (!control || !root.contains(control)) return;
+
+    if (control.dataset.canvasAction === 'close-node') {
+      handlers.closeNode();
+      return;
+    }
+
+    if (control.dataset.canvasAction === 'open-node') {
+      const nodeId = control.dataset.canvasNodeId;
+      if (!nodeId) return;
+      handlers.openNode(nodeId);
+      bindInspectorEscape();
+    }
+  });
+
+  const bindInspectorEscape = (): void => {
+    const close = root.querySelector<HTMLElement>(
+      '[data-canvas-action="close-node"][data-c1-key="canvas-node-inspector-close"]',
+    );
+    if (!close || close.dataset.canvasEscapeBound === 'true') return;
+
+    close.dataset.canvasEscapeBound = 'true';
+    close.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      handlers.closeNode();
+    });
+  };
+
+  bindInspectorEscape();
+
+  root
+    .querySelectorAll<HTMLElement>(
+      '[data-canvas-action="open-node"][data-canvas-node-id]',
+    )
+    .forEach((card) => {
+      card.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+
+        const nodeId = card.dataset.canvasNodeId;
+        if (!nodeId) return;
+
+        event.preventDefault();
+        handlers.openNode(nodeId);
+        bindInspectorEscape();
+      });
+    });
 }
 
 function escapeHtml(value: unknown): string {
-  return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
