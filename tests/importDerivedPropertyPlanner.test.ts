@@ -234,7 +234,7 @@ describe(
         );
         const rollupSchema = requireRollupSchema(derived, 'total');
 
-        expect(result.schemaVersion).toBe(4);
+        expect(result.schemaVersion).toBe(5);
         expect(derived.schemaVersion).toBe(1);
         expect(rollupSchema).toMatchObject({
           disposition: 'canonical-ready',

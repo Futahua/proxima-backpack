@@ -30,6 +30,11 @@ import {
   type LoadOptions,
 } from './vaultRepository.js';
 import {
+  planLegacyExternalArtifacts,
+  type LegacyImportArtifactPlanningInput,
+  type LegacyImportExternalArtifactPlan,
+} from './importArtifactPlanner.js';
+import {
   planLegacyDerivedProperties,
   type LegacyImportDerivedPropertyPlan,
 } from './importDerivedPropertyPlanner.js';
@@ -44,7 +49,7 @@ import {
 } from './importSchemaPlanner.js';
 
 export const LEGACY_IMPORT_PLAN_SCHEMA_VERSION =
-  4 as const;
+  5 as const;
 
 export interface LegacyImportIdentityRequest {
   readonly kind: RecordKind;
@@ -333,6 +338,8 @@ export interface LegacyImportPlan {
 
   readonly derivedProperties:
     LegacyImportDerivedPropertyPlan | null;
+  readonly externalArtifacts:
+    LegacyImportExternalArtifactPlan | null;
 
   readonly identityMapping:
     LegacyImportIdentityMappingManifest;
@@ -642,6 +649,9 @@ export async function planLegacyMarkdownImport(
   schemaPlanning:
     LegacyImportSchemaPlanningInput | null =
       null,
+  artifactPlanning:
+    LegacyImportArtifactPlanningInput | null =
+      null,
 ): Promise<
   LegacyImportPlan
 > {
@@ -923,6 +933,26 @@ export async function planLegacyMarkdownImport(
             schemaPlanning.snapshot,
           schemaSettings,
           propertyValues,
+        });
+
+  const externalArtifacts =
+    artifactPlanning === null
+      ? null
+      : planLegacyExternalArtifacts({
+          candidates,
+          identities:
+            mappings.map(
+              (mapping) => ({
+                kind:
+                  mapping.kind,
+                sourcePath:
+                  mapping.source.path,
+                recordId:
+                  mapping.recordId,
+              }),
+            ),
+          planning:
+            artifactPlanning,
         });
 
   const mappingByPhysical =
@@ -1441,6 +1471,7 @@ export async function planLegacyMarkdownImport(
     schemaSettings,
     propertyValues,
     derivedProperties,
+    externalArtifacts,
     projectReferences,
     problems,
 

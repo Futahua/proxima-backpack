@@ -81,6 +81,14 @@ export interface LegacyPhysicalRecordCandidate {
     readonly projectType:
       Project['projectType'] | null;
     /**
+     * Already-interpreted legacy project/filesystem associations.
+     *
+     * These remain external-artifact import evidence. Paths do not become
+     * canonical project identity.
+     */
+    readonly projectLinkedFolders:
+      readonly LinkedFolder[] | null;
+    /**
      * Already-parsed frontmatter used only as the lookup source for legacy custom
      * properties. Projects have no legacy property-value surface in this importer.
      */
@@ -485,6 +493,16 @@ function toPhysicalCandidate(
           null,
         projectType:
           project.projectType,
+        projectLinkedFolders:
+          project.linkedFolders
+            .map(
+              (folder) => ({
+                name:
+                  folder.name,
+                path:
+                  folder.path,
+              }),
+            ),
         propertyValues:
           null,
       },
@@ -522,6 +540,8 @@ function toPhysicalCandidate(
           ),
         projectType:
           null,
+        projectLinkedFolders:
+          null,
         propertyValues: {
           ...doc.frontmatter,
         },
@@ -549,6 +569,8 @@ function toPhysicalCandidate(
       taskExecutionState:
         null,
       projectType: null,
+      projectLinkedFolders:
+        null,
       propertyValues: {
         ...doc.frontmatter,
       },
