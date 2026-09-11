@@ -1,4 +1,7 @@
 import type {
+  RecoveryJournalBackend,
+} from '../app/vaultRecovery.js';
+import type {
   RecordStoreFileBackend,
   RecordStoreFileMutationResult,
   RecordStoreFileName,
@@ -10,6 +13,8 @@ export const PROXIMA_RECORD_STORE_ORIGIN =
 
 const RECORD_STORE_DIRECTORY = 'record-store';
 const RECORDS_DIRECTORY = 'records';
+const RECOVERY_DIRECTORY = 'recovery';
+const RECOVERY_JOURNAL_FILE = 'journal.json';
 const RECORD_FILE_NAME =
   /^pxr_[0-9a-f]{32}\.json$/;
 
@@ -250,16 +255,16 @@ async function writeWholeFile(
 }
 
 /**
- * Opens the creator-accepted HARD GATE B namespace:
+ * Opens the creator-accepted HARD GATE B record namespace:
  *
  *   papers-backpack://bp-954ea2cd-6261-410d-baf8-0d1fbd8ca0b1
  *     OPFS/
  *       record-store/
  *         records/
  *
- * `record-store/recovery/` is intentionally not opened or created by this
- * slice. Raw OPFS handles remain closure-private and never cross the
- * RecordStoreFileBackend seam.
+ * This factory still opens only `records/`. The sibling `recovery/` namespace
+ * is opened only by the recovery-journal factory below. Raw OPFS handles remain
+ * closure-private and never cross either injected storage seam.
  */
 export async function
 createBrowserOpfsRecordStoreFileBackend():
@@ -481,6 +486,77 @@ Promise<RecordStoreFileBackend> {
         revision:
           `deleted:${existing.revision}`,
       };
+    },
+  };
+}
+
+/**
+ * Opens only the durable recovery sibling selected by HARD GATE B:
+ *
+ *   record-store/
+ *     recovery/
+ *       journal.json
+ *
+ * The journal filename is fixed by Proxima. No caller supplies a directory,
+ * filename, machine path, vault path or OPFS handle.
+ */
+export async function
+createBrowserOpfsRecordRecoveryJournalBackend():
+Promise<RecoveryJournalBackend> {
+  const root =
+    await acquireOpfsRoot();
+
+  const recordStoreDirectory =
+    await root.getDirectoryHandle(
+      RECORD_STORE_DIRECTORY,
+      { create: true },
+    );
+
+  const recoveryDirectory =
+    await recordStoreDirectory
+      .getDirectoryHandle(
+        RECOVERY_DIRECTORY,
+        { create: true },
+      );
+
+  return {
+    async read() {
+      let handle:
+        OpfsFileHandleLike;
+
+      try {
+        handle =
+          await recoveryDirectory
+            .getFileHandle(
+              RECOVERY_JOURNAL_FILE,
+            );
+      } catch (error) {
+        if (isNotFound(error)) {
+          return undefined;
+        }
+
+        throw error;
+      }
+
+      const snapshot =
+        await handle.getFile();
+
+      return snapshot.text();
+    },
+
+    async write(value) {
+      const handle =
+        await recoveryDirectory
+          .getFileHandle(
+            RECOVERY_JOURNAL_FILE,
+            { create: true },
+          );
+
+      const writable =
+        await handle.createWritable();
+
+      await writable.write(value);
+      await writable.close();
     },
   };
 }

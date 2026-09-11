@@ -7,6 +7,7 @@ import {
 } from 'vitest';
 
 import {
+  createBrowserOpfsRecordRecoveryJournalBackend,
   createBrowserOpfsRecordStoreFileBackend,
   PROXIMA_RECORD_STORE_ORIGIN,
 } from '../src/adapters/opfsRecordStoreFileBackend.js';
@@ -16,6 +17,9 @@ import {
 import {
   RecordStoreFormatError,
 } from '../src/app/jsonRecordStore.js';
+import {
+  createDurableRecoveryStore,
+} from '../src/app/vaultRecovery.js';
 import {
   opaqueRecordIdFromRandomBytes,
   type OpaqueRecordId,
@@ -871,6 +875,165 @@ describe(
 
         await expect(
           createBrowserOpfsRecordStoreFileBackend(),
+        ).rejects.toThrow(
+          /accepted Backpack origin/,
+        );
+
+        expect(
+          getDirectory,
+        ).not.toHaveBeenCalled();
+        expect(root.children.size)
+          .toBe(0);
+      },
+    );
+
+    it(
+      'persists durable recovery state only under record-store/recovery/journal.json',
+      async () => {
+        const root =
+          new FakeDirectoryHandle();
+        const getDirectory =
+          installBrowserOpfs(root);
+
+        const journalBackend =
+          await createBrowserOpfsRecordRecoveryJournalBackend();
+
+        const recovery =
+          createDurableRecoveryStore(
+            journalBackend,
+          );
+
+        const name =
+          recordFileName(
+            recordId(7),
+          );
+
+        await recovery.save({
+          requestId:
+            'record-recovery-opfs-1',
+          operation: 'update',
+          path: name,
+          revision: 'record-r1',
+          bytes:
+            new TextEncoder()
+              .encode('old'),
+          nextBytes:
+            new TextEncoder()
+              .encode('new'),
+          createdAt:
+            '2026-09-11T04:00:00.000Z',
+          status: 'prepared',
+        });
+
+        expect(
+          getDirectory,
+        ).toHaveBeenCalledTimes(1);
+
+        expect(
+          [...root.children.keys()],
+        ).toEqual([
+          'record-store',
+        ]);
+
+        const store =
+          await root.getDirectoryHandle(
+            'record-store',
+          );
+
+        expect(
+          [...store.children.keys()],
+        ).toEqual([
+          'recovery',
+        ]);
+
+        expect(
+          store.children.has(
+            'records',
+          ),
+        ).toBe(false);
+
+        const recoveryDirectory =
+          await store.getDirectoryHandle(
+            'recovery',
+          );
+
+        expect(
+          [...recoveryDirectory.children.keys()],
+        ).toEqual([
+          'journal.json',
+        ]);
+
+        expect(journalBackend)
+          .not
+          .toHaveProperty('root');
+        expect(journalBackend)
+          .not
+          .toHaveProperty('recoveryDirectory');
+
+        const restarted =
+          createDurableRecoveryStore(
+            await createBrowserOpfsRecordRecoveryJournalBackend(),
+          );
+
+        await restarted.load();
+
+        expect(
+          getDirectory,
+        ).toHaveBeenCalledTimes(2);
+
+        const loaded =
+          restarted.list();
+
+        expect(loaded)
+          .toHaveLength(1);
+
+        expect(loaded[0])
+          .toMatchObject({
+            requestId:
+              'record-recovery-opfs-1',
+            operation: 'update',
+            path: name,
+            revision: 'record-r1',
+            status: 'prepared',
+            createdAt:
+              '2026-09-11T04:00:00.000Z',
+          });
+
+        expect(
+          new TextDecoder()
+            .decode(
+              loaded[0]?.bytes,
+            ),
+        ).toBe('old');
+
+        expect(
+          new TextDecoder()
+            .decode(
+              loaded[0]?.nextBytes,
+            ),
+        ).toBe('new');
+      },
+    );
+
+    it(
+      'refuses record and recovery backends outside the exact accepted Proxima Backpack origin before acquiring OPFS',
+      async () => {
+        const root =
+          new FakeDirectoryHandle();
+        const getDirectory =
+          installBrowserOpfs(
+            root,
+            'https://example.com/not-proxima',
+          );
+
+        await expect(
+          createBrowserOpfsRecordStoreFileBackend(),
+        ).rejects.toThrow(
+          /accepted Backpack origin/,
+        );
+
+        await expect(
+          createBrowserOpfsRecordRecoveryJournalBackend(),
         ).rejects.toThrow(
           /accepted Backpack origin/,
         );
