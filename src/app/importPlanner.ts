@@ -29,9 +29,14 @@ import {
   type LegacyPhysicalRecordCandidate,
   type LoadOptions,
 } from './vaultRepository.js';
+import {
+  planLegacySchemaSettings,
+  type LegacyImportSchemaPlanningInput,
+  type LegacyImportSchemaSettingsPlan,
+} from './importSchemaPlanner.js';
 
 export const LEGACY_IMPORT_PLAN_SCHEMA_VERSION =
-  1 as const;
+  2 as const;
 
 export interface LegacyImportIdentityRequest {
   readonly kind: RecordKind;
@@ -311,6 +316,9 @@ export interface LegacyImportPlan {
 
   readonly conversions:
     readonly LegacyImportConversionPlan[];
+
+  readonly schemaSettings:
+    LegacyImportSchemaSettingsPlan | null;
 
   readonly identityMapping:
     LegacyImportIdentityMappingManifest;
@@ -617,6 +625,9 @@ export async function planLegacyMarkdownImport(
   priorIdentityMapping:
     LegacyImportIdentityMappingManifest | null =
       null,
+  schemaPlanning:
+    LegacyImportSchemaPlanningInput | null =
+      null,
 ): Promise<
   LegacyImportPlan
 > {
@@ -857,6 +868,13 @@ export async function planLegacyMarkdownImport(
         compareIdentityMappingEntries,
       ),
     };
+
+  const schemaSettings = schemaPlanning === null ? null : planLegacySchemaSettings(
+    schemaPlanning,
+    [
+      ...claimedCanonicalIds.keys(),
+    ],
+  );
 
   const mappingByPhysical =
     new Map<
@@ -1371,6 +1389,7 @@ export async function planLegacyMarkdownImport(
     identityMapping,
     collisions,
     conversions,
+    schemaSettings,
     projectReferences,
     problems,
 
