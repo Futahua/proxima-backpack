@@ -215,6 +215,9 @@ describe('no write control can be clicked and do nothing', () => {
       openNewProject: () => { open = true; rerender(); },
       closeNewProject: () => { open = false; rerender(); },
       createProject: ({ name, description }) => dispatcher.dispatch({ type: 'project.create', name, description }),
+      archiveProject: () => undefined,
+      restoreProject: () => undefined,
+      deleteProject: () => undefined,
     });
     rerender();
 

@@ -18,7 +18,9 @@ async function mountProjectCreate() {
   let filter: ProjectsHubFilter = 'active';
   let newProjectOpen = false;
   const rerender = () => { root.innerHTML = renderProjectsHub({ state, selection: 'all', filter, workspaceTab: 'notes', now: NOW, newProjectOpen }); };
-  bindProjectsHubInteractions(root, { setFilter: (next) => { filter = next; rerender(); }, openProject: () => {}, showHub: () => {}, openNewProject: () => { newProjectOpen = true; rerender(); }, closeNewProject: () => { newProjectOpen = false; rerender(); }, createProject: ({ name, description }) => dispatcher.dispatch({ type: 'project.create', name, description }) });
+  bindProjectsHubInteractions(root, { setFilter: (next) => { filter = next; rerender(); }, openProject: () => {}, showHub: () => {}, openNewProject: () => { newProjectOpen = true; rerender(); }, closeNewProject: () => { newProjectOpen = false; rerender(); }, createProject: ({ name, description }) => dispatcher.dispatch({ type: 'project.create', name, description }),
+    archiveProject: () => undefined, restoreProject: () => undefined, deleteProject: () => undefined,
+  });
   rerender();
   return { root, harness: createInteractionHarness(root), state, dispatcher, isOpen: () => newProjectOpen };
 }

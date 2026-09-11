@@ -1144,3 +1144,30 @@ the refusal stays and its reason changes to a policy one that a caller can act o
 than inferring them; if it is "leave members uncategorised", the delete proceeds and the members
 keep a project id that no longer resolves, which the projection already reports as a gap rather
 than dropping. Whichever it is, `deleteProject` is the one function that changes.
+
+---
+
+## D57 — The lifecycle controls are enabled by a resolved write path, and Delete is enabled with them
+
+**Decided:** the Projects Hub draws Archive, Restore and Delete as **real controls** whenever a
+record write path has resolved (`projectWrites.refusal === null`), and as disabled controls carrying
+the reason beside them when it has not. Delete is offered on exactly the same terms as the other two.
+Its refusal — `policy-not-decided`, with the member counts — is drawn as a sentence where the button
+is, and the button stays enabled, because that refusal is an **answer** rather than a missing feature.
+
+**Why:** the earlier stance — "Unavailable until record-store cutover", hardcoded in the renderer —
+was honest only while *no* lifecycle verb could run. Once four of the five run, a disabled Delete
+would say about it the same false thing the banner used to say about all of them, and it would hide
+the one message that lets the creator answer D56's question. The distinction the surface now draws is
+the real one: `refusal === null` means "there are operations behind these buttons", and the feedback
+line carries whatever the last attempt said — an accepted outcome's sentence, or the operation's own
+refusal with its code and detail together.
+
+**Also decided:** the feedback line is drawn **twice** — once inside the controls it belongs to, and
+once at the list level. Archiving is the case that forces it: the archived card leaves the active
+list, so a sentence drawn only on the card would vanish at the exact moment it became the only thing
+explaining what had happened.
+
+**Reverses if:** the deletion policy is answered (D56), at which point Delete's sentence changes and
+nothing about its enablement does; or a surface appears that can write records but not projects, in
+which case the option becomes per-verb rather than one `ProjectWriteView` for all three.

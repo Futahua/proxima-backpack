@@ -11,7 +11,7 @@ async function lifecycleState() {
   return { projects: [{ ...template, id: 'lifecycle-active', name: 'Lifecycle Active' }, { ...template, id: 'lifecycle-archived', name: 'Lifecycle Archived', status: 'archived' as const, archivedAt: '2026-09-01T00:00:00.000Z' }], tasks: [], events: [], statuses: [], taskSchema: [] };
 }
 beforeEach(() => { document.body.innerHTML = ''; });
-describe('Stage 5 project lifecycle controls before cutover', () => {
+describe('Stage 5 project lifecycle controls with no write path resolved', () => {
   it('shows Archive/Delete for active projects and Restore/Delete for archived projects as explicit unavailable controls', async () => {
     const state = await lifecycleState(); const before = JSON.stringify(state);
     document.body.innerHTML = renderProjectsHub({ state, selection: ALL_PROJECTS, filter: 'active', workspaceTab: 'notes', now: new Date('2026-09-06T12:00:00.000Z') });

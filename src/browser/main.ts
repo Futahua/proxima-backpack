@@ -7,7 +7,7 @@ import { coexistenceReadiness, declareCoexistenceReadiness } from './coexistence
 import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
 import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupSource.js';
-import { resolveBrowserTaskMutations, type BrowserTaskMutations } from '../adapters/browserTaskMutations.js';
+import { resolveBrowserTaskMutations, type BrowserRecordMutations } from '../adapters/browserTaskMutations.js';
 import { performElasticDrop } from '../app/elasticDropAction.js';
 import { performWorkflowDrop } from '../app/workflowBoardDrop.js';
 import { bulkCompleteTasks, bulkDeleteTasks, type BulkTaskActionReport } from '../app/bulkTaskActions.js';
@@ -62,10 +62,13 @@ import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
 import { cockpitSubmode, renderCockpitNavigation } from './cockpitNavigation.js';
 import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor } from './workspaceIdentity.js';
+import { archiveProjectAction, deleteProjectAction, restoreProjectAction, type ProjectLifecycleOutcome } from '../app/projectLifecycleActions.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
 const DETERMINISTIC_IDS = sequentialIdGenerator();
+/** What the Hub's lifecycle controls say while nothing has happened yet and a write path exists. */
+const PROJECT_LIFECYCLE_IDLE_FEEDBACK = 'Archive and Restore write the project status; Delete reports the deletion policy.';
 let appState: ProximaState | null = null;
 let loadProblems: LoadProblem[] = [];
 let selection = ALL_PROJECTS;
@@ -88,6 +91,10 @@ let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_V
 /** The workflow board's own state: it groups by stage, so it previews and refuses separately. */
 let projectWorkflowBoardView: ProjectWorkflowBoardViewState = EMPTY_PROJECT_WORKFLOW_BOARD_VIEW;
 let projectWorkflowRefusal: string | null = null;
+/** The lifecycle line the Projects Hub draws: an outcome's own words, or the refusal's. */
+let projectLifecycleFeedback: string | null = null;
+/** The refusal code that sentence belongs to, null when the last attempt was accepted. */
+let projectLifecycleRefusalCode: string | null = null;
 let projectBacklogView: ProjectBacklogViewState = EMPTY_PROJECT_BACKLOG_VIEW;
 let projectDeadlinesView: ProjectDeadlinesViewState = EMPTY_PROJECT_DEADLINES_VIEW;
 let projectScheduleView: ProjectScheduleViewState = EMPTY_PROJECT_SCHEDULE_VIEW;
@@ -107,8 +114,8 @@ let elasticSelectedTaskId: string | null = null;
 let taskEditorDraft: TaskEditorDraft | null = null;
 let elasticDropRefusal: string | null = null;
 /** The browser's task-write operations once a record-store run has been cleared to write. */
-let taskMutations: BrowserTaskMutations | null = null;
-let taskMutationResolution: Promise<BrowserTaskMutations | null> | null = null;
+let taskMutations: BrowserRecordMutations | null = null;
+let taskMutationResolution: Promise<BrowserRecordMutations | null> | null = null;
 /** Why there is no write path, in the shell's own words, for the refusal banner. */
 let taskMutationUnavailable: string | null = null;
 /** The last refusal the Task editor's Save or Delete produced, shown beside the form. */
@@ -367,8 +374,15 @@ function selectProjectNote(path: string): void {
   void loadProjectNotePreview(reader, path).then((result) => { if (projectNotesPreviewRequestKey !== key || selection !== projectId || projectNotesSourceGeneration() !== generation || projectNotesView.selectedPath !== path) return; projectNotesPreviewRequestKey = null; projectNotesView = { ...projectNotesView, previewStatus: result.preview ? 'ready' : 'unavailable', preview: result.preview, previewFailure: result.failure }; render(); }).catch(() => { if (projectNotesPreviewRequestKey !== key || selection !== projectId || projectNotesSourceGeneration() !== generation || projectNotesView.selectedPath !== path) return; projectNotesPreviewRequestKey = null; projectNotesView = { ...projectNotesView, previewStatus: 'unavailable', preview: null, previewFailure: 'unreadable' }; render(); });
 }
 function projectsHubSurface(state: ProximaState): string {
+  // A resolved write path is what makes the controls real; the reason there is none is drawn
+  // beside them rather than swallowed.
+  const lifecycleWrites = {
+    refusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null,
+    feedback: projectLifecycleFeedback ?? (taskMutations === null ? null : PROJECT_LIFECYCLE_IDLE_FEEDBACK),
+    feedbackRefusal: projectLifecycleRefusalCode,
+  };
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: { ...projectWorkflowBoardView, writeRefusal: projectWorkflowRefusal }, projectBacklog: { ...projectBacklogView, bulkWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null }, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: { ...projectWorkflowBoardView, writeRefusal: projectWorkflowRefusal }, projectBacklog: { ...projectBacklogView, bulkWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null }, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView, projectWrites: lifecycleWrites });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -604,7 +618,7 @@ async function refreshFromSource(
  * Markdown has no record write path at all — the honest answer is a refusal that names why,
  * not a gesture that appears to work and reverts on the next read.
  */
-async function resolveTaskWritePath(): Promise<BrowserTaskMutations | null> {
+async function resolveTaskWritePath(): Promise<BrowserRecordMutations | null> {
   if (taskMutations !== null) return taskMutations;
 
   if (taskMutationResolution === null) {
@@ -799,6 +813,47 @@ async function moveTaskFromWorkflowDrop(intent: { taskId: string; targetStageId:
   render();
 }
 
+/**
+ * The Projects Hub's lifecycle controls.
+ *
+ * Archive, Restore and Delete all reach the same sequence in `src/app/projectLifecycleActions.ts`,
+ * where tests execute it against a real store; the shell supplies the resolved record operations,
+ * what to say when this run has none, and the sink the feedback line is drawn from.
+ *
+ * Delete is offered on exactly the same terms as the other two. While the deletion policy is
+ * undecided its operation answers `policy-not-decided` — with the member counts it would affect —
+ * and that answer is what the reader gets, because it is a question a reader can answer. A disabled
+ * button would say the feature is missing, which is not what is true.
+ */
+function projectLifecycleDependencies() {
+  return {
+    state: appState,
+    writes: resolveTaskWritePath,
+    unavailableReason: () => taskMutationUnavailable,
+    refresh: refreshFromSource,
+    setRefusal: (reason: string | null) => { projectLifecycleFeedback = reason; projectLifecycleRefusalCode = reason; },
+    render,
+  };
+}
+
+function projectLifecycleSentence(outcome: ProjectLifecycleOutcome): string {
+  if (outcome.ok) return `${outcome.outcome} at revision ${outcome.revision}`;
+  return `${outcome.reason}: ${outcome.detail}`;
+}
+
+async function runProjectLifecycle(kind: 'archive' | 'restore' | 'delete', projectId: string): Promise<void> {
+  const dependencies = projectLifecycleDependencies();
+  const outcome = kind === 'archive'
+    ? await archiveProjectAction(dependencies, { projectId })
+    : kind === 'restore'
+      ? await restoreProjectAction(dependencies, { projectId })
+      : await deleteProjectAction(dependencies, { projectId });
+  // The operation's own sentence replaces the progress line, and stays until the next attempt.
+  projectLifecycleFeedback = projectLifecycleSentence(outcome);
+  projectLifecycleRefusalCode = outcome.ok ? null : outcome.reason;
+  render();
+}
+
 function bindInteractions(): void {
   const root = element<HTMLElement>('#proxima-app');
   if (root.dataset.interactionsBound === 'true') return;
@@ -954,6 +1009,9 @@ function bindInteractions(): void {
     openNewProject: () => { projectCreateOpen = true; render(); },
     closeNewProject: () => { projectCreateOpen = false; render(); },
     createProject: ({ name, description }) => dispatchAction({ type: 'project.create', name, description }),
+    archiveProject: (projectId) => { void runProjectLifecycle('archive', projectId); },
+    restoreProject: (projectId) => { void runProjectLifecycle('restore', projectId); },
+    deleteProject: (projectId) => { void runProjectLifecycle('delete', projectId); },
   });
   bindProjectTaskBoardInteractions(root, {
     openTask: (taskId) => { const task = appState?.tasks.find((candidate) => candidate.id === taskId && candidate.projectId === selection); if (!task) return; projectTaskBoardView = { ...EMPTY_PROJECT_TASK_BOARD_VIEW, projectId: selection, selectedTaskId: taskId }; render(); },
