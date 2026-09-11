@@ -43,6 +43,14 @@ import {
   type TaskMutationDependencies,
   type TaskMutationResult,
 } from '../app/taskMutations.js';
+import {
+  createEvent,
+  deleteEvent,
+  updateEvent,
+  type CreateEventRequest,
+  type EventFieldMutation,
+  type EventMutationResult,
+} from '../app/eventMutations.js';
 import type { Clock } from '../domain/clock.js';
 import { systemClock } from '../domain/clock.js';
 import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../domain/canonicalIdentity.js';
@@ -68,8 +76,15 @@ export interface BrowserProjectMutations {
   deleteProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
 }
 
+/** The event verbs. A reschedule and a resize are their own operations, not field updates. */
+export interface BrowserEventMutations {
+  createEvent(request: CreateEventRequest): Promise<EventMutationResult>;
+  updateEvent(input: { eventId: OpaqueRecordId; expectedRevision: string; mutations: readonly EventFieldMutation[] }): Promise<EventMutationResult>;
+  deleteEvent(input: { eventId: OpaqueRecordId; expectedRevision: string }): Promise<EventMutationResult>;
+}
+
 /** Everything one activated store hands a surface, resolved once. */
-export type BrowserRecordMutations = BrowserTaskMutations & BrowserProjectMutations;
+export type BrowserRecordMutations = BrowserTaskMutations & BrowserProjectMutations & BrowserEventMutations;
 
 export type BrowserTaskMutationResolution =
   | { readonly ok: true; readonly mutations: BrowserRecordMutations }
@@ -162,6 +177,9 @@ export async function resolveBrowserTaskMutations(
       archiveProject: (input) => archiveProject(projectDeps, input),
       restoreProject: (input) => restoreProject(projectDeps, input),
       deleteProject: (input) => deleteProject(projectDeps, input),
+      createEvent: (request) => createEvent(projectDeps, request),
+      updateEvent: (input) => updateEvent(projectDeps, input),
+      deleteEvent: (input) => deleteEvent(projectDeps, input),
     },
   };
 }

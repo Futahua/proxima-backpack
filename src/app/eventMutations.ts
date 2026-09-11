@@ -98,9 +98,14 @@ export interface CreateEventRequest {
 }
 
 /**
- * One field of an event, named. The dates are *not* in this union: they move through
- * `event.reschedule` and `event.resize`, which are the verbs a gesture and an agent sentence both
- * compile to, and one place that writes them is what keeps the three from disagreeing.
+ * One field of an event, named.
+ *
+ * The two date *verbs* (`event.reschedule`, `event.resize`) are separate operations because that is
+ * what a gesture and an agent sentence compile to — each names one end and lets the operation carry
+ * the other. The `span` mutation exists for the case those two cannot express: a form that shows both
+ * ends and whose reader changed both, which is one intent describing one new span. It reaches exactly
+ * the same validated write, so the form and the two gesture verbs cannot disagree about what a span
+ * is.
  */
 export type EventFieldMutation =
   | { readonly kind: 'name'; readonly value: string }
@@ -108,6 +113,7 @@ export type EventFieldMutation =
   | { readonly kind: 'project'; readonly value: OpaqueRecordId | null }
   | { readonly kind: 'completion'; readonly value: boolean }
   | { readonly kind: 'recurrence'; readonly value: CanonicalRecurrenceSeries | null }
+  | { readonly kind: 'span'; readonly startDate: string; readonly deadline: string }
   | { readonly kind: 'property'; readonly key: OpaqueRecordId; readonly value: CanonicalStoredPropertyValue | null };
 
 /** A resize names either the new end or the duration it should have, never both and never neither. */
@@ -326,6 +332,16 @@ function applyFieldMutations(
       }
       case 'recurrence': {
         next = { ...next, recurrence: mutation.value };
+        break;
+      }
+      case 'span': {
+        const startDate = instant(mutation.startDate);
+        if (startDate === null) return { ok: false, failure: refused('the start is not a real instant') };
+        const deadline = instant(mutation.deadline);
+        if (deadline === null) return { ok: false, failure: refused('the end is not a real instant') };
+        const span = spanFailure(startDate, deadline);
+        if (span !== null) return { ok: false, failure: span };
+        next = { ...next, startDate, deadline };
         break;
       }
       case 'property': {

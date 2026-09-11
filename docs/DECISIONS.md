@@ -1247,3 +1247,11 @@ and are not invented here.
 gain a scope parameter rather than a second operation; or a gesture appears that must express a
 non-slot boundary (a five-minute grid, a free-form timeline), at which point snapping moves to the
 grid that knows its own resolution.
+
+**Amended while writing the form** (slice 69, the same stage): `event.update`'s field union *does*
+carry a `span` mutation — both ends together — because the Event editor shows a start and an end and a
+reader who fixes both is describing one new span, which neither `reschedule` (one end, duration from
+the record) nor `resize` (one end, start from the record) can express. The original reason still
+holds where it mattered: there is one validated span rule and one write, shared by the two gesture
+verbs and the form's mutation, so the three cannot disagree about what a span is. What the amendment
+rejects is only the idea that a form should have to send two writes to say one thing.
