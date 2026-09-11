@@ -1108,3 +1108,39 @@ layer already speaks the taxonomy's names for what a gesture *is* (`task.executi
 authority the shell passes in rather than holds — at which point the gesture should be routed
 through the dispatcher so there is exactly one semantic entry point for a UI caller and an
 agent caller.
+
+---
+
+## D56 — Project deletion is refused until the creator says what it means
+
+**Decided:** `project.delete` is implemented as a **deterministic typed refusal** — reason
+`policy-not-decided`, a sentence naming how many tasks and events the project holds, and no write of
+any kind — while `project.create`, `project.update`, `project.archive` and `project.restore` are
+implemented in full. The refusal is the same for every caller, because there is one operation
+(`src/app/projectMutations.ts`) and the UI and an agent both meet at it.
+
+**Why:** the checklist says in as many words that this is an open semantic question and that the
+source cannot answer what the creator wants after the old storage model was removed. It lists three
+possible answers — leave members uncategorised, require an explicit cascade, or refuse while members
+exist — and each one changes what a click means, what an agent's request means, and what a user is
+promised. Implementing any of the three would be inventing a product decision, and a silently
+plausible choice is worse than a refusal: a cascade that ran would be unrecoverable, and a delete
+that left records behind would look like data loss to whoever found them later.
+
+Two things are deliberate about the refusal itself. It is **deterministic** — the same request
+refuses with the same words, so it is a contract rather than a shrug — and it is **informative**: it
+names the member counts, so the person who owns the question can answer it from the message. An
+empty project is refused for the same reason and with the same reason code as a full one, which is
+what makes the eventual answer a decision rather than a side effect of how many tasks exist.
+
+**Also decided, and implemented:** archiving is a **status change and nothing else**. It sets
+`status` and `archivedAt` on the project and does not consult, move, mark or count its members; the
+test asserts every member record is byte-identical afterwards. An archive that touched a task would
+be a delete wearing another word.
+
+**Reverses if:** the creator answers the question. If the answer is "refuse while members exist",
+the refusal stays and its reason changes to a policy one that a caller can act on; if it is
+"cascade explicitly", a new operation is added that takes the members as an explicit list rather
+than inferring them; if it is "leave members uncategorised", the delete proceeds and the members
+keep a project id that no longer resolves, which the projection already reports as a gap rather
+than dropping. Whichever it is, `deleteProject` is the one function that changes.
