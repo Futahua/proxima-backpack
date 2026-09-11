@@ -94,7 +94,7 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
 
     // The Elastic drag is the one mutation the shell reaches through its operation path, and
     // it still speaks the taxonomy's own names for the two things a drop can be.
-    expect(MAIN_SOURCE).toContain('moveTaskByGesture(');
+    expect(MAIN_SOURCE).toContain('performElasticDrop(');
     expect(MAIN_SOURCE).not.toContain("type: 'task.execution.move'");
     expect(TASK_MOVE_GESTURE_SOURCE).toContain(
       "'task.execution.move'",

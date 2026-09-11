@@ -85,14 +85,23 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(source).not.toContain(forbidden);
 
     // Wired: a drop becomes one semantic gesture, it carries the revision it read at, and the
-    // surfaces are refreshed from the store afterwards rather than drawn optimistically.
+    // surfaces are refreshed from the store afterwards rather than drawn optimistically. The
+    // sequence itself lives in the app layer, where tests execute it against a real store; the
+    // shell keeps only the sinks a render needs.
     expect(source).toContain("from '../adapters/browserTaskMutations.js'");
     expect(source).toContain('resolveBrowserTaskMutations(');
-    expect(source).toContain('moveTaskByGesture(');
+    expect(source).toContain('performElasticDrop(');
     expect(source).toMatch(/moveTask:\s*\(\{ taskId, targetColumn, targetIndex \}\) => \{[\s\S]{0,200}?moveTaskFromDrop\(/);
-    expect(source).toContain('expectedRevision: task.source.revision');
     expect(source).toContain('refresh: refreshFromSource,');
+    expect(source).toContain('setRefusal: (reason) => { elasticDropRefusal = reason; },');
     expect(source).not.toContain("type: 'task.execution.move'");
+
+    const dropAction = await readFile(new URL('../src/app/elasticDropAction.ts', import.meta.url), 'utf8');
+    expect(dropAction).toContain('expectedRevision: task.source.revision');
+    expect(dropAction).toContain('moveTaskByGesture(');
+    // And the app layer holds no storage either: it takes operations, not a store.
+    for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(dropAction).not.toContain(forbidden);
+    expect(dropAction).not.toContain('RecordStore');
 
     for (const type of DISPATCHER_UI_RECORD_MUTATIONS) expect(source).toMatch(new RegExp(`dispatchAction\\(\\{[\\s\\S]{0,500}?type:\\s*'${escapeRegExp(type)}'`));
     for (const type of UNWIRED_UI_RECORD_MUTATIONS) expect(source).not.toContain(`type: '${type}'`);

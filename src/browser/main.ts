@@ -8,8 +8,7 @@ import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
 import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupSource.js';
 import { resolveBrowserTaskMutations, type BrowserTaskMutations } from '../adapters/browserTaskMutations.js';
-import { moveTaskByGesture } from '../app/taskMoveGesture.js';
-import { executionStateOf } from '../app/recordStateProjection.js';
+import { performElasticDrop } from '../app/elasticDropAction.js';
 import type { SourceMode, SourceSession } from '../app/sourceSession.js';
 import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
 import { executeSourceRefreshAction } from '../app/sourceRefreshAction.js';
@@ -606,48 +605,28 @@ async function resolveTaskWritePath(): Promise<BrowserTaskMutations | null> {
 }
 
 /**
- * An Elastic drop, from gesture to converged surface.
+ * An Elastic drop.
  *
- * The card is never redrawn as moved first. The write is attempted and whatever the store then
- * says is what the next render shows, which is why a refusal needs no undo path: the
- * authoritative record never changed, so the card is already where it belongs. A lost race is
- * the one refusal where the board was showing a revision the store no longer holds, so the
- * gesture re-reads before the refusal is drawn beside the authoritative card.
+ * The sequence itself lives in `src/app/elasticDropAction.ts`, where it is executed by tests
+ * against a real store; what stays here is the shell's half — where the write operations come
+ * from, what to say when this run has none, and the two sinks a render needs.
  */
 async function moveTaskFromDrop(
   taskId: string,
   targetColumn: ElasticColumn,
   targetIndex: number,
 ): Promise<void> {
-  const task = appState?.tasks.find((candidate) => candidate.id === taskId);
-  if (!task) return;
-
-  elasticDropRefusal = null;
-  const mutations = await resolveTaskWritePath();
-  if (mutations === null) {
-    elasticDropRefusal = taskMutationUnavailable ?? 'record-writes-unavailable';
-    render();
-    return;
-  }
-
-  const result = await moveTaskByGesture(
+  await performElasticDrop(
     {
-      updateTask: (input) => mutations.updateTask(input),
+      state: appState,
+      writes: resolveTaskWritePath,
+      unavailableReason: () => taskMutationUnavailable,
       refresh: refreshFromSource,
+      setRefusal: (reason) => { elasticDropRefusal = reason; },
+      render,
     },
-    {
-      taskId: task.id as OpaqueRecordId,
-      // The column the board is showing *is* the execution state, and the revision the card
-      // was read at is what makes a stale gesture a refusal rather than a silent overwrite.
-      from: executionStateOf(task),
-      to: targetColumn,
-      targetIndex,
-      expectedRevision: task.source.revision,
-    },
+    { taskId, targetColumn, targetIndex },
   );
-
-  if (!result.ok) elasticDropRefusal = result.reason;
-  render();
 }
 
 function bindInteractions(): void {

@@ -13,7 +13,8 @@ import { describe, expect, it } from 'vitest';
 import { createActionDispatcher } from '../src/app/actionProtocol.js';
 import { elasticExecutionPresentation, shouldTickElasticProgress } from '../src/browser/elasticCockpit.js';
 import { createCanonicalJsonRecordStore } from '../src/app/canonicalRecordCodec.js';
-import { createRefreshController, type RefreshResult } from '../src/app/refreshController.js';
+import { performElasticDrop } from '../src/app/elasticDropAction.js';
+import { createRefreshController, type RefreshReason, type RefreshResult } from '../src/app/refreshController.js';
 import { startRecordMutationAuthority } from '../src/app/recordRecoveryStartup.js';
 import { recordStoreStateSource } from '../src/app/stateSource.js';
 import { moveTaskByGesture, taskMoveActionType, type TaskMoveGestureInput } from '../src/app/taskMoveGesture.js';
@@ -29,7 +30,7 @@ import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
 import { defineCanonicalRecordHeader, opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
 import type { CanonicalProjectRecordV2, CanonicalRecordV2, CanonicalTaskRecordV2 } from '../src/domain/canonicalRecordV2.js';
 import type { CanonicalExecutionState } from '../src/domain/canonicalTaskState.js';
-import type { Task } from '../src/domain/types.js';
+import type { ElasticColumn, ProximaState, Task } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
 
 const CLOCK_ISO = '2026-09-12T04:00:00+07:00';
@@ -70,9 +71,12 @@ interface Harness {
   readonly deps: TaskMutationDependencies;
   /** Every refresh the gesture asked for, in order. */
   readonly refreshCalls: string[];
+  gestureRefresh(reason: RefreshReason): Promise<RefreshResult>;
   gesture(input: TaskMoveGestureInput): ReturnType<typeof moveTaskByGesture>;
   /** The task as the store holds it — the authority the surfaces are supposed to follow. */
   stored(id: OpaqueRecordId): Promise<CanonicalTaskRecordV2>;
+  /** The world a surface renders right now. */
+  projection(): Promise<ProximaState>;
   /** The task as a fresh projection of the store sees it, which is what a surface renders. */
   projected(id: OpaqueRecordId): Promise<Task | undefined>;
 }
@@ -100,18 +104,20 @@ async function harness(): Promise<Harness> {
   const source = recordStoreStateSource(store);
   const refresh = createRefreshController({ initial: await source.load(), source });
   const refreshCalls: string[] = [];
+  const gestureRefresh = async (reason: RefreshReason): Promise<RefreshResult> => {
+    refreshCalls.push(reason);
+    return await refresh.refreshSource(reason);
+  };
 
   return {
     files,
     deps,
     refreshCalls,
+    gestureRefresh,
     gesture: (input) => moveTaskByGesture(
       {
         updateTask: (request) => updateTask(deps, request),
-        refresh: async (reason): Promise<RefreshResult> => {
-          refreshCalls.push(reason);
-          return await refresh.refreshSource(reason);
-        },
+        refresh: gestureRefresh,
       },
       input,
     ),
@@ -120,10 +126,51 @@ async function harness(): Promise<Harness> {
       if (observation === undefined) throw new Error(`task ${id} is not in the store`);
       return observation.record as CanonicalTaskRecordV2;
     },
+    projection: async () => (await source.load()).state,
     projected: async (id) => {
       const loaded = await source.load();
       return loaded.state.tasks.find((task) => task.id === id);
     },
+  };
+}
+
+/**
+ * The shell's half of a drop, with the sinks it would render through recorded in order, so a
+ * case can assert *when* a render happened and not merely that one did.
+ *
+ * The rendered world is passed in rather than read here on purpose: a board renders the
+ * projection it last loaded, and a case about a lost race needs the drop to carry the revision
+ * that board was showing, not a fresher one.
+ */
+function shellGlue(
+  app: Harness,
+  state: ProximaState,
+  options: { readonly writesAvailable?: boolean; readonly unavailableReason?: string } = {},
+) {
+  const events: string[] = [];
+  const refusals: (string | null)[] = [];
+  const writesAvailable = options.writesAvailable ?? true;
+
+  return {
+    events,
+    refusals,
+    drop: async (intent: { taskId: string; targetColumn: ElasticColumn; targetIndex: number }) => performElasticDrop(
+      {
+        state,
+        writes: async () => {
+          events.push('writes');
+          return writesAvailable ? { updateTask: (input) => updateTask(app.deps, input) } : null;
+        },
+        unavailableReason: () => options.unavailableReason ?? 'no write path',
+        refresh: async (reason) => {
+          events.push('refresh');
+          return await app.gestureRefresh(reason);
+        },
+        setRefusal: (reason) => { refusals.push(reason); },
+        render: () => { events.push('render'); },
+      },
+      intent,
+    ),
   };
 }
 
@@ -326,5 +373,68 @@ describe('Stage 9 drop wiring', () => {
     // And both are visible to the surfaces through the same projection.
     expect(await app.projected(dragged.id)).toMatchObject({ status: 'running', orderIndex: 1 });
     expect(await app.projected(asked.id)).toMatchObject({ status: 'running', orderIndex: 1 });
+  });
+});
+
+describe('Stage 9 shell glue', () => {
+  it('runs the whole chain for an accepted drop: resolve, write, refresh, then draw', async () => {
+    const app = await harness();
+    const task = await seeded(app.deps, 'Through the shell', 'backlog', 0);
+    const glue = shellGlue(app, await app.projection());
+
+    const outcome = await glue.drop({ taskId: task.id, targetColumn: 'running', targetIndex: 3 });
+
+    expect(outcome).toMatchObject({ ok: true, actionType: 'task.execution.move', refreshed: true });
+    // The order is the claim: nothing is drawn until the store has answered and been re-read.
+    expect(glue.events).toEqual(['writes', 'refresh', 'render']);
+    expect(glue.refusals).toEqual([null]);
+    expect(await app.stored(task.id)).toMatchObject({ executionState: 'running', executionOrder: 3 });
+  });
+
+  it('refuses a drop on a run with no write path, and names why', async () => {
+    const app = await harness();
+    const task = await seeded(app.deps, 'Cannot be written', 'backlog', 0);
+    const glue = shellGlue(app, await app.projection(), { writesAvailable: false, unavailableReason: 'record-writes-need-an-activated-store' });
+
+    const outcome = await glue.drop({ taskId: task.id, targetColumn: 'running', targetIndex: 0 });
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'writes-unavailable', detail: 'record-writes-need-an-activated-store' });
+    expect(glue.events).toEqual(['writes', 'render']);
+    expect(glue.refusals).toEqual([null, 'record-writes-need-an-activated-store']);
+    expect(app.refreshCalls).toEqual([]);
+    expect(await app.stored(task.id)).toMatchObject({ executionState: 'backlog' });
+  });
+
+  it('does nothing at all for a card the board is not showing', async () => {
+    const app = await harness();
+    const glue = shellGlue(app, await app.projection());
+
+    const outcome = await glue.drop({ taskId: 'card-that-is-not-there', targetColumn: 'running', targetIndex: 0 });
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'unknown-task' });
+    // No write path is even resolved, no refusal is invented and nothing is redrawn.
+    expect(glue.events).toEqual([]);
+    expect(glue.refusals).toEqual([]);
+  });
+
+  it('draws a lost race only after re-reading, so the card is already back where the store says', async () => {
+    const app = await harness();
+    const task = await seeded(app.deps, 'Raced again', 'backlog', 0);
+    // The board rendered this revision, in this state; the winner moves on after that, which is
+    // exactly the race a drop has to lose without overwriting anyone.
+    const glue = shellGlue(app, await app.projection());
+    const winner = await updateTask(app.deps, {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      mutations: [{ kind: 'name', value: 'Moved on without it' }],
+    });
+    expect(winner.ok).toBe(true);
+
+    const outcome = await glue.drop({ taskId: task.id, targetColumn: 'running', targetIndex: 0 });
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'stale-revision', refreshed: true });
+    expect(glue.events).toEqual(['writes', 'refresh', 'render']);
+    expect(glue.refusals).toEqual([null, 'stale-revision']);
+    expect(await app.projected(task.id)).toMatchObject({ name: 'Moved on without it', status: 'backlog' });
   });
 });
