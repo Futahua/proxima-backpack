@@ -30,6 +30,7 @@ import {
   renderScheduleTimeGrid,
   type ScheduleEventChangeIntent,
   type ScheduleEventDraft,
+  type ScheduleTimeGridMode,
 } from '../src/browser/scheduleTimeGrid.js';
 import { MemoryRecordFiles } from './test-record-store.js';
 
@@ -132,6 +133,7 @@ function mount(
   view: View,
   pending: Promise<void>[],
   onState: (next: ProximaState) => void,
+  currentMode: ScheduleTimeGridMode = 'day',
 ): HTMLElement {
   const host = document.createElement('div');
   document.body.append(host);
@@ -141,7 +143,7 @@ function mount(
 
   const draw = (current: ProximaState): void => {
     host.innerHTML = renderScheduleTimeGrid({
-      mode: 'day',
+      mode: currentMode,
       events: current.events,
       projectNames: new Map(),
       selectionLabel: 'All projects',
@@ -207,13 +209,16 @@ beforeEach(() => {
 });
 
 describe('Stage 12 schedule writes, driven through the grid', () => {
-  it('moves the record by the slots a dragged block moved, keeping its duration', async () => {
+  it('moves the record by the slots a dragged block moved, keeping its duration, in every time-grid mode', async () => {
+    // The same binder draws Day, 4-Day and Week and the same sequence writes them, so the case drives
+    // all three rather than asserting the other two from one.
+    for (const mode of ['day', 'four-day', 'week'] as const) {
     const app = await scheduleWorld();
     const state = await app.read();
     const view: View = { writeRefusal: null, writeFeedback: null, seedRefusal: null };
     const pending: Promise<void>[] = [];
     let drawn = state;
-    const host = mount(state, app, view, pending, (next) => { drawn = next; });
+    const host = mount(state, app, view, pending, (next) => { drawn = next; }, mode);
     const harness = createInteractionHarness(host);
 
     const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
@@ -238,6 +243,11 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
     expect(Date.parse(moved.deadline) - Date.parse(moved.startDate)).toBe(duration);
     expect(view.writeFeedback).toContain('rescheduled');
     expect(view.writeRefusal).toBeNull();
+    // And the block the next render draws is the moved one, not the one the gesture started from.
+    expect(host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!.dataset.scheduleStartValue)
+      .toBe(moved.startDate);
+    document.body.innerHTML = '';
+    }
   });
 
   it('sends nothing at all when a drag lands back where it started', async () => {
