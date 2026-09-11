@@ -224,7 +224,7 @@ describe('Stage 9 planTaskEditorSave', () => {
     expect(plan).toMatchObject({ ok: true, mutations: [{ kind: 'dates', startDate: task.startDate, deadline: '2026-10-01' }] });
 
     const bad = planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'startDate', value: 'not a date' }));
-    expect(bad).toMatchObject({ ok: false, reason: 'invalid-value', fieldId: 'startDate' });
+    expect(bad).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'startDate' });
   });
 
   it('refuses a value the record could not hold rather than writing part of the form', async () => {
@@ -233,12 +233,12 @@ describe('Stage 9 planTaskEditorSave', () => {
     const task = await app.task(id);
     const seed = taskEditorDraftFor(task);
 
-    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'name', value: '   ' }))).toMatchObject({ ok: false, reason: 'invalid-value', fieldId: 'name' });
-    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'weight', value: 'heavy' }))).toMatchObject({ ok: false, reason: 'invalid-value', fieldId: 'weight' });
-    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'weight', value: '-2' }))).toMatchObject({ ok: false, reason: 'invalid-value', fieldId: 'weight' });
+    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'name', value: '   ' }))).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'name' });
+    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'weight', value: 'heavy' }))).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'weight' });
+    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'weight', value: '-2' }))).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'weight' });
     // A vault's own status id is not a canonical column, and writing it would invent one.
-    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'executionState', value: 'doing' }))).toMatchObject({ ok: false, reason: 'invalid-value', fieldId: 'executionState' });
-    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'fixedDurationOn', checked: true }))).toMatchObject({ ok: false, reason: 'invalid-value', fieldId: 'fixedDuration' });
+    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'executionState', value: 'doing' }))).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'executionState' });
+    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'fixedDurationOn', checked: true }))).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'fixedDuration' });
     // Stage 10 owns the canonical mapping a custom property would need.
     expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'property:pxr_effort', value: '3' }))).toMatchObject({ ok: false, reason: 'unsupported-field', fieldId: 'property:pxr_effort' });
     // A refused plan wrote nothing, which is the point of planning before writing.

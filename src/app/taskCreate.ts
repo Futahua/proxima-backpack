@@ -41,7 +41,7 @@ export const TASK_CREATE_SCHEMA_VERSION = 1 as const;
 
 const EXECUTION_STATES: readonly CanonicalExecutionState[] = ['backlog', 'running', 'finished'];
 
-export type TaskCreatePlanFailureReason = 'invalid-value' | 'unknown-project';
+export type TaskCreatePlanFailureReason = 'validation-refused' | 'unknown-project';
 
 export interface TaskCreateProjection {
   readonly title: string;
@@ -193,7 +193,7 @@ function minutesOrNull(value: string): { ok: true; value: number | null } | { ok
  */
 export function planTaskCreate(state: ProximaState, draft: TaskEditorDraft): TaskCreatePlan {
   const name = (draft.values.name ?? '').trim();
-  if (name.length === 0) return refused('invalid-value', 'a task needs a name', 'name');
+  if (name.length === 0) return refused('validation-refused', 'a task needs a name', 'name');
 
   const project = (draft.values.project ?? '').trim();
   if (project.length > 0 && !state.projects.some((candidate) => candidate.id === project)) {
@@ -202,30 +202,30 @@ export function planTaskCreate(state: ProximaState, draft: TaskEditorDraft): Tas
 
   const executionState = (draft.values.executionState ?? 'backlog').trim() as CanonicalExecutionState;
   if (!EXECUTION_STATES.includes(executionState)) {
-    return refused('invalid-value', 'a column is Backlog, Running or Finished', 'executionState');
+    return refused('validation-refused', 'a column is Backlog, Running or Finished', 'executionState');
   }
 
   const weightText = (draft.values.weight ?? '').trim();
   const weight = weightText.length === 0 ? 1 : Number(weightText);
-  if (!Number.isFinite(weight) || weight < 0) return refused('invalid-value', 'weight is a number that is not negative', 'weight');
+  if (!Number.isFinite(weight) || weight < 0) return refused('validation-refused', 'weight is a number that is not negative', 'weight');
 
   const isFixedDuration = draft.checks.fixedDurationOn === true;
   const fixed = minutesOrNull(draft.values.fixedDuration ?? '');
   if (!fixed.ok || (isFixedDuration && fixed.value === null)) {
-    return refused('invalid-value', 'a fixed-duration task needs a duration in whole minutes', 'fixedDuration');
+    return refused('validation-refused', 'a fixed-duration task needs a duration in whole minutes', 'fixedDuration');
   }
   const max = minutesOrNull(draft.values.maxDuration ?? '');
-  if (!max.ok) return refused('invalid-value', 'the maximum duration is whole minutes, or nothing at all', 'maxDuration');
+  if (!max.ok) return refused('validation-refused', 'the maximum duration is whole minutes, or nothing at all', 'maxDuration');
   if (max.value !== null && isFixedDuration && fixed.value !== null && max.value < fixed.value) {
-    return refused('invalid-value', 'the maximum duration is below the fixed duration', 'maxDuration');
+    return refused('validation-refused', 'the maximum duration is below the fixed duration', 'maxDuration');
   }
 
   const startDate = instantOrNull(draft.values.startDate ?? '');
-  if (!startDate.ok) return refused('invalid-value', 'the start date is not a readable instant', 'startDate');
+  if (!startDate.ok) return refused('validation-refused', 'the start date is not a readable instant', 'startDate');
   const deadline = instantOrNull(draft.values.deadline ?? '');
-  if (!deadline.ok) return refused('invalid-value', 'the deadline is not a readable instant', 'deadline');
+  if (!deadline.ok) return refused('validation-refused', 'the deadline is not a readable instant', 'deadline');
   if (startDate.value !== null && deadline.value !== null && Date.parse(deadline.value) < Date.parse(startDate.value)) {
-    return refused('invalid-value', 'the deadline is before the start date', 'deadline');
+    return refused('validation-refused', 'the deadline is before the start date', 'deadline');
   }
 
   return {
@@ -267,7 +267,7 @@ export interface TaskCreateDependencies {
 export type TaskCreateFailureReason =
   | 'not-open'
   | 'writes-unavailable'
-  | 'invalid-value'
+  | 'validation-refused'
   | 'unknown-project'
   | TaskMutationFailureReason;
 

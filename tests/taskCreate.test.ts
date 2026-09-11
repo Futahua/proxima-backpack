@@ -196,10 +196,10 @@ describe('Stage 9 planTaskCreate', () => {
     const base = newTaskDraft(state, PROJECT);
     const named = applyTaskEditorEdit(base, { fieldId: 'name', value: 'Ok' });
 
-    expect(planTaskCreate(state, base)).toMatchObject({ ok: false, reason: 'invalid-value', fieldId: 'name' });
+    expect(planTaskCreate(state, base)).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'name' });
     expect(planTaskCreate(state, applyTaskEditorEdit(named, { fieldId: 'name', value: '   ' }))).toMatchObject({ ok: false, fieldId: 'name' });
     expect(planTaskCreate(state, applyTaskEditorEdit(named, { fieldId: 'weight', value: 'heavy' }))).toMatchObject({ ok: false, fieldId: 'weight' });
-    expect(planTaskCreate(state, applyTaskEditorEdit(named, { fieldId: 'executionState', value: 'doing' }))).toMatchObject({ ok: false, reason: 'invalid-value', fieldId: 'executionState' });
+    expect(planTaskCreate(state, applyTaskEditorEdit(named, { fieldId: 'executionState', value: 'doing' }))).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'executionState' });
     expect(planTaskCreate(state, applyTaskEditorEdit(named, { fieldId: 'fixedDurationOn', checked: true }))).toMatchObject({ ok: false, fieldId: 'fixedDuration' });
     expect(planTaskCreate(state, applyTaskEditorEdit(applyTaskEditorEdit(named, { fieldId: 'startDate', value: '2026-09-20' }), { fieldId: 'deadline', value: '2026-09-19' }))).toMatchObject({ ok: false, fieldId: 'deadline' });
     expect(planTaskCreate(state, applyTaskEditorEdit(named, { fieldId: 'startDate', value: 'whenever' }))).toMatchObject({ ok: false, fieldId: 'startDate' });
@@ -283,7 +283,7 @@ describe('Stage 9 createTaskAction', () => {
     const effect = await form.create(newTaskDraft(await app.state(), PROJECT));
 
     expect(effect).toMatchObject({ clearDraft: false, closeEditor: false });
-    expect(effect.outcome).toMatchObject({ ok: false, reason: 'invalid-value', detail: 'a task needs a name', fieldId: 'name' });
+    expect(effect.outcome).toMatchObject({ ok: false, reason: 'validation-refused', detail: 'a task needs a name', fieldId: 'name' });
     expect(app.files.size).toBe(2);
     expect(app.refreshCalls).toEqual([]);
   });

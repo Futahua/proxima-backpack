@@ -34,7 +34,7 @@ export const TASK_EDITOR_WRITE_SCHEMA_VERSION = 1 as const;
 /** The canonical execution states, which are the only columns a task may be moved to. */
 const EXECUTION_STATES: readonly CanonicalExecutionState[] = ['backlog', 'running', 'finished'];
 
-export type TaskEditorPlanFailureReason = 'nothing-to-save' | 'unsupported-field' | 'invalid-value';
+export type TaskEditorPlanFailureReason = 'nothing-to-save' | 'unsupported-field' | 'validation-refused';
 
 export type TaskEditorMutationPlan =
   | {
@@ -101,7 +101,7 @@ export function planTaskEditorSave(task: Task, draft: TaskEditorDraft | null): T
 
   if (valueChanged('name')) {
     const name = value('name').trim();
-    if (name.length === 0) return planRefused('invalid-value', 'a task needs a name', 'name');
+    if (name.length === 0) return planRefused('validation-refused', 'a task needs a name', 'name');
     mutations.push({ kind: 'name', value: name });
   }
 
@@ -113,14 +113,14 @@ export function planTaskEditorSave(task: Task, draft: TaskEditorDraft | null): T
   if (valueChanged('executionState')) {
     const state = value('executionState').trim() as CanonicalExecutionState;
     if (!EXECUTION_STATES.includes(state)) {
-      return planRefused('invalid-value', 'a column is Backlog, Running or Finished', 'executionState');
+      return planRefused('validation-refused', 'a column is Backlog, Running or Finished', 'executionState');
     }
     mutations.push({ kind: 'execution-state', value: state });
   }
 
   if (valueChanged('weight')) {
     const weight = numberOrNull(value('weight'));
-    if (!weight.ok || weight.value < 0) return planRefused('invalid-value', 'weight is a number that is not negative', 'weight');
+    if (!weight.ok || weight.value < 0) return planRefused('validation-refused', 'weight is a number that is not negative', 'weight');
     mutations.push({ kind: 'weight', value: weight.value });
   }
 
@@ -131,7 +131,7 @@ export function planTaskEditorSave(task: Task, draft: TaskEditorDraft | null): T
     if (isFixedDuration) {
       const fixed = minutesOrNull(value('fixedDuration'));
       if (!fixed.ok || fixed.value === null) {
-        return planRefused('invalid-value', 'a fixed-duration task needs a duration in whole minutes', 'fixedDuration');
+        return planRefused('validation-refused', 'a fixed-duration task needs a duration in whole minutes', 'fixedDuration');
       }
       mutations.push({ kind: 'fixed-duration', isFixedDuration: true, fixedDuration: fixed.value });
     } else {
@@ -141,7 +141,7 @@ export function planTaskEditorSave(task: Task, draft: TaskEditorDraft | null): T
 
   if (valueChanged('maxDuration')) {
     const max = minutesOrNull(value('maxDuration'));
-    if (!max.ok) return planRefused('invalid-value', 'the maximum duration is whole minutes, or nothing at all', 'maxDuration');
+    if (!max.ok) return planRefused('validation-refused', 'the maximum duration is whole minutes, or nothing at all', 'maxDuration');
     mutations.push({ kind: 'max-duration', value: max.value });
   }
 
@@ -150,8 +150,8 @@ export function planTaskEditorSave(task: Task, draft: TaskEditorDraft | null): T
   if (valueChanged('startDate') || valueChanged('deadline')) {
     const startDate = instantOrNull(value('startDate'));
     const deadline = instantOrNull(value('deadline'));
-    if (!startDate.ok) return planRefused('invalid-value', 'the start date is not a readable instant', 'startDate');
-    if (!deadline.ok) return planRefused('invalid-value', 'the deadline is not a readable instant', 'deadline');
+    if (!startDate.ok) return planRefused('validation-refused', 'the start date is not a readable instant', 'startDate');
+    if (!deadline.ok) return planRefused('validation-refused', 'the deadline is not a readable instant', 'deadline');
     mutations.push({ kind: 'dates', startDate: startDate.value, deadline: deadline.value });
   }
 
@@ -238,6 +238,8 @@ export type TaskEditorWriteOutcome =
       readonly detail: string;
       readonly fieldId: string | null;
       readonly refreshed: boolean;
+      /** The revision that beat this caller, when the refusal was a lost race. */
+      readonly actualRevision?: string;
     };
 
 function writeRefused(
@@ -245,8 +247,17 @@ function writeRefused(
   detail: string,
   fieldId: string | null = null,
   refreshed = false,
+  actualRevision?: string,
 ): TaskEditorWriteOutcome {
-  return { ok: false, schemaVersion: TASK_EDITOR_WRITE_SCHEMA_VERSION, reason, detail, fieldId, refreshed };
+  return {
+    ok: false,
+    schemaVersion: TASK_EDITOR_WRITE_SCHEMA_VERSION,
+    reason,
+    detail,
+    fieldId,
+    refreshed,
+    ...(actualRevision === undefined ? {} : { actualRevision }),
+  };
 }
 
 function taskOf(deps: TaskEditorWriteDependencies, taskId: string): Task | null {
@@ -300,7 +311,7 @@ export async function saveTaskFromEditor(
         revision: written.revision,
         refreshed: convergence.refreshed,
       }
-    : writeRefused(written.reason, written.detail, null, convergence.refreshed);
+    : writeRefused(written.reason, written.detail, null, convergence.refreshed, written.actualRevision);
 }
 
 /**
@@ -346,7 +357,7 @@ export async function deleteTaskFromEditor(
         revision: written.revision,
         refreshed: convergence.refreshed,
       }
-    : writeRefused(written.reason, written.detail, null, convergence.refreshed);
+    : writeRefused(written.reason, written.detail, null, convergence.refreshed, written.actualRevision);
 }
 
 /**
