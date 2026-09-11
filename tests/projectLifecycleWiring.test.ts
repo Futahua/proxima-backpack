@@ -38,7 +38,8 @@ import { recordStoreStateSource } from '../src/app/stateSource.js';
 import { createTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
 import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/app/vaultRecovery.js';
 import { fixedClock } from '../src/domain/clock.js';
-import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
+import { opaqueRecordIdFromRandomBytes, defineCanonicalRecordHeader, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
+import type { CanonicalEventRecordV2, CanonicalRecordV2 } from '../src/domain/canonicalRecordV2.js';
 import { ALL_PROJECTS } from '../src/domain/selectors.js';
 import type { ProximaState } from '../src/domain/types.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
@@ -52,6 +53,8 @@ import {
   type ProjectWriteView,
 } from '../src/browser/projectsHub.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { EMPTY_PROJECT_BACKLOG_VIEW } from '../src/browser/projectBacklog.js';
+import { EMPTY_PROJECT_SCHEDULE_VIEW } from '../src/browser/projectSchedule.js';
 import { sourceRef } from './fixtures.js';
 
 const CLOCK_ISO = '2026-09-12T09:00:00+07:00';
@@ -159,6 +162,24 @@ async function projectWorld(seedOffset: number) {
       const task = await createTask(deps, { name, projectId: created.recordId, executionState: 'backlog', executionOrder: 0 });
       if (!task.ok) throw new Error(`seeding ${name} failed: ${task.reason}`);
       return task.recordId;
+    },
+    // Events have no create operation yet — Stage 12 owns that write half — so a case that needs one
+    // seeds the record the way the store holds it rather than pretending a surface made it.
+    seedEvent: async (name: string): Promise<OpaqueRecordId> => {
+      const record: CanonicalEventRecordV2 = {
+        ...defineCanonicalRecordHeader({ kind: 'event', id: idFromLastByte(nextId++), name }),
+        description: '',
+        projectId: created.recordId,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        isCompleted: false,
+        properties: {},
+        recurrence: null,
+        startDate: '2026-09-10T09:00:00.000Z',
+        deadline: '2026-09-10T10:00:00.000Z',
+      };
+      const written = await store.createIfAbsent(record as CanonicalRecordV2);
+      if (!written.ok) throw new Error(`seeding ${name} failed: ${written.reason}`);
+      return record.id;
     },
   };
 }
@@ -397,6 +418,79 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     expect(app.files.size).toBe(filesBefore);
     expect((await app.read()).projects).toHaveLength(1);
     expect(host.querySelector('[data-project-lifecycle-action="delete"]')).not.toBeNull();
+  });
+
+  it('keeps a combined project\'s task and event valid through the lifecycle, on the surfaces', async () => {
+    const app = await projectWorld(2600);
+    const task = await app.seedTask('Member task');
+    const event = await app.seedEvent('Member event');
+    let state = await app.read();
+    expect(state.tasks.some((candidate) => candidate.id === task)).toBe(true);
+    expect(state.events.some((candidate) => candidate.id === event)).toBe(true);
+    const memberRevisions = new Map(
+      (await app.store.list())
+        .filter((observation) => observation.record.id === task || observation.record.id === event)
+        .map((observation) => [observation.record.id, observation.observedRevision]),
+    );
+
+    let filter: 'active' | 'archived' = 'active';
+    const view: ProjectWriteView = { refusal: null, feedback: null };
+    const draw = (): string => renderProjectsHub({ state, selection: ALL_PROJECTS, filter, workspaceTab: 'notes', now: NOW, projectWrites: view });
+    const host = mount(draw());
+    const pending: Promise<void>[] = [];
+
+    bindProjectsHubInteractions(host, {
+      ...quietHandlers,
+      archiveProject: (projectId) => {
+        pending.push((async () => {
+          const outcome = await archiveProjectAction(
+            { state, writes: async () => app.operations, unavailableReason: () => null, refresh: async () => null, setRefusal: () => undefined, render: () => undefined },
+            { projectId },
+          );
+          expect(outcome.ok).toBe(true);
+          state = await app.read();
+          host.innerHTML = draw();
+        })());
+      },
+    });
+
+    const control = host.querySelector<HTMLElement>('[data-project-lifecycle-action="archive"]')!;
+    createInteractionHarness(host).click(control.getAttribute('data-c1-key')!);
+    await Promise.all(pending);
+
+    // The project moved and its members did not: the same two records, at the same revisions, still
+    // naming the project they belong to. A combined project is ordinary (A4), so archiving one is
+    // the same operation as archiving any other.
+    expect(state.projects.find((project) => project.id === app.projectId)!.status).toBe('archived');
+    expect(state.tasks.find((candidate) => candidate.id === task)?.projectId).toBe(app.projectId);
+    expect(state.events.find((candidate) => candidate.id === event)?.projectId).toBe(app.projectId);
+    const after = new Map(
+      (await app.store.list())
+        .filter((observation) => observation.record.id === task || observation.record.id === event)
+        .map((observation) => [observation.record.id, observation.observedRevision]),
+    );
+    expect(after).toEqual(memberRevisions);
+
+    // The surfaces still draw it. The archived filter shows the card with its Restore control, and
+    // the workspace it opens still lists the member task in the Backlog: an archived project is
+    // read-only in the sense that it is not in the active list, not in the sense that it is gone.
+    filter = 'archived';
+    host.innerHTML = draw();
+    expect(host.querySelector(`[data-c1-key="project-hub-card-${app.projectId}"]`)).not.toBeNull();
+    host.innerHTML = renderProjectsHub({
+      state,
+      selection: app.projectId,
+      filter,
+      workspaceTab: 'backlog',
+      now: NOW,
+      projectWrites: view,
+      projectBacklog: { ...EMPTY_PROJECT_BACKLOG_VIEW, projectId: app.projectId },
+      projectSchedule: { ...EMPTY_PROJECT_SCHEDULE_VIEW, projectId: app.projectId },
+    });
+    expect(host.textContent).toContain('Archived project');
+    expect(host.textContent).toContain('Member task');
+    expect(host.querySelector('[data-project-lifecycle-action="restore"]')).not.toBeNull();
+    expect(host.querySelector('[data-project-lifecycle-action="archive"]')).toBeNull();
   });
 });
 
