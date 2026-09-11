@@ -124,3 +124,38 @@ describe('no Obsidian compatibility layer exists', () => {
     expect(violations).toEqual([]);
   });
 });
+
+describe('wikilink semantics stay out of the interface', () => {
+  /**
+   * `[[target]]`, or the word for it. A nested array literal looks like `[[` too, so the
+   * pattern demands a closing `]]` with something between.
+   */
+  const WIKILINK = /\[\[[^[\]]+\]\]|\bwikilinks?\b/i;
+
+  it('never appears in the browser layer', () => {
+    const violations: string[] = [];
+    for (const file of sourceFiles('browser')) {
+      if (WIKILINK.test(file.text)) violations.push(`${file.path} mentions wikilink syntax`);
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('appears only where a raw asset embed is decoded', () => {
+    const carriers: string[] = [];
+    for (const directory of ['domain', 'app', 'ports', 'adapters', 'browser']) {
+      for (const file of sourceFiles(directory)) {
+        if (WIKILINK.test(file.text)) carriers.push(file.path);
+      }
+    }
+
+    // Relation, rollup and formula projection must never learn to parse `[[...]]`: a
+    // relation is a record id, and reading a link out of text is exactly the host-syntax
+    // dependence this project exists to remove. The syntax survives in one place only —
+    // the Excalidraw asset path, where an `![[asset]]` embed is really decoded.
+    expect(carriers.sort()).toEqual([
+      'app/excalidrawAssetLoader.ts',
+      'domain/excalidraw.ts',
+      'domain/excalidrawAssets.ts',
+    ]);
+  });
+});

@@ -47,7 +47,13 @@ function rawGet(port: number, path: string, headers: Record<string, string>): Pr
 
 async function listening(child: ReturnType<typeof spawn>): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('bridge did not start')), 5_000);
+    // This bound is about a child process starting at all, not about how fast the bridge
+    // ought to be: the assertions below are about what it discloses, not how quickly. Five
+    // seconds was tight enough that a parallel run, with the rest of the suite compiling and
+    // running alongside, could fail here while the same file passed alone in half a second —
+    // a flake that makes the whole suite untrustworthy. Thirty seconds still fails a bridge
+    // that never starts, and no longer fails one that is merely queued behind other work.
+    const timer = setTimeout(() => reject(new Error('bridge did not start')), 30_000);
     child.stdout?.on('data', (chunk) => { if (String(chunk).includes('listening')) { clearTimeout(timer); resolve(); } });
     child.once('error', (error) => { clearTimeout(timer); reject(error); });
     child.once('exit', (code) => { if (code !== 0) { clearTimeout(timer); reject(new Error(`bridge exited ${code}`)); } });
