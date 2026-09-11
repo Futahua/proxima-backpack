@@ -80,6 +80,12 @@ export interface LegacyPhysicalRecordCandidate {
       ElasticColumn | null;
     readonly projectType:
       Project['projectType'] | null;
+    /**
+     * Already-parsed frontmatter used only as the lookup source for legacy custom
+     * properties. Projects have no legacy property-value surface in this importer.
+     */
+    readonly propertyValues:
+      Readonly<Record<string, unknown>> | null;
   };
 }
 
@@ -479,6 +485,8 @@ function toPhysicalCandidate(
           null,
         projectType:
           project.projectType,
+        propertyValues:
+          null,
       },
     };
   }
@@ -514,6 +522,9 @@ function toPhysicalCandidate(
           ),
         projectType:
           null,
+        propertyValues: {
+          ...doc.frontmatter,
+        },
       },
     };
 
@@ -538,6 +549,9 @@ function toPhysicalCandidate(
       taskExecutionState:
         null,
       projectType: null,
+      propertyValues: {
+        ...doc.frontmatter,
+      },
     },
   };
 }

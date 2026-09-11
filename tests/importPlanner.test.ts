@@ -161,7 +161,7 @@ describe(
 
         expect(plan)
           .toMatchObject({
-            schemaVersion: 2,
+            schemaVersion: 3,
             mode:
               'dry-run',
             source:
