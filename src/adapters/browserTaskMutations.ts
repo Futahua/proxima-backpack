@@ -25,6 +25,16 @@ import { createDurableRecoveryStore } from '../app/vaultRecovery.js';
 import { startRecordMutationAuthority } from '../app/recordRecoveryStartup.js';
 import { readRecordStoreActivation } from '../app/recordStoreActivation.js';
 import {
+  archiveProject,
+  createProject,
+  deleteProject,
+  restoreProject,
+  updateProject as updateProjectRecord,
+  type CreateProjectRequest,
+  type ProjectFieldMutation,
+  type ProjectMutationResult,
+} from '../app/projectMutations.js';
+import {
   createTask,
   deleteTask,
   updateTask,
@@ -42,14 +52,27 @@ import {
   createBrowserOpfsRecordStoreFileBackend,
 } from './opfsRecordStoreFileBackend.js';
 
+/** The task verbs. */
 export interface BrowserTaskMutations {
   createTask(request: CreateTaskRequest): Promise<TaskMutationResult>;
   updateTask(input: { taskId: OpaqueRecordId; expectedRevision: string; mutations: readonly TaskFieldMutation[] }): Promise<TaskMutationResult>;
   deleteTask(input: { taskId: OpaqueRecordId; expectedRevision: string }): Promise<TaskMutationResult>;
 }
 
+/** The project lifecycle verbs. `delete` answers with the policy refusal while that is undecided. */
+export interface BrowserProjectMutations {
+  createProject(request: CreateProjectRequest): Promise<ProjectMutationResult>;
+  updateProject(input: { projectId: OpaqueRecordId; expectedRevision: string; mutations: readonly ProjectFieldMutation[] }): Promise<ProjectMutationResult>;
+  archiveProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
+  restoreProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
+  deleteProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
+}
+
+/** Everything one activated store hands a surface, resolved once. */
+export type BrowserRecordMutations = BrowserTaskMutations & BrowserProjectMutations;
+
 export type BrowserTaskMutationResolution =
-  | { readonly ok: true; readonly mutations: BrowserTaskMutations }
+  | { readonly ok: true; readonly mutations: BrowserRecordMutations }
   | {
       readonly ok: false;
       readonly reason: 'not-activated' | 'recovery-blocked' | 'store-unreadable';
@@ -126,12 +149,19 @@ export async function resolveBrowserTaskMutations(
     allocateRecordId: freshRecordId,
   };
 
+  const projectDeps = deps;
+
   return {
     ok: true,
     mutations: {
       createTask: (request) => createTask(deps, request),
       updateTask: (input) => updateTask(deps, input),
       deleteTask: (input) => deleteTask(deps, input),
+      createProject: (request) => createProject(projectDeps, request),
+      updateProject: (input) => updateProjectRecord(projectDeps, input),
+      archiveProject: (input) => archiveProject(projectDeps, input),
+      restoreProject: (input) => restoreProject(projectDeps, input),
+      deleteProject: (input) => deleteProject(projectDeps, input),
     },
   };
 }
