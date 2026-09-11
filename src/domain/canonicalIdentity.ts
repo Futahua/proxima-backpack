@@ -1,3 +1,4 @@
+import { CANONICAL_DOMAIN_SCHEMA_VERSION } from './canonicalDataOwnership.js';
 import type { IdOrigin } from './records.js';
 
 /**
@@ -6,7 +7,7 @@ import type { IdOrigin } from './records.js';
  * This version covers identity only. Later HARD GATE A slices may add canonical
  * record fields, but they must retain this opaque-id separation.
  */
-export const CANONICAL_RECORD_SCHEMA_VERSION = 1 as const;
+export const CANONICAL_RECORD_SCHEMA_VERSION = CANONICAL_DOMAIN_SCHEMA_VERSION;
 
 const OPAQUE_RECORD_ID_PATTERN = /^pxr_[0-9a-f]{32}$/;
 declare const opaqueRecordIdBrand: unique symbol;

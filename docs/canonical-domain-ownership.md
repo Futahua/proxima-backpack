@@ -1,0 +1,5 @@
+# Canonical domain ownership before Record Store implementation
+
+Status: HARD GATE A / A10 architecture contract.
+
+Every retained value belongs to exactly one authority: canonical Proxima record/schema data, disposable Backpack-local presentation state, or external vault-artifact reference/provenance. Canonical semantics must not survive only in local settings; external notes/drawings/attachments remain externally owned. Legacy import mapping is a specification only: status maps to separate execution/workflow fields, universal order to scoped order, wikilinks to opaque relation IDs, schemas and recurrence to canonical structures, and linkedFolders to explicit artifact bindings plus external locators. No Record Store, persistence, migration, import execution, mutation or cutover is implemented here. HARD GATE A evidence proves the A1-A9 separations; the A10 fixtures prove combined task+event ownership and independent execution/workflow movement. Stage 7 defines the physical store later.
