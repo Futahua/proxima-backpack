@@ -43,6 +43,17 @@ export interface BacklogViewState {
   readonly selectedTaskId:
     string | null;
 
+  /**
+   * The tasks marked for a bulk action, in the order they were marked.
+   *
+   * A selection is memory, not a filter: a task the current query hides stays selected so
+   * that clearing the query brings it back, while what the projection *reports* as selected
+   * is only what the query leaves visible. The gap between the two is reported too, so a
+   * bulk action can never be understood to cover a row nobody can see.
+   */
+  readonly selectedTaskIds:
+    readonly string[];
+
   readonly query:
     BacklogQuery;
 }
@@ -53,6 +64,8 @@ export const EMPTY_BACKLOG_VIEW:
       null,
     selectedTaskId:
       null,
+    selectedTaskIds:
+      [],
     query:
       EMPTY_BACKLOG_QUERY,
   };
@@ -102,6 +115,10 @@ export interface BacklogRow {
   /** The legacy order index, which the row element has always carried. */
   readonly orderIndex:
     number;
+
+  /** Whether this row is marked for a bulk action. */
+  readonly selected:
+    boolean;
 
   readonly cells:
     readonly BacklogCell[];
@@ -179,6 +196,21 @@ export interface BacklogProjection {
   /** The filter menu, offering each field and only the comparisons it admits. */
   readonly filterMenu:
     readonly BacklogFilterMenuGroup[];
+
+  /** How many of the rows the query leaves visible are marked for a bulk action. */
+  readonly selectedCount:
+    number;
+
+  /** How many marked tasks the query is hiding, so a bulk action is never read as covering them. */
+  readonly hiddenSelectedCount:
+    number;
+
+  /**
+   * Whether every visible row is marked. False when nothing is visible: an empty list has
+   * nothing selected, and saying otherwise would let a bulk action look safe to run.
+   */
+  readonly allVisibleSelected:
+    boolean;
 
   readonly filterChips:
     readonly BacklogFilterChip[];
@@ -591,6 +623,10 @@ export function projectBacklog(
           Number(
             task.orderIndex,
           ) || 0,
+        selected:
+          view.selectedTaskIds.includes(
+            task.id,
+          ),
         cells:
           columns.map(
             (column) =>
@@ -627,6 +663,14 @@ export function projectBacklog(
         ? 'no-matches'
         : null;
 
+  const visibleSelected =
+    visible.filter(
+      (task) =>
+        view.selectedTaskIds.includes(
+          task.id,
+        ),
+    );
+
   return {
     projectId:
       project.id,
@@ -642,6 +686,19 @@ export function projectBacklog(
       view.query.sort,
     filterMenu:
       filterMenuFor(),
+    selectedCount:
+      visibleSelected.length,
+    /**
+     * A selection the query hides is counted rather than forgotten, so "select all" and a
+     * bulk action can never be read as covering a row nobody can see.
+     */
+    hiddenSelectedCount:
+      view.selectedTaskIds.length
+      - visibleSelected.length,
+    allVisibleSelected:
+      visible.length > 0
+      && visibleSelected.length
+        === visible.length,
     filterChips:
       view.query.filters.map(
         (filter) => ({

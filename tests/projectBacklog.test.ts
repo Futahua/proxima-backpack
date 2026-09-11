@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_BULK_NOTE, PROJECT_BACKLOG_WRITE_REFUSAL, renderProjectBacklog, type ProjectBacklogViewState } from '../src/browser/projectBacklog.js';
-import { applyBacklogControl, buildBacklogFilter } from '../src/app/backlogControls.js';
+import { applyBacklogControl, buildBacklogFilter, clearBacklogSelection, selectAllBacklogVisible, toggleBacklogSelection } from '../src/app/backlogControls.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import type { Project, ProximaState, Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
@@ -10,7 +10,7 @@ const other:Project={...project,id:'other',source:sourceRef('project','other'),n
 const task=(id:string,pid:string,ix:number):Task=>({id,source:sourceRef('task',id),name:id,description:'<script>x</script>',projectId:pid,status:'todo',weight:1,orderIndex:ix,isFixedDuration:false,fixedDuration:null,maxDuration:null,isCompleted:false,createdAt:'2026-09-01T00:00:00.000Z',startDate:null,deadline:null,properties:{}});
 const state=():ProximaState=>({projects:[project,other],tasks:[task('second',project.id,2),task('first',project.id,1),task('other',other.id,0)],events:[],statuses:[],taskSchema:[]});
 /** The query controls a case does not exercise, so each case states only its own. */
-const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{}};
+const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{},toggleSelection:()=>{},selectAllVisible:()=>{},clearSelection:()=>{}};
 beforeEach(()=>{document.body.innerHTML='';});
 describe('Stage 5 slice 7 detailed Backlog interactions',()=>{
  it('orders and scopes tasks without mutation',()=>{const s=state(),before=JSON.stringify(s);document.body.innerHTML=renderProjectBacklog(s,project);expect(Array.from(document.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId)).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-task-id="other"]')).toBeNull();expect(JSON.stringify(s)).toBe(before);});
@@ -46,8 +46,11 @@ function session(s:ProximaState,start:ProjectBacklogViewState={...EMPTY_PROJECT_
   sortBy:field=>{apply({kind:'sort-by',field});draw();},
   clearSort:()=>{apply({kind:'clear-sort'});draw();},
   clearQuery:()=>{apply({kind:'clear-query'});draw();},
+  toggleSelection:(taskId)=>{view={...view,projectId:project.id,selectedTaskIds:toggleBacklogSelection(view.selectedTaskIds,taskId)};draw();},
+  selectAllVisible:(visibleTaskIds)=>{view={...view,projectId:project.id,selectedTaskIds:selectAllBacklogVisible(view.selectedTaskIds,visibleTaskIds)};draw();},
+  clearSelection:()=>{view={...view,projectId:project.id,selectedTaskIds:clearBacklogSelection(view.selectedTaskIds)};draw();},
  });
- return {harness:createInteractionHarness(host),view:()=>view,rows:()=>Array.from(host.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId),chipIds:()=>Array.from(host.querySelectorAll('[data-project-backlog-filter-chip]')).map(x=>(x as HTMLElement).dataset.projectBacklogFilterChip),stop};
+ return {root:()=>host,harness:createInteractionHarness(host),view:()=>view,rows:()=>Array.from(host.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId),chipIds:()=>Array.from(host.querySelectorAll('[data-project-backlog-filter-chip]')).map(x=>(x as HTMLElement).dataset.projectBacklogFilterChip),stop};
 }
 describe('Stage 6 Backlog query controls, driven through the document',()=>{
  it('searches as the field is typed, and shows the text that is searching',()=>{const s=state();const run=session(s);run.harness.typeText('project-backlog-search-input','d');expect(run.rows()).toEqual(['second']);expect((document.querySelector('[data-project-backlog-search-input]') as HTMLInputElement).value).toBe('d');expect(document.querySelector('[data-project-backlog-empty-reason]')).toBeNull();run.stop();});
@@ -121,5 +124,62 @@ describe('Stage 6 Backlog bulk controls',()=>{
   harness.click('project-backlog-bulk-delete');
   expect(JSON.stringify(s)).toBe(before);
   expect(document.querySelector('[data-project-backlog-inspector-task-id]')).toBeNull();
+ });
+});
+describe('Stage 6 Backlog selection',()=>{
+ it('marks a row from its checkbox and reports how many of the shown rows are marked',()=>{
+  const s=state();const run=session(s);
+  expect(run.root().querySelector('[data-project-backlog-selection-count]')!.getAttribute('data-project-backlog-selection-count')).toBe('0');
+  run.harness.click('project-backlog-select-first');
+  expect(run.root().querySelector('[data-project-backlog-select="first"]')!.hasAttribute('checked')).toBe(true);
+  expect(run.root().querySelector('[data-project-backlog-selected="true"]')).not.toBeNull();
+  const summary=()=>run.root().querySelector('[data-project-backlog-selection-count]')!;
+  expect(summary().getAttribute('data-project-backlog-selection-count')).toBe('1');
+  expect(summary().getAttribute('data-project-backlog-selection-all-visible')).toBe('false');
+  expect(summary().textContent).toContain('1 of 2 selected');
+  // The checkbox reports which task it is for; the view state decides what that means.
+  expect(run.view().selectedTaskIds).toEqual(['first']);
+  run.harness.click('project-backlog-select-first');
+  expect(run.view().selectedTaskIds).toEqual([]);
+  expect(summary().getAttribute('data-project-backlog-selection-count')).toBe('0');
+  run.stop();
+ });
+ it('selects every shown row at once, and clears the selection again',()=>{
+  const s=state();const run=session(s);
+  run.harness.click('project-backlog-select-all');
+  expect(run.view().selectedTaskIds).toEqual(['first','second']);
+  expect(run.root().querySelector('[data-project-backlog-selection-count]')!.getAttribute('data-project-backlog-selection-all-visible')).toBe('true');
+  // With everything shown already selected there is nothing left to add.
+  expect(run.root().querySelector('[data-c1-key="project-backlog-select-all"]')!.hasAttribute('disabled')).toBe(true);
+  run.harness.click('project-backlog-select-none');
+  expect(run.view().selectedTaskIds).toEqual([]);
+  expect(run.root().querySelector('[data-c1-key="project-backlog-select-none"]')!.hasAttribute('disabled')).toBe(true);
+  run.stop();
+ });
+ it('counts a marked task the query hides instead of letting the selection cover it silently',()=>{
+  const s=state();const run=session(s);
+  run.harness.click('project-backlog-select-all');
+  expect(run.view().selectedTaskIds).toEqual(['first','second']);
+  // Hiding one of them leaves the mark in place, reports the gap, and says "select all" is
+  // not satisfied by the rows on screen.
+  run.harness.typeText('project-backlog-search-input','d');
+  const summary=()=>run.root().querySelector('[data-project-backlog-selection-count]')!;
+  expect(run.rows()).toEqual(['second']);
+  expect(summary().getAttribute('data-project-backlog-selection-count')).toBe('1');
+  expect(summary().getAttribute('data-project-backlog-selection-hidden')).toBe('1');
+  expect(summary().textContent).toContain('1 selected hidden by the query');
+  // Select all now means the one row on screen, and it is already marked.
+  expect(run.root().querySelector('[data-c1-key="project-backlog-select-all"]')!.hasAttribute('disabled')).toBe(true);
+  run.harness.click('project-backlog-select-none');
+  expect(run.view().selectedTaskIds).toEqual([]);
+  run.stop();
+ });
+ it('keeps the order a selection was made in, and never writes a record',()=>{
+  const s=state();const before=JSON.stringify(s);const run=session(s);
+  run.harness.click('project-backlog-select-second');
+  run.harness.click('project-backlog-select-first');
+  expect(run.view().selectedTaskIds).toEqual(['second','first']);
+  expect(JSON.stringify(s)).toBe(before);
+  run.stop();
  });
 });

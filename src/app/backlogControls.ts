@@ -562,3 +562,79 @@ export function buildBacklogFilter(
     }
   }
 }
+
+
+/**
+ * Mark or unmark one task for a bulk action.
+ *
+ * The order a selection was made in is kept, because it is the order a bulk action would
+ * act in and a reader who selected `b` then `a` should not be surprised by `a, b`.
+ * @param selected - the tasks marked so far.
+ * @param taskId - the task to mark or unmark.
+ * @returns the next selection.
+ */
+export function toggleBacklogSelection(
+  selected:
+    readonly string[],
+  taskId:
+    string,
+): string[] {
+  return selected.includes(
+    taskId,
+  )
+    ? selected.filter(
+        (id) =>
+          id
+          !== taskId,
+      )
+    : [
+        ...selected,
+        taskId,
+      ];
+}
+
+/**
+ * Mark every task the caller can see, keeping any selection it already had.
+ *
+ * `Select all` can only mean the rows on screen: a task the query hides is not something
+ * the creator can see they are selecting, so it is left to whatever marked it before.
+ * @param selected - the tasks marked so far.
+ * @param visibleTaskIds - the tasks the query currently leaves visible.
+ * @returns the next selection, or a copy of the same one when every visible task was marked.
+ */
+export function selectAllBacklogVisible(
+  selected:
+    readonly string[],
+  visibleTaskIds:
+    readonly string[],
+): string[] {
+  const added =
+    visibleTaskIds.filter(
+      (taskId) =>
+        !selected.includes(
+          taskId,
+        ),
+    );
+
+  return [
+    ...selected,
+    ...added,
+  ];
+}
+
+/**
+ * Clear the whole selection, including tasks the current query hides.
+ * @param selected - the tasks marked so far.
+ * @returns the empty selection.
+ */
+export function clearBacklogSelection(
+  selected:
+    readonly string[],
+): string[] {
+  return selected.length
+    === 0
+    ? [
+        ...selected,
+      ]
+    : [];
+}

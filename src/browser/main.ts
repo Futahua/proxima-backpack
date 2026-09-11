@@ -42,7 +42,7 @@ import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter 
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
-import { applyBacklogControl, buildBacklogFilter } from '../app/backlogControls.js';
+import { applyBacklogControl, buildBacklogFilter, clearBacklogSelection, selectAllBacklogVisible, toggleBacklogSelection } from '../app/backlogControls.js';
 import { applyTaskEditorEdit, taskEditorDraftFor, type TaskEditorDraft } from '../app/taskEditor.js';
 import { bindProjectDeadlinesInteractions, EMPTY_PROJECT_DEADLINES_VIEW, type ProjectDeadlinesViewState } from './projectDeadlines.js';
 import { bindProjectScheduleInteractions, EMPTY_PROJECT_SCHEDULE_VIEW, type ProjectScheduleViewState } from './projectSchedule.js';
@@ -699,6 +699,12 @@ function bindInteractions(): void {
     sortBy: (field) => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'sort-by', field }) }; render(); },
     clearSort: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'clear-sort' }) }; render(); },
     clearQuery: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'clear-query' }) }; render(); },
+    // Selection is view state: it marks tasks for a bulk action that cannot run yet, and it
+    // never touches a record. "Select all" means the rows the query leaves visible, and the
+    // projection reports any marked task the query hides rather than letting it be forgotten.
+    toggleSelection: (taskId) => { projectBacklogView = { ...projectBacklogView, projectId: selection, selectedTaskIds: toggleBacklogSelection(projectBacklogView.selectedTaskIds, taskId) }; render(); },
+    selectAllVisible: (visibleTaskIds) => { projectBacklogView = { ...projectBacklogView, projectId: selection, selectedTaskIds: selectAllBacklogVisible(projectBacklogView.selectedTaskIds, visibleTaskIds) }; render(); },
+    clearSelection: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, selectedTaskIds: clearBacklogSelection(projectBacklogView.selectedTaskIds) }; render(); },
   });
   bindProjectDeadlinesInteractions(root, {
     setFilter: (filter) => { projectDeadlinesView = { ...projectDeadlinesView, projectId: selection, filter, selectedTaskId: null }; render(); },
