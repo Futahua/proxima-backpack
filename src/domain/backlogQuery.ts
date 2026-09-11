@@ -73,12 +73,46 @@ export interface BacklogSort {
     | 'descending';
 }
 
+/**
+ * A filter over a custom property.
+ *
+ * A property is not a field: its name comes from the data, and its type comes from the
+ * schema — or from nothing at all, in which case it is text. So it carries both, and the
+ * operator it admits is decided by {@link operatorsForValueType} rather than by
+ * {@link operatorsForField}. It is a separate list on the query rather than another field on
+ * {@link BacklogFilter}, so a filter that names a property cannot be mistaken for one that
+ * names a field, and neither list can be read as the other.
+ */
+export interface BacklogPropertyFilter {
+  readonly id:
+    string;
+
+  readonly propertyKey:
+    string;
+
+  readonly valueType:
+    BacklogValueType;
+
+  readonly operator:
+    BacklogOperator;
+
+  /** Absent only for the operators that test presence. */
+  readonly value?:
+    string
+    | number
+    | boolean;
+}
+
 export interface BacklogQuery {
   readonly search:
     string;
 
   readonly filters:
     readonly BacklogFilter[];
+
+  /** Filters over custom properties, applied together with {@link filters}. */
+  readonly propertyFilters:
+    readonly BacklogPropertyFilter[];
 
   readonly sort:
     BacklogSort | null;
@@ -91,6 +125,8 @@ export const EMPTY_BACKLOG_QUERY:
       '',
     filters:
       [],
+    propertyFilters:
+      [],
     sort:
       null,
   };
@@ -102,19 +138,26 @@ export const EMPTY_BACKLOG_QUERY:
  */
 export class BacklogQueryError
   extends Error {
+  /** The field at fault, or null when the fault is a custom property's. */
   readonly field:
-    BacklogField;
+    BacklogField | null;
 
   readonly operator:
     BacklogOperator;
+
+  /** The property at fault, or null when the fault is a field's. */
+  readonly propertyKey:
+    string | null;
 
   constructor(
     message:
       string,
     field:
-      BacklogField,
+      BacklogField | null,
     operator:
       BacklogOperator,
+    propertyKey:
+      string | null = null,
   ) {
     super(
       message,
@@ -128,6 +171,9 @@ export class BacklogQueryError
 
     this.operator =
       operator;
+
+    this.propertyKey =
+      propertyKey;
   }
 }
 
@@ -198,6 +244,33 @@ const FIELD_OPERATORS:
     isCompleted:
       BOOLEAN_OPERATORS,
   };
+
+/**
+ * The operators a value type admits, in presentation order.
+ *
+ * The same tables {@link operatorsForField} reads, reached by type instead of by field, so a
+ * custom property's menu and a task field's menu cannot offer different comparisons for the
+ * same kind of value.
+ * @param type - the value type being filtered.
+ * @returns the operators that type admits.
+ */
+export function operatorsForValueType(
+  type:
+    BacklogValueType,
+): readonly BacklogOperator[] {
+  switch (
+    type
+  ) {
+    case 'number':
+      return NUMBER_OPERATORS;
+    case 'date':
+      return DATE_OPERATORS;
+    case 'boolean':
+      return BOOLEAN_OPERATORS;
+    case 'text':
+      return TEXT_OPERATORS;
+  }
+}
 
 /**
  * The operators a field admits, in presentation order. This is the one place
@@ -360,6 +433,44 @@ export function assertBacklogQuery(
       );
     }
   }
+
+  for (
+    const filter
+    of query.propertyFilters
+  ) {
+    const allowed =
+      operatorsForValueType(
+        filter.valueType,
+      );
+
+    if (
+      !allowed.includes(
+        filter.operator,
+      )
+    ) {
+      throw new BacklogQueryError(
+        `Backlog property "${filter.propertyKey}" is filtered as ${filter.valueType}, which does not support "${filter.operator}"; it supports ${allowed.join(', ')}`,
+        null,
+        filter.operator,
+        filter.propertyKey,
+      );
+    }
+
+    if (
+      operatorTakesValue(
+        filter.operator,
+      )
+      && filter.value
+        === undefined
+    ) {
+      throw new BacklogQueryError(
+        `Backlog filter "${filter.operator}" on property "${filter.propertyKey}" needs a value`,
+        null,
+        filter.operator,
+        filter.propertyKey,
+      );
+    }
+  }
 }
 
 /** The fields search reads. */
@@ -475,7 +586,7 @@ function asInstant(
 }
 
 /**
- * Test one task against one filter.
+ * Test one task against one field filter.
  * @param task - the task to test.
  * @param filter - a filter whose operator {@link assertBacklogQuery} accepted.
  * @returns true when the task satisfies the filter.
@@ -486,14 +597,127 @@ export function matchesFilter(
   filter:
     BacklogFilter,
 ): boolean {
-  const actual =
+  return compareValue(
     fieldValue(
       task,
       filter.field,
-    );
+    ),
+    filter.operator,
+    filter.value,
+    valueTypeForField(
+      filter.field,
+    ),
+  );
+}
 
+/**
+ * Test one task against one custom-property filter.
+ *
+ * The value compared is the one the Backlog *shows* — an array joined the same way a cell
+ * joins it — so a filter and the column it filters cannot disagree about what a
+ * multi-select property holds. The type comes from the filter, which the caller took from
+ * the schema, so a property the schema calls a number is compared as one.
+ * @param task - the task to test.
+ * @param filter - a property filter whose operator {@link assertBacklogQuery} accepted.
+ * @returns true when the task satisfies the filter.
+ */
+export function matchesPropertyFilter(
+  task:
+    Task,
+  filter:
+    BacklogPropertyFilter,
+): boolean {
+  return compareValue(
+    propertyValue(
+      task,
+      filter.propertyKey,
+    ),
+    filter.operator,
+    filter.value,
+    filter.valueType,
+  );
+}
+
+/**
+ * The comparable value of a custom property, or null when the record has none.
+ *
+ * An array becomes the text a cell would show for it, so what is filtered is what is read.
+ * @param task - the task whose property is read.
+ * @param propertyKey - the property to read.
+ * @returns the comparable value.
+ */
+export function propertyValue(
+  task:
+    Task,
+  propertyKey:
+    string,
+): string | number | boolean | null {
+  const value =
+    task.properties[
+      propertyKey
+    ];
+
+  if (
+    value
+    === undefined
+    || value
+      === null
+  ) {
+    return null;
+  }
+
+  if (
+    Array.isArray(
+      value,
+    )
+  ) {
+    return value
+      .map(
+        (entry) =>
+          String(
+            entry,
+          ),
+      )
+      .join(
+        ', ',
+      );
+  }
+
+  if (
+    typeof value
+    === 'string'
+    || typeof value
+      === 'number'
+    || typeof value
+      === 'boolean'
+  ) {
+    return value;
+  }
+
+  return String(
+    value,
+  );
+}
+
+/**
+ * Compare one value against a filter, by the value's own type.
+ *
+ * This is the whole of the matcher, shared by both kinds of filter: a field filter passes the
+ * field's value and type, a property filter passes the property's. Two matchers would be two
+ * chances for the same query to mean different things.
+ */
+export function compareValue(
+  actual:
+    string | number | boolean | null,
+  operator:
+    BacklogOperator,
+  expected:
+    string | number | boolean | undefined,
+  type:
+    BacklogValueType,
+): boolean {
   switch (
-    filter.operator
+    operator
   ) {
     case 'is-empty':
       return isEmptyValue(
@@ -513,7 +737,7 @@ export function matchesFilter(
         .toLowerCase()
         .includes(
           String(
-            filter.value
+            expected
             ?? '',
           )
             .toLowerCase(),
@@ -522,27 +746,27 @@ export function matchesFilter(
     case 'is':
       return equalsValue(
         actual,
-        filter.value,
-        filter.field,
+        expected,
+        type,
       );
 
     case 'is-not':
       return !equalsValue(
         actual,
-        filter.value,
-        filter.field,
+        expected,
+        type,
       );
 
     case 'less-than':
       return compareOrdered(
         actual,
-        filter.value,
+        expected,
       ) === -1;
 
     case 'greater-than':
       return compareOrdered(
         actual,
-        filter.value,
+        expected,
       ) === 1;
 
     case 'before': {
@@ -553,7 +777,7 @@ export function matchesFilter(
 
       const right =
         asInstant(
-          filter.value
+          expected
           ?? null,
         );
 
@@ -573,7 +797,7 @@ export function matchesFilter(
 
       const right =
         asInstant(
-          filter.value
+          expected
           ?? null,
         );
 
@@ -601,17 +825,21 @@ function isNumericField(
 }
 
 /**
- * Equality that respects the field's type: numbers compare numerically, dates
+ * Equality that respects the value's type: numbers compare numerically, dates
  * compare as instants, everything else as text, and a boolean never equals the
  * string "true".
+ *
+ * The type is a parameter rather than a field, because a custom property has a type the
+ * schema declares and no field of its own — and both kinds of filter must compare the same
+ * way or the same query would mean two things.
  */
 function equalsValue(
   actual:
     string | number | boolean | null,
   expected:
     string | number | boolean | undefined,
-  field:
-    BacklogField,
+  type:
+    BacklogValueType,
 ): boolean {
   if (
     expected
@@ -621,9 +849,8 @@ function equalsValue(
   }
 
   if (
-    isNumericField(
-      field,
-    )
+    type
+    === 'number'
   ) {
     return typeof actual
       === 'number'
@@ -648,10 +875,8 @@ function equalsValue(
   }
 
   if (
-    field
-      === 'startDate'
-    || field
-      === 'deadline'
+    type
+    === 'date'
   ) {
     const left =
       asInstant(
@@ -967,6 +1192,14 @@ export function applyBacklogQuery(
                 task,
                 filter,
               ),
+          )
+        && query.propertyFilters
+          .every(
+            (filter) =>
+              matchesPropertyFilter(
+                task,
+                filter,
+              ),
           ),
     );
 
@@ -995,6 +1228,10 @@ export function applyBacklogQuery(
  * Drop one filter by id, leaving the rest of the query untouched — the Backlog's
  * "remove filter" control. An unknown id changes nothing rather than throwing:
  * removing a filter that is already gone has the outcome the caller wanted.
+ *
+ * The id is looked for in both lists, because a chip carries one id and the reader does not
+ * know or care which kind of filter it names. Ids are minted per query, so a field filter and
+ * a property filter cannot share one.
  * @param query - the query to modify.
  * @param filterId - the id of the filter to remove.
  * @returns a new query without that filter.
@@ -1009,6 +1246,12 @@ export function removeBacklogFilter(
     ...query,
     filters:
       query.filters.filter(
+        (filter) =>
+          filter.id
+          !== filterId,
+      ),
+    propertyFilters:
+      query.propertyFilters.filter(
         (filter) =>
           filter.id
           !== filterId,

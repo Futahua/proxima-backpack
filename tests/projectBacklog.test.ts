@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_BULK_NOTE, PROJECT_BACKLOG_WRITE_REFUSAL, renderProjectBacklog, type ProjectBacklogViewState } from '../src/browser/projectBacklog.js';
-import { applyBacklogControl, buildBacklogFilter, clearBacklogSelection, resizeBacklogColumn, selectAllBacklogVisible, toggleBacklogSelection } from '../src/app/backlogControls.js';
+import { applyBacklogControl, buildBacklogFilter, buildBacklogPropertyFilter, clearBacklogSelection, resizeBacklogColumn, selectAllBacklogVisible, toggleBacklogSelection } from '../src/app/backlogControls.js';
+import { propertyValueTypeFor } from '../src/app/backlogView.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import type { Project, ProximaState, Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
@@ -41,7 +42,20 @@ function session(s:ProximaState,start:ProjectBacklogViewState={...EMPTY_PROJECT_
   closeTask:()=>{view={...view,selectedTaskId:null};draw();},
   startDrag:()=>{},previewMove:()=>{},refuseMove:()=>{},clearDrag:()=>{},
   setSearch:search=>{apply({kind:'set-search',search});draw();},
-  addFilter:(expression,value)=>{const built=buildBacklogFilter(view.query.filters,expression,value);built.ok?apply({kind:'add-filter',filter:built.filter}):refuse(built.reason);draw();},
+  // Mirrors `main.ts`: an expression beginning `property.` names a custom property, and the
+  // type it is compared as comes from the schema — the same lookup the menu used.
+  addFilter:(expression,value)=>{
+   if(expression.startsWith('property.')){
+    const key=expression.slice('property.'.length,expression.indexOf('|'));
+    const built=buildBacklogPropertyFilter(view.query.propertyFilters,expression,value,propertyValueTypeFor(s.taskSchema,key),view.query.filters);
+    built.ok?apply({kind:'add-property-filter',filter:built.filter}):refuse(built.reason);
+    draw();
+    return;
+   }
+   const built=buildBacklogFilter(view.query.filters,expression,value,view.query.propertyFilters);
+   built.ok?apply({kind:'add-filter',filter:built.filter}):refuse(built.reason);
+   draw();
+  },
   removeFilter:filterId=>{apply({kind:'remove-filter',filterId});draw();},
   sortBy:field=>{apply({kind:'sort-by',field});draw();},
   clearSort:()=>{apply({kind:'clear-sort'});draw();},
@@ -60,10 +74,10 @@ describe('Stage 6 Backlog query controls, driven through the document',()=>{
  it('searches as the field is typed, and shows the text that is searching',()=>{const s=state();const run=session(s);run.harness.typeText('project-backlog-search-input','d');expect(run.rows()).toEqual(['second']);expect((document.querySelector('[data-project-backlog-search-input]') as HTMLInputElement).value).toBe('d');expect(document.querySelector('[data-project-backlog-empty-reason]')).toBeNull();run.stop();});
  it('says so when a search matches nothing',()=>{const s=state();const run=session(s);run.harness.typeText('project-backlog-search-input','z');expect(run.rows()).toEqual([]);expect(document.querySelector('[data-project-backlog-empty-reason="no-matches"]')).not.toBeNull();run.stop();});
  it('adds the filter the menu was left on, and shows the chip that removes it',()=>{const s=state();const run=session(s);(document.querySelector('[data-project-backlog-filter-expression]') as HTMLSelectElement).value='name|contains';(document.querySelector('[data-project-backlog-filter-value]') as HTMLInputElement).value='fir';run.harness.click('project-backlog-add-filter');expect(run.chipIds()).toEqual(['filter-1']);expect(run.rows()).toEqual(['first']);expect(document.querySelector('[data-project-backlog-filter-chip="filter-1"] span')?.textContent).toBe('Name contains fir');run.stop();});
- it('removes the filter a chip names, bringing its tasks back',()=>{const s=state();const run=session(s,{...EMPTY_PROJECT_BACKLOG_VIEW,projectId:project.id,query:{search:'',filters:[{id:'filter-1',field:'name',operator:'contains',value:'fir'}],sort:null}});expect(run.rows()).toEqual(['first']);run.harness.click('project-backlog-chip-remove-filter-1');expect(run.rows()).toEqual(['first','second']);expect(run.chipIds()).toEqual([]);expect(run.view().query.filters).toEqual([]);run.stop();});
+ it('removes the filter a chip names, bringing its tasks back',()=>{const s=state();const run=session(s,{...EMPTY_PROJECT_BACKLOG_VIEW,projectId:project.id,query:{search:'',filters:[{id:'filter-1',field:'name',operator:'contains',value:'fir'}],propertyFilters:[],sort:null}});expect(run.rows()).toEqual(['first']);run.harness.click('project-backlog-chip-remove-filter-1');expect(run.rows()).toEqual(['first','second']);expect(run.chipIds()).toEqual([]);expect(run.view().query.filters).toEqual([]);run.stop();});
  it('refuses a value that cannot be compared, and keeps the query it had',()=>{const s=state();const run=session(s);(document.querySelector('[data-project-backlog-filter-expression]') as HTMLSelectElement).value='weight|greater-than';(document.querySelector('[data-project-backlog-filter-value]') as HTMLInputElement).value='heavy';run.harness.click('project-backlog-add-filter');expect(run.view().queryRefusal).toBe('"heavy" is not a number');expect(document.querySelector('[data-project-backlog-query-refusal]')?.textContent).toBe('"heavy" is not a number');expect(run.rows()).toEqual(['first','second']);expect(run.chipIds()).toEqual([]);run.stop();});
  it('sorts a column ascending, then the same column descending, then clears it',()=>{const s=state();const run=session(s);run.harness.click('project-backlog-sort-name');expect(run.rows()).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-sort-indicator]')?.getAttribute('data-project-backlog-sort-direction')).toBe('ascending');run.harness.click('project-backlog-sort-name');expect(run.rows()).toEqual(['second','first']);expect(document.querySelector('[data-project-backlog-sort-indicator]')?.getAttribute('data-project-backlog-sort-direction')).toBe('descending');expect(document.querySelector('[data-project-backlog-sort-by="name"]')?.getAttribute('aria-pressed')).toBe('true');run.harness.click('project-backlog-clear-sort');expect(run.view().query.sort).toBeNull();expect(document.querySelector('[data-project-backlog-sort-indicator]')).toBeNull();expect(run.rows()).toEqual(['first','second']);run.stop();});
- it('clears a whole query at once, and leaves nothing to clear',()=>{const s=state();const run=session(s,{...EMPTY_PROJECT_BACKLOG_VIEW,projectId:project.id,query:{search:'s',filters:[{id:'filter-1',field:'weight',operator:'is',value:1}],sort:{field:'name',direction:'descending'}}});run.harness.click('project-backlog-clear-query');expect(run.view().query).toEqual({search:'',filters:[],sort:null});expect(run.rows()).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-action="clear-query"]')?.hasAttribute('disabled')).toBe(true);expect((document.querySelector('[data-project-backlog-search-input]') as HTMLInputElement).value).toBe('');run.stop();});
+ it('clears a whole query at once, and leaves nothing to clear',()=>{const s=state();const run=session(s,{...EMPTY_PROJECT_BACKLOG_VIEW,projectId:project.id,query:{search:'s',filters:[{id:'filter-1',field:'weight',operator:'is',value:1}],propertyFilters:[],sort:{field:'name',direction:'descending'}}});run.harness.click('project-backlog-clear-query');expect(run.view().query).toEqual({search:'',filters:[],propertyFilters:[],sort:null});expect(run.rows()).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-action="clear-query"]')?.hasAttribute('disabled')).toBe(true);expect((document.querySelector('[data-project-backlog-search-input]') as HTMLInputElement).value).toBe('');run.stop();});
  it('does not write to a record for any control it was given',()=>{const s=state();const before=JSON.stringify(s);const run=session(s);run.harness.typeText('project-backlog-search-input','d');(document.querySelector('[data-project-backlog-filter-expression]') as HTMLSelectElement).value='name|contains';(document.querySelector('[data-project-backlog-filter-value]') as HTMLInputElement).value='sec';run.harness.click('project-backlog-add-filter');run.harness.click('project-backlog-sort-name');run.harness.click('project-backlog-chip-remove-filter-1');run.harness.click('project-backlog-clear-query');expect(JSON.stringify(s)).toBe(before);run.stop();});
 });
 describe('Stage 6 Backlog column table',()=>{
@@ -126,6 +140,73 @@ function derivedState():ProximaState{
  const properties={blocks:'task-9',childCount:3,progress:'2/5',estimate:null};
  return {...state(),tasks:[{...task('first',project.id,1),properties},{...task('second',project.id,2),properties:{}}],taskSchema:[{id:'blocks',name:'Blocks',type:'relation',relationProperty:'blocks'},{id:'childCount',name:'Child count',type:'rollup',aggregation:'count',targetProperty:'children'},{id:'progress',name:'Progress',type:'formula',expression:'done / total'},{id:'estimate',name:'Estimate',type:'number'}]};
 }
+describe('Stage 6 Backlog property filters',()=>{
+ /** The same project, with the number property set so a numeric filter can match. */
+ function filterState():ProximaState{
+  const base=derivedState();
+  return {...base,tasks:[{...base.tasks[0]!,properties:{...base.tasks[0]!.properties,estimate:5}},base.tasks[1]!]};
+ }
+ it('offers each declared property with only the comparisons its type admits',()=>{
+  const s=derivedState();const run=session(s);
+  const groups=Array.from(run.root().querySelectorAll('[data-project-backlog-property-menu]')).map(x=>x as HTMLElement);
+  expect(groups.map(g=>g.dataset.projectBacklogPropertyMenu)).toEqual(['blocks','childCount','estimate','progress']);
+  expect(groups.map(g=>g.getAttribute('label'))).toEqual(['Blocks','Child count','Estimate','Progress']);
+  // The number property offers ordering; the text-ish ones do not.
+  const options=(key:string)=>Array.from(groups.find(g=>g.dataset.projectBacklogPropertyMenu===key)!.querySelectorAll('option')).map(o=>o.value);
+  expect(options('estimate')).toContain('property.estimate|greater-than');
+  expect(options('estimate')).not.toContain('property.estimate|contains');
+  expect(groups.find(g=>g.dataset.projectBacklogPropertyMenu==='estimate')!.dataset.projectBacklogPropertyType).toBe('number');
+  expect(options('progress')).toContain('property.progress|contains');
+  expect(options('progress')).not.toContain('property.progress|before');
+  run.stop();
+ });
+ it('filters the rows by a property, and chips it like any other filter',()=>{
+  const s=filterState();const run=session(s);
+  expect(run.rows()).toEqual(['first','second']);
+  (run.root().querySelector('[data-project-backlog-filter-expression]') as HTMLSelectElement).value='property.estimate|greater-than';
+  (run.root().querySelector('[data-project-backlog-filter-value]') as HTMLInputElement).value='4';
+  run.harness.click('project-backlog-add-filter');
+  expect(run.rows()).toEqual(['first']);
+  expect(run.view().query.propertyFilters).toEqual([{id:'filter-1',propertyKey:'estimate',valueType:'number',operator:'greater-than',value:4}]);
+  const chip=run.root().querySelector('[data-project-backlog-filter-property="estimate"]')!;
+  expect(chip.getAttribute('data-project-backlog-filter-property-type')).toBe('number');
+  expect(chip.textContent).toContain('Estimate > 4');
+  // Removing the chip brings the hidden task back, through the same control as any filter.
+  run.harness.click('project-backlog-chip-remove-filter-1');
+  expect(run.view().query.propertyFilters).toEqual([]);
+  expect(run.rows()).toEqual(['first','second']);
+  run.stop();
+ });
+ it('refuses a value the property type cannot compare, and keeps the query it had',()=>{
+  const s=filterState();const run=session(s);
+  (run.root().querySelector('[data-project-backlog-filter-expression]') as HTMLSelectElement).value='property.estimate|greater-than';
+  (run.root().querySelector('[data-project-backlog-filter-value]') as HTMLInputElement).value='many';
+  run.harness.click('project-backlog-add-filter');
+  expect(run.view().queryRefusal).toBe('"many" is not a number');
+  expect(run.view().query.propertyFilters).toEqual([]);
+  expect(run.rows()).toEqual(['first','second']);
+  run.stop();
+ });
+ it('applies a property filter together with a field filter and the search',()=>{
+  const s=filterState();const run=session(s);
+  (run.root().querySelector('[data-project-backlog-filter-expression]') as HTMLSelectElement).value='property.estimate|greater-than';
+  (run.root().querySelector('[data-project-backlog-filter-value]') as HTMLInputElement).value='4';
+  run.harness.click('project-backlog-add-filter');
+  (run.root().querySelector('[data-project-backlog-filter-expression]') as HTMLSelectElement).value='name|contains';
+  (run.root().querySelector('[data-project-backlog-filter-value]') as HTMLInputElement).value='fir';
+  run.harness.click('project-backlog-add-filter');
+  expect(run.rows()).toEqual(['first']);
+  expect(run.view().query.filters).toHaveLength(1);
+  expect(run.view().query.propertyFilters).toHaveLength(1);
+  // Two filters, two distinct ids: minting spans both lists, because one chip id naming two
+  // filters would remove both at once. Chips are drawn field filters first, then properties —
+  // the order the query keeps them in, rather than the order they arrived.
+  const chipIds=Array.from(run.root().querySelectorAll('[data-project-backlog-filter-chip]')).map(x=>x.getAttribute('data-project-backlog-filter-chip'));
+  expect(chipIds).toEqual(['filter-2','filter-1']);
+  expect(new Set(chipIds).size).toBe(chipIds.length);
+  run.stop();
+ });
+});
 describe('Stage 6 Backlog derived and relation display',()=>{
  it('shows every custom property of a row, and says which kind each one is',()=>{
   const s=derivedState();

@@ -28,6 +28,7 @@
 
 import {
   assertBacklogQuery,
+  operatorsForValueType,
   EMPTY_BACKLOG_QUERY,
   isBacklogField,
   operatorTakesValue,
@@ -37,7 +38,9 @@ import {
   type BacklogField,
   type BacklogFilter,
   type BacklogOperator,
+  type BacklogPropertyFilter,
   type BacklogQuery,
+  type BacklogValueType,
 } from '../domain/backlogQuery.js';
 
 /** The filter ids this module mints, so a minted id is recognisable and ordinate. */
@@ -116,6 +119,12 @@ export type BacklogControl =
     }
   | {
       readonly kind:
+        'add-property-filter';
+      readonly filter:
+        BacklogPropertyFilter;
+    }
+  | {
+      readonly kind:
         'remove-filter';
       readonly filterId:
         string;
@@ -163,6 +172,7 @@ function isEmptyQuery(
 ): boolean {
   return query.search === ''
     && query.filters.length === 0
+    && query.propertyFilters.length === 0
     && query.sort === null;
 }
 
@@ -238,12 +248,60 @@ export function applyBacklogControl(
       return next;
     }
 
+    case 'add-property-filter': {
+      const at =
+        query.propertyFilters.findIndex(
+          (filter) =>
+            filter.id
+            === control.filter.id,
+        );
+
+      if (
+        samePropertyFilter(
+          control.filter,
+          at === -1
+            ? undefined
+            : query.propertyFilters[at],
+        )
+      ) {
+        return query;
+      }
+
+      const next:
+        BacklogQuery = {
+          ...query,
+          propertyFilters:
+            at === -1
+              ? [
+                  ...query.propertyFilters,
+                  control.filter,
+                ]
+              : query.propertyFilters.map(
+                  (filter, index) =>
+                    index === at
+                      ? control.filter
+                      : filter,
+                ),
+        };
+
+      assertBacklogQuery(
+        next,
+      );
+
+      return next;
+    }
+
     case 'remove-filter': {
       return query.filters.some(
         (filter) =>
           filter.id
           === control.filterId,
       )
+        || query.propertyFilters.some(
+          (filter) =>
+            filter.id
+            === control.filterId,
+        )
         ? removeBacklogFilter(
             query,
             control.filterId,
@@ -313,9 +371,13 @@ export function applyBacklogControl(
  * @param filters - the filters the query currently holds.
  * @returns an id that is not among them.
  */
-export function nextBacklogFilterId(
+export function nextBacklogFilterId<
+  Filter extends {
+    readonly id: string;
+  },
+>(
   filters:
-    readonly BacklogFilter[],
+    readonly Filter[],
 ): string {
   let highest =
     0;
@@ -388,6 +450,20 @@ function operatorFrom(
  * one. A refusal is a sentence rather than an exception because the text it comes from
  * was typed by a person, and a mistyped number is a thing to say, not a crash.
  */
+export type BacklogPropertyFilterBuild =
+  | {
+      readonly ok:
+        true;
+      readonly filter:
+        BacklogPropertyFilter;
+    }
+  | {
+      readonly ok:
+        false;
+      readonly reason:
+        string;
+    };
+
 export type BacklogFilterBuild =
   | {
       readonly ok:
@@ -422,6 +498,10 @@ export function buildBacklogFilter(
     string,
   raw:
     string,
+  alsoInUse:
+    readonly {
+      readonly id: string;
+    }[] = [],
 ): BacklogFilterBuild {
   const separator =
     expression.indexOf(
@@ -471,7 +551,10 @@ export function buildBacklogFilter(
 
   const id =
     nextBacklogFilterId(
-      filters,
+      [
+        ...filters,
+        ...alsoInUse,
+      ],
     );
 
   if (!operatorTakesValue(operator)) {
@@ -748,4 +831,211 @@ export function backlogColumnWidth(
 ): number {
   return widths[columnId]
     ?? BACKLOG_COLUMN_DEFAULT_WIDTH;
+}
+/**
+ * Whether two property filters would filter identically, id included — the same rule
+ * {@link sameFilter} applies to field filters.
+ */
+function samePropertyFilter(
+  left:
+    BacklogPropertyFilter,
+  right:
+    BacklogPropertyFilter | undefined,
+): boolean {
+  return right !== undefined
+    && left.id === right.id
+    && left.propertyKey === right.propertyKey
+    && left.valueType === right.valueType
+    && left.operator === right.operator
+    && Object.is(
+      left.value,
+      right.value,
+    );
+}
+
+/**
+ * Build the custom-property filter a menu is asking for.
+ *
+ * The value is taken as the property's declared type, for the same reason a numeric field must
+ * be given a number: a comparison the type cannot make matches nothing, and a filter that
+ * matches nothing is indistinguishable from one that quietly failed. A boolean property's
+ * value is the comparison itself — "is" and "is not" — so it takes no text.
+ *
+ * @param filters - the property filters already in the query, so the new id does not collide.
+ * @param expression - the encoded `property.<key>|<operator>` the menu offered.
+ * @param raw - the text typed for the value, ignored by operators that take none.
+ * @param valueType - how the schema says this property is compared.
+ * @returns the filter, or the reason it cannot be built.
+ */
+export function buildBacklogPropertyFilter(
+  filters:
+    readonly BacklogPropertyFilter[],
+  expression:
+    string,
+  raw:
+    string,
+  valueType:
+    BacklogValueType,
+  alsoInUse:
+    readonly {
+      readonly id: string;
+    }[] = [],
+): BacklogPropertyFilterBuild {
+  const separator =
+    expression.indexOf(
+      '|',
+    );
+
+  if (separator === -1) {
+    return {
+      ok:
+        false,
+      reason:
+        `"${expression}" is not a filter`,
+    };
+  }
+
+  const keyWithPrefix =
+    expression.slice(
+      0,
+      separator,
+    );
+
+  if (
+    !keyWithPrefix.startsWith(
+      'property.',
+    )
+  ) {
+    return {
+      ok:
+        false,
+      reason:
+        `"${keyWithPrefix}" is not a custom property`,
+    };
+  }
+
+  const propertyKey =
+    keyWithPrefix.slice(
+      'property.'.length,
+    );
+
+  if (propertyKey.length === 0) {
+    return {
+      ok:
+        false,
+      reason:
+        'A custom-property filter needs a property name.',
+    };
+  }
+
+  const operator =
+    operatorsForValueType(
+      valueType,
+    ).find(
+      (candidate) =>
+        candidate
+        === expression.slice(
+          separator + 1,
+        ),
+    );
+
+  if (operator === undefined) {
+    return {
+      ok:
+        false,
+      reason:
+        `Property "${propertyKey}" is filtered as ${valueType}, which does not support that comparison`,
+    };
+  }
+
+  const id =
+    nextBacklogFilterId(
+      [
+        ...filters,
+        ...alsoInUse,
+      ],
+    );
+
+  if (!operatorTakesValue(operator)) {
+    return {
+      ok:
+        true,
+      filter: {
+        id,
+        propertyKey,
+        valueType,
+        operator,
+      },
+    };
+  }
+
+  if (valueType === 'boolean') {
+    return {
+      ok:
+        true,
+      filter: {
+        id,
+        propertyKey,
+        valueType,
+        operator,
+        value:
+          operator
+          === 'is',
+      },
+    };
+  }
+
+  if (valueType === 'number') {
+    const text =
+      raw.trim();
+
+    if (text === '') {
+      return {
+        ok:
+          false,
+        reason:
+          `"${propertyKey}" needs a number`,
+      };
+    }
+
+    const number =
+      Number(
+        text,
+      );
+
+    if (!Number.isFinite(number)) {
+      return {
+        ok:
+          false,
+        reason:
+          `"${text}" is not a number`,
+      };
+    }
+
+    return {
+      ok:
+        true,
+      filter: {
+        id,
+        propertyKey,
+        valueType,
+        operator,
+        value:
+          number,
+      },
+    };
+  }
+
+  return {
+    ok:
+      true,
+    filter: {
+      id,
+      propertyKey,
+      valueType,
+      operator,
+      value:
+        raw,
+    },
+  };
 }

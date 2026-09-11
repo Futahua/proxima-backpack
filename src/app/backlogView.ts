@@ -15,11 +15,13 @@ import {
   BACKLOG_FIELDS,
   EMPTY_BACKLOG_QUERY,
   operatorsForField,
+  operatorsForValueType,
   type BacklogField,
   type BacklogFilter,
   type BacklogOperator,
   type BacklogQuery,
   type BacklogSort,
+  type BacklogValueType,
 } from '../domain/backlogQuery.js';
 
 import {
@@ -140,6 +142,63 @@ export interface BacklogFilterChip {
 }
 
 /**
+ * One active custom-property filter, as its own chip.
+ *
+ * Kept apart from {@link BacklogFilterChip} rather than folded into it: a property filter has
+ * no {@link BacklogField}, and a chip that pretended one would put a lie in the document,
+ * where the renderer and any test can read it.
+ */
+export interface BacklogPropertyFilterChip {
+  readonly id:
+    string;
+
+  readonly propertyKey:
+    string;
+
+  readonly valueType:
+    BacklogValueType;
+
+  readonly operator:
+    BacklogOperator;
+
+  readonly label:
+    string;
+}
+
+/** One comparison a custom-property menu offers, carrying the property's key and type. */
+export interface BacklogPropertyFilterOption {
+  readonly expression:
+    string;
+
+  readonly propertyKey:
+    string;
+
+  readonly valueType:
+    BacklogValueType;
+
+  readonly operator:
+    BacklogOperator;
+
+  readonly label:
+    string;
+}
+
+/** One custom property's worth of a filter menu. */
+export interface BacklogPropertyFilterMenuGroup {
+  readonly propertyKey:
+    string;
+
+  readonly valueType:
+    BacklogValueType;
+
+  readonly label:
+    string;
+
+  readonly options:
+    readonly BacklogPropertyFilterOption[];
+}
+
+/**
  * One comparison a filter menu offers. `expression` is the single value the menu
  * carries for the pair, so adding a filter needs no draft state in the view.
  */
@@ -196,6 +255,18 @@ export interface BacklogProjection {
   /** The filter menu, offering each field and only the comparisons it admits. */
   readonly filterMenu:
     readonly BacklogFilterMenuGroup[];
+
+  /**
+   * The custom-property menu: one group per property the project's tasks declare, each
+   * offering the comparisons its declared type admits. A property appears because the data
+   * has it, which is the same rule the columns follow.
+   */
+  readonly propertyFilterMenu:
+    readonly BacklogPropertyFilterMenuGroup[];
+
+  /** The active custom-property filters, as chips. */
+  readonly propertyFilterChips:
+    readonly BacklogPropertyFilterChip[];
 
   /** How many of the rows the query leaves visible are marked for a bulk action. */
   readonly selectedCount:
@@ -528,10 +599,123 @@ function chipLabel(
   const operator =
     BACKLOG_OPERATOR_LABELS[filter.operator];
 
-  return filter.value
+  return labelWithValue(
+    field,
+    operator,
+    filter.value,
+  );
+}
+
+/** The one sentence a chip carries, whichever kind of filter it describes. */
+function labelWithValue(
+  subject:
+    string,
+  operator:
+    string,
+  value:
+    string | number | boolean | undefined,
+): string {
+  return value
     === undefined
-    ? `${field} ${operator}`
-    : `${field} ${operator} ${String(filter.value)}`;
+    ? `${subject} ${operator}`
+    : `${subject} ${operator} ${String(value)}`;
+}
+
+/**
+ * What a custom property is called in a chip and a menu: the schema's name, or the stored
+ * key when the schema does not declare it.
+ * @param schema - the loaded schema.
+ * @param propertyKey - the property being named.
+ * @returns the name to show.
+ */
+export function propertyLabelFor(
+  schema:
+    readonly PropertySchema[],
+  propertyKey:
+    string,
+): string {
+  return schema.find(
+    (declared) =>
+      declared.id
+      === propertyKey,
+  )?.name
+  ?? propertyKey;
+}
+
+/**
+ * How a custom property is compared: the schema's type, or text when nothing declares it.
+ *
+ * One function so the menu, the chip and the builder cannot disagree about what kind of value
+ * a property holds — a disagreement there is a filter that can never match.
+ * @param schema - the loaded schema.
+ * @param propertyKey - the property being filtered.
+ * @returns the value type to compare it as.
+ */
+export function propertyValueTypeFor(
+  schema:
+    readonly PropertySchema[],
+  propertyKey:
+    string,
+): BacklogValueType {
+  const declared =
+    schema.find(
+      (candidate) =>
+        candidate.id
+        === propertyKey,
+    );
+
+  if (declared === undefined) {
+    return 'text';
+  }
+
+  switch (
+    declared.type
+  ) {
+    case 'number':
+      return 'number';
+    case 'date':
+      return 'date';
+    case 'checkbox':
+      return 'boolean';
+    default:
+      return 'text';
+  }
+}
+
+/** The property keys any of these tasks declares, in the order a menu should offer them. */
+function declaredPropertyKeys(
+  tasks:
+    readonly Task[],
+): string[] {
+  const keys =
+    new Set<
+      string
+    >();
+
+  for (
+    const task
+    of tasks
+  ) {
+    for (
+      const key
+      of Object.keys(
+        task.properties,
+      )
+    ) {
+      keys.add(
+        key,
+      );
+    }
+  }
+
+  return [
+    ...keys,
+  ].sort(
+    (left, right) =>
+      left.localeCompare(
+        right,
+      ),
+  );
 }
 
 /**
@@ -711,6 +895,64 @@ export function projectBacklog(
           label:
             chipLabel(
               filter,
+            ),
+        }),
+      ),
+    propertyFilterMenu:
+      declaredPropertyKeys(
+        tasks,
+      ).map(
+        (propertyKey) => {
+          const valueType =
+            propertyValueTypeFor(
+              state.taskSchema,
+              propertyKey,
+            );
+
+          return {
+            propertyKey,
+            valueType,
+            label:
+              propertyLabelFor(
+                state.taskSchema,
+                propertyKey,
+              ),
+            options:
+              operatorsForValueType(
+                valueType,
+              ).map(
+                (operator) => ({
+                  expression:
+                    `property.${propertyKey}|${operator}`,
+                  propertyKey,
+                  valueType,
+                  operator,
+                  label:
+                    BACKLOG_OPERATOR_LABELS[operator],
+                }),
+              ),
+          };
+        },
+      ),
+    propertyFilterChips:
+      view.query.propertyFilters.map(
+        (filter) => ({
+          id:
+            filter.id,
+          propertyKey:
+            filter.propertyKey,
+          valueType:
+            filter.valueType,
+          operator:
+            filter.operator,
+          label:
+            labelWithValue(
+              propertyLabelFor(
+                state.taskSchema,
+                filter.propertyKey,
+              ),
+              BACKLOG_OPERATOR_LABELS[filter.operator],
+              filter.value,
             ),
         }),
       ),

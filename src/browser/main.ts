@@ -42,7 +42,8 @@ import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter 
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
-import { applyBacklogControl, buildBacklogFilter, clearBacklogSelection, resizeBacklogColumn, selectAllBacklogVisible, toggleBacklogSelection } from '../app/backlogControls.js';
+import { applyBacklogControl, buildBacklogFilter, buildBacklogPropertyFilter, clearBacklogSelection, resizeBacklogColumn, selectAllBacklogVisible, toggleBacklogSelection } from '../app/backlogControls.js';
+import { propertyValueTypeFor } from '../app/backlogView.js';
 import { applyTaskEditorEdit, taskEditorDraftFor, type TaskEditorDraft } from '../app/taskEditor.js';
 import { bindProjectDeadlinesInteractions, EMPTY_PROJECT_DEADLINES_VIEW, type ProjectDeadlinesViewState } from './projectDeadlines.js';
 import { bindProjectScheduleInteractions, EMPTY_PROJECT_SCHEDULE_VIEW, type ProjectScheduleViewState } from './projectSchedule.js';
@@ -694,7 +695,23 @@ function bindInteractions(): void {
     refuseMove: (intent) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: null, dragTargetIndex: null, writeRefusal: PROJECT_BACKLOG_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
     clearDrag: () => { projectBacklogView = { ...projectBacklogView, dragTaskId: null, dragTargetIndex: null }; },
     setSearch: (search) => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'set-search', search }) }; render(); restoreBacklogSearchFocus(search.length); },
-    addFilter: (expression, value) => { const built = buildBacklogFilter(projectBacklogView.query.filters, expression, value); if (!built.ok) { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: built.reason }; render(); return; } projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'add-filter', filter: built.filter }) }; render(); },
+    // One menu, two builders: an expression beginning `property.` names a custom property, and
+    // the type it is compared as comes from the schema — the same lookup the menu used to
+    // offer it, so the menu and the filter cannot disagree about what a property holds.
+    addFilter: (expression, value) => {
+      if (expression.startsWith('property.')) {
+        const key = expression.slice('property.'.length, expression.indexOf('|') === -1 ? undefined : expression.indexOf('|'));
+        const built = buildBacklogPropertyFilter(projectBacklogView.query.propertyFilters, expression, value, propertyValueTypeFor(appState?.taskSchema ?? [], key), projectBacklogView.query.filters);
+        if (!built.ok) { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: built.reason }; render(); return; }
+        projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'add-property-filter', filter: built.filter }) };
+        render();
+        return;
+      }
+      const built = buildBacklogFilter(projectBacklogView.query.filters, expression, value, projectBacklogView.query.propertyFilters);
+      if (!built.ok) { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: built.reason }; render(); return; }
+      projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'add-filter', filter: built.filter }) };
+      render();
+    },
     removeFilter: (filterId) => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'remove-filter', filterId }) }; render(); },
     sortBy: (field) => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'sort-by', field }) }; render(); },
     clearSort: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'clear-sort' }) }; render(); },

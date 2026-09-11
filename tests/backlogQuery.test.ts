@@ -20,9 +20,11 @@ import {
   BacklogQueryError,
   EMPTY_BACKLOG_QUERY,
   matchesFilter,
+  matchesPropertyFilter,
   matchesSearch,
   operatorTakesValue,
   operatorsForField,
+  operatorsForValueType,
   removeBacklogFilter,
   type BacklogFilter,
   type BacklogQuery,
@@ -1184,3 +1186,119 @@ describe(
     );
   },
 );
+
+describe('Backlog property filters', () => {
+  it('filters on a custom property, and the value compared is the one a cell shows', () => {
+    const tasks = [
+      task({ id: 'a', properties: { area: 'work', tags: ['urgent', 'later'], seats: 12 } }),
+      task({ id: 'b', properties: { area: 'home', tags: ['later'], seats: 3 } }),
+      task({ id: 'c', properties: {} }),
+    ];
+
+    const byArea = applyBacklogQuery(tasks, { ...EMPTY_BACKLOG_QUERY, propertyFilters: [{ id: 'p1', propertyKey: 'area', valueType: 'text', operator: 'is', value: 'work' }] });
+    expect(byArea.map((entry) => entry.id)).toEqual(['a']);
+
+    const byNumber = applyBacklogQuery(tasks, { ...EMPTY_BACKLOG_QUERY, propertyFilters: [{ id: 'p1', propertyKey: 'seats', valueType: 'number', operator: 'greater-than', value: 5 }] });
+    expect(byNumber.map((entry) => entry.id)).toEqual(['a']);
+
+    // A multi-select property is compared as the text its cell shows, so a filter and the
+    // column it filters cannot disagree about what the property holds.
+    const byTag = applyBacklogQuery(tasks, { ...EMPTY_BACKLOG_QUERY, propertyFilters: [{ id: 'p1', propertyKey: 'tags', valueType: 'text', operator: 'contains', value: 'urgent' }] });
+    expect(byTag.map((entry) => entry.id)).toEqual(['a']);
+
+    // An absent property is empty, and is neither "is" nor "contains" anything.
+    const empty = applyBacklogQuery(tasks, { ...EMPTY_BACKLOG_QUERY, propertyFilters: [{ id: 'p1', propertyKey: 'area', valueType: 'text', operator: 'is-empty' }] });
+    expect(empty.map((entry) => entry.id)).toEqual(['c']);
+  });
+
+  it('compares a property by its declared type, so a number is never text', () => {
+    const numeric = task({ id: 'a', properties: { seats: 12 } });
+    const textual = task({ id: 'b', properties: { seats: '12' } });
+
+    // As a number, only the number matches; as text, only the text does.
+    expect(matchesPropertyFilter(numeric, { id: 'p1', propertyKey: 'seats', valueType: 'number', operator: 'is', value: 12 })).toBe(true);
+    expect(matchesPropertyFilter(textual, { id: 'p1', propertyKey: 'seats', valueType: 'number', operator: 'is', value: 12 })).toBe(false);
+    expect(matchesPropertyFilter(textual, { id: 'p1', propertyKey: 'seats', valueType: 'text', operator: 'is', value: '12' })).toBe(true);
+    expect(matchesPropertyFilter(numeric, { id: 'p1', propertyKey: 'seats', valueType: 'text', operator: 'is', value: '12' })).toBe(true);
+  });
+
+  it('compares a boolean property against a boolean, never against its spelling', () => {
+    const flagged = task({ id: 'a', properties: { done: true } });
+    const spelled = task({ id: 'b', properties: { done: 'true' } });
+
+    expect(matchesPropertyFilter(flagged, { id: 'p1', propertyKey: 'done', valueType: 'boolean', operator: 'is', value: true })).toBe(true);
+    expect(matchesPropertyFilter(spelled, { id: 'p1', propertyKey: 'done', valueType: 'boolean', operator: 'is', value: true })).toBe(false);
+    expect(matchesPropertyFilter(flagged, { id: 'p1', propertyKey: 'done', valueType: 'boolean', operator: 'is-not', value: false })).toBe(true);
+  });
+
+  it('compares a date property as instants', () => {
+    const due = task({ id: 'a', properties: { due: '2026-06-30T09:00:00.000Z' } });
+
+    expect(matchesPropertyFilter(due, { id: 'p1', propertyKey: 'due', valueType: 'date', operator: 'before', value: '2026-07-01T00:00:00.000Z' })).toBe(true);
+    expect(matchesPropertyFilter(due, { id: 'p1', propertyKey: 'due', valueType: 'date', operator: 'after', value: '2026-07-01T00:00:00.000Z' })).toBe(false);
+    expect(matchesPropertyFilter(due, { id: 'p1', propertyKey: 'due', valueType: 'date', operator: 'is', value: '2026-06-30T09:00:00.000Z' })).toBe(true);
+  });
+
+  it('applies property filters together with field filters and the search', () => {
+    const tasks = [
+      task({ id: 'a', name: 'Alpha', properties: { area: 'work' } }),
+      task({ id: 'b', name: 'Alpha', properties: { area: 'home' } }),
+      task({ id: 'c', name: 'Beta', properties: { area: 'work' } }),
+    ];
+
+    const matched = applyBacklogQuery(tasks, {
+      ...EMPTY_BACKLOG_QUERY,
+      search: 'alpha',
+      propertyFilters: [{ id: 'p1', propertyKey: 'area', valueType: 'text', operator: 'is', value: 'work' }],
+    });
+
+    expect(matched.map((entry) => entry.id)).toEqual(['a']);
+  });
+
+  it('refuses a comparison the property type does not admit, naming the property', () => {
+    const boolean = { id: 'p1', propertyKey: 'done', valueType: 'boolean' as const, operator: 'greater-than' as const, value: 1 };
+
+    expect(() => applyBacklogQuery([task({ id: 'a' })], { ...EMPTY_BACKLOG_QUERY, propertyFilters: [boolean] }))
+      .toThrow(/property "done" is filtered as boolean, which does not support "greater-than"/);
+
+    try {
+      applyBacklogQuery([task({ id: 'a' })], { ...EMPTY_BACKLOG_QUERY, propertyFilters: [boolean] });
+    } catch (thrown) {
+      expect(thrown).toBeInstanceOf(BacklogQueryError);
+      expect((thrown as BacklogQueryError).field).toBeNull();
+      expect((thrown as BacklogQueryError).propertyKey).toBe('done');
+    }
+
+    // A value-taking operator still needs a value, and says which property wanted one.
+    expect(() => applyBacklogQuery([task({ id: 'a' })], {
+      ...EMPTY_BACKLOG_QUERY,
+      propertyFilters: [{ id: 'p1', propertyKey: 'seats', valueType: 'number', operator: 'is' }],
+    })).toThrow(/on property "seats" needs a value/);
+  });
+
+  it('offers the operators a value type admits, through the same tables the fields use', () => {
+    expect(operatorsForValueType('number')).toEqual(operatorsForField('weight'));
+    expect(operatorsForValueType('date')).toEqual(operatorsForField('deadline'));
+    expect(operatorsForValueType('boolean')).toEqual(operatorsForField('isCompleted'));
+    expect(operatorsForValueType('text')).toEqual(operatorsForField('name'));
+  });
+
+  it('removes a property filter by the same id a chip carries, from either list', () => {
+    const query: BacklogQuery = {
+      ...EMPTY_BACKLOG_QUERY,
+      filters: [{ id: 'filter-1', field: 'name', operator: 'contains', value: 'a' }],
+      propertyFilters: [{ id: 'filter-2', propertyKey: 'area', valueType: 'text', operator: 'is', value: 'work' }],
+    };
+
+    const withoutProperty = removeBacklogFilter(query, 'filter-2');
+    expect(withoutProperty.propertyFilters).toEqual([]);
+    expect(withoutProperty.filters).toHaveLength(1);
+
+    const withoutField = removeBacklogFilter(query, 'filter-1');
+    expect(withoutField.filters).toEqual([]);
+    expect(withoutField.propertyFilters).toHaveLength(1);
+
+    // An unknown id changes nothing at all.
+    expect(removeBacklogFilter(query, 'missing')).toEqual(query);
+  });
+});
