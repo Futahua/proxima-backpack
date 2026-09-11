@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, renderProjectTaskBoard, type ProjectTaskBoardViewState } from '../src/browser/projectTaskBoard.js';
+import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, renderProjectTaskBoard, type ProjectTaskBoardMoveIntent, type ProjectTaskBoardViewState } from '../src/browser/projectTaskBoard.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import type { Project, ProximaState, StatusDefinition, Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
@@ -14,4 +14,57 @@ describe('Stage 5 slice 6 detailed Task Board interactions',()=>{
  it('opens escaped read-only inspector with unavailable writes',()=>{const s=state();let v:ProjectTaskBoardViewState=EMPTY_PROJECT_TASK_BOARD_VIEW;const r=()=>{document.body.innerHTML=renderProjectTaskBoard(s,project,v);};r();bindProjectTaskBoardInteractions(document.body,{openTask:id=>{v={...EMPTY_PROJECT_TASK_BOARD_VIEW,projectId:project.id,selectedTaskId:id};r();},closeTask:()=>{v={...v,selectedTaskId:null};r();},startDrag:()=>{},previewMove:()=>{},refuseMove:()=>{},clearDrag:()=>{}});createInteractionHarness(document).click('project-board-task-first-task');expect(document.querySelector('[data-project-board-inspector-task-id="first-task"]')).not.toBeNull();expect(document.querySelector('.project-board-task-inspector script')).toBeNull();expect(document.querySelectorAll('[data-project-board-write-action]')).toHaveLength(2);expect(Array.from(document.querySelectorAll<HTMLButtonElement>('[data-project-board-write-action]')).every(x=>x.disabled&&x.dataset.projectBoardWriteRefusal===PROJECT_TASK_BOARD_WRITE_REFUSAL)).toBe(true);});
  it('previews and refuses drag moves without mutating state',()=>{const s=state();let v:ProjectTaskBoardViewState={...EMPTY_PROJECT_TASK_BOARD_VIEW,projectId:project.id};let refused=null as any;const r=()=>{document.body.innerHTML=renderProjectTaskBoard(s,project,v);};r();bindProjectTaskBoardInteractions(document.body,{openTask:()=>{},closeTask:()=>{},startDrag:id=>{v={...v,dragTaskId:id};},previewMove:intent=>{v={...v,dragTaskId:intent.taskId};},refuseMove:intent=>{refused=intent;v={...v,writeRefusal:PROJECT_TASK_BOARD_WRITE_REFUSAL,lastRefusedMove:intent};r();},clearDrag:()=>{}});const h=createInteractionHarness(document),d=h.beginDrag('project-board-task-first-task',{clientX:0,clientY:0});d.move('project-board-drop-'+project.id+'-doing-1',{clientX:1,clientY:1});expect((document.querySelector('[data-project-board-drop-status="doing"][data-project-board-drop-index="1"]')?.querySelector('.project-board-insertion-placeholder') as HTMLElement| null)?.style.height).toBe('54px');d.drop('project-board-drop-'+project.id+'-doing-1',{clientX:1,clientY:1});expect(refused).toEqual({taskId:'first-task',targetStatus:'doing',targetIndex:1});});
  it('does not leak foreign selection or refusal',()=>{const v:ProjectTaskBoardViewState={...EMPTY_PROJECT_TASK_BOARD_VIEW,projectId:'other',selectedTaskId:'x',writeRefusal:PROJECT_TASK_BOARD_WRITE_REFUSAL,lastRefusedMove:{taskId:'x',targetStatus:'doing',targetIndex:0}};document.body.innerHTML=renderProjectTaskBoard(state(),project,v);expect(document.querySelector('[data-project-board-inspector-task-id]')).toBeNull();expect(document.querySelector('[data-project-board-write-refusal]')).toBeNull();});
+ it('paints a workflow column only when the vault value is a colour',()=>{
+  const s:ProximaState={...state(),statuses:[...statuses,{id:'padded',name:'Padded',color:'  #abc  ',column:'backlog'},{id:'hostile',name:'Hostile',color:'url(javascript:alert(1))',column:'running'}]};
+  document.body.innerHTML=renderProjectTaskBoard(s,project);
+  const column=(id:string)=>document.querySelector<HTMLElement>('[data-project-board-status-column="'+id+'"]');
+  expect(column('todo')?.getAttribute('style')).toBe('border-top:3px solid #112233;');
+  expect(column('todo')?.dataset.projectStatusColor).toBe('#112233');
+  expect(column('padded')?.getAttribute('style')).toBe('border-top:3px solid #abc;');
+  expect(column('blocked')?.getAttribute('style')).toBeNull();
+  expect(column('blocked')?.dataset.projectStatusColor).toBe('');
+  expect(column('hostile')?.getAttribute('style')).toBeNull();
+  expect(column('hostile')?.dataset.projectStatusColor).toBe('');
+ });
+ it('gives a column to a status the vault does not define, after the defined ones',()=>{
+  const s:ProximaState={...state(),tasks:[...state().tasks,{...task('archived-task','archived',1)}]};
+  document.body.innerHTML=renderProjectTaskBoard(s,project);
+  expect(Array.from(document.querySelectorAll<HTMLElement>('[data-project-board-status-column]')).map(column=>column.dataset.projectBoardStatusColumn)).toEqual(['todo','doing','done','blocked','archived']);
+  const orphan=document.querySelector<HTMLElement>('[data-project-board-status-column="archived"]');
+  expect(orphan?.querySelector('header strong')?.textContent).toBe('archived');
+  expect(Array.from(orphan?.querySelectorAll<HTMLElement>('[data-project-board-task-id]')??[]).map(card=>card.dataset.projectBoardTaskId)).toEqual(['archived-task']);
+  expect(orphan?.querySelector('[data-project-board-drop-status="archived"]')).not.toBeNull();
+ });
+ it('keeps local display order for tied and missing indices',()=>{
+  const s:ProximaState={...state(),tasks:[task('b-task','todo',4),task('a-task','todo',4),{...task('no-index','todo',0),orderIndex:undefined as unknown as number}]};
+  document.body.innerHTML=renderProjectTaskBoard(s,project);
+  expect(Array.from(document.querySelectorAll<HTMLElement>('[data-project-board-status-column="todo"] [data-project-board-task-id]')).map(card=>card.dataset.projectBoardTaskId)).toEqual(['no-index','a-task','b-task']);
+ });
+ it('reports the picked-up card and clears the placeholder on a refused drop',()=>{
+  const s=state();
+  const before=JSON.stringify(s);
+  const host=document.createElement('div');document.body.append(host);
+  let v:ProjectTaskBoardViewState={...EMPTY_PROJECT_TASK_BOARD_VIEW,projectId:project.id};
+  const picked:string[]=[];
+  const previews:ProjectTaskBoardMoveIntent[]=[];
+  const refusals:ProjectTaskBoardMoveIntent[]=[];
+  const render=()=>{host.innerHTML=renderProjectTaskBoard(s,project,v);};
+  render();
+  bindProjectTaskBoardInteractions(host,{openTask:()=>{},closeTask:()=>{},startDrag:id=>{picked.push(id);v={...v,dragTaskId:id};},previewMove:intent=>{previews.push(intent);},refuseMove:intent=>{refusals.push(intent);v={...EMPTY_PROJECT_TASK_BOARD_VIEW,projectId:project.id,writeRefusal:PROJECT_TASK_BOARD_WRITE_REFUSAL,lastRefusedMove:intent};render();},clearDrag:()=>{}});
+  const h=createInteractionHarness(host);
+  const slot='project-board-drop-'+project.id+'-doing-1';
+  const drag=h.beginDrag('project-board-task-first-task',{clientX:0,clientY:0});
+  expect(picked).toEqual(['first-task']);
+  expect(v.dragTaskId).toBe('first-task');
+  drag.move(slot,{clientX:1,clientY:1});
+  expect(previews).toEqual([{taskId:'first-task',targetStatus:'doing',targetIndex:1}]);
+  const hovered=host.querySelector<HTMLElement>('[data-project-board-drop-status="doing"][data-project-board-drop-index="1"]');
+  expect(hovered?.dataset.projectBoardPreview).toBe('true');
+  expect(hovered?.querySelector<HTMLElement>('.project-board-insertion-placeholder')?.style.height).toBe('54px');
+  drag.drop(slot,{clientX:1,clientY:1});
+  expect(refusals).toEqual([{taskId:'first-task',targetStatus:'doing',targetIndex:1}]);
+  expect(host.querySelector('[data-project-board-write-refusal]')?.textContent).toContain('first-task → doing @ 1');
+  expect(host.querySelector<HTMLElement>('[data-project-board-task-id="first-task"]')?.getAttribute('aria-pressed')).toBe('false');
+  expect(JSON.stringify(s)).toBe(before);
+ });
 });
