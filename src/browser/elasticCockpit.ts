@@ -1,6 +1,7 @@
 import { calculateElasticTimeline, elasticCardHeights } from '../domain/elastic.js';
 import { elasticBoard } from '../domain/selectors.js';
 import type { ElasticColumn, ProximaState, Task, TimelineSlice } from '../domain/types.js';
+import { projectTaskEditor, TASK_EDITOR_SAVE_NOTE, TASK_EDITOR_SAVE_REFUSAL, type TaskEditorDraft, type TaskEditorEdit, type TaskEditorField } from '../app/taskEditor.js';
 
 export interface ElasticSessionView {
   targetTime: string;
@@ -24,6 +25,8 @@ export interface ElasticCockpitRenderOptions {
   session: ElasticSessionView;
   now: Date;
   selectedTaskId: string | null;
+  /** The Task editor's provisional edits, or null while nothing has been edited. */
+  editorDraft: TaskEditorDraft | null;
   dropRefusal: string | null;
   containerHeight?: number;
 }
@@ -41,6 +44,10 @@ export interface ElasticCockpitHandlers {
   lock(): void;
   unlock(): void;
   moveTask(intent: ElasticMoveIntent): void;
+  /** One edit of the Task editor's form, before anything is saved. */
+  editTask(edit: TaskEditorEdit): void;
+  /** Discard the provisional edits and show the record again. */
+  cancelTaskEdit(): void;
 }
 
 function escapeHtml(value: unknown): string {
@@ -195,13 +202,61 @@ function renderColumn(
   return `<section class="board-column" data-c1-key="board-column-${column}" data-elastic-column-region="${column}" aria-label="${label} column"><header><h3>${label}</h3><span>${tasks.length}</span></header><div class="column-cards">${tasks.length === 0 ? `<p class="empty-state" data-c1-key="board-empty-${column}">No tasks here.</p>` : ''}${pieces.join('')}</div></section>`;
 }
 
-export function renderTaskModal(state: ProximaState, taskId: string | null, projectNames: Map<string, string>): string {
-  if (!taskId) return '';
-  const task = state.tasks.find((candidate) => candidate.id === taskId);
-  if (!task) return '';
-  const modalTask = { ...task, id: `${task.id}-modal` };
+/**
+ * One field of the Task editor, drawn as the control its type calls for.
+ *
+ * Dates are text inputs holding the stored value on purpose: the vault stores ISO
+ * instants, and a date input would normalise `2026-03-10T00:00:00.000Z` to
+ * `2026-03-10` on sight and report a change nobody made.
+ */
+function renderEditorField(field: TaskEditorField): string {
+  const key = `task-editor-${field.id}`;
+  const attributes = `data-task-editor-field="${escapeHtml(field.id)}"`;
 
-  return `<section class="task-modal" role="dialog" aria-modal="true" aria-label="Task quick editor" data-c1-key="elastic-task-modal"><header><h2>${escapeHtml(task.name)}</h2><button type="button" data-elastic-action="close-task" data-c1-key="elastic-task-modal-close" aria-label="Close task editor">×</button></header><label>Name<input data-c1-key="elastic-task-name" value="${escapeHtml(task.name)}" readonly></label><label>Status<input data-c1-key="elastic-task-status" value="${escapeHtml(task.status)}" readonly></label><label>Project<input data-c1-key="elastic-task-project" value="${escapeHtml(projectName(projectNames, task))}" readonly></label><label>Weight<input data-c1-key="elastic-task-weight" value="${escapeHtml(task.weight)}" readonly></label><label>Start<input data-c1-key="elastic-task-start" value="${escapeHtml(task.startDate ?? '')}" readonly></label><label>Deadline<input data-c1-key="elastic-task-deadline" value="${escapeHtml(task.deadline ?? '')}" readonly></label>${renderProperties(state, modalTask)}<footer><button type="button" data-c1-key="elastic-task-delete" disabled>Delete unavailable</button><button type="button" data-c1-key="elastic-task-save" disabled>Save unavailable</button></footer></section>`;
+  if (field.control === 'derived') {
+    return `<p class="task-editor-derived" data-c1-key="${escapeHtml(key)}"><strong>${escapeHtml(field.label)}</strong><span>${escapeHtml(field.value || 'No value')}</span><small>${escapeHtml(field.note ?? 'Derived value.')}</small></p>`;
+  }
+
+  if (field.control === 'checkbox') {
+    return `<label class="task-editor-check"><input type="checkbox" data-c1-key="${escapeHtml(key)}" ${attributes} data-task-editor-edit="check"${field.checked ? ' checked' : ''}${field.editable ? '' : ' disabled'}> ${escapeHtml(field.label)}</label>`;
+  }
+
+  if (field.control === 'select') {
+    const options = field.options.map((option) => `<option value="${escapeHtml(option.id)}"${option.id === field.value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('');
+
+    return `<label class="task-editor-field">${escapeHtml(field.label)}<select data-c1-key="${escapeHtml(key)}" ${attributes} data-task-editor-edit="value">${options}</select></label>`;
+  }
+
+  if (field.control === 'multi-select') {
+    const options = field.options.map((option) => `<label class="task-editor-option"><input type="checkbox" data-c1-key="${escapeHtml(key)}-${escapeHtml(option.id)}" ${attributes} data-task-editor-option="${escapeHtml(option.id)}" data-task-editor-edit="selection"${field.selected.includes(option.id) ? ' checked' : ''}> ${escapeHtml(option.label)}</label>`).join('');
+
+    return `<fieldset class="task-editor-field task-editor-multi" data-c1-key="${escapeHtml(key)}"><legend>${escapeHtml(field.label)}</legend>${options}${field.note === null ? '' : `<small class="task-editor-note">${escapeHtml(field.note)}</small>`}</fieldset>`;
+  }
+
+  const type = field.control === 'number' ? 'number' : 'text';
+
+  return `<label class="task-editor-field">${escapeHtml(field.label)}<input type="${type}" data-c1-key="${escapeHtml(key)}" ${attributes} data-task-editor-edit="value" value="${escapeHtml(field.value)}"${field.editable ? '' : ' readonly'}></label>${field.note === null ? '' : `<small class="task-editor-note">${escapeHtml(field.note)}</small>`}`;
+}
+
+/**
+ * The Task editor.
+ *
+ * Everything it shows comes from `projectTaskEditor`, so which fields exist, what each
+ * one is worth and which of them are derived is a decision this function consumes rather
+ * than makes. Save is refused with a typed result rather than being absent, because a
+ * form that cannot save should say so where the button is.
+ */
+export function renderTaskModal(state: ProximaState, taskId: string | null, draft: TaskEditorDraft | null): string {
+  if (!taskId) return '';
+  const editor = projectTaskEditor(state, taskId, draft);
+  if (!editor) return '';
+
+  const sections = editor.sections.map((section) => `<fieldset class="task-editor-section" data-c1-key="task-editor-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map(renderEditorField).join('')}</fieldset>`).join('');
+  const status = editor.dirty
+    ? `<p class="task-editor-dirty" data-c1-key="task-editor-dirty" data-task-editor-dirty="true">Unsaved changes. ${escapeHtml(TASK_EDITOR_SAVE_NOTE)}</p>`
+    : `<p class="task-editor-clean" data-c1-key="task-editor-clean" data-task-editor-dirty="false">${escapeHtml(TASK_EDITOR_SAVE_NOTE)}</p>`;
+
+  return `<section class="task-modal" role="dialog" aria-modal="true" aria-label="Task editor" data-c1-key="elastic-task-modal" data-task-editor-task-id="${escapeHtml(editor.taskId)}" data-task-editor-field-count="${editor.fieldCount}"><header><h2>${escapeHtml(editor.title)}</h2><button type="button" data-elastic-action="close-task" data-c1-key="elastic-task-modal-close" aria-label="Close task editor">×</button></header>${status}${sections}<footer><button type="button" data-elastic-action="cancel-task-edit" data-c1-key="task-editor-cancel">Cancel changes</button><button type="button" data-c1-key="elastic-task-delete" disabled>Delete unavailable</button><button type="button" data-c1-key="elastic-task-save" data-task-editor-save-refusal="${escapeHtml(TASK_EDITOR_SAVE_REFUSAL)}" disabled>Save unavailable</button></footer></section>`;
 }
 
 export function renderElasticCockpit(options: ElasticCockpitRenderOptions): string {
@@ -215,7 +270,7 @@ export function renderElasticCockpit(options: ElasticCockpitRenderOptions): stri
   const locked = options.session.lockedAt !== null;
   const targetValue = localTargetValue(options.session.targetTime);
 
-  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Elastic Boards</h2><p class="surface-description">Backlog, live execution and finished work.</p></div><span class="surface-count">${options.tasks.length} tasks</span></header><section class="elastic-session-controls" data-c1-key="elastic-session-controls"><label>Execution target<input type="datetime-local" value="${escapeHtml(targetValue)}" data-elastic-action="target" data-c1-key="elastic-target-input"${locked ? ' disabled' : ''}></label>${locked ? '<button type="button" data-elastic-action="unlock" data-c1-key="elastic-unlock">Unlock</button>' : `<button type="button" data-elastic-action="lock" data-c1-key="elastic-lock"${presentation.targetExpired ? ' disabled' : ''}>Lock</button>`}<div class="elastic-run-progress" data-c1-key="elastic-run-progress" data-progress-ratio="${presentation.overallProgress.toFixed(4)}"><div class="elastic-progress-fill" style="width:${(presentation.overallProgress * 100).toFixed(2)}%"></div></div>${presentation.targetExpired ? '<span class="task-overdue" data-c1-key="elastic-target-expired">Target has passed</span>' : ''}</section>${options.dropRefusal ? `<p class="diagnostics" data-c1-key="elastic-drop-refusal">Move unavailable: ${escapeHtml(options.dropRefusal)}. Task data was not changed.</p>` : ''}<div class="board-grid">${renderColumn(options.state, 'backlog', 'Backlog', board.backlog, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'running', 'Running', board.running, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'finished', 'Finished', board.finished, presentation, options.projectNames, options.now)}</div>${renderTaskModal(options.state, options.selectedTaskId, options.projectNames)}</section>`;
+  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Elastic Boards</h2><p class="surface-description">Backlog, live execution and finished work.</p></div><span class="surface-count">${options.tasks.length} tasks</span></header><section class="elastic-session-controls" data-c1-key="elastic-session-controls"><label>Execution target<input type="datetime-local" value="${escapeHtml(targetValue)}" data-elastic-action="target" data-c1-key="elastic-target-input"${locked ? ' disabled' : ''}></label>${locked ? '<button type="button" data-elastic-action="unlock" data-c1-key="elastic-unlock">Unlock</button>' : `<button type="button" data-elastic-action="lock" data-c1-key="elastic-lock"${presentation.targetExpired ? ' disabled' : ''}>Lock</button>`}<div class="elastic-run-progress" data-c1-key="elastic-run-progress" data-progress-ratio="${presentation.overallProgress.toFixed(4)}"><div class="elastic-progress-fill" style="width:${(presentation.overallProgress * 100).toFixed(2)}%"></div></div>${presentation.targetExpired ? '<span class="task-overdue" data-c1-key="elastic-target-expired">Target has passed</span>' : ''}</section>${options.dropRefusal ? `<p class="diagnostics" data-c1-key="elastic-drop-refusal">Move unavailable: ${escapeHtml(options.dropRefusal)}. Task data was not changed.</p>` : ''}<div class="board-grid">${renderColumn(options.state, 'backlog', 'Backlog', board.backlog, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'running', 'Running', board.running, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'finished', 'Finished', board.finished, presentation, options.projectNames, options.now)}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft)}</section>`;
 }
 
 function clearDragFeedback(root: HTMLElement): void {
@@ -255,11 +310,47 @@ export function bindElasticCockpitInteractions(root: HTMLElement, handlers: Elas
       if (taskId) handlers.openTask(taskId);
     } else if (action === 'close-task') {
       handlers.closeTask();
+    } else if (action === 'cancel-task-edit') {
+      handlers.cancelTaskEdit();
     } else if (action === 'lock') {
       handlers.lock();
     } else if (action === 'unlock') {
       handlers.unlock();
     }
+  });
+
+  root.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (!root.querySelector('[data-task-editor-task-id]')) return;
+    handlers.cancelTaskEdit();
+  });
+
+  /**
+   * A form control reports what it now holds, and the handler decides what that means.
+   * A multi-select's group is read as a whole, so unticking one option reports the
+   * remaining ones rather than a removal the model would have to infer.
+   */
+  root.addEventListener('input', (event) => {
+    const control = (event.target as HTMLElement).closest<HTMLInputElement>('[data-task-editor-field]');
+    if (!control) return;
+    const fieldId = control.dataset.taskEditorField;
+    if (!fieldId) return;
+
+    if (control.dataset.taskEditorEdit === 'check') {
+      handlers.editTask({ fieldId, checked: control.checked });
+      return;
+    }
+
+    if (control.dataset.taskEditorEdit === 'selection') {
+      const selected = Array.from(root.querySelectorAll<HTMLInputElement>(`[data-task-editor-field="${fieldId}"][data-task-editor-option]`))
+        .filter((option) => option.checked)
+        .map((option) => option.dataset.taskEditorOption ?? '')
+        .filter((optionId) => optionId.length > 0);
+      handlers.editTask({ fieldId, selected });
+      return;
+    }
+
+    handlers.editTask({ fieldId, value: control.value });
   });
 
   root.addEventListener('change', (event) => {

@@ -126,6 +126,7 @@ function mount(
       calendarCursor: new Date(`${snapshot.calendarMonth}T00:00:00`),
       now: now(),
       selectedTaskId,
+      editorDraft: null,
     });
   };
 
@@ -181,6 +182,8 @@ function mount(
     lock: () => {},
     unlock: () => {},
     moveTask: () => {},
+    editTask: () => undefined,
+    cancelTaskEdit: () => undefined,
   });
 
   render();
@@ -820,6 +823,7 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
           calendarCursor: new Date(`${snapshot.calendarMonth}T00:00:00`),
           now: currentNow.value,
           selectedTaskId: null,
+          editorDraft: null,
         });
       };
 

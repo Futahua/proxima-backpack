@@ -43,6 +43,7 @@ import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WR
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
 import { applyBacklogControl, buildBacklogFilter } from '../app/backlogControls.js';
+import { applyTaskEditorEdit, taskEditorDraftFor, type TaskEditorDraft } from '../app/taskEditor.js';
 import { bindProjectDeadlinesInteractions, EMPTY_PROJECT_DEADLINES_VIEW, type ProjectDeadlinesViewState } from './projectDeadlines.js';
 import { bindProjectScheduleInteractions, EMPTY_PROJECT_SCHEDULE_VIEW, type ProjectScheduleViewState } from './projectSchedule.js';
 import { applyBootState, type BootState } from './bootState.js';
@@ -83,6 +84,12 @@ let calendarCursor = new Date(FIXED_CLOCK.now());
 let elasticTargetTime = new Date(FIXED_CLOCK.now() + 4 * 60 * 60 * 1000).toISOString();
 let elasticLockedAt: string | null = null;
 let elasticSelectedTaskId: string | null = null;
+/**
+ * The Task editor's provisional edits. Null means nothing has been edited, which is what
+ * Cancel restores and what makes `dirty` exact — the draft is never a rebuilt guess at
+ * the record.
+ */
+let taskEditorDraft: TaskEditorDraft | null = null;
 let elasticDropRefusal: string | null = null;
 let elasticProgressTimer: number | null = null;
 let actionDispatcher: ProximaActionDispatcher | null = null;
@@ -210,6 +217,7 @@ function boardSurface(state: ProximaState, lookup: Map<string, string>): string 
     },
     now,
     selectedTaskId: elasticSelectedTaskId,
+    editorDraft: taskEditorDraft,
     dropRefusal: elasticDropRefusal,
     containerHeight: 460,
   });
@@ -258,6 +266,7 @@ function timekeepingSurface(state: ProximaState, lookup: Map<string, string>): s
     calendarCursor,
     now,
     selectedTaskId: elasticSelectedTaskId,
+    editorDraft: taskEditorDraft,
   });
 }
 
@@ -615,10 +624,23 @@ function bindInteractions(): void {
   bindElasticCockpitInteractions(root, {
     openTask: (taskId) => {
       elasticSelectedTaskId = taskId;
+      taskEditorDraft = null;
       render();
     },
     closeTask: () => {
       elasticSelectedTaskId = null;
+      taskEditorDraft = null;
+      render();
+    },
+    editTask: (edit) => {
+      const task = appState?.tasks.find((candidate) => candidate.id === elasticSelectedTaskId);
+      if (!task) return;
+      // No render: a keystroke must not be able to take the field away from the reader.
+      // The draft is what the next render, Cancel and Save all read.
+      taskEditorDraft = applyTaskEditorEdit(taskEditorDraft ?? taskEditorDraftFor(task), edit);
+    },
+    cancelTaskEdit: () => {
+      taskEditorDraft = null;
       render();
     },
     setTarget: (targetTime) => {
@@ -803,6 +825,7 @@ function bindInteractions(): void {
   bindTimekeepingCockpitInteractions(root, {
     openTask: (taskId) => {
       elasticSelectedTaskId = taskId;
+      taskEditorDraft = null;
       render();
     },
     setPanelVisible: (panel, visible) => {
