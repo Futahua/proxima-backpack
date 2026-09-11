@@ -1538,5 +1538,254 @@ describe(
         );
       },
     );
+
+    it(
+      'reports outstanding project references and the applied selection through import.status, and refuses commit for that reason',
+      async () => {
+        const planned =
+          await ambiguousProjectPlan();
+
+        const selected =
+          planned.projectReferences[0]
+            ?.candidateProjectRecordIds
+            ?.[0];
+
+        if (
+          !selected
+        ) {
+          throw new Error(
+            'fixture produced no ambiguous project candidate',
+          );
+        }
+
+        const actions =
+          createLegacyImportAdministrativeActions({
+            async plan(
+              selection,
+            ) {
+              return ambiguousProjectPlan(
+                selection
+                ?? null,
+              );
+            },
+
+            async inspect(
+              plan,
+            ) {
+              return verificationFor(
+                plan,
+                'verified',
+              );
+            },
+          });
+
+        // Before any plan there is nothing outstanding and nothing applied.
+        const before =
+          await actions.dispatch({
+            type:
+              'import.status',
+          });
+
+        expect(
+          before,
+        ).toMatchObject({
+          schemaVersion:
+            2,
+          ok:
+            true,
+          durableChange:
+            false,
+          data: {
+            kind:
+              'status',
+            status: {
+              phase:
+                'not-planned',
+              unresolvedProjectReferences:
+                0,
+              ambiguousProjectReferences:
+                0,
+              appliedProjectSelection:
+                null,
+              liveWritesAuthorized:
+                false,
+            },
+          },
+        });
+
+        // With an accepted ambiguous plan the counts are visible, so no caller
+        // can read the migration as clean.
+        await actions.dispatch({
+          type:
+            'import.plan',
+        });
+
+        const ambiguous =
+          await actions.dispatch({
+            type:
+              'import.status',
+          });
+
+        expect(
+          ambiguous,
+        ).toMatchObject({
+          data: {
+            kind:
+              'status',
+            status: {
+              phase:
+                'planned',
+              unresolvedProjectReferences:
+                2,
+              ambiguousProjectReferences:
+                2,
+              appliedProjectSelection:
+                null,
+            },
+          },
+        });
+
+        // A commit attempted here refuses *because* of those counts, and says so
+        // in machine-readable form rather than only in prose.
+        const refusedCommit =
+          await actions.dispatch({
+            type:
+              'import.commit',
+          });
+
+        expect(
+          refusedCommit,
+        ).toMatchObject({
+          ok:
+            false,
+          actionType:
+            'import.commit',
+          outcome:
+            'unavailable',
+          durableChange:
+            false,
+          error: {
+            code:
+              'action-not-available',
+            outstandingProjectReferences: {
+              ambiguous:
+                2,
+              unresolved:
+                2,
+            },
+          },
+        });
+
+        // After the explicit selection the references are acknowledged and the
+        // decision that acknowledged them is visible.
+        const resolved =
+          await actions.dispatch({
+            type:
+              'import.resolve',
+            candidateProjectRecordId:
+              selected,
+          });
+
+        expect(
+          resolved,
+        ).toMatchObject({
+          schemaVersion:
+            2,
+          ok:
+            true,
+        });
+
+        const settled =
+          await actions.dispatch({
+            type:
+              'import.status',
+          });
+
+        expect(
+          settled,
+        ).toMatchObject({
+          data: {
+            kind:
+              'status',
+            status: {
+              unresolvedProjectReferences:
+                0,
+              ambiguousProjectReferences:
+                0,
+              appliedProjectSelection:
+                selected,
+              liveWritesAuthorized:
+                false,
+            },
+          },
+        });
+
+        // Commit is still unavailable — the policy and activation gates are
+        // untouched — but no longer for this reason, so the ambiguity-specific
+        // evidence is gone.
+        const policyCommit =
+          await actions.dispatch({
+            type:
+              'import.commit',
+          });
+
+        expect(
+          policyCommit,
+        ).toMatchObject({
+          ok:
+            false,
+          actionType:
+            'import.commit',
+          outcome:
+            'unavailable',
+          error: {
+            code:
+              'action-not-available',
+          },
+        });
+
+        if (
+          policyCommit.ok
+        ) {
+          throw new Error(
+            'import.commit unexpectedly succeeded',
+          );
+        }
+
+        expect(
+          policyCommit
+            .error
+            .outstandingProjectReferences,
+        ).toBeUndefined();
+
+        // A fresh plan clears the applied decision, so status never describes a
+        // selection that no longer belongs to the plan in effect.
+        await actions.dispatch({
+          type:
+            'import.plan',
+        });
+
+        const replanned =
+          await actions.dispatch({
+            type:
+              'import.status',
+          });
+
+        expect(
+          replanned,
+        ).toMatchObject({
+          data: {
+            kind:
+              'status',
+            status: {
+              ambiguousProjectReferences:
+                2,
+              appliedProjectSelection:
+                null,
+            },
+          },
+        });
+      },
+    );
   },
 );

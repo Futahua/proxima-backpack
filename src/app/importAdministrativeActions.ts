@@ -11,8 +11,17 @@ import {
   type OpaqueRecordId,
 } from '../domain/canonicalIdentity.js';
 
+/**
+ * Administrative action envelope version.
+ *
+ * 2 adds the outstanding project-reference counts and the applied selection to
+ * `import.status`, and gives `import.commit` a machine-readable reason whenever
+ * it refuses because references remain unacknowledged. A version-1 consumer
+ * validating the status payload would reject those fields, which is exactly
+ * what the version is for.
+ */
 export const LEGACY_IMPORT_ADMIN_ACTION_SCHEMA_VERSION =
-  1 as const;
+  2 as const;
 
 export type LegacyImportAdministrativeAction =
   | {
@@ -83,6 +92,24 @@ export interface LegacyImportAdministrativeStatus {
 
   readonly deferredChecks:
     readonly LegacyImportAdministrativeOpenCheck[];
+
+  /**
+   * Outstanding project references on the plan currently in effect. Both stay
+   * nonzero until an explicit `import.resolve` selection acknowledges them, so
+   * nothing downstream can read a clean migration while ambiguity remains.
+   */
+  readonly unresolvedProjectReferences:
+    number;
+
+  readonly ambiguousProjectReferences:
+    number;
+
+  /**
+   * The candidate project record applied by the most recent accepted
+   * `import.resolve`, or null while the plan in effect carries no selection.
+   */
+  readonly appliedProjectSelection:
+    OpaqueRecordId | null;
 
   readonly liveWritesAuthorized:
     false;
@@ -169,6 +196,17 @@ export interface LegacyImportAdministrativeActionFailure {
 
     readonly deferredChecks?:
       readonly LegacyImportAdministrativeOpenCheck[];
+
+    /**
+     * Present when the refusal is caused by unacknowledged project references,
+     * so a machine can act on the reason instead of parsing the message.
+     */
+    readonly outstandingProjectReferences?: {
+      readonly ambiguous:
+        number;
+      readonly unresolved:
+        number;
+    };
   };
 }
 
@@ -514,6 +552,8 @@ function statusFor(
     LegacyImportPlan | null,
   verification:
     LegacyImportVerificationResult | null,
+  appliedProjectSelection:
+    OpaqueRecordId | null,
 ): LegacyImportAdministrativeStatus {
   if (
     plan === null
@@ -536,6 +576,12 @@ function statusFor(
       deferredChecks: [
         ...OPEN_CHECKS,
       ],
+      unresolvedProjectReferences:
+        0,
+      ambiguousProjectReferences:
+        0,
+      appliedProjectSelection:
+        null,
       liveWritesAuthorized:
         false,
     };
@@ -563,6 +609,13 @@ function statusFor(
       deferredChecks: [
         ...OPEN_CHECKS,
       ],
+      unresolvedProjectReferences:
+        plan.counts
+          .unresolvedProjectReferences,
+      ambiguousProjectReferences:
+        plan.counts
+          .ambiguousProjectReferences,
+      appliedProjectSelection,
       liveWritesAuthorized:
         false,
     };
@@ -596,6 +649,13 @@ function statusFor(
     deferredChecks: [
       ...OPEN_CHECKS,
     ],
+    unresolvedProjectReferences:
+      plan.counts
+        .unresolvedProjectReferences,
+    ambiguousProjectReferences:
+      plan.counts
+        .ambiguousProjectReferences,
+    appliedProjectSelection,
     liveWritesAuthorized:
       false,
   };
@@ -611,6 +671,15 @@ export function createLegacyImportAdministrativeActions(
 
   let latestVerification:
     LegacyImportVerificationResult | null =
+      null;
+
+  /**
+   * The selection applied to the plan currently in effect. Reset whenever a new
+   * plan is accepted, so status can never report a decision that no longer
+   * describes the plan it is attached to.
+   */
+  let appliedProjectSelection:
+    OpaqueRecordId | null =
       null;
 
   let requestSequence =
@@ -639,6 +708,13 @@ export function createLegacyImportAdministrativeActions(
       string,
     includeDeferredChecks =
       false,
+    outstandingProjectReferences?:
+      {
+        readonly ambiguous:
+          number;
+        readonly unresolved:
+          number;
+      },
   ): LegacyImportAdministrativeActionFailure => ({
     schemaVersion:
       LEGACY_IMPORT_ADMIN_ACTION_SCHEMA_VERSION,
@@ -657,6 +733,11 @@ export function createLegacyImportAdministrativeActions(
             deferredChecks: [
               ...OPEN_CHECKS,
             ],
+          }
+        : {}),
+      ...(outstandingProjectReferences
+        ? {
+            outstandingProjectReferences,
           }
         : {}),
     },
@@ -735,6 +816,7 @@ export function createLegacyImportAdministrativeActions(
               statusFor(
                 latestPlan,
                 latestVerification,
+                appliedProjectSelection,
               ),
           },
         );
@@ -827,6 +909,10 @@ export function createLegacyImportAdministrativeActions(
         latestPlan =
           resolvedPlan;
 
+        appliedProjectSelection =
+          action
+            .candidateProjectRecordId;
+
         /**
          * The accepted verification described the pre-resolution plan, so it is
          * discarded rather than carried over. `import.inspect` re-verifies the
@@ -851,13 +937,50 @@ export function createLegacyImportAdministrativeActions(
         action.type
         === 'import.commit'
       ) {
+        /**
+         * Commit stays unavailable because the migration policy and activation
+         * gates remain open, and it now refuses *specifically* while the plan in
+         * effect still carries unacknowledged project references — so a clean
+         * migration cannot be claimed while ambiguity remains.
+         */
+        const outstanding =
+          latestPlan
+          === null
+            ? {
+                ambiguous:
+                  0,
+                unresolved:
+                  0,
+              }
+            : {
+                ambiguous:
+                  latestPlan
+                    .counts
+                    .ambiguousProjectReferences,
+                unresolved:
+                  latestPlan
+                    .counts
+                    .unresolvedProjectReferences,
+              };
+
+        const unacknowledged =
+          outstanding.ambiguous
+          > 0
+          || outstanding.unresolved
+          > 0;
+
         return failure(
           action.type,
           requestId,
           'unavailable',
           'action-not-available',
-          'import.commit remains unavailable while migration policy and activation gates remain open',
+          unacknowledged
+            ? `import.commit refuses while the plan in effect still carries ${outstanding.ambiguous} ambiguous and ${outstanding.unresolved} unresolved project reference(s); migration policy and activation gates also remain open`
+            : 'import.commit remains unavailable while migration policy and activation gates remain open',
           true,
+          unacknowledged
+            ? outstanding
+            : undefined,
         );
       }
 
@@ -900,6 +1023,9 @@ export function createLegacyImportAdministrativeActions(
           plan;
 
         latestVerification =
+          null;
+
+        appliedProjectSelection =
           null;
 
         return success(
