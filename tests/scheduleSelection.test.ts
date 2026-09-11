@@ -8,7 +8,7 @@ import { scheduleEventsForSelection } from '../src/browser/scheduleSelection.js'
 import { fixtureVault } from './fixtures.js';
 
 describe('Schedule project and event filtering', () => {
-  it('shows only Schedule-project or uncategorised events, then applies the existing project selection without mutating source state', async () => {
+  it('shows events from any active project before applying selection without mutating source state', async () => {
     const loaded = await loadVaultState(
       fixtureVault('vault-basic'),
     );
@@ -56,17 +56,22 @@ describe('Schedule project and event filtering', () => {
       all.some(
         (event) => event.id === taskProjectEvent.id,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       all.some(
         (event) => event.id === uncategorisedEvent.id,
       ),
     ).toBe(true);
+    const activeProjectIds = new Set(
+      state.projects
+        .filter((project) => project.status === 'active')
+        .map((project) => project.id),
+    );
     expect(
       all.every(
         (event) => (
           event.projectId === null
-          || event.projectId === scheduleProject.id
+          || activeProjectIds.has(event.projectId)
         ),
       ),
     ).toBe(true);
@@ -81,12 +86,20 @@ describe('Schedule project and event filtering', () => {
       ),
     ).toBe(true);
 
+    const selectedTask = scheduleEventsForSelection(
+      state,
+      taskProject.id,
+    );
     expect(
-      scheduleEventsForSelection(
-        state,
-        taskProject.id,
+      selectedTask.every(
+        (event) => event.projectId === taskProject.id,
       ),
-    ).toEqual([]);
+    ).toBe(true);
+    expect(
+      selectedTask.some(
+        (event) => event.id === taskProjectEvent.id,
+      ),
+    ).toBe(true);
 
     const uncategorised = scheduleEventsForSelection(
       state,

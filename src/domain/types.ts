@@ -58,7 +58,12 @@ export interface Project {
   description: string;
   createdAt: string;
   status: ProjectStatus;
-  /** 'task' projects appear on the Elastic board; 'schedule' projects appear on the calendar. */
+  /**
+   * Legacy Markdown import/presentation metadata only.
+   *
+   * HARD GATE A / A4 removes this field from capability and visibility decisions.
+   * A project may simultaneously own tasks and events regardless of this old label.
+   */
   projectType: 'task' | 'schedule';
   archivedAt?: string;
   tabBgColor?: string;

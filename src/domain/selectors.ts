@@ -32,26 +32,62 @@ export function activeProjects(projects: Project[]): Project[] {
   return projects.filter((p) => p.status === 'active');
 }
 
-/** Task projects feed the Elastic board; schedule projects feed the calendar. */
-export function projectsFor(projects: Project[], kind: 'task' | 'schedule'): Project[] {
-  return activeProjects(projects).filter((p) => p.projectType === kind);
+export interface ProjectCapabilities {
+  readonly taskBoard: boolean;
+  readonly schedule: boolean;
+  readonly notes: boolean;
 }
 
 /**
- * A selection is only valid for the surface showing it. Selecting a schedule
- * project and switching to the board must not leak a project the board cannot
- * show — the original guarded this reactively; here it is one honest function.
+ * Project capabilities come from the data and workspace configuration currently
+ * available for that project. The legacy projectType label is deliberately absent.
+ */
+export function projectCapabilities(
+  state: ProximaState,
+  projectId: string,
+): ProjectCapabilities {
+  const project = state.projects.find((candidate) => candidate.id === projectId);
+  if (!project || project.status !== 'active') {
+    return {
+      taskBoard: false,
+      schedule: false,
+      notes: false,
+    };
+  }
+  return {
+    taskBoard: state.tasks.some((task) => task.projectId === projectId),
+    schedule: state.events.some((event) => event.projectId === projectId),
+    notes: project.linkedFolders.length > 0,
+  };
+}
+
+/**
+ * Compatibility helper retained for pre-A4 callers.
+ *
+ * `kind` no longer filters anything: legacy projectType is import/presentation
+ * metadata, not surface authority. Capability-aware consumers use
+ * projectCapabilities instead.
+ */
+export function projectsFor(
+  projects: Project[],
+  _kind: 'task' | 'schedule',
+): Project[] {
+  return activeProjects(projects);
+}
+
+/**
+ * A project selection is valid on either task or calendar surfaces while the
+ * project is active. Its former task/schedule label does not gate visibility.
  */
 export function reconcileSelection(
   projects: Project[],
   selection: ProjectSelection,
-  surface: 'board' | 'calendar',
+  _surface: 'board' | 'calendar',
 ): ProjectSelection {
   if (selection === ALL_PROJECTS || selection === UNCATEGORISED) return selection;
   const project = projects.find((p) => p.id === selection);
   if (!project) return ALL_PROJECTS;
-  const wanted = surface === 'calendar' ? 'schedule' : 'task';
-  return project.status === 'active' && project.projectType === wanted ? selection : ALL_PROJECTS;
+  return project.status === 'active' ? selection : ALL_PROJECTS;
 }
 
 export interface ElasticBoard {

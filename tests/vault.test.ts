@@ -80,11 +80,12 @@ describe('calendar and selection', () => {
     expect(byDay.get(last)).toHaveLength(1);
   });
 
-  it('drops a schedule project when the board asks for it', async () => {
+  it('keeps an active project selected across board and calendar regardless of legacy type', async () => {
     const { state } = await loadVaultState(vault);
-    expect(reconcileSelection(state.projects, 'proj-term', 'board')).toBe('all');
+    expect(reconcileSelection(state.projects, 'proj-term', 'board')).toBe('proj-term');
     expect(reconcileSelection(state.projects, 'proj-term', 'calendar')).toBe('proj-term');
     expect(reconcileSelection(state.projects, 'proj-studio', 'board')).toBe('proj-studio');
+    expect(reconcileSelection(state.projects, 'proj-studio', 'calendar')).toBe('proj-studio');
   });
 
   it('covers month and year boundaries with inclusive local days', () => {

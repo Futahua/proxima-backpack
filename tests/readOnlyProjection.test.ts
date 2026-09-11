@@ -15,7 +15,8 @@ describe('Gate 6B provenance-aware read-only projection', () => {
     vault.set('Proxima/projects/Term Calendar.md', '---\nid: proj-term\nname: Renamed Calendar\nprojectType: schedule\nstatus: active\ncreatedAt: 2026-08-20T08:00:00.000Z\n---\nDated commitments.\n');
     const refreshed = await controller.refreshSource('external-signal');
     const next = createReadOnlyProjection(refreshed.snapshot);
-    const schedule = projectsFor(next.state.projects, 'schedule');
+    const activeProjects = projectsFor(next.state.projects, 'schedule');
+    const renamedCalendar = activeProjects.find((project) => project.id === 'proj-term');
     const calendarEvents = eventsForSelection(next.state.events, 'proj-term');
     const board = elasticBoard(next.state.tasks, next.state.statuses);
 
@@ -23,10 +24,10 @@ describe('Gate 6B provenance-aware read-only projection', () => {
     expect(next.generation).toBe(2);
     expect(next.health.sourceRevision).toBe(next.generation);
     expect(next.health.stale).toBe(false);
-    expect(schedule[0]?.name).toBe('Renamed Calendar');
-    expect(calendarEvents.every((event) => event.projectId === schedule[0]?.id)).toBe(true);
+    expect(renamedCalendar?.name).toBe('Renamed Calendar');
+    expect(calendarEvents.every((event) => event.projectId === renamedCalendar?.id)).toBe(true);
     expect(board.backlog.length + board.running.length + board.finished.length).toBe(7);
-    expect(sourceProvenance(schedule[0]!)).toMatchObject({ logicalId: 'proj-term', sourceKind: 'project', relativeSourcePath: 'Proxima/projects/Term Calendar.md', idOrigin: 'frontmatter' });
+    expect(sourceProvenance(renamedCalendar!)).toMatchObject({ logicalId: 'proj-term', sourceKind: 'project', relativeSourcePath: 'Proxima/projects/Term Calendar.md', idOrigin: 'frontmatter' });
     expect(sourceProvenance(calendarEvents[0]!)).toMatchObject({ logicalId: calendarEvents[0]?.id, sourceKind: 'event', idOrigin: 'frontmatter' });
   });
 

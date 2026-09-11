@@ -1,6 +1,6 @@
 import { calculateElasticTimeline, elasticCardHeights } from '../domain/elastic.js';
 import { isBlocking, type LoadProblem } from '../domain/problems.js';
-import { elasticBoard, eventsByDay, eventsForSelection, projectsFor, tasksForSelection, type ProjectSelection } from '../domain/selectors.js';
+import { elasticBoard, eventsByDay, eventsForSelection, projectCapabilities, projectsFor, tasksForSelection, type ProjectCapabilities, type ProjectSelection } from '../domain/selectors.js';
 import { localDateKey } from '../domain/time.js';
 import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
 import type { ActionDispatcherState, ProjectWorkspaceTab, ScheduleMode, Surface, TasksMode, TimekeepingPanelVisibility } from './actionProtocol.js';
@@ -8,7 +8,7 @@ import { boundDiagnosticProblems, DIAGNOSTIC_LIMITS } from './diagnostics.js';
 import { sourceProvenance, type ReadOnlyProjectionHealth, type RecordProvenance } from './readOnlyProjection.js';
 import { createUiHealthModel, type UiHealthModel } from './uiHealth.js';
 
-export const INSPECTION_SCHEMA_VERSION = 4 as const;
+export const INSPECTION_SCHEMA_VERSION = 5 as const;
 export const MAX_INSPECTION_ITEMS = 500;
 export const MAX_INSPECTION_TEXT = 400;
 
@@ -44,7 +44,7 @@ export interface InspectionProjection {
     elasticLockedAt: string | null;
     canvasSelectedNodeId: string | null;
   };
-  projects: Array<{ id: string; name: string; projectType: 'task' | 'schedule'; status: string; provenance: RecordProvenance }>;
+  projects: Array<{ id: string; name: string; capabilities: ProjectCapabilities; status: string; provenance: RecordProvenance }>;
   board: { counts: { backlog: number; running: number; finished: number }; tasks: Array<{ id: string; name: string; projectId: string | null; column: string; deadline: string | null; durationMinutes: number | null; provenance: RecordProvenance }> };
   calendar: { cursorMonth: string; events: Array<{ id: string; name: string; projectId: string | null; startDate: string; deadline: string; dayKeys: string[]; provenance: RecordProvenance }> };
   loadProblems: Array<{ code: string; severity: string; id?: string; path?: string; detail: string }>;
@@ -65,6 +65,21 @@ export interface InspectionProjection {
 }
 
 function safeText(value: string, limit = MAX_INSPECTION_TEXT): string { return value.slice(0, limit); }
+
+function isInspectionProject(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const project = value as Record<string, unknown>;
+  if ('projectType' in project) return false;
+  const capabilities = project.capabilities;
+  if (typeof capabilities !== 'object' || capabilities === null) return false;
+  const flags = capabilities as Record<string, unknown>;
+  return typeof project.id === 'string'
+    && typeof project.name === 'string'
+    && typeof project.status === 'string'
+    && typeof flags.taskBoard === 'boolean'
+    && typeof flags.schedule === 'boolean'
+    && typeof flags.notes === 'boolean';
+}
 
 function inspectionSubmode(dispatcher: ActionDispatcherState): InspectionProjection['submode'] {
   if (dispatcher.surface === 'tasks') return dispatcher.tasksMode;
@@ -170,7 +185,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
       elasticLockedAt: dispatcher.elasticLockedAt,
       canvasSelectedNodeId: dispatcher.canvasSelectedNodeId,
     },
-    projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), projectType: project.projectType, status: project.status, provenance: sourceProvenance(project) })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
+    projects: dispatcher.state.projects.map((project) => ({ id: safeText(project.id), name: safeText(project.name), capabilities: projectCapabilities(dispatcher.state, project.id), status: project.status, provenance: sourceProvenance(project) })).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS),
     board: { counts: { backlog: board.backlog.length, running: board.running.length, finished: board.finished.length }, tasks: taskSummaries.slice(0, MAX_INSPECTION_ITEMS).map((task) => ({ ...task, id: safeText(task.id), name: safeText(task.name), provenance: { ...task.provenance, logicalId: safeText(task.provenance.logicalId), sourceRevision: safeText(task.provenance.sourceRevision) } })) },
     calendar: { cursorMonth: dispatcher.calendarMonth, events: calendarEvents.map((event) => eventSummary(event, dayKeysById)).sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_INSPECTION_ITEMS).map((event) => ({ ...event, id: safeText(event.id), name: safeText(event.name) })) },
     loadProblems: boundDiagnosticProblems(problems).map((problem) => safeProblem(problem, dispatcher.mode)),
@@ -263,6 +278,7 @@ export function isInspectionProjection(value: unknown): value is InspectionProje
       )
     )
     && Array.isArray(candidate.projects)
+    && candidate.projects.every(isInspectionProject)
     && Array.isArray(candidate.board?.tasks)
     && Array.isArray(candidate.calendar?.events)
     && Array.isArray(candidate.loadProblems)

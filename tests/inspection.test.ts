@@ -25,7 +25,7 @@ describe('Gate 3A inspection projection', () => {
 
     expect(isInspectionProjection(projection)).toBe(true);
     expect(projection).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       mode: 'fixture',
       applicationStateRevision: 1,
       surface: 'tasks',
@@ -62,6 +62,29 @@ describe('Gate 3A inspection projection', () => {
     });
 
     expect(projection.projects).toHaveLength(3);
+    expect(
+      projection.projects.every(
+        (project) => !('projectType' in project),
+      ),
+    ).toBe(true);
+    expect(
+      projection.projects.every(
+        (project) => (
+          typeof project.capabilities.taskBoard === 'boolean'
+          && typeof project.capabilities.schedule === 'boolean'
+          && typeof project.capabilities.notes === 'boolean'
+        ),
+      ),
+    ).toBe(true);
+    expect(isInspectionProjection({
+      ...projection,
+      projects: [
+        {
+          ...projection.projects[0]!,
+          projectType: 'task',
+        },
+      ],
+    })).toBe(false);
     expect(projection.board.tasks).toHaveLength(7);
     expect(projection.calendar.events).toHaveLength(3);
     expect(projection.calendar.events.find((event) => event.id === 'evt-studio-week')?.dayKeys).toHaveLength(6);

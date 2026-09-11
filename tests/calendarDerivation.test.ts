@@ -12,7 +12,7 @@ function event(id: string, projectId: string | null, startDate: string, deadline
 }
 
 describe('Gate 6.3A Calendar derivation', () => {
-  it('filters active schedule events and supports all/uncategorised/selected views', async () => {
+  it('filters events by active project association without a legacy project-type silo', async () => {
     const { state } = await loadVaultState(fixtureVault('vault-basic'));
     const schedule = state.projects.find((project) => project.projectType === 'schedule' && project.status === 'active')!;
     const taskProject = state.projects.find((project) => project.projectType === 'task' && project.status === 'active')!;
@@ -20,10 +20,12 @@ describe('Gate 6.3A Calendar derivation', () => {
     const sourceEvents = [event('schedule', schedule.id, '2026-09-07T09:00:00.000Z'), event('task-project', taskProject.id, '2026-09-07T09:00:00.000Z'), event('uncategorised', null, '2026-09-07T09:00:00.000Z'), event('archived', archivedSchedule.id, '2026-09-07T09:00:00.000Z')];
     const scheduleIds = new Set(projectsFor([...state.projects, archivedSchedule], 'schedule').map((project) => project.id));
     const eligible = sourceEvents.filter((item) => item.projectId === null || scheduleIds.has(item.projectId));
-    expect(eligible.map((item) => item.id)).toEqual(['schedule', 'uncategorised']);
-    expect(eventsForSelection(eligible, ALL_PROJECTS).map((item) => item.id)).toEqual(['schedule', 'uncategorised']);
+    expect(eligible.map((item) => item.id)).toEqual(['schedule', 'task-project', 'uncategorised']);
+    expect(eventsForSelection(eligible, ALL_PROJECTS).map((item) => item.id)).toEqual(['schedule', 'task-project', 'uncategorised']);
     expect(eventsForSelection(eligible, UNCATEGORISED).map((item) => item.id)).toEqual(['uncategorised']);
     expect(eventsForSelection(eligible, schedule.id).map((item) => item.id)).toEqual(['schedule']);
+    expect(eventsForSelection(eligible, taskProject.id).map((item) => item.id)).toEqual(['task-project']);
+    expect(reconcileSelection(state.projects, taskProject.id, 'calendar')).toBe(taskProject.id);
     expect(reconcileSelection([...state.projects, archivedSchedule], archivedSchedule.id, 'calendar')).toBe(ALL_PROJECTS);
   });
 

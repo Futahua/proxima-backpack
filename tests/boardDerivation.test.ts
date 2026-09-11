@@ -5,15 +5,32 @@ import { loadVaultState } from '../src/app/vaultRepository.js';
 import { fixtureVault } from './fixtures.js';
 
 describe('Gate 6.2A board derivation', () => {
-  it('filters all, uncategorised and selected tasks and excludes schedule projects', async () => {
+  it('filters all, uncategorised and selected tasks without a legacy project-type silo', async () => {
     const { state } = await loadVaultState(fixtureVault('vault-basic'));
+    const formerScheduleProject = state.projects.find(
+      (project) => project.projectType === 'schedule' && project.status === 'active',
+    )!;
+    const template = state.tasks[0]!;
+    const crossCapabilityTask = {
+      ...template,
+      id: 'former-schedule-project-task',
+      projectId: formerScheduleProject.id,
+    };
     const taskProjects = projectsFor(state.projects, 'task');
-    const eligible = state.tasks.filter((task) => !task.projectId || taskProjects.some((project) => project.id === task.projectId));
+    const scheduleProjects = projectsFor(state.projects, 'schedule');
+    const eligible = [...state.tasks, crossCapabilityTask].filter(
+      (task) => !task.projectId || taskProjects.some((project) => project.id === task.projectId),
+    );
+    expect(taskProjects.map((project) => project.id)).toEqual(
+      scheduleProjects.map((project) => project.id),
+    );
     expect(tasksForSelection(eligible, ALL_PROJECTS)).toEqual(eligible);
     expect(tasksForSelection(eligible, UNCATEGORISED).every((task) => !task.projectId)).toBe(true);
     expect(tasksForSelection(eligible, 'proj-backpack').every((task) => task.projectId === 'proj-backpack')).toBe(true);
-    expect(eligible.some((task) => task.projectId === 'proj-term')).toBe(false);
-    expect(taskProjects.every((project) => project.status === 'active' && project.projectType === 'task')).toBe(true);
+    expect(eligible.some((task) => task.id === crossCapabilityTask.id)).toBe(true);
+    expect(reconcileSelection(state.projects, formerScheduleProject.id, 'board')).toBe(
+      formerScheduleProject.id,
+    );
   });
 
   it('reconciles inactive selections away from both board and calendar', async () => {

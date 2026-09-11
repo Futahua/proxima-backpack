@@ -209,14 +209,20 @@ describe('the legacy creator vault', () => {
     expect(problemsFor(problems, 'missing-project')).toEqual([]);
   });
 
-  it('keeps the schedule project on the calendar and off the board', async () => {
+  it('keeps legacy projectType as metadata without using it as a surface silo', async () => {
     const { state } = await loadLegacy();
-    expect(projectsFor(state.projects, 'schedule').map((p) => p.id)).toEqual(['proj-term']);
-    expect(projectsFor(state.projects, 'task').map((p) => p.id).sort()).toEqual([
+    const activeIds = [
       'proj-backpack',
       'proj-studio',
-    ]);
-    expect(reconcileSelection(state.projects, 'proj-term', 'board')).toBe('all');
+      'proj-term',
+    ];
+
+    expect(projectsFor(state.projects, 'schedule').map((p) => p.id).sort()).toEqual(activeIds);
+    expect(projectsFor(state.projects, 'task').map((p) => p.id).sort()).toEqual(activeIds);
+    expect(state.projects.find((project) => project.id === 'proj-term')?.projectType).toBe(
+      'schedule',
+    );
+    expect(reconcileSelection(state.projects, 'proj-term', 'board')).toBe('proj-term');
     expect(reconcileSelection(state.projects, 'proj-term', 'calendar')).toBe('proj-term');
   });
 
