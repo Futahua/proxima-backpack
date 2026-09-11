@@ -24,6 +24,13 @@
  */
 
 import {
+  applyFormEdit,
+  sameFormDraft,
+  type FormDraft,
+  type FormEdit,
+} from './formDraft.js';
+
+import {
   type PropertySchema,
   type PropertyType,
   type ProximaState,
@@ -106,52 +113,22 @@ export interface TaskEditorSection {
  * `null` — not this type — is what means "nothing edited"; a draft is only ever built
  * from a record, so a draft that has not been touched compares equal to the record.
  */
-export interface TaskEditorDraft {
-  readonly values:
-    Readonly<
-      Record<
-        string,
-        string
-      >
-    >;
+export type TaskEditorDraft =
+  FormDraft;
 
-  readonly checks:
-    Readonly<
-      Record<
-        string,
-        boolean
-      >
-    >;
-
-  readonly selections:
-    Readonly<
-      Record<
-        string,
-        readonly string[]
-      >
-    >;
-}
-
-/** One edit, as a value rather than a callback. */
+/** One edit of the Task editor's form. */
 export type TaskEditorEdit =
-  | {
-      readonly fieldId:
-        string;
-      readonly value:
-        string;
-    }
-  | {
-      readonly fieldId:
-        string;
-      readonly checked:
-        boolean;
-    }
-  | {
-      readonly fieldId:
-        string;
-      readonly selected:
-        readonly string[];
-    };
+  FormEdit;
+
+/** Apply one edit to a Task editor draft. */
+export const applyTaskEditorEdit:
+  typeof applyFormEdit =
+    applyFormEdit;
+
+/** Whether two Task editor drafts hold the same edits. */
+export const sameTaskEditorDraft:
+  typeof sameFormDraft =
+    sameFormDraft;
 
 export interface TaskEditorProjection {
   readonly taskId:
@@ -471,161 +448,6 @@ export function taskEditorDraftFor(
         task,
       ),
   };
-}
-
-/**
- * Apply one edit to a draft.
- *
- * An edit names the field it belongs to, so a control that reports the wrong kind of edit
- * for a field is a mistake in the caller rather than a silently ignored keystroke: the
- * draft keeps one entry per field and the wrong kind would replace the right one.
- * @param draft - the draft so far.
- * @param edit - the edit to apply.
- * @returns the next draft.
- */
-export function applyTaskEditorEdit(
-  draft:
-    TaskEditorDraft,
-  edit:
-    TaskEditorEdit,
-): TaskEditorDraft {
-  if ('checked' in edit) {
-    return {
-      ...draft,
-      checks: {
-        ...draft.checks,
-        [edit.fieldId]:
-          edit.checked,
-      },
-    };
-  }
-
-  if ('selected' in edit) {
-    return {
-      ...draft,
-      selections: {
-        ...draft.selections,
-        [edit.fieldId]:
-          [
-            ...edit.selected,
-          ],
-      },
-    };
-  }
-
-  return {
-    ...draft,
-    values: {
-      ...draft.values,
-      [edit.fieldId]:
-        edit.value,
-    },
-  };
-}
-
-/** Whether two drafts hold the same edits. */
-export function sameTaskEditorDraft(
-  left:
-    TaskEditorDraft,
-  right:
-    TaskEditorDraft,
-): boolean {
-  return sameRecord(
-    left.values,
-    right.values,
-  ) && sameRecord(
-    left.checks,
-    right.checks,
-  ) && sameSelections(
-    left.selections,
-    right.selections,
-  );
-}
-
-function sameRecord(
-  left:
-    Readonly<
-      Record<
-        string,
-        unknown
-      >
-    >,
-  right:
-    Readonly<
-      Record<
-        string,
-        unknown
-      >
-    >,
-): boolean {
-  const leftKeys =
-    Object.keys(
-      left,
-    );
-
-  if (
-    leftKeys.length
-    !== Object.keys(
-      right,
-    ).length
-  ) {
-    return false;
-  }
-
-  return leftKeys.every(
-    (key) =>
-      Object.is(
-        left[key],
-        right[key],
-      ),
-  );
-}
-
-function sameSelections(
-  left:
-    Readonly<
-      Record<
-        string,
-        readonly string[]
-      >
-    >,
-  right:
-    Readonly<
-      Record<
-        string,
-        readonly string[]
-      >
-    >,
-): boolean {
-  const leftKeys =
-    Object.keys(
-      left,
-    );
-
-  if (
-    leftKeys.length
-    !== Object.keys(
-      right,
-    ).length
-  ) {
-    return false;
-  }
-
-  return leftKeys.every(
-    (key) => {
-      const other =
-        right[key];
-
-      return other !== undefined
-        && other.length
-          === left[key]!.length
-        && other.every(
-          (entry, index) =>
-            entry
-            === left[key]![index],
-        );
-    },
-  );
 }
 
 /** One project, as a choice. */
