@@ -19,6 +19,7 @@ import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { CanonicalExecutionState } from '../domain/canonicalTaskState.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
+import { convergeAfterWrite } from './writeConvergence.js';
 
 export const TASK_MOVE_GESTURE_SCHEMA_VERSION = 1 as const;
 
@@ -79,32 +80,6 @@ export function taskMoveActionType(
   return from === to ? 'task.execution.reorder' : 'task.execution.move';
 }
 
-interface Convergence {
-  readonly refreshed: boolean;
-  readonly refreshFailure: string | null;
-}
-
-/**
- * Re-read the world, and report a failure to do so rather than throwing.
- *
- * A refresh is presentation catching up with a record that is already durable, so a source
- * that has gone away changes what the reader sees and never what the store holds.
- */
-async function converge(deps: TaskMoveGestureDependencies): Promise<Convergence> {
-  try {
-    const result = await deps.refresh('manual');
-    return {
-      refreshed: result !== null,
-      refreshFailure: result === null ? 'the source session declined to refresh' : null,
-    };
-  } catch (error) {
-    return {
-      refreshed: false,
-      refreshFailure: error instanceof Error ? error.message.slice(0, 120) : 'the refresh failed',
-    };
-  }
-}
-
 export async function moveTaskByGesture(
   deps: TaskMoveGestureDependencies,
   input: TaskMoveGestureInput,
@@ -142,9 +117,10 @@ export async function moveTaskByGesture(
     // longer the record's. Re-reading is how the card returns to where the store says it is.
     // Every other refusal left the world exactly as it was, and refreshing there would be a
     // redraw that implies something happened.
-    const convergence = written.reason === 'stale-revision'
-      ? await converge(deps)
-      : { refreshed: false, refreshFailure: null };
+    const convergence = await convergeAfterWrite(deps, {
+      accepted: false,
+      lostRace: written.reason === 'stale-revision',
+    });
 
     return {
       ok: false,
@@ -159,7 +135,7 @@ export async function moveTaskByGesture(
     };
   }
 
-  const convergence = await converge(deps);
+  const convergence = await convergeAfterWrite(deps, { accepted: true });
 
   return {
     ok: true,
