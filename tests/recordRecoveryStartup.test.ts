@@ -483,5 +483,165 @@ describe(
         });
       },
     );
+
+    it(
+      'blocks instead of guessing when unresolved record bytes match neither prior nor intended state',
+      async () => {
+        const events:
+          string[] = [];
+
+        const records =
+          new MemoryRecordBackend(
+            events,
+          );
+
+        records.seed(
+          RECORD_FILE,
+          'peer-bytes',
+          'record-r2',
+        );
+
+        const journal =
+          new MemoryRecoveryJournal(
+            events,
+          );
+
+        await journal.seed(
+          recoveryRecord(
+            'ambiguous-peer-state',
+            'prepared',
+          ),
+        );
+
+        const recovery =
+          createDurableRecoveryStore(
+            journal,
+          );
+
+        const result =
+          await startRecordMutationAuthority({
+            backend: records,
+            recovery,
+          });
+
+        expect(events)
+          .toEqual([
+            'journal:read',
+            'record:read',
+            'record:read',
+            'journal:write',
+          ]);
+
+        expect(result)
+          .toEqual({
+            mutationAuthority:
+              'blocked',
+            outcomes: [
+              {
+                requestId:
+                  'ambiguous-peer-state',
+                classification:
+                  'conflict',
+                status:
+                  'blocked',
+                reason:
+                  'conflict',
+              },
+            ],
+            unresolved: 1,
+            reason:
+              'blocked recovery record requires explicit resolution',
+          });
+
+        expect(result)
+          .not
+          .toHaveProperty(
+            'coordinator',
+          );
+
+        const persisted =
+          createDurableRecoveryStore(
+            journal,
+          );
+
+        await persisted.load();
+
+        expect(
+          persisted.list()[0],
+        ).toMatchObject({
+          requestId:
+            'ambiguous-peer-state',
+          status: 'blocked',
+        });
+
+        expect(
+          (
+            await records
+              .readRecordFile(
+                RECORD_FILE,
+              )
+          )?.text,
+        ).toBe(
+          'peer-bytes',
+        );
+      },
+    );
+
+    it(
+      'blocks instead of guessing when the durable recovery journal is corrupt',
+      async () => {
+        const events:
+          string[] = [];
+
+        const records =
+          new MemoryRecordBackend(
+            events,
+          );
+
+        const recovery =
+          createDurableRecoveryStore({
+            async read() {
+              events.push(
+                'journal:read',
+              );
+
+              return '{bad';
+            },
+
+            async write() {
+              events.push(
+                'journal:write',
+              );
+            },
+          });
+
+        const result =
+          await startRecordMutationAuthority({
+            backend: records,
+            recovery,
+          });
+
+        expect(result)
+          .toMatchObject({
+            mutationAuthority:
+              'blocked',
+            outcomes: [],
+            unresolved: 0,
+            reason:
+              expect.any(String),
+          });
+
+        expect(result)
+          .not
+          .toHaveProperty(
+            'coordinator',
+          );
+
+        expect(events)
+          .toEqual([
+            'journal:read',
+          ]);
+      },
+    );
   },
 );
