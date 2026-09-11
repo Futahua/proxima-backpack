@@ -105,6 +105,44 @@ const EVENT_OPERATION_ONLY_ROWS = [
   { action: 'event.recurrence.set/clear (retained)', module: 'src/app/eventRecurrenceActions.ts', marker: 'export async function setRecurrenceAction', absentCaller: 'setRecurrenceAction(' },
 ] as const;
 
+/**
+ * Stage 17's project rows.
+ *
+ * Five of the eleven rows in this group are wired: a project is created, edited, archived, restored
+ * and deleted through one operation each, and the Projects Hub reaches all five. Delete is the one to
+ * read carefully — the operation exists and answers, and what it answers is `policy-not-decided` with
+ * the counts it would affect, because what deleting a project *means* for its members is the creator's
+ * decision (D56). This table therefore says "wired" about a verb that refuses, and says why.
+ *
+ * The other six rows are not wired and the audit asserts that rather than leaving it to memory:
+ * workflow-stage create/rename/delete-remap and property-schema create/update/delete with its options,
+ * formulas, rollups and relation edits. A record kind existing — and both do, canonically — is not an
+ * operation, and the gap table below is what keeps the distinction checkable.
+ */
+const PROJECT_ROWS: readonly TaskActionRow[] = [
+  { action: 'project.create', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function createProjectAction', caller: 'createProjectAction(', testFile: 'tests/projectLifecycleActions.test.ts', testMarker: 'createProjectAction', equivalence: false },
+  { action: 'project.update', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function updateProjectAction', caller: 'updateProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'updateProjectAction', equivalence: false },
+  { action: 'project.archive', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function archiveProjectAction', caller: 'archiveProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'archiveProjectAction', equivalence: false },
+  { action: 'project.restore', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function restoreProjectAction', caller: 'restoreProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'restoreProjectAction', equivalence: false },
+  // Wired, and refused on purpose: the sequence runs and the operation answers `policy-not-decided`.
+  { action: 'project.delete', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function deleteProjectAction', caller: 'deleteProjectAction(', testFile: 'tests/projectMutations.test.ts', testMarker: 'policy-not-decided', equivalence: false },
+];
+
+/**
+ * Rows whose operation does not exist yet, asserted as absent.
+ *
+ * Each entry names what would have to appear for the row to become tickable: an exported operation in
+ * the app layer. Until then the audit proves the gap instead of the checklist remembering it.
+ */
+const UNWRITTEN_PROJECT_ROWS = [
+  { action: 'workflow stage create', absentExport: 'export async function createWorkflowStage' },
+  { action: 'workflow stage rename', absentExport: 'export async function renameWorkflowStage' },
+  { action: 'workflow stage delete/remap', absentExport: 'export async function deleteWorkflowStage' },
+  { action: 'property schema create/update/delete', absentExport: 'export async function updatePropertySchema' },
+  { action: 'schema options', absentExport: 'export async function updateSchemaOption' },
+  { action: 'formula/rollup/relation schema edits', absentExport: 'export async function updateSchemaField' },
+] as const;
+
 /** The one task action the record layer accepts and no surface offers yet. */
 const OPERATION_ONLY_ROWS = [
   { action: 'task recurrence (retained)', module: 'src/app/taskMutations.ts', marker: "kind: 'recurrence'" },
@@ -184,5 +222,34 @@ describe('Stage 17 event action coverage', () => {
     }
     expect(mutations).toContain('expectedRevision: input.expectedRevision');
     expect(mutations).toContain('actualRevision');
+  });
+});
+
+describe('Stage 17 project, workflow and schema coverage', () => {
+  it('names a module, a caller and a test for every project action the Hub reaches', () => {
+    for (const row of PROJECT_ROWS) {
+      expect(source(row.module), `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
+      expect(MAIN, `${row.action}: the shell must reach it`).toContain(row.caller!);
+      expect(source(row.testFile), `${row.action}: ${row.testFile} must exercise it`).toContain(row.testMarker);
+    }
+  });
+
+  it('proves the six rows that have no operation rather than remembering them', () => {
+    // A canonical record kind is not an operation: both workflow stages and schema records exist in
+    // the model, and neither has a write here yet. The audit asserts the absence so that the day an
+    // operation appears, this table is what has to change.
+    const appFiles = ['src/app/projectMutations.ts', 'src/app/projectLifecycleActions.ts', 'src/app/taskMutations.ts', 'src/app/eventMutations.ts'];
+    const appText = appFiles.map((file) => source(file)).join('\n');
+    for (const row of UNWRITTEN_PROJECT_ROWS) {
+      expect(appText, `${row.action}: an operation appeared, so the row must be revisited`).not.toContain(row.absentExport);
+    }
+  });
+
+  it('states what project delete answers, since the box is about a refusing verb being wired', () => {
+    const mutations = source('src/app/projectMutations.ts');
+    expect(mutations).toContain("'policy-not-decided'");
+    // The refusal names what it would affect, which is what makes it an answer rather than a failure.
+    expect(mutations).toContain('would affect');
+    expect(source('src/browser/main.ts')).toContain('deleteProjectAction(');
   });
 });
