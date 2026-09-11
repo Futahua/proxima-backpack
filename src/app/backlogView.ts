@@ -30,6 +30,7 @@ import {
 
 import type {
   Project,
+  PropertySchema,
   ProximaState,
   Task,
 } from '../domain/types.js';
@@ -424,6 +425,8 @@ function propertyText(
 function columnsFor(
   tasks:
     readonly Task[],
+  schema:
+    readonly PropertySchema[],
 ): BacklogColumn[] {
   const propertyKeys =
     new Set<
@@ -472,7 +475,7 @@ function columnsFor(
           id:
             `property:${key}`,
           label:
-            key,
+            schema.find((declared) => declared.id === key)?.name ?? key,
           field:
             null,
           propertyKey:
@@ -568,6 +571,7 @@ export function projectBacklog(
   const columns =
     columnsFor(
       tasks,
+      state.taskSchema,
     );
 
   const rows =
