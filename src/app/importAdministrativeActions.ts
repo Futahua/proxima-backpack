@@ -105,6 +105,18 @@ export interface LegacyImportAdministrativeStatus {
     number;
 
   /**
+   * Outstanding reader problems on the plan currently in effect, and how many of
+   * them are records awaiting the unsupported-frontmatter policy decision. A
+   * nonzero count means records the importer could not convert, so nothing
+   * downstream can read the import as complete.
+   */
+  readonly readerProblems:
+    number;
+
+  readonly unsupportedFrontmatter:
+    number;
+
+  /**
    * The candidate project record applied by the most recent accepted
    * `import.resolve`, or null while the plan in effect carries no selection.
    */
@@ -205,6 +217,17 @@ export interface LegacyImportAdministrativeActionFailure {
       readonly ambiguous:
         number;
       readonly unresolved:
+        number;
+    };
+
+    /**
+     * Present when the refusal is caused by records the importer could not
+     * convert, so an incomplete import cannot be read as complete.
+     */
+    readonly outstandingRecords?: {
+      readonly readerProblems:
+        number;
+      readonly unsupportedFrontmatter:
         number;
     };
   };
@@ -580,6 +603,10 @@ function statusFor(
         0,
       ambiguousProjectReferences:
         0,
+      readerProblems:
+        0,
+      unsupportedFrontmatter:
+        0,
       appliedProjectSelection:
         null,
       liveWritesAuthorized:
@@ -615,6 +642,12 @@ function statusFor(
       ambiguousProjectReferences:
         plan.counts
           .ambiguousProjectReferences,
+      readerProblems:
+        plan.counts
+          .readerProblems,
+      unsupportedFrontmatter:
+        plan.counts
+          .unsupportedFrontmatter,
       appliedProjectSelection,
       liveWritesAuthorized:
         false,
@@ -655,6 +688,12 @@ function statusFor(
     ambiguousProjectReferences:
       plan.counts
         .ambiguousProjectReferences,
+    readerProblems:
+      plan.counts
+        .readerProblems,
+    unsupportedFrontmatter:
+      plan.counts
+        .unsupportedFrontmatter,
     appliedProjectSelection,
     liveWritesAuthorized:
       false,
@@ -715,6 +754,13 @@ export function createLegacyImportAdministrativeActions(
         readonly unresolved:
           number;
       },
+    outstandingRecords?:
+      {
+        readonly readerProblems:
+          number;
+        readonly unsupportedFrontmatter:
+          number;
+      },
   ): LegacyImportAdministrativeActionFailure => ({
     schemaVersion:
       LEGACY_IMPORT_ADMIN_ACTION_SCHEMA_VERSION,
@@ -738,6 +784,11 @@ export function createLegacyImportAdministrativeActions(
       ...(outstandingProjectReferences
         ? {
             outstandingProjectReferences,
+          }
+        : {}),
+      ...(outstandingRecords
+        ? {
+            outstandingRecords,
           }
         : {}),
     },
@@ -963,23 +1014,76 @@ export function createLegacyImportAdministrativeActions(
                     .unresolvedProjectReferences,
               };
 
+        const outstandingRecords =
+          latestPlan
+          === null
+            ? {
+                readerProblems:
+                  0,
+                unsupportedFrontmatter:
+                  0,
+              }
+            : {
+                readerProblems:
+                  latestPlan
+                    .counts
+                    .readerProblems,
+                unsupportedFrontmatter:
+                  latestPlan
+                    .counts
+                    .unsupportedFrontmatter,
+              };
+
         const unacknowledged =
           outstanding.ambiguous
           > 0
           || outstanding.unresolved
           > 0;
 
+        /**
+         * A record the importer could not convert is an incomplete import, not a
+         * silent omission, so it refuses commit for its own reason beside the
+         * unacknowledged references.
+         */
+        const unconverted =
+          outstandingRecords
+            .readerProblems
+          > 0;
+
+        const reasons:
+          string[] = [];
+
+        if (
+          unacknowledged
+        ) {
+          reasons.push(
+            `${outstanding.ambiguous} ambiguous and ${outstanding.unresolved} unresolved project reference(s)`,
+          );
+        }
+
+        if (
+          unconverted
+        ) {
+          reasons.push(
+            `${outstandingRecords.readerProblems} reader problem(s), ${outstandingRecords.unsupportedFrontmatter} of them awaiting the unsupported-frontmatter policy decision`,
+          );
+        }
+
         return failure(
           action.type,
           requestId,
           'unavailable',
           'action-not-available',
-          unacknowledged
-            ? `import.commit refuses while the plan in effect still carries ${outstanding.ambiguous} ambiguous and ${outstanding.unresolved} unresolved project reference(s); migration policy and activation gates also remain open`
+          reasons.length
+          > 0
+            ? `import.commit refuses while the plan in effect still carries ${reasons.join(' and ')}; migration policy and activation gates also remain open`
             : 'import.commit remains unavailable while migration policy and activation gates remain open',
           true,
           unacknowledged
             ? outstanding
+            : undefined,
+          unconverted
+            ? outstandingRecords
             : undefined,
         );
       }

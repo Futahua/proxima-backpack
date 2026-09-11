@@ -148,6 +148,87 @@ async function ambiguousProjectPlan(
   );
 }
 
+/**
+ * The ambiguous-project fixture plus records the importer cannot convert: one
+ * ordinary frontmatter parse failure and one frontmatter shape awaiting the
+ * unsupported-frontmatter policy decision. The two refusal reasons are
+ * independent, which is what the status and commit assertions pin down.
+ */
+async function ambiguousAndMalformedPlan(
+  selection:
+    LegacyImportProjectSelection | null =
+      null,
+): Promise<
+  LegacyImportPlan
+> {
+  return planLegacyMarkdownImport(
+    createMemoryVault({
+      'Proxima/projects/a.md': [
+        '---',
+        'id: shared-project',
+        'type: project',
+        'name: Shared A',
+        '---',
+        '',
+      ].join(
+        '\n',
+      ),
+
+      'Proxima/projects/b.md': [
+        '---',
+        'id: shared-project',
+        'type: project',
+        'name: Shared B',
+        '---',
+        '',
+      ].join(
+        '\n',
+      ),
+
+      'Proxima/tasks/ref.md': [
+        '---',
+        'id: task-ref',
+        'name: References duplicate project',
+        'project: shared-project',
+        'status: running',
+        '---',
+        '',
+      ].join(
+        '\n',
+      ),
+
+      'Proxima/tasks/malformed.md': [
+        '---',
+        'id: malformed-task',
+        'name: "unterminated',
+        '---',
+        'Readable body',
+        '',
+      ].join(
+        '\n',
+      ),
+
+      'Proxima/tasks/unsupported.md': [
+        '---',
+        'id: unsupported-task',
+        'description: |',
+        '  multiline value',
+        '---',
+        'Readable body',
+        '',
+      ].join(
+        '\n',
+      ),
+    }),
+    allocator(),
+    {},
+    null,
+    null,
+    null,
+    selection,
+  );
+}
+
 function countsFor(
   plan:
     LegacyImportPlan,
@@ -1785,6 +1866,204 @@ describe(
             },
           },
         });
+      },
+    );
+
+    it(
+      'refuses commit for unconvertible records independently of unacknowledged references',
+      async () => {
+        const planned =
+          await ambiguousAndMalformedPlan();
+
+        expect(
+          planned.counts,
+        ).toMatchObject({
+          ambiguousProjectReferences:
+            1,
+          unresolvedProjectReferences:
+            1,
+          unsupportedFrontmatter:
+            1,
+        });
+
+        // The fixture must really carry unconvertible records beyond the single
+        // policy-pending shape, or the independence this test proves is vacuous.
+        expect(
+          planned.counts
+            .readerProblems,
+        ).toBeGreaterThan(
+          1,
+        );
+
+        const selected =
+          planned.projectReferences[0]
+            ?.candidateProjectRecordIds
+            ?.[0];
+
+        if (
+          !selected
+        ) {
+          throw new Error(
+            'fixture produced no ambiguous project candidate',
+          );
+        }
+
+        const actions =
+          createLegacyImportAdministrativeActions({
+            async plan(
+              selection,
+            ) {
+              return ambiguousAndMalformedPlan(
+                selection
+                ?? null,
+              );
+            },
+
+            async inspect(
+              plan,
+            ) {
+              return verificationFor(
+                plan,
+                'verified',
+              );
+            },
+          });
+
+        await actions.dispatch({
+          type:
+            'import.plan',
+        });
+
+        // Both reasons are outstanding, and status reports both.
+        const both =
+          await actions.dispatch({
+            type:
+              'import.status',
+          });
+
+        expect(
+          both,
+        ).toMatchObject({
+          data: {
+            kind:
+              'status',
+            status: {
+              ambiguousProjectReferences:
+                1,
+              unresolvedProjectReferences:
+                1,
+              readerProblems:
+                planned.counts
+                  .readerProblems,
+              unsupportedFrontmatter:
+                1,
+            },
+          },
+        });
+
+        const bothCommit =
+          await actions.dispatch({
+            type:
+              'import.commit',
+          });
+
+        expect(
+          bothCommit,
+        ).toMatchObject({
+          ok:
+            false,
+          outcome:
+            'unavailable',
+          durableChange:
+            false,
+          error: {
+            code:
+              'action-not-available',
+            outstandingProjectReferences: {
+              ambiguous:
+                1,
+              unresolved:
+                1,
+            },
+            outstandingRecords: {
+              readerProblems:
+                planned.counts
+                  .readerProblems,
+              unsupportedFrontmatter:
+                1,
+            },
+          },
+        });
+
+        // Acknowledging the references clears only the reference reason. The
+        // unconvertible records are still unconverted, so an incomplete import
+        // cannot be read as complete.
+        await actions.dispatch({
+          type:
+            'import.resolve',
+          candidateProjectRecordId:
+            selected,
+        });
+
+        const afterResolve =
+          await actions.dispatch({
+            type:
+              'import.commit',
+          });
+
+        expect(
+          afterResolve,
+        ).toMatchObject({
+          ok:
+            false,
+          actionType:
+            'import.commit',
+          outcome:
+            'unavailable',
+          error: {
+            code:
+              'action-not-available',
+            outstandingRecords: {
+              readerProblems:
+                planned.counts
+                  .readerProblems,
+              unsupportedFrontmatter:
+                1,
+            },
+          },
+        });
+
+        if (
+          afterResolve.ok
+        ) {
+          throw new Error(
+            'import.commit unexpectedly succeeded',
+          );
+        }
+
+        expect(
+          afterResolve
+            .error
+            .outstandingProjectReferences,
+        ).toBeUndefined();
+
+        // The surviving reason is named rather than collapsing into the generic
+        // policy sentence.
+        expect(
+          afterResolve
+            .error
+            .message,
+        ).toContain(
+          'reader problem(s)',
+        );
+
+        expect(
+          afterResolve
+            .error
+            .message,
+        ).toContain(
+          'unsupported-frontmatter policy decision',
+        );
       },
     );
   },
