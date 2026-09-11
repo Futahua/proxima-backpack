@@ -15,6 +15,7 @@ import {
   planLegacyMarkdownImport,
   type LegacyImportIdentityAllocator,
   type LegacyImportPlan,
+  type LegacyImportProjectSelection,
 } from '../src/app/importPlanner.js';
 import type {
   LegacyImportVerificationKindCounts,
@@ -73,6 +74,77 @@ async function oneProjectPlan():
       ),
     }),
     allocator(),
+  );
+}
+
+/**
+ * Two physical project records share one legacy project id, so the task and the
+ * event that name it are both ambiguous. The selection is what Stage 8 slice 19
+ * resolves; omitting it leaves both references exactly as the vault presents
+ * them.
+ */
+async function ambiguousProjectPlan(
+  selection:
+    LegacyImportProjectSelection | null =
+      null,
+): Promise<
+  LegacyImportPlan
+> {
+  return planLegacyMarkdownImport(
+    createMemoryVault({
+      'Proxima/projects/a.md': [
+        '---',
+        'id: shared-project',
+        'type: project',
+        'name: Shared A',
+        '---',
+        '',
+      ].join(
+        '\n',
+      ),
+
+      'Proxima/projects/b.md': [
+        '---',
+        'id: shared-project',
+        'type: project',
+        'name: Shared B',
+        '---',
+        '',
+      ].join(
+        '\n',
+      ),
+
+      'Proxima/tasks/ref.md': [
+        '---',
+        'id: task-ref',
+        'name: References duplicate project',
+        'project: shared-project',
+        'status: running',
+        '---',
+        '',
+      ].join(
+        '\n',
+      ),
+
+      'Proxima/events/ref-event.md': [
+        '---',
+        'id: event-ref',
+        'name: References duplicate project',
+        'projectId: shared-project',
+        'startDate: 2026-09-12T10:00:00.000Z',
+        'deadline: 2026-09-12T11:00:00.000Z',
+        '---',
+        '',
+      ].join(
+        '\n',
+      ),
+    }),
+    allocator(),
+    {},
+    null,
+    null,
+    null,
+    selection,
   );
 }
 
@@ -214,7 +286,7 @@ describe(
   'Stage 8 slice 18 read-only import administrative actions',
   () => {
     it(
-      'parses exactly the five administrative action names and refuses premature payload shapes',
+      'parses the five administrative action names and refuses premature payload shapes',
       () => {
         for (
           const type
@@ -222,7 +294,6 @@ describe(
             'import.plan',
             'import.inspect',
             'import.status',
-            'import.resolve',
             'import.commit',
           ] as const
         ) {
@@ -253,6 +324,22 @@ describe(
           },
         });
 
+        // import.resolve carries the selected candidate project record, so the
+        // payload-less spelling is no longer a resolvable action.
+        expect(
+          parseLegacyImportAdministrativeAction({
+            type:
+              'import.resolve',
+          }),
+        ).toMatchObject({
+          ok:
+            false,
+          error: {
+            code:
+              'invalid-action-input',
+          },
+        });
+
         expect(
           parseLegacyImportAdministrativeAction({
             type:
@@ -268,6 +355,80 @@ describe(
           error: {
             code:
               'invalid-action-input',
+          },
+        });
+
+        expect(
+          parseLegacyImportAdministrativeAction({
+            type:
+              'import.resolve',
+            candidateProjectRecordId:
+              opaque(
+                7,
+              ),
+            extra:
+              true,
+          }),
+        ).toMatchObject({
+          ok:
+            false,
+          error: {
+            code:
+              'invalid-action-input',
+          },
+        });
+
+        expect(
+          parseLegacyImportAdministrativeAction({
+            type:
+              'import.resolve',
+            candidateProjectRecordId:
+              7,
+          }),
+        ).toMatchObject({
+          ok:
+            false,
+          error: {
+            code:
+              'invalid-action-input',
+          },
+        });
+
+        expect(
+          parseLegacyImportAdministrativeAction({
+            type:
+              'import.resolve',
+            candidateProjectRecordId:
+              'project-a',
+          }),
+        ).toMatchObject({
+          ok:
+            false,
+          error: {
+            code:
+              'invalid-action-input',
+          },
+        });
+
+        expect(
+          parseLegacyImportAdministrativeAction({
+            type:
+              'import.resolve',
+            candidateProjectRecordId:
+              opaque(
+                7,
+              ),
+          }),
+        ).toEqual({
+          ok:
+            true,
+          action: {
+            type:
+              'import.resolve',
+            candidateProjectRecordId:
+              opaque(
+                7,
+              ),
           },
         });
       },
@@ -812,7 +973,7 @@ describe(
     );
 
     it(
-      'recognizes import.resolve and import.commit as typed unavailable actions without invoking planning or inspection',
+      'keeps import.commit unavailable and refuses import.resolve without an accepted plan, invoking neither planning nor inspection',
       async () => {
         let plannerCalls =
           0;
@@ -842,39 +1003,83 @@ describe(
             },
           });
 
-        for (
-          const type
-          of [
-            'import.resolve',
-            'import.commit',
-          ] as const
-        ) {
-          const result =
-            await actions.dispatch({
-              type,
-            });
+        const commit =
+          await actions.dispatch({
+            type:
+              'import.commit',
+          });
 
-          expect(result)
-            .toMatchObject({
-              ok:
-                false,
-              actionType:
-                type,
-              outcome:
-                'unavailable',
-              durableChange:
-                false,
-              error: {
-                code:
-                  'action-not-available',
-                deferredChecks: [
-                  'unsupported-frontmatter-importability',
-                  'recurrence-migration',
-                  'event-all-day-intent',
-                ],
-              },
-            });
-        }
+        expect(commit)
+          .toMatchObject({
+            ok:
+              false,
+            actionType:
+              'import.commit',
+            outcome:
+              'unavailable',
+            durableChange:
+              false,
+            error: {
+              code:
+                'action-not-available',
+              deferredChecks: [
+                'unsupported-frontmatter-importability',
+                'recurrence-migration',
+                'event-all-day-intent',
+              ],
+            },
+          });
+
+        // import.resolve is no longer unconditionally unavailable: it accepts a
+        // selection, but has nothing to resolve it against until a plan is
+        // accepted, and planning is still not invoked to find out.
+        const resolve =
+          await actions.dispatch({
+            type:
+              'import.resolve',
+            candidateProjectRecordId:
+              opaque(
+                9,
+              ),
+          });
+
+        expect(resolve)
+          .toMatchObject({
+            ok:
+              false,
+            actionType:
+              'import.resolve',
+            outcome:
+              'unavailable',
+            durableChange:
+              false,
+            error: {
+              code:
+                'action-not-available',
+            },
+          });
+
+        const malformed =
+          await actions.dispatch({
+            type:
+              'import.resolve',
+          });
+
+        expect(malformed)
+          .toMatchObject({
+            ok:
+              false,
+            actionType:
+              'import.resolve',
+            outcome:
+              'validation-refused',
+            durableChange:
+              false,
+            error: {
+              code:
+                'invalid-action-input',
+            },
+          });
 
         expect(
           plannerCalls,
@@ -884,6 +1089,450 @@ describe(
 
         expect(
           inspectorCalls,
+        ).toBe(
+          0,
+        );
+      },
+    );
+
+    it(
+      'resolves an explicitly selected candidate project record across every reference that names it, writing nothing',
+      async () => {
+        const planned =
+          await ambiguousProjectPlan();
+
+        expect(
+          planned.counts,
+        ).toMatchObject({
+          projectReferences:
+            2,
+          unresolvedProjectReferences:
+            2,
+          ambiguousProjectReferences:
+            2,
+        });
+
+        const candidates =
+          planned.projectReferences
+            .find(
+              (reference) =>
+                reference.sourceKind
+                === 'task',
+            )
+            ?.candidateProjectRecordIds
+          ?? [];
+
+        expect(
+          candidates,
+        ).toHaveLength(
+          2,
+        );
+
+        const selected =
+          candidates[0];
+
+        if (
+          !selected
+        ) {
+          throw new Error(
+            'fixture produced no ambiguous project candidate',
+          );
+        }
+
+        let plannerCalls =
+          0;
+
+        const actions =
+          createLegacyImportAdministrativeActions({
+            async plan(
+              selection,
+            ) {
+              plannerCalls +=
+                1;
+
+              return ambiguousProjectPlan(
+                selection
+                ?? null,
+              );
+            },
+
+            async inspect(
+              plan,
+            ) {
+              return verificationFor(
+                plan,
+                'verified',
+              );
+            },
+          });
+
+        const plannedResult =
+          await actions.dispatch({
+            type:
+              'import.plan',
+          });
+
+        expect(
+          plannedResult.ok,
+        ).toBe(
+          true,
+        );
+
+        const result =
+          await actions.dispatch({
+            type:
+              'import.resolve',
+            candidateProjectRecordId:
+              selected,
+          });
+
+        expect(result)
+          .toMatchObject({
+            ok:
+              true,
+            actionType:
+              'import.resolve',
+            outcome:
+              'accepted',
+            durableChange:
+              false,
+          });
+
+        expect(
+          plannerCalls,
+        ).toBe(
+          2,
+        );
+
+        if (
+          !result.ok
+          || result.data.kind
+            !== 'plan'
+        ) {
+          throw new Error(
+            'import.resolve did not return a plan',
+          );
+        }
+
+        const resolved =
+          result.data.plan;
+
+        // The resolution produced a different in-memory plan; the accepted plan
+        // it was derived from still reports the vault's ambiguity.
+        expect(
+          planned.counts
+            .ambiguousProjectReferences,
+        ).toBe(
+          2,
+        );
+
+        expect(
+          resolved.counts,
+        ).toMatchObject({
+          projectReferences:
+            2,
+          unresolvedProjectReferences:
+            0,
+          ambiguousProjectReferences:
+            0,
+        });
+
+        expect(
+          resolved.writes,
+        ).toEqual({
+          legacyMarkdown:
+            0,
+          recordStore:
+            0,
+          staging:
+            0,
+        });
+
+        for (
+          const reference
+          of resolved.projectReferences
+        ) {
+          expect(reference)
+            .toMatchObject({
+              resolution:
+                'resolved',
+              projectRecordId:
+                selected,
+            });
+
+          expect(
+            reference
+              .candidateProjectRecordIds,
+          ).toBeUndefined();
+        }
+
+        const task =
+          resolved.conversions.find(
+            (conversion) =>
+              conversion.kind
+              === 'task',
+          );
+
+        if (
+          task?.kind
+          !== 'task'
+        ) {
+          throw new Error(
+            'fixture produced no task conversion',
+          );
+        }
+
+        expect(
+          task.workflowStage,
+        ).toMatchObject({
+          resolution:
+            'candidate',
+          projectRecordId:
+            selected,
+        });
+
+        expect(
+          task.scopedOrders
+            .workflow
+            ?.scope,
+        ).toMatchObject({
+          kind:
+            'project-workflow-stage-candidate',
+          projectRecordId:
+            selected,
+        });
+
+        const event =
+          resolved.conversions.find(
+            (conversion) =>
+              conversion.kind
+              === 'event',
+          );
+
+        if (
+          event?.kind
+          !== 'event'
+        ) {
+          throw new Error(
+            'fixture produced no event conversion',
+          );
+        }
+
+        expect(
+          event.project,
+        ).toMatchObject({
+          resolution:
+            'resolved',
+          projectRecordId:
+            selected,
+        });
+      },
+    );
+
+    it(
+      'refuses a selection that is a candidate of no ambiguous project reference without re-planning',
+      async () => {
+        let plannerCalls =
+          0;
+
+        const actions =
+          createLegacyImportAdministrativeActions({
+            async plan(
+              selection,
+            ) {
+              plannerCalls +=
+                1;
+
+              return ambiguousProjectPlan(
+                selection
+                ?? null,
+              );
+            },
+
+            async inspect(
+              plan,
+            ) {
+              return verificationFor(
+                plan,
+                'verified',
+              );
+            },
+          });
+
+        await actions.dispatch({
+          type:
+            'import.plan',
+        });
+
+        expect(
+          plannerCalls,
+        ).toBe(
+          1,
+        );
+
+        const result =
+          await actions.dispatch({
+            type:
+              'import.resolve',
+            candidateProjectRecordId:
+              opaque(
+                99,
+              ),
+          });
+
+        expect(result)
+          .toMatchObject({
+            ok:
+              false,
+            actionType:
+              'import.resolve',
+            outcome:
+              'validation-refused',
+            durableChange:
+              false,
+            error: {
+              code:
+                'invalid-action-input',
+            },
+          });
+
+        expect(
+          plannerCalls,
+        ).toBe(
+          1,
+        );
+
+        const status =
+          await actions.dispatch({
+            type:
+              'import.status',
+          });
+
+        expect(status)
+          .toMatchObject({
+            ok:
+              true,
+            data: {
+              kind:
+                'status',
+              status: {
+                phase:
+                  'planned',
+                liveWritesAuthorized:
+                  false,
+              },
+            },
+          });
+      },
+    );
+
+    it(
+      'keeps import.commit unavailable after a resolution and inspects the resolved plan',
+      async () => {
+        const planned =
+          await ambiguousProjectPlan();
+
+        const selected =
+          planned.projectReferences[0]
+            ?.candidateProjectRecordIds
+            ?.[0];
+
+        if (
+          !selected
+        ) {
+          throw new Error(
+            'fixture produced no ambiguous project candidate',
+          );
+        }
+
+        const inspected:
+          LegacyImportPlan[] = [];
+
+        const actions =
+          createLegacyImportAdministrativeActions({
+            async plan(
+              selection,
+            ) {
+              return ambiguousProjectPlan(
+                selection
+                ?? null,
+              );
+            },
+
+            async inspect(
+              plan,
+            ) {
+              inspected.push(
+                plan,
+              );
+
+              return verificationFor(
+                plan,
+                'verified',
+              );
+            },
+          });
+
+        await actions.dispatch({
+          type:
+            'import.plan',
+        });
+
+        await actions.dispatch({
+          type:
+            'import.resolve',
+          candidateProjectRecordId:
+            selected,
+        });
+
+        const commit =
+          await actions.dispatch({
+            type:
+              'import.commit',
+          });
+
+        expect(commit)
+          .toMatchObject({
+            ok:
+              false,
+            actionType:
+              'import.commit',
+            outcome:
+              'unavailable',
+            durableChange:
+              false,
+            error: {
+              code:
+                'action-not-available',
+            },
+          });
+
+        const inspection =
+          await actions.dispatch({
+            type:
+              'import.inspect',
+          });
+
+        expect(inspection)
+          .toMatchObject({
+            ok:
+              true,
+            actionType:
+              'import.inspect',
+            durableChange:
+              false,
+          });
+
+        expect(
+          inspected,
+        ).toHaveLength(
+          1,
+        );
+
+        expect(
+          inspected[0]
+            ?.counts
+            .ambiguousProjectReferences,
         ).toBe(
           0,
         );

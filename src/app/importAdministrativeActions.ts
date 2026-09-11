@@ -1,10 +1,15 @@
 import {
   LEGACY_IMPORT_PLAN_SCHEMA_VERSION,
   type LegacyImportPlan,
+  type LegacyImportProjectSelection,
 } from './importPlanner.js';
 import type {
   LegacyImportVerificationResult,
 } from './importVerification.js';
+import {
+  parseOpaqueRecordId,
+  type OpaqueRecordId,
+} from '../domain/canonicalIdentity.js';
 
 export const LEGACY_IMPORT_ADMIN_ACTION_SCHEMA_VERSION =
   1 as const;
@@ -25,6 +30,14 @@ export type LegacyImportAdministrativeAction =
   | {
       readonly type:
         'import.resolve';
+
+      /**
+       * The candidate project record to apply, for every ambiguous project
+       * reference whose candidate set contains it. An id that is a candidate of
+       * no ambiguous reference is refused rather than silently ignored.
+       */
+      readonly candidateProjectRecordId:
+        OpaqueRecordId;
     }
   | {
       readonly type:
@@ -171,7 +184,10 @@ export interface LegacyImportAdministrativeActionDependencies {
    * Record Store writer or activation capability itself.
    */
   readonly plan:
-    () => Promise<
+    (
+      selection?:
+        LegacyImportProjectSelection | null,
+    ) => Promise<
       LegacyImportPlan
     >;
 
@@ -293,6 +309,86 @@ export function parseLegacyImportAdministrativeAction(
     };
   }
 
+  const actionType =
+    input.type;
+
+  if (
+    actionType
+    === 'import.resolve'
+  ) {
+    if (
+      Object.keys(
+        input,
+      ).length
+      !== 2
+      || !(
+        'candidateProjectRecordId'
+        in input
+      )
+    ) {
+      return {
+        ok: false,
+        error: {
+          code:
+            'invalid-action-input',
+          message:
+            'import.resolve requires exactly one candidateProjectRecordId input',
+        },
+      };
+    }
+
+    const requested =
+      input
+        .candidateProjectRecordId;
+
+    if (
+      typeof requested
+        !== 'string'
+      || requested
+        .length
+        === 0
+    ) {
+      return {
+        ok: false,
+        error: {
+          code:
+            'invalid-action-input',
+          message:
+            'import.resolve candidateProjectRecordId must be a non-empty string',
+        },
+      };
+    }
+
+    let candidateProjectRecordId:
+      OpaqueRecordId;
+
+    try {
+      candidateProjectRecordId =
+        parseOpaqueRecordId(
+          requested,
+        );
+    } catch {
+      return {
+        ok: false,
+        error: {
+          code:
+            'invalid-action-input',
+          message:
+            'import.resolve candidateProjectRecordId must be an opaque Proxima record id',
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      action: {
+        type:
+          'import.resolve',
+        candidateProjectRecordId,
+      },
+    };
+  }
+
   if (
     Object.keys(
       input,
@@ -305,7 +401,7 @@ export function parseLegacyImportAdministrativeAction(
         code:
           'invalid-action-input',
         message:
-          `${input.type} does not accept a payload in this import slice`,
+          `${actionType} does not accept a payload in this import slice`,
       },
     };
   }
@@ -314,7 +410,7 @@ export function parseLegacyImportAdministrativeAction(
     ok: true,
     action: {
       type:
-        input.type,
+        actionType,
     },
   };
 }
@@ -648,13 +744,106 @@ export function createLegacyImportAdministrativeActions(
         action.type
         === 'import.resolve'
       ) {
-        return failure(
+        if (
+          latestPlan
+          === null
+        ) {
+          return failure(
+            action.type,
+            requestId,
+            'unavailable',
+            'action-not-available',
+            'import.resolve needs an accepted import.plan result first',
+            true,
+          );
+        }
+
+        const isCandidateOfAmbiguity =
+          latestPlan
+            .projectReferences
+            .some(
+              (reference) =>
+                reference
+                  .resolution
+                === 'ambiguous'
+                && (
+                  reference
+                    .candidateProjectRecordIds
+                  ?? []
+                ).includes(
+                  action
+                    .candidateProjectRecordId,
+                ),
+            );
+
+        if (
+          !isCandidateOfAmbiguity
+        ) {
+          return failure(
+            action.type,
+            requestId,
+            'validation-refused',
+            'invalid-action-input',
+            `import.resolve candidate ${action.candidateProjectRecordId} is not a candidate of any ambiguous project reference in the accepted plan`,
+          );
+        }
+
+        let resolvedPlan:
+          LegacyImportPlan;
+
+        try {
+          resolvedPlan =
+            await dependencies
+              .plan({
+                candidateProjectRecordId:
+                  action
+                    .candidateProjectRecordId,
+              });
+        } catch {
+          return failure(
+            action.type,
+            requestId,
+            'dependency-failure',
+            'dependency-failure',
+            'import.resolve dependency failed',
+          );
+        }
+
+        if (
+          !isAcceptedDryRunPlan(
+            resolvedPlan,
+          )
+        ) {
+          return failure(
+            action.type,
+            requestId,
+            'invalid-evidence',
+            'invalid-evidence',
+            'import.resolve dependency returned evidence outside the accepted zero-write dry-run contract',
+            true,
+          );
+        }
+
+        latestPlan =
+          resolvedPlan;
+
+        /**
+         * The accepted verification described the pre-resolution plan, so it is
+         * discarded rather than carried over. `import.inspect` re-verifies the
+         * resolved plan when asked.
+         */
+        latestVerification =
+          null;
+
+        return success(
           action.type,
           requestId,
-          'unavailable',
-          'action-not-available',
-          'import.resolve remains unavailable until the explicit migration-resolution contract is authored',
-          true,
+          {
+            kind:
+              'plan',
+            plan:
+              resolvedPlan,
+          },
         );
       }
 

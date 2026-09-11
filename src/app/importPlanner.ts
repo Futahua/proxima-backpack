@@ -154,6 +154,22 @@ export interface LegacyImportCollisionPlan {
     readonly LegacyImportCollisionCandidate[];
 }
 
+/**
+ * An explicitly selected candidate project record, applied only while planning.
+ *
+ * A legacy project id that maps to more than one physical project record makes
+ * every reference to it ambiguous. Supplying the chosen record id here resolves
+ * exactly those references whose candidate set contains it, and everything
+ * derived from a reference follows from the resolved reference rather than being
+ * patched afterwards: the task workflow stage becomes a candidate, its workflow
+ * order scope names the selected project, and the event project association is
+ * resolved. Nothing is written — the selection shapes an in-memory dry-run plan.
+ */
+export interface LegacyImportProjectSelection {
+  readonly candidateProjectRecordId:
+    OpaqueRecordId;
+}
+
 export interface LegacyImportProjectReferencePlan {
   readonly sourceKind:
     'task' | 'event';
@@ -715,6 +731,13 @@ function cloneCensus(
  * This function has no writer argument. It cannot mutate legacy Markdown,
  * staging, or the Record Store. Its output is the machine-readable input to
  * later Stage 8 reconciliation/materialization slices.
+ *
+ * `projectSelection` resolves ambiguous project references in memory only. A
+ * selected candidate applies to every reference whose candidate set contains
+ * it, and the task workflow stage, workflow order scope, event project
+ * association and the reference counts all follow from the resolved reference
+ * rather than being patched afterwards. Omitting it leaves every ambiguity
+ * exactly as the vault presents it.
  */
 export async function planLegacyMarkdownImport(
   vault:
@@ -731,6 +754,9 @@ export async function planLegacyMarkdownImport(
       null,
   artifactPlanning:
     LegacyImportArtifactPlanningInput | null =
+      null,
+  projectSelection:
+    LegacyImportProjectSelection | null =
       null,
 ): Promise<
   LegacyImportPlan
@@ -1215,6 +1241,39 @@ export async function planLegacyMarkdownImport(
       projectMappings.length
       > 1
     ) {
+      const selectedProjectMapping =
+        projectSelection
+          === null
+          ? undefined
+          : projectMappings.find(
+              (mapping) =>
+                mapping.recordId
+                === projectSelection
+                  .candidateProjectRecordId,
+            );
+
+      if (
+        selectedProjectMapping
+      ) {
+        projectReferences.push({
+          sourceKind:
+            candidate.kind,
+          sourceLegacyId:
+            candidate.legacyId,
+          sourceRecordId:
+            sourceMapping.recordId,
+          legacyProjectId:
+            candidate.projectId,
+          projectRecordId:
+            selectedProjectMapping
+              .recordId,
+          resolution:
+            'resolved',
+        });
+
+        continue;
+      }
+
       projectReferences.push({
         sourceKind:
           candidate.kind,
