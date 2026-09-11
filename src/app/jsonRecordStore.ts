@@ -47,6 +47,21 @@ function recordFileName(
   return `${checked}.json` as RecordStoreFileName;
 }
 
+/**
+ * The record-file name for a record id.
+ *
+ * Exported because more than one caller legitimately needs it — a mutation coordinator writes
+ * through the pathless backend and must name the file the store would name — and a second
+ * copy of this convention is how a record ends up at two addresses.
+ */
+export function recordFileNameFor(
+  id: OpaqueRecordId,
+): RecordStoreFileName {
+  return recordFileName(
+    id,
+  );
+}
+
 function recordIdFromFileName(
   value: string,
 ): OpaqueRecordId {
@@ -192,6 +207,25 @@ function encodeDocument<
     null,
     2,
   )}\n`;
+}
+
+/**
+ * The exact bytes a record would be stored as.
+ *
+ * A mutation that goes through the recovery coordinator writes raw text, so it must write the
+ * document the store would write — envelope, validation and all. Sharing this function is what
+ * keeps a coordinated update and a store write from drifting into two formats.
+ */
+export function encodeRecordDocument<
+  T extends CanonicalRecordHeader,
+>(
+  record: T,
+  codec: RecordStoreCodec<T>,
+): string {
+  return encodeDocument(
+    record,
+    codec,
+  );
 }
 
 function mutationResult(
