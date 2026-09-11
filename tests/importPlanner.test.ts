@@ -893,5 +893,407 @@ describe(
         ).toBe(1);
       },
     );
+
+    it(
+      'separates legacy task status into execution and project-workflow conversion semantics',
+      async () => {
+        const plan =
+          await planLegacyMarkdownImport(
+            createMemoryVault({
+              'Proxima/projects/alpha.md': [
+                '---',
+                'id: alpha',
+                'type: project',
+                'name: Alpha',
+                'projectType: schedule',
+                '---',
+                '',
+              ].join('\n'),
+
+              'Proxima/tasks/a-backlog.md': [
+                '---',
+                'id: a-backlog',
+                'name: Backlog task',
+                'project: alpha',
+                'status: backlog',
+                'orderIndex: 30',
+                '---',
+                '',
+              ].join('\n'),
+
+              'Proxima/tasks/b-waiting.md': [
+                '---',
+                'id: b-waiting',
+                'name: Waiting task',
+                'project: alpha',
+                'status: waiting',
+                'orderIndex: 10',
+                '---',
+                '',
+              ].join('\n'),
+
+              'Proxima/tasks/c-completed.md': [
+                '---',
+                'id: c-completed',
+                'name: Completed task',
+                'project: alpha',
+                'status: running',
+                'orderIndex: 20',
+                'isCompleted: true',
+                '---',
+                '',
+              ].join('\n'),
+            }),
+            sequentialAllocator(),
+          );
+
+        const tasks =
+          plan.conversions
+            .filter(
+              (
+                conversion,
+              ): conversion is Extract<
+                typeof conversion,
+                {
+                  kind:
+                    'task';
+                }
+              > =>
+                conversion.kind
+                === 'task',
+            );
+
+        const bySource =
+          new Map(
+            tasks.map(
+              (task) => [
+                task.sourcePath,
+                task,
+              ] as const,
+            ),
+          );
+
+        expect(
+          bySource.get(
+            'Proxima/tasks/a-backlog.md',
+          ),
+        ).toMatchObject({
+          legacyStatusId:
+            'backlog',
+          executionState:
+            'backlog',
+          workflowStage: {
+            resolution:
+              'candidate',
+            legacyStatusId:
+              'backlog',
+            suggestedName:
+              'Elastic Backlog',
+          },
+          scopedOrders: {
+            execution: {
+              scope: {
+                kind:
+                  'elastic-execution',
+                executionState:
+                  'backlog',
+              },
+              position: 30,
+            },
+            workflow: {
+              scope: {
+                kind:
+                  'project-workflow-stage-candidate',
+                legacyStatusId:
+                  'backlog',
+              },
+              position: 30,
+            },
+          },
+        });
+
+        expect(
+          bySource.get(
+            'Proxima/tasks/b-waiting.md',
+          ),
+        ).toMatchObject({
+          legacyStatusId:
+            'waiting',
+          executionState:
+            'running',
+          workflowStage: {
+            resolution:
+              'candidate',
+            legacyStatusId:
+              'waiting',
+            suggestedName:
+              'waiting',
+          },
+          scopedOrders: {
+            execution: {
+              scope: {
+                executionState:
+                  'running',
+              },
+              position: 10,
+            },
+            workflow: {
+              scope: {
+                legacyStatusId:
+                  'waiting',
+              },
+              position: 10,
+            },
+          },
+        });
+
+        expect(
+          bySource.get(
+            'Proxima/tasks/c-completed.md',
+          ),
+        ).toMatchObject({
+          legacyStatusId:
+            'running',
+          executionState:
+            'finished',
+          workflowStage: {
+            resolution:
+              'candidate',
+            legacyStatusId:
+              'running',
+            suggestedName:
+              'Elastic Running',
+          },
+          scopedOrders: {
+            execution: {
+              scope: {
+                executionState:
+                  'finished',
+              },
+              position: 20,
+            },
+            workflow: {
+              scope: {
+                legacyStatusId:
+                  'running',
+              },
+              position: 20,
+            },
+          },
+        });
+
+        const projectIds =
+          new Set(
+            tasks.map(
+              (task) =>
+                task.workflowStage
+                  .projectRecordId,
+            ),
+          );
+
+        expect(projectIds.size).toBe(1);
+        expect(projectIds.has(null)).toBe(false);
+        expect(
+          JSON.stringify(
+            plan.conversions,
+          ),
+        ).not.toContain(
+          '"orderIndex"',
+        );
+
+        expect(plan.writes).toEqual({
+          legacyMarkdown: 0,
+          recordStore: 0,
+          staging: 0,
+        });
+      },
+    );
+
+    it(
+      'keeps legacy projectType as compatibility metadata with identical canonical capability authority',
+      async () => {
+        const plan =
+          await planLegacyMarkdownImport(
+            createMemoryVault({
+              'Proxima/projects/task-project.md': [
+                '---',
+                'id: task-project',
+                'type: project',
+                'name: Task-labelled project',
+                'projectType: task',
+                '---',
+                '',
+              ].join('\n'),
+
+              'Proxima/projects/schedule-project.md': [
+                '---',
+                'id: schedule-project',
+                'type: project',
+                'name: Schedule-labelled project',
+                'projectType: schedule',
+                '---',
+                '',
+              ].join('\n'),
+            }),
+            sequentialAllocator(),
+          );
+
+        const projects =
+          plan.conversions
+            .filter(
+              (
+                conversion,
+              ): conversion is Extract<
+                typeof conversion,
+                {
+                  kind:
+                    'project';
+                }
+              > =>
+                conversion.kind
+                === 'project',
+            )
+            .map(
+              (project) => ({
+                legacyProjectType:
+                  project
+                    .legacyProjectType,
+                disposition:
+                  project.disposition,
+                canonicalCapabilityAuthority:
+                  project
+                    .canonicalCapabilityAuthority,
+              }),
+            )
+            .sort(
+              (left, right) =>
+                left
+                  .legacyProjectType
+                  .localeCompare(
+                    right
+                      .legacyProjectType,
+                  ),
+            );
+
+        expect(projects)
+          .toEqual([
+            {
+              legacyProjectType:
+                'schedule',
+              disposition:
+                'compatibility-import-metadata-only',
+              canonicalCapabilityAuthority:
+                'associated-data-and-workspace',
+            },
+            {
+              legacyProjectType:
+                'task',
+              disposition:
+                'compatibility-import-metadata-only',
+              canonicalCapabilityAuthority:
+                'associated-data-and-workspace',
+            },
+          ]);
+      },
+    );
+
+    it(
+      'keeps execution conversion usable while ambiguous project identity blocks workflow-stage and workflow-order selection',
+      async () => {
+        const plan =
+          await planLegacyMarkdownImport(
+            createMemoryVault({
+              'Proxima/projects/a.md': [
+                '---',
+                'id: shared-project',
+                'type: project',
+                'name: Shared A',
+                '---',
+                '',
+              ].join('\n'),
+
+              'Proxima/projects/b.md': [
+                '---',
+                'id: shared-project',
+                'type: project',
+                'name: Shared B',
+                '---',
+                '',
+              ].join('\n'),
+
+              'Proxima/tasks/ref.md': [
+                '---',
+                'id: task-ref',
+                'name: Ambiguous workflow task',
+                'project: shared-project',
+                'status: review',
+                'orderIndex: 7',
+                '---',
+                '',
+              ].join('\n'),
+            }),
+            sequentialAllocator(),
+          );
+
+        const task =
+          plan.conversions.find(
+            (
+              conversion,
+            ): conversion is Extract<
+              typeof conversion,
+              {
+                kind:
+                  'task';
+              }
+            > =>
+              conversion.kind
+              === 'task',
+          );
+
+        expect(task).toBeDefined();
+
+        expect(task).toMatchObject({
+          legacyStatusId:
+            'review',
+          executionState:
+            'finished',
+          workflowStage: {
+            resolution:
+              'ambiguous-project',
+            legacyStatusId:
+              'review',
+            suggestedName:
+              'Finished',
+            projectRecordId:
+              null,
+          },
+          scopedOrders: {
+            execution: {
+              scope: {
+                kind:
+                  'elastic-execution',
+                executionState:
+                  'finished',
+              },
+              position: 7,
+            },
+            workflow:
+              null,
+          },
+        });
+
+        expect(
+          task
+            ?.workflowStage
+            .resolution
+          === 'ambiguous-project'
+            ? task
+                .workflowStage
+                .candidateProjectRecordIds
+                .length
+            : 0,
+        ).toBe(2);
+      },
+    );
   },
 );

@@ -17,7 +17,7 @@
  * Layouts and discovery rules live in `vaultLayout.ts` and `discovery.ts`.
  */
 import { asString, asStringOrNull, parseDocument, type FrontmatterIssueCode } from '../domain/frontmatter.js';
-import { DEFAULT_STATUSES } from '../domain/elastic.js';
+import { DEFAULT_STATUSES, columnOf } from '../domain/elastic.js';
 import { problemCodeForField, type LoadProblem } from '../domain/problems.js';
 import {
   readBoolean,
@@ -34,6 +34,7 @@ import type { IdOrigin, RecordKind, SourceRef } from '../domain/records.js';
 import type { DirectoryPresence, VaultReader } from '../ports/vault.js';
 import type {
   CalendarEvent,
+  ElasticColumn,
   LinkedFolder,
   Project,
   ProximaState,
@@ -63,6 +64,23 @@ export interface LegacyPhysicalRecordCandidate {
   readonly name: string;
   readonly projectId: string | null;
   readonly source: SourceRef;
+
+  /**
+   * Already-interpreted legacy values needed by the one-time importer.
+   *
+   * These values are produced by the same compatibility semantics used by ordinary
+   * loading. They are import input only and do not become a second canonical model.
+   */
+  readonly compatibility: {
+    readonly taskStatus:
+      Task['status'] | null;
+    readonly taskOrderIndex:
+      Task['orderIndex'] | null;
+    readonly taskExecutionState:
+      ElasticColumn | null;
+    readonly projectType:
+      Project['projectType'] | null;
+  };
 }
 
 export interface LoadResult {
@@ -428,23 +446,98 @@ function projectReference(fm: Record<string, unknown>): string | null {
 function toPhysicalCandidate(
   doc: SourcedDocument,
 ): LegacyPhysicalRecordCandidate {
-  const legacyId = resolveId(doc);
+  const legacyId =
+    resolveId(doc);
+
+  const source = {
+    ...doc.source,
+  };
+
+  if (
+    doc.source.kind
+    === 'project'
+  ) {
+    const project =
+      toProject(
+        doc,
+        legacyId,
+        [],
+      );
+
+    return {
+      kind: 'project',
+      legacyId,
+      name:
+        project.name,
+      projectId: null,
+      source,
+      compatibility: {
+        taskStatus: null,
+        taskOrderIndex:
+          null,
+        taskExecutionState:
+          null,
+        projectType:
+          project.projectType,
+      },
+    };
+  }
+
+  if (
+    doc.source.kind
+    === 'task'
+  ) {
+    const task =
+      toTask(
+        doc,
+        legacyId,
+        [],
+      );
+
+    return {
+      kind: 'task',
+      legacyId,
+      name:
+        task.name,
+      projectId:
+        task.projectId,
+      source,
+      compatibility: {
+        taskStatus:
+          task.status,
+        taskOrderIndex:
+          task.orderIndex,
+        taskExecutionState:
+          columnOf(
+            task,
+            DEFAULT_STATUSES,
+          ),
+        projectType:
+          null,
+      },
+    };
+
+  }
 
   return {
-    kind: doc.source.kind,
+    kind: 'event',
     legacyId,
     name: displayName(
       doc.frontmatter,
       legacyId,
     ),
     projectId:
-      doc.source.kind === 'project'
-        ? null
-        : projectReference(
-            doc.frontmatter,
-          ),
-    source: {
-      ...doc.source,
+      projectReference(
+        doc.frontmatter,
+      ),
+    source,
+    compatibility: {
+      taskStatus: null,
+      taskOrderIndex:
+        null,
+      taskExecutionState:
+        null,
+      projectType: null,
     },
   };
 }

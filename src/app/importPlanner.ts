@@ -9,6 +9,13 @@ import type {
   ProblemCode,
   ProblemSeverity,
 } from '../domain/problems.js';
+import {
+  canonicalOrderPosition,
+  type CanonicalOrderPosition,
+} from '../domain/canonicalOrdering.js';
+import type {
+  CanonicalExecutionState,
+} from '../domain/canonicalTaskState.js';
 import type {
   IdOrigin,
   RecordKind,
@@ -148,6 +155,128 @@ export interface LegacyImportProjectReferencePlan {
     | 'ambiguous';
 }
 
+export type LegacyImportWorkflowStagePlan =
+  | {
+      readonly resolution:
+        'candidate';
+      readonly legacyStatusId:
+        string;
+      readonly suggestedName:
+        string;
+      readonly projectRecordId:
+        OpaqueRecordId;
+    }
+  | {
+      readonly resolution:
+        'none';
+      readonly legacyStatusId:
+        string;
+      readonly suggestedName:
+        string;
+      readonly projectRecordId:
+        null;
+    }
+  | {
+      readonly resolution:
+        'missing-project';
+      readonly legacyStatusId:
+        string;
+      readonly suggestedName:
+        string;
+      readonly projectRecordId:
+        null;
+    }
+  | {
+      readonly resolution:
+        'ambiguous-project';
+      readonly legacyStatusId:
+        string;
+      readonly suggestedName:
+        string;
+      readonly projectRecordId:
+        null;
+      readonly candidateProjectRecordIds:
+        readonly OpaqueRecordId[];
+    };
+
+export interface LegacyImportExecutionOrderPlan {
+  readonly scope: {
+    readonly kind:
+      'elastic-execution';
+    readonly executionState:
+      CanonicalExecutionState;
+  };
+  readonly position:
+    CanonicalOrderPosition;
+}
+
+export interface LegacyImportWorkflowOrderPlan {
+  /**
+   * This is a conversion-plan scope, not yet a materialized canonical
+   * CanonicalDurableOrderScope: final workflowStageId allocation belongs to staging.
+   */
+  readonly scope: {
+    readonly kind:
+      'project-workflow-stage-candidate';
+    readonly projectRecordId:
+      OpaqueRecordId;
+    readonly legacyStatusId:
+      string;
+  };
+  readonly position:
+    CanonicalOrderPosition;
+}
+
+export interface LegacyImportTaskConversionPlan {
+  readonly kind:
+    'task';
+  readonly recordId:
+    OpaqueRecordId;
+  readonly sourcePath:
+    string;
+  readonly legacyStatusId:
+    string;
+  readonly executionState:
+    CanonicalExecutionState;
+  readonly workflowStage:
+    LegacyImportWorkflowStagePlan;
+  readonly scopedOrders: {
+    readonly execution:
+      LegacyImportExecutionOrderPlan;
+    readonly workflow:
+      LegacyImportWorkflowOrderPlan | null;
+  };
+}
+
+export interface LegacyImportProjectConversionPlan {
+  readonly kind:
+    'project';
+  readonly recordId:
+    OpaqueRecordId;
+  readonly sourcePath:
+    string;
+  readonly legacyProjectType:
+    'task' | 'schedule';
+  readonly disposition:
+    'compatibility-import-metadata-only';
+  readonly canonicalCapabilityAuthority:
+    'associated-data-and-workspace';
+}
+
+export interface LegacyImportEventConversionPlan {
+  readonly kind:
+    'event';
+  readonly recordId:
+    OpaqueRecordId;
+  readonly sourcePath:
+    string;
+}
+
+export type LegacyImportConversionPlan =
+  | LegacyImportTaskConversionPlan
+  | LegacyImportProjectConversionPlan
+  | LegacyImportEventConversionPlan;
+
 export type LegacyImportProblemDisposition =
   | 'reader-problem'
   | 'unsupported-frontmatter-policy-pending';
@@ -179,6 +308,9 @@ export interface LegacyImportPlan {
 
   readonly mappings:
     readonly LegacyImportIdentityPlan[];
+
+  readonly conversions:
+    readonly LegacyImportConversionPlan[];
 
   readonly identityMapping:
     LegacyImportIdentityMappingManifest;
@@ -956,6 +1088,251 @@ export async function planLegacyMarkdownImport(
     });
   }
 
+  const projectReferenceBySourceRecordId =
+    new Map(
+      projectReferences.map(
+        (reference) => [
+          reference.sourceRecordId,
+          reference,
+        ] as const,
+      ),
+    );
+
+  const statusNameById =
+    new Map(
+      loaded.state.statuses.map(
+        (status) => [
+          status.id,
+          status.name,
+        ] as const,
+      ),
+    );
+
+  const conversions:
+    LegacyImportConversionPlan[] =
+      [];
+
+  for (
+    const candidate
+    of candidates
+  ) {
+    const mapping =
+      mappingByPhysical.get(
+        physicalKey(
+          candidate.kind,
+          candidate.source.path,
+        ),
+      );
+
+    if (!mapping) {
+      throw new Error(
+        `Import planner lost conversion identity for ${candidate.kind} ${candidate.source.path}.`,
+      );
+    }
+
+    if (
+      candidate.kind
+      === 'project'
+    ) {
+      const legacyProjectType =
+        candidate.compatibility
+          .projectType;
+
+      if (
+        legacyProjectType
+        === null
+      ) {
+        throw new Error(
+          `Import planner lost interpreted project type for ${candidate.source.path}.`,
+        );
+      }
+
+      conversions.push({
+        kind: 'project',
+        recordId:
+          mapping.recordId,
+        sourcePath:
+          candidate.source.path,
+        legacyProjectType,
+        disposition:
+          'compatibility-import-metadata-only',
+        canonicalCapabilityAuthority:
+          'associated-data-and-workspace',
+      });
+
+      continue;
+    }
+
+    if (
+      candidate.kind
+      === 'event'
+    ) {
+      conversions.push({
+        kind: 'event',
+        recordId:
+          mapping.recordId,
+        sourcePath:
+          candidate.source.path,
+      });
+
+      continue;
+    }
+
+    const legacyStatusId =
+      candidate.compatibility
+        .taskStatus;
+
+    const legacyOrderIndex =
+      candidate.compatibility
+        .taskOrderIndex;
+
+    const executionState =
+      candidate.compatibility
+        .taskExecutionState;
+
+    if (
+      legacyStatusId
+        === null
+      || legacyOrderIndex
+        === null
+      || executionState
+        === null
+    ) {
+      throw new Error(
+        `Import planner lost interpreted task conversion input for ${candidate.source.path}.`,
+      );
+    }
+
+    const canonicalExecutionState:
+      CanonicalExecutionState =
+        executionState;
+
+    const suggestedName =
+      statusNameById.get(
+        legacyStatusId,
+      )
+      ?? legacyStatusId;
+
+    const projectReference =
+      projectReferenceBySourceRecordId.get(
+        mapping.recordId,
+      );
+
+    let workflowStage:
+      LegacyImportWorkflowStagePlan;
+
+    if (
+      candidate.projectId
+      === null
+    ) {
+      workflowStage = {
+        resolution:
+          'none',
+        legacyStatusId,
+        suggestedName,
+        projectRecordId:
+          null,
+      };
+    } else if (
+      !projectReference
+    ) {
+      throw new Error(
+        `Import planner lost project-reference conversion input for ${candidate.source.path}.`,
+      );
+    } else if (
+      projectReference.resolution
+      === 'resolved'
+    ) {
+      if (
+        projectReference
+          .projectRecordId
+        === null
+      ) {
+        throw new Error(
+          `Import planner received a resolved project reference without a canonical project id for ${candidate.source.path}.`,
+        );
+      }
+
+      workflowStage = {
+        resolution:
+          'candidate',
+        legacyStatusId,
+        suggestedName,
+        projectRecordId:
+          projectReference
+            .projectRecordId,
+      };
+    } else if (
+      projectReference.resolution
+      === 'ambiguous'
+    ) {
+      workflowStage = {
+        resolution:
+          'ambiguous-project',
+        legacyStatusId,
+        suggestedName,
+        projectRecordId:
+          null,
+        candidateProjectRecordIds:
+          projectReference
+            .candidateProjectRecordIds
+          ?? [],
+      };
+    } else {
+      workflowStage = {
+        resolution:
+          'missing-project',
+        legacyStatusId,
+        suggestedName,
+        projectRecordId:
+          null,
+      };
+    }
+
+    const position =
+      canonicalOrderPosition(
+        legacyOrderIndex,
+      );
+
+    conversions.push({
+      kind: 'task',
+      recordId:
+        mapping.recordId,
+      sourcePath:
+        candidate.source.path,
+      legacyStatusId,
+      executionState:
+        canonicalExecutionState,
+      workflowStage,
+      scopedOrders: {
+        execution: {
+          scope: {
+            kind:
+              'elastic-execution',
+            executionState:
+              canonicalExecutionState,
+          },
+          position,
+        },
+        workflow:
+          workflowStage.resolution
+          === 'candidate'
+            ? {
+                scope: {
+                  kind:
+                    'project-workflow-stage-candidate',
+                  projectRecordId:
+                    workflowStage
+                      .projectRecordId,
+                  legacyStatusId,
+                },
+                position,
+              }
+            : null,
+      },
+    });
+  }
+
   const problems:
     LegacyImportProblemPlan[] =
       loaded.problems.map(
@@ -993,6 +1370,7 @@ export async function planLegacyMarkdownImport(
     mappings,
     identityMapping,
     collisions,
+    conversions,
     projectReferences,
     problems,
 
