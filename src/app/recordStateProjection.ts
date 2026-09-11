@@ -28,7 +28,7 @@ import {
   type CanonicalTaskRecordV2,
 } from '../domain/canonicalRecordV2.js';
 import type { CanonicalPropertyDefinition, CanonicalPropertySchemaRecord } from '../domain/canonicalSchema.js';
-import type { CanonicalExecutionState } from '../domain/canonicalTaskState.js';
+import type { CanonicalExecutionState, CanonicalWorkflowStageStateRecord } from '../domain/canonicalTaskState.js';
 import type { SourceRef } from '../domain/records.js';
 import type {
   CalendarEvent,
@@ -38,6 +38,7 @@ import type {
   SelectOption,
   StatusDefinition,
   Task,
+  WorkflowStage,
 } from '../domain/types.js';
 import type { RecordStoreObservation } from '../ports/recordStore.js';
 
@@ -57,7 +58,8 @@ export const EXECUTION_STATE_STATUSES: readonly StatusDefinition[] = [
 ];
 
 export type RecordStateProjectionGapReason =
-  | 'workflow-stage-has-no-legacy-slot'
+  | 'workflow-stage-project-missing'
+  | 'task-workflow-stage-missing'
   | 'artifact-binding-not-resolvable-from-records'
   | 'property-option-not-in-schema'
   | 'property-value-not-representable';
@@ -241,6 +243,10 @@ function taskFrom(
     startDate: record.startDate,
     deadline: record.deadline,
     properties: legacyProperties(record.properties, labels, gaps, 'task', record.id),
+    // The workflow dimension travels with the task rather than replacing the execution one: a task
+    // in Review is still Running, and that is A2 stated as two fields instead of one.
+    workflowStageId: record.workflowStageId,
+    workflowOrder: record.workflowOrder,
   };
 }
 
@@ -345,17 +351,45 @@ export function projectRecordState(
     gaps,
   ));
 
-  for (const observation of ordered) {
-    consumed[observation.record.kind] += 1;
-    if (observation.record.kind === 'workflow-stage') {
+  for (const observation of ordered) consumed[observation.record.kind] += 1;
+
+  // The workflow dimension, as its own list in the readable world. It is deliberately *not* folded
+  // into `statuses`: A2 keeps the project workflow and the Elastic execution state independent, and
+  // a board that read one as the other would be the silo this gate removed. Two things are still
+  // reported rather than invented — a stage whose project is not in the store, and a task naming a
+  // stage that is not — because either would otherwise render as an empty column or a lost card.
+  const stageRecords = ordered
+    .map((observation) => observation.record)
+    .filter((record): record is CanonicalWorkflowStageStateRecord => record.kind === 'workflow-stage');
+  const stageIds = new Set(stageRecords.map((record) => record.id as string));
+
+  for (const record of stageRecords) {
+    if (!projectRecords.some((project) => project.id === record.projectId)) {
       gaps.push({
         kind: 'workflow-stage',
-        id: observation.record.id,
-        reason: 'workflow-stage-has-no-legacy-slot',
-        detail: `stage ${observation.record.name} belongs to project ${observation.record.projectId}; A2 keeps it independent of the execution state the board groups by`,
+        id: record.id,
+        reason: 'workflow-stage-project-missing',
+        detail: `stage ${record.name} belongs to project ${record.projectId}, which is not in the store`,
       });
     }
   }
+  for (const record of taskRecords) {
+    if (record.workflowStageId !== null && !stageIds.has(record.workflowStageId)) {
+      gaps.push({
+        kind: 'task',
+        id: record.id,
+        reason: 'task-workflow-stage-missing',
+        detail: `task ${record.name} is in stage ${record.workflowStageId}, which is not in the store`,
+      });
+    }
+  }
+
+  const workflowStages: WorkflowStage[] = stageRecords.map((record) => ({
+    id: record.id,
+    projectId: record.projectId,
+    name: record.name,
+    revision: revisions[record.id] ?? '',
+  }));
 
   return {
     state: {
@@ -364,6 +398,7 @@ export function projectRecordState(
       events,
       statuses: [...EXECUTION_STATE_STATUSES],
       taskSchema: schemaRecords.map(propertySchemaFor),
+      workflowStages,
     },
     report: {
       schemaVersion: RECORD_STATE_PROJECTION_VERSION,

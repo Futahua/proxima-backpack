@@ -244,16 +244,43 @@ describe('Stage 44 canonical records to the readable world', () => {
     expect(single.targetRecordIds).toEqual([EVENT]);
   });
 
-  it('reports what the compatibility shape cannot carry instead of dropping it', () => {
+  it('carries the workflow dimension as its own list, and reports what it cannot place', () => {
     const { state, report } = projectRecordState(world());
     const reasons = report.gaps.map((gap) => gap.reason);
 
-    // A workflow stage has no slot in the readable world, and A2 is why: the board's columns
-    // are execution states, and the stage is an independent dimension.
-    expect(reasons).toContain('workflow-stage-has-no-legacy-slot');
-    const stageGap = report.gaps.find((gap) => gap.kind === 'workflow-stage')!;
-    expect(stageGap.id).toBe(STAGE);
-    expect(stageGap.detail).toContain('independent');
+    // A stage now has a slot: it is a column heading of its own, not a status. A2 is why it is a
+    // separate list from `statuses` — the board's execution columns and its workflow columns are
+    // two dimensions, and folding one into the other is the silo HARD GATE A4 removed.
+    expect(state.workflowStages).toEqual([{ id: STAGE, projectId: PROJECT, name: 'In review', revision: `${STAGE}@1` }]);
+    expect(reasons).not.toContain('workflow-stage-has-no-legacy-slot');
+
+    // Each task carries its own stage and position, beside its execution state rather than instead
+    // of it: the projected task is Running *and* in Review.
+    const running = state.tasks.find((candidate) => candidate.id === TASK_RUNNING)!;
+    expect(running).toMatchObject({ status: 'running', workflowStageId: STAGE, workflowOrder: 1 });
+
+    // What the projection still cannot place is reported rather than invented: a stage whose project
+    // is not in the store, and a task naming a stage that is not.
+    const orphanStage = projectRecordState([
+      observation(stage(STAGE, idFromLastByte(200), 'Homeless stage')),
+    ]);
+    expect(orphanStage.report.gaps).toContainEqual(expect.objectContaining({ kind: 'workflow-stage', id: STAGE, reason: 'workflow-stage-project-missing' }));
+
+    const missingStage = projectRecordState([
+      observation(project(PROJECT, 'Project', 'active')),
+      observation({
+        ...task({ id: TASK_BACKLOG, name: 'Lost stage', projectId: PROJECT, executionState: 'backlog', executionOrder: 1, deadline: null }),
+        workflowStageId: idFromLastByte(201),
+      }),
+    ]);
+    expect(missingStage.report.gaps).toContainEqual(expect.objectContaining({ kind: 'task', id: TASK_BACKLOG, reason: 'task-workflow-stage-missing' }));
+    // The id the record names is kept as it stands: an unplaceable stage is a report, not a rewrite.
+    expect(missingStage.state.tasks[0]!.workflowStageId).toBe(idFromLastByte(201));
+  });
+
+  it('reports what the compatibility shape cannot carry instead of dropping it', () => {
+    const { state, report } = projectRecordState(world());
+    const reasons = report.gaps.map((gap) => gap.reason);
 
     // An option with no schema record to name it is reported, and the raw id is kept rather
     // than a label being invented for it.

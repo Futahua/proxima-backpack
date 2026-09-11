@@ -124,6 +124,33 @@ export interface Task {
   startDate: string | null;
   deadline: string | null;
   properties: Record<string, unknown>;
+  /**
+   * The project workflow stage this task sits in, and its position inside that stage.
+   *
+   * Present only for a source that declares a workflow dimension — the record store does, a legacy
+   * Markdown vault does not, because the legacy reader has no stage model to read. A2 is why these
+   * are separate fields from `status`: the execution state answers the Elastic question and the
+   * stage answers the project-workflow one, and neither derives the other.
+   */
+  workflowStageId?: string | null;
+  workflowOrder?: number | null;
+}
+
+/** One project workflow stage, as the readable world carries it. */
+export interface WorkflowStage {
+  id: string;
+  /** The project that owns the stage. A stage belongs to exactly one. */
+  projectId: string;
+  name: string;
+  /**
+   * The revision the stage was observed at.
+   *
+   * A revision rather than a `SourceRef` on purpose: `RecordKind` is the readable world's own
+   * vocabulary of records that have a place on a surface, and a stage has none of its own — it is a
+   * column heading. What a caller actually needs is the token a conditional write would carry, so
+   * that is what travels.
+   */
+  revision: string;
 }
 
 export interface CalendarEvent {
@@ -178,6 +205,8 @@ export interface ProximaState {
   events: CalendarEvent[];
   statuses: StatusDefinition[];
   taskSchema: PropertySchema[];
+  /** Project workflow stages, where the source has them. Absent for a legacy vault. */
+  workflowStages?: WorkflowStage[];
 }
 
 export const EMPTY_STATE: ProximaState = {
