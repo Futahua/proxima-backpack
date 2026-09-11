@@ -25,6 +25,7 @@ import { fixedClock } from '../src/domain/clock.js';
 import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
 import type { ProximaState } from '../src/domain/types.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
+import { renderScheduleProjection } from '../src/browser/scheduleProjection.js';
 import {
   bindScheduleTimeGridInteractions,
   renderScheduleTimeGrid,
@@ -335,6 +336,74 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
     expect(drawn.events.find((event) => event.id === app.eventId)!.startDate).toBe(winnerStart);
     expect(host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!.getAttribute('data-schedule-refusal'))
       .toBe('stale-revision');
+  });
+
+  it('shows a written event in every Schedule view, with the three time-grid modes drawing the exact span', async () => {
+    const app = await scheduleWorld();
+    const state = await app.read();
+    const view: View = { writeRefusal: null, writeFeedback: null, seedRefusal: null };
+    const pending: Promise<void>[] = [];
+    let drawn = state;
+    const host = mount(state, app, view, pending, (next) => { drawn = next; });
+    const harness = createInteractionHarness(host);
+
+    const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
+    const dayKey = card.closest<HTMLElement>('[data-schedule-day]')!.dataset.scheduleDay!;
+    const trackKey = `schedule-time-track-${dayKey}`;
+    const startValue = card.dataset.scheduleStartValue!;
+    const y = (minuteOfDay(card.dataset.scheduleDeadlineValue!) / 1440) * TRACK_HEIGHT;
+
+    const gesture = harness.pointerDown(card.querySelector<HTMLElement>('[data-schedule-resize-edge="end"]')!.dataset.c1Key!, { clientX: 40, clientY: y });
+    gesture.move(trackKey, { clientX: 40, clientY: y + SLOT_HEIGHT * 4 });
+    gesture.release(trackKey, { clientX: 40, clientY: y + SLOT_HEIGHT * 4 });
+    await Promise.all(pending);
+
+    const written = drawn.events.find((event) => event.id === app.eventId)!;
+    // Ninety minutes as seeded, plus the four slots the bottom edge moved: one hundred and fifty.
+    expect(Date.parse(written.deadline) - Date.parse(written.startDate)).toBe(150 * 60_000);
+
+    // The six views are two renderers over one projection of one read. Time grid first, in its three
+    // modes: each draws the block the store now holds, at the span it now holds.
+    for (const mode of ['day', 'four-day', 'week'] as const) {
+      const grid = document.createElement('div');
+      grid.innerHTML = renderScheduleTimeGrid({
+        mode,
+        events: drawn.events,
+        projectNames: new Map(),
+        selectionLabel: 'All projects',
+        calendarCursor: DAY,
+        now: new Date(2026, 8, 6, 12, 0),
+        selectedEventId: null,
+      });
+      const block = grid.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
+      expect(block.dataset.scheduleStartValue).toBe(written.startDate);
+      expect(block.dataset.scheduleDeadlineValue).toBe(written.deadline);
+      // The drawn height is the duration over the day, which is the same arithmetic the record says.
+      const height = Number(/([\d.]+)%/.exec(block.getAttribute('style')!.split('height:')[1]!)?.[1]);
+      expect(height).toBeCloseTo((150 / 1440) * 100, 6);
+    }
+
+    // And the three projection modes, which read the same `events`.
+    for (const mode of ['month', 'year', 'agenda'] as const) {
+      const projection = document.createElement('div');
+      projection.innerHTML = renderScheduleProjection({
+        mode,
+        events: drawn.events,
+        projectNames: new Map(),
+        selectionLabel: 'All projects',
+        calendarCursor: DAY,
+        now: new Date(2026, 8, 6, 12, 0),
+        selectedEventId: null,
+      });
+      // Month and agenda name the event; the year view is a mini-month with one indicator per day
+      // rather than a list, so what it says is that the day the written span starts holds one event.
+      if (mode === 'year') {
+        expect(projection.querySelector('[data-schedule-year-event-indicator]')!.getAttribute('data-schedule-occurrence-count')).toBe('1');
+      } else {
+        expect(projection.textContent).toContain('Dragged event');
+        expect(projection.querySelectorAll('[data-schedule-event-id]').length).toBeGreaterThan(0);
+      }
+    }
   });
 
   it('creates the event a seeded form describes, and closes the form it came from', async () => {
