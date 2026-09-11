@@ -638,3 +638,114 @@ export function clearBacklogSelection(
       ]
     : [];
 }
+
+/** How narrow a Backlog column may be dragged, so a label never becomes unreadable. */
+export const BACKLOG_COLUMN_MIN_WIDTH:
+  number =
+    96;
+
+/** How wide a Backlog column may be dragged, so one column cannot swallow the table. */
+export const BACKLOG_COLUMN_MAX_WIDTH:
+  number =
+    640;
+
+/** The width a column starts at, before anybody has dragged it. */
+export const BACKLOG_COLUMN_DEFAULT_WIDTH:
+  number =
+    160;
+
+/**
+ * Clamp a proposed column width.
+ *
+ * A drag reports pixels, and a drag can go anywhere: off the left edge of the table, or far
+ * past the right. Rounding to whole pixels keeps a rendered width and a stored width the
+ * same number, so a reload does not drift a column by a fraction each time.
+ * @param width - the width the drag proposed, in pixels.
+ * @returns a whole number of pixels inside the bounds.
+ */
+export function clampBacklogColumnWidth(
+  width:
+    number,
+): number {
+  if (!Number.isFinite(width)) {
+    return BACKLOG_COLUMN_DEFAULT_WIDTH;
+  }
+
+  return Math.min(
+    BACKLOG_COLUMN_MAX_WIDTH,
+    Math.max(
+      BACKLOG_COLUMN_MIN_WIDTH,
+      Math.round(width),
+    ),
+  );
+}
+
+/**
+ * Record a column's width, leaving every other column as it was.
+ *
+ * A width is how this reader is looking at the table, not what the table means, which is why
+ * it lives in view state and why this returns a new map rather than editing one.
+ * @param widths - the widths in effect.
+ * @param columnId - the column being resized.
+ * @param width - the proposed width, which is clamped.
+ * @returns the next widths, or a copy of the same ones when nothing changed.
+ */
+export function resizeBacklogColumn(
+  widths:
+    Readonly<
+      Record<
+        string,
+        number
+      >
+    >,
+  columnId:
+    string,
+  width:
+    number,
+): Readonly<
+  Record<
+    string,
+    number
+  >
+> {
+  const clamped =
+    clampBacklogColumnWidth(
+      width,
+    );
+
+  if (
+    widths[columnId]
+    === clamped
+  ) {
+    return {
+      ...widths,
+    };
+  }
+
+  return {
+    ...widths,
+    [columnId]:
+      clamped,
+  };
+}
+
+/**
+ * The width a column is currently drawn at.
+ * @param widths - the widths in effect.
+ * @param columnId - the column being drawn.
+ * @returns its width, or the default when nobody has dragged it.
+ */
+export function backlogColumnWidth(
+  widths:
+    Readonly<
+      Record<
+        string,
+        number
+      >
+    >,
+  columnId:
+    string,
+): number {
+  return widths[columnId]
+    ?? BACKLOG_COLUMN_DEFAULT_WIDTH;
+}

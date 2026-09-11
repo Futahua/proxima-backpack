@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_BULK_NOTE, PROJECT_BACKLOG_WRITE_REFUSAL, renderProjectBacklog, type ProjectBacklogViewState } from '../src/browser/projectBacklog.js';
-import { applyBacklogControl, buildBacklogFilter, clearBacklogSelection, selectAllBacklogVisible, toggleBacklogSelection } from '../src/app/backlogControls.js';
+import { applyBacklogControl, buildBacklogFilter, clearBacklogSelection, resizeBacklogColumn, selectAllBacklogVisible, toggleBacklogSelection } from '../src/app/backlogControls.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import type { Project, ProximaState, Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
@@ -10,7 +10,7 @@ const other:Project={...project,id:'other',source:sourceRef('project','other'),n
 const task=(id:string,pid:string,ix:number):Task=>({id,source:sourceRef('task',id),name:id,description:'<script>x</script>',projectId:pid,status:'todo',weight:1,orderIndex:ix,isFixedDuration:false,fixedDuration:null,maxDuration:null,isCompleted:false,createdAt:'2026-09-01T00:00:00.000Z',startDate:null,deadline:null,properties:{}});
 const state=():ProximaState=>({projects:[project,other],tasks:[task('second',project.id,2),task('first',project.id,1),task('other',other.id,0)],events:[],statuses:[],taskSchema:[]});
 /** The query controls a case does not exercise, so each case states only its own. */
-const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{},toggleSelection:()=>{},selectAllVisible:()=>{},clearSelection:()=>{},openTemplate:()=>{},closeTemplate:()=>{},setTemplateText:()=>{}};
+const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{},toggleSelection:()=>{},selectAllVisible:()=>{},clearSelection:()=>{},openTemplate:()=>{},closeTemplate:()=>{},setTemplateText:()=>{},resizeColumn:()=>{}};
 beforeEach(()=>{document.body.innerHTML='';});
 describe('Stage 5 slice 7 detailed Backlog interactions',()=>{
  it('orders and scopes tasks without mutation',()=>{const s=state(),before=JSON.stringify(s);document.body.innerHTML=renderProjectBacklog(s,project);expect(Array.from(document.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId)).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-task-id="other"]')).toBeNull();expect(JSON.stringify(s)).toBe(before);});
@@ -52,6 +52,7 @@ function session(s:ProximaState,start:ProjectBacklogViewState={...EMPTY_PROJECT_
   openTemplate:()=>{view={...view,projectId:project.id,templateOpen:true};draw();},
   closeTemplate:()=>{view={...view,projectId:project.id,templateOpen:false};draw();},
   setTemplateText:(text)=>{view={...view,projectId:project.id,templateText:text};draw();},
+  resizeColumn:(columnId,width)=>{view={...view,projectId:project.id,columnWidths:resizeBacklogColumn(view.columnWidths,columnId,width)};draw();},
  });
  return {root:()=>host,harness:createInteractionHarness(host),view:()=>view,rows:()=>Array.from(host.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId),chipIds:()=>Array.from(host.querySelectorAll('[data-project-backlog-filter-chip]')).map(x=>(x as HTMLElement).dataset.projectBacklogFilterChip),stop};
 }
@@ -64,6 +65,61 @@ describe('Stage 6 Backlog query controls, driven through the document',()=>{
  it('sorts a column ascending, then the same column descending, then clears it',()=>{const s=state();const run=session(s);run.harness.click('project-backlog-sort-name');expect(run.rows()).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-sort-indicator]')?.getAttribute('data-project-backlog-sort-direction')).toBe('ascending');run.harness.click('project-backlog-sort-name');expect(run.rows()).toEqual(['second','first']);expect(document.querySelector('[data-project-backlog-sort-indicator]')?.getAttribute('data-project-backlog-sort-direction')).toBe('descending');expect(document.querySelector('[data-project-backlog-sort-by="name"]')?.getAttribute('aria-pressed')).toBe('true');run.harness.click('project-backlog-clear-sort');expect(run.view().query.sort).toBeNull();expect(document.querySelector('[data-project-backlog-sort-indicator]')).toBeNull();expect(run.rows()).toEqual(['first','second']);run.stop();});
  it('clears a whole query at once, and leaves nothing to clear',()=>{const s=state();const run=session(s,{...EMPTY_PROJECT_BACKLOG_VIEW,projectId:project.id,query:{search:'s',filters:[{id:'filter-1',field:'weight',operator:'is',value:1}],sort:{field:'name',direction:'descending'}}});run.harness.click('project-backlog-clear-query');expect(run.view().query).toEqual({search:'',filters:[],sort:null});expect(run.rows()).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-action="clear-query"]')?.hasAttribute('disabled')).toBe(true);expect((document.querySelector('[data-project-backlog-search-input]') as HTMLInputElement).value).toBe('');run.stop();});
  it('does not write to a record for any control it was given',()=>{const s=state();const before=JSON.stringify(s);const run=session(s);run.harness.typeText('project-backlog-search-input','d');(document.querySelector('[data-project-backlog-filter-expression]') as HTMLSelectElement).value='name|contains';(document.querySelector('[data-project-backlog-filter-value]') as HTMLInputElement).value='sec';run.harness.click('project-backlog-add-filter');run.harness.click('project-backlog-sort-name');run.harness.click('project-backlog-chip-remove-filter-1');run.harness.click('project-backlog-clear-query');expect(JSON.stringify(s)).toBe(before);run.stop();});
+});
+describe('Stage 6 Backlog column table',()=>{
+ it('names each custom-property column once, above the cells that belong to it',()=>{
+  const s=derivedState();const run=session(s);
+  const header=run.root().querySelector('[data-project-backlog-columns]')!;
+  expect(header).not.toBeNull();
+  const columns=Array.from(run.root().querySelectorAll('[data-project-backlog-column]')).map(x=>x as HTMLElement);
+  expect(columns.map(x=>x.dataset.projectBacklogColumn)).toEqual(['property:blocks','property:childCount','property:estimate','property:progress']);
+  // The label is the schema's name, and the header sits above the list it names.
+  expect(columns.map(x=>x.querySelector('span')!.textContent)).toEqual(['Blocks','Child count','Estimate','Progress']);
+  // The header sits directly above the list it names.
+  expect(header.nextElementSibling).toBe(run.root().querySelector('.project-backlog-list'));
+  run.stop();
+ });
+ it('draws a column header only for the columns the rows actually draw',()=>{
+  const bare=state();const run=session(bare);
+  expect(run.root().querySelector('[data-project-backlog-columns]')).toBeNull();
+  run.stop();
+ });
+ it('gives the header and every cell of a column the same width',()=>{
+  const s=derivedState();const run=session(s);
+  const width=(selector:string)=>(run.root().querySelector(selector) as HTMLElement).style.width;
+  const header=width('[data-project-backlog-column="property:blocks"]');
+  expect(header).toBe('160px');
+  expect(width('[data-project-backlog-cell="property:blocks"]')).toBe(header);
+  run.stop();
+ });
+ it('resizes a column by dragging its edge, and keeps the header and cells together',()=>{
+  const s=derivedState();const before=JSON.stringify(s);const run=session(s);
+  const drag=run.harness.beginResize('project-backlog-column-resize-property:blocks',{clientX:300,clientY:10});
+  drag.move('project-backlog-column-resize-property:blocks',{clientX:360,clientY:10});
+  drag.release('project-backlog-column-resize-property:blocks',{clientX:360,clientY:10});
+  expect(run.view().columnWidths['property:blocks']).toBe(220);
+  const width=(selector:string)=>(run.root().querySelector(selector) as HTMLElement).style.width;
+  expect(width('[data-project-backlog-column="property:blocks"]')).toBe('220px');
+  expect(width('[data-project-backlog-cell="property:blocks"]')).toBe('220px');
+  // The other columns are untouched, and nothing about the project's data changed.
+  expect(run.view().columnWidths['property:progress']).toBeUndefined();
+  expect(width('[data-project-backlog-column="property:progress"]')).toBe('160px');
+  expect(JSON.stringify(s)).toBe(before);
+  run.stop();
+ });
+ it('clamps a drag that would make a column unreadable or swallow the table',()=>{
+  const s=derivedState();const run=session(s);
+  const edge='project-backlog-column-resize-property:blocks';
+  const shrink=run.harness.beginResize(edge,{clientX:300,clientY:10});
+  shrink.move(edge,{clientX:-900,clientY:10});
+  shrink.release(edge,{clientX:-900,clientY:10});
+  expect(run.view().columnWidths['property:blocks']).toBe(96);
+  const grow=run.harness.beginResize(edge,{clientX:300,clientY:10});
+  grow.move(edge,{clientX:9000,clientY:10});
+  grow.release(edge,{clientX:9000,clientY:10});
+  expect(run.view().columnWidths['property:blocks']).toBe(640);
+  run.stop();
+ });
 });
 /** A project whose tasks declare a relation, a rollup, a formula and an unset property. */
 function derivedState():ProximaState{

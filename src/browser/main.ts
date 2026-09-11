@@ -42,7 +42,7 @@ import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter 
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
-import { applyBacklogControl, buildBacklogFilter, clearBacklogSelection, selectAllBacklogVisible, toggleBacklogSelection } from '../app/backlogControls.js';
+import { applyBacklogControl, buildBacklogFilter, clearBacklogSelection, resizeBacklogColumn, selectAllBacklogVisible, toggleBacklogSelection } from '../app/backlogControls.js';
 import { applyTaskEditorEdit, taskEditorDraftFor, type TaskEditorDraft } from '../app/taskEditor.js';
 import { bindProjectDeadlinesInteractions, EMPTY_PROJECT_DEADLINES_VIEW, type ProjectDeadlinesViewState } from './projectDeadlines.js';
 import { bindProjectScheduleInteractions, EMPTY_PROJECT_SCHEDULE_VIEW, type ProjectScheduleViewState } from './projectSchedule.js';
@@ -711,6 +711,8 @@ function bindInteractions(): void {
     // which is why the caret is put back afterwards.
     openTemplate: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, templateOpen: true }; render(); },
     closeTemplate: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, templateOpen: false }; render(); },
+    // A column width is how this reader is looking at the table, not what the table means: it never leaves view state.
+    resizeColumn: (columnId, width) => { projectBacklogView = { ...projectBacklogView, projectId: selection, columnWidths: resizeBacklogColumn(projectBacklogView.columnWidths, columnId, width) }; render(); },
     setTemplateText: (text) => { projectBacklogView = { ...projectBacklogView, projectId: selection, templateText: text }; render(); const field = root.querySelector<HTMLTextAreaElement>('[data-template-text]'); if (field) { field.focus(); field.setSelectionRange(text.length, text.length); } },
   });
   bindProjectDeadlinesInteractions(root, {
