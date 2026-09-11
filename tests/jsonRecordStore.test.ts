@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { parseAction } from '../src/app/actionProtocol.js';
+import { categoryOf } from '../src/app/actionTaxonomy.js';
+
 import {
   CANONICAL_RECORD_SCHEMA_VERSION,
   defineCanonicalRecordHeader,
@@ -116,6 +119,8 @@ implements RecordStoreFileBackend {
     >();
 
   readCalls = 0;
+  writeCalls = 0;
+  deleteCalls = 0;
 
   listRecordFiles(): Promise<readonly string[]> {
     return Promise.resolve(
@@ -176,6 +181,7 @@ implements RecordStoreFileBackend {
     text: string,
     expectedRevision: string,
   ): Promise<RecordStoreFileMutationResult> {
+    this.writeCalls += 1;
     const existing =
       this.files.get(fileName);
 
@@ -222,6 +228,7 @@ implements RecordStoreFileBackend {
     fileName: RecordStoreFileName,
     expectedRevision: string,
   ): Promise<RecordStoreFileMutationResult> {
+    this.deleteCalls += 1;
     const existing =
       this.files.get(fileName);
 
@@ -629,5 +636,34 @@ describe('Stage 7 slice 1 JSON RecordStore contract', () => {
     expect(afterRestart).toEqual(
       beforeRestart,
     );
+  });
+
+  it('contains path-shaped semantic mutation targets before the RecordStore backend receives them', async () => {
+    const backend = new MemoryRecordFileBackend();
+    const records = store(backend);
+    const creatorVaultPaths = [
+      'D:/Creator Vault/Tasks/task.md',
+      '../Creator Vault/Tasks/task.md',
+      '/Users/creator/Vault/Tasks/task.md',
+    ];
+
+    for (const creatorVaultPath of creatorVaultPaths) {
+      const updateAction = parseAction({ type: 'task.execution.move', taskId: creatorVaultPath, targetColumn: 'running', targetIndex: 0 });
+      expect(updateAction.ok).toBe(true);
+      if (!updateAction.ok || updateAction.action.type !== 'task.execution.move') throw new Error('expected parsed task record-mutation action');
+      expect(categoryOf(updateAction.action.type)).toBe('record-mutation');
+      await expect(records.updateIfUnchanged(task(updateAction.action.taskId as OpaqueRecordId, 'Path-shaped semantic update'), 'semantic-observed-revision')).rejects.toThrow(/Invalid opaque Proxima record id/);
+
+      const deleteAction = parseAction({ type: 'project.delete', projectId: creatorVaultPath });
+      expect(deleteAction.ok).toBe(true);
+      if (!deleteAction.ok || deleteAction.action.type !== 'project.delete') throw new Error('expected parsed project record-mutation action');
+      expect(categoryOf(deleteAction.action.type)).toBe('record-mutation');
+      await expect(records.deleteIfUnchanged(deleteAction.action.projectId as OpaqueRecordId, 'semantic-observed-revision')).rejects.toThrow(/Invalid opaque Proxima record id/);
+    }
+
+    expect(backend.readCalls).toBe(0);
+    expect(backend.writeCalls).toBe(0);
+    expect(backend.deleteCalls).toBe(0);
+    expect(backend.names()).toEqual([]);
   });
 });
