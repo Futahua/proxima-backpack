@@ -96,6 +96,16 @@ export interface LegacyPhysicalRecordCandidate {
       Task['startDate'] | null;
     readonly taskDeadline:
       Task['deadline'] | null;
+    readonly eventDescription:
+      string | null;
+    readonly eventCreatedAt:
+      string | null;
+    readonly eventStartDate:
+      string | null;
+    readonly eventDeadline:
+      string | null;
+    readonly eventIsCompleted:
+      boolean | null;
     readonly projectType:
       Project['projectType'] | null;
     readonly projectDescription:
@@ -535,6 +545,16 @@ function toPhysicalCandidate(
           null,
         taskDeadline:
           null,
+        eventDescription:
+          null,
+        eventCreatedAt:
+          null,
+        eventStartDate:
+          null,
+        eventDeadline:
+          null,
+        eventIsCompleted:
+          null,
         projectType:
           project.projectType,
         projectDescription:
@@ -609,6 +629,16 @@ function toPhysicalCandidate(
           task.startDate,
         taskDeadline:
           task.deadline,
+        eventDescription:
+          null,
+        eventCreatedAt:
+          null,
+        eventStartDate:
+          null,
+        eventDeadline:
+          null,
+        eventIsCompleted:
+          null,
         projectType:
           null,
         projectDescription:
@@ -629,17 +659,20 @@ function toPhysicalCandidate(
 
   }
 
+  const event =
+    toEvent(
+      doc,
+      legacyId,
+      [],
+    );
+
   return {
     kind: 'event',
     legacyId,
-    name: displayName(
-      doc.frontmatter,
-      legacyId,
-    ),
+    name:
+      event.name,
     projectId:
-      projectReference(
-        doc.frontmatter,
-      ),
+      event.projectId,
     source,
     compatibility: {
       taskStatus: null,
@@ -665,6 +698,16 @@ function toPhysicalCandidate(
         null,
       taskDeadline:
         null,
+      eventDescription:
+        event.description,
+      eventCreatedAt:
+        event.createdAt,
+      eventStartDate:
+        event.startDate,
+      eventDeadline:
+        event.deadline,
+      eventIsCompleted:
+        event.isCompleted,
       projectType: null,
       projectDescription:
         null,

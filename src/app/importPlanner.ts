@@ -49,7 +49,7 @@ import {
 } from './importSchemaPlanner.js';
 
 export const LEGACY_IMPORT_PLAN_SCHEMA_VERSION =
-  7 as const;
+  8 as const;
 
 export interface LegacyImportIdentityRequest {
   readonly kind: RecordKind;
@@ -313,6 +313,38 @@ export interface LegacyImportProjectConversionPlan {
     'associated-data-and-workspace';
 }
 
+export type LegacyImportEventProjectPlan =
+  | {
+      readonly resolution:
+        'none';
+      readonly projectRecordId:
+        null;
+    }
+  | {
+      readonly resolution:
+        'resolved';
+      readonly projectRecordId:
+        OpaqueRecordId;
+    }
+  | {
+      readonly resolution:
+        'missing';
+      readonly legacyProjectId:
+        string;
+      readonly projectRecordId:
+        null;
+    }
+  | {
+      readonly resolution:
+        'ambiguous';
+      readonly legacyProjectId:
+        string;
+      readonly projectRecordId:
+        null;
+      readonly candidateProjectRecordIds:
+        readonly OpaqueRecordId[];
+    };
+
 export interface LegacyImportEventConversionPlan {
   readonly kind:
     'event';
@@ -320,6 +352,22 @@ export interface LegacyImportEventConversionPlan {
     OpaqueRecordId;
   readonly sourcePath:
     string;
+  readonly name:
+    string;
+  readonly description:
+    string;
+  readonly createdAt:
+    string;
+  readonly startDate:
+    string;
+  readonly deadline:
+    string;
+  readonly isCompleted:
+    boolean;
+  readonly recurrence:
+    null;
+  readonly project:
+    LegacyImportEventProjectPlan;
 }
 
 export type LegacyImportConversionPlan =
@@ -1322,12 +1370,135 @@ export async function planLegacyMarkdownImport(
       candidate.kind
       === 'event'
     ) {
+      const description =
+        candidate.compatibility
+          .eventDescription;
+
+      const createdAt =
+        candidate.compatibility
+          .eventCreatedAt;
+
+      const startDate =
+        candidate.compatibility
+          .eventStartDate;
+
+      const deadline =
+        candidate.compatibility
+          .eventDeadline;
+
+      const isCompleted =
+        candidate.compatibility
+          .eventIsCompleted;
+
+      if (
+        description
+          === null
+        || createdAt
+          === null
+        || startDate
+          === null
+        || deadline
+          === null
+        || isCompleted
+          === null
+      ) {
+        throw new Error(
+          `Import planner lost interpreted event conversion input for ${candidate.source.path}.`,
+        );
+      }
+
+      let project:
+        LegacyImportEventProjectPlan;
+
+      if (
+        candidate.projectId
+        === null
+      ) {
+        project = {
+          resolution:
+            'none',
+          projectRecordId:
+            null,
+        };
+      } else {
+        const projectReference =
+          projectReferenceBySourceRecordId.get(
+            mapping.recordId,
+          );
+
+        if (
+          projectReference
+          === undefined
+        ) {
+          throw new Error(
+            `Import planner lost project-reference evidence for event ${candidate.source.path}.`,
+          );
+        }
+
+        if (
+          projectReference.resolution
+          === 'resolved'
+        ) {
+          if (
+            projectReference.projectRecordId
+            === null
+          ) {
+            throw new Error(
+              `Import planner received a resolved event project reference without a canonical project id for ${candidate.source.path}.`,
+            );
+          }
+
+          project = {
+            resolution:
+              'resolved',
+            projectRecordId:
+              projectReference
+                .projectRecordId,
+          };
+        } else if (
+          projectReference.resolution
+          === 'ambiguous'
+        ) {
+          project = {
+            resolution:
+              'ambiguous',
+            legacyProjectId:
+              candidate.projectId,
+            projectRecordId:
+              null,
+            candidateProjectRecordIds:
+              projectReference
+                .candidateProjectRecordIds
+              ?? [],
+          };
+        } else {
+          project = {
+            resolution:
+              'missing',
+            legacyProjectId:
+              candidate.projectId,
+            projectRecordId:
+              null,
+          };
+        }
+      }
+
       conversions.push({
         kind: 'event',
         recordId:
           mapping.recordId,
         sourcePath:
           candidate.source.path,
+        name:
+          mapping.name,
+        description,
+        createdAt,
+        startDate,
+        deadline,
+        isCompleted,
+        recurrence:
+          null,
+        project,
       });
 
       continue;

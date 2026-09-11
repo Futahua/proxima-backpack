@@ -1038,7 +1038,7 @@ describe(
 
         expect(
           plan.schemaVersion,
-        ).toBe(7);
+        ).toBe(8);
 
         expect(
           plan.mappings,
