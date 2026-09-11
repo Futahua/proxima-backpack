@@ -1,5 +1,5 @@
 import { bootstrapRestoredHandle, type BootstrapInspection, type ReadPermissionProvider, type RestoredHandleStore } from './handleBootstrap.js';
-import { createSourceSession, type SourceCandidate, type SourceSession, type SourceSessionOptions } from './sourceSession.js';
+import { createSourceSession, type SourceCandidate, type SourceMode, type SourceSession, type SourceSessionOptions } from './sourceSession.js';
 import { loadVaultState } from './vaultRepository.js';
 import { detectLayout } from './vaultLayout.js';
 
@@ -9,7 +9,7 @@ export interface StartupSessionOptions extends Omit<SourceSessionOptions, 'initi
 }
 
 export interface StartupInspection {
-  startupSourceMode: 'fixture' | 'external';
+  startupSourceMode: SourceMode;
   restoredHandlePresent: boolean;
   bootstrapStatus: BootstrapInspection['bootstrapStatus'];
   sourceGeneration: number;

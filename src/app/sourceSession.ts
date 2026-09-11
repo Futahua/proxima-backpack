@@ -1,16 +1,34 @@
 import type { VaultReader } from '../ports/vault.js';
-import type { LoadResult } from './vaultRepository.js';
 import { createReadOnlyProjection, type ReadOnlyProjection } from './readOnlyProjection.js';
 import { createRefreshController, type RefreshController, type RefreshReason, type RefreshResult } from './refreshController.js';
 import { createRefreshPolicy, type RefreshPolicy, type RefreshScheduler } from './refreshPolicy.js';
+import { vaultStateSource, type StateSource, type StateSourceLoad } from './stateSource.js';
 
-export type SourceMode = 'fixture' | 'external';
+/**
+ * Which world the session is reading.
+ *
+ * `fixture` and `external` are the same source — a legacy Markdown vault — with different
+ * bytes behind it. `record-store` is a different source: canonical records, read through the
+ * record store's own boundary and projected into the readable shape. The session still holds
+ * a `reader` in that mode, because notes, drawings and attachments are vault artifacts and
+ * HARD GATE C keeps them there; only records move.
+ */
+export type SourceMode = 'fixture' | 'external' | 'record-store';
 export type SourceTransitionState = 'stable' | 'switching' | 'failed';
 
 export interface SourceCandidate {
   mode: SourceMode;
+  /**
+   * The vault this session reads artifacts from. Required in every mode, including
+   * `record-store`: notes continue reading from the vault after the cutover.
+   */
   reader: VaultReader;
-  initial: LoadResult;
+  initial: StateSourceLoad;
+  /**
+   * Where records come from. Absent means the reader above: the legacy source. A
+   * `record-store` candidate must supply it.
+   */
+  source?: StateSource;
 }
 
 export interface SourceSessionSnapshot {
@@ -54,7 +72,10 @@ interface ActiveSource {
 }
 
 function validCandidate(candidate: SourceCandidate): boolean {
-  return !!candidate && (candidate.mode === 'fixture' || candidate.mode === 'external') && !!candidate.reader && !!candidate.initial && typeof candidate.initial.state === 'object';
+  if (!candidate) return false;
+  const knownMode = candidate.mode === 'fixture' || candidate.mode === 'external' || candidate.mode === 'record-store';
+  const hasSource = candidate.mode === 'record-store' ? candidate.source !== undefined : true;
+  return knownMode && !!candidate.reader && hasSource && !!candidate.initial && typeof candidate.initial.state === 'object';
 }
 
 /**
@@ -82,11 +103,14 @@ export function createSourceSession(options: SourceSessionOptions): SourceSessio
     // this a legacy vault read correctly at startup and then degraded on the first
     // refresh, because the reload looked for the preferred directories and reported
     // them unreadable — the surface said DEGRADED about a vault that had not
-    // changed at all.
+    // changed at all. A source that has no layout (the record store) simply has none
+    // to pass, and its own reload is layout-free by construction.
+    const layout = candidate.initial.layout;
     const controller = createRefreshController({
-      vault: candidate.reader,
       initial: candidate.initial,
-      loadOptions: { layout: candidate.initial.layout },
+      ...(candidate.source === undefined
+        ? { vault: candidate.reader, loadOptions: layout === undefined ? {} : { layout } }
+        : { source: candidate.source }),
     });
     const source: ActiveSource = { candidate, controller, policy: undefined as unknown as RefreshPolicy, projection: projectionFor(controller.snapshot(), generation) };
     source.policy = createRefreshPolicy({ controller, intervalMs: options.intervalMs, scheduler: options.scheduler, onResult(result) {

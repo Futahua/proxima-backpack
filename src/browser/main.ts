@@ -6,7 +6,7 @@ import { evaluateCreatorVaultPreflight, isCreatorVaultPreflightReport, type Crea
 import { coexistenceReadiness, declareCoexistenceReadiness } from './coexistenceReadiness.js';
 import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
-import type { SourceSession } from '../app/sourceSession.js';
+import type { SourceMode, SourceSession } from '../app/sourceSession.js';
 import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
 import { executeSourceRefreshAction } from '../app/sourceRefreshAction.js';
 import { loadProjectNotePreview, loadProjectNotesTree } from '../app/projectNotes.js';
@@ -430,7 +430,15 @@ function render(): void {
   const health = currentUiHealth();
   const projectNames = createProjectNameLookup(appState);
   root.dataset.proximaHealthGeneration = String(health.sourceRevision);
-  const sourceLabel = sourceSession?.snapshot().sourceMode === 'external' ? 'Read-only external source' : 'Read-only fixture';
+  const sourceMode = sourceSession?.snapshot().sourceMode ?? 'fixture';
+  const sourceLabel = sourceMode === 'external'
+    ? 'Read-only external source'
+    : sourceMode === 'record-store'
+      // Records come from the record store; notes, drawings and attachments stay vault
+      // artifacts, which is why both halves are named rather than saying "record store" and
+      // letting a reader assume the vault is gone.
+      ? 'Record store records · vault notes'
+      : 'Read-only fixture';
   const surfaceMarkup = renderWithBoundary(() => {
     if (surface === 'tasks') {
       return tasksMode === 'elastic'
@@ -515,7 +523,7 @@ function currentSourceMode(): 'fixture' | 'external' {
   return sourceSession?.snapshot().sourceMode === 'external' ? 'external' : 'fixture';
 }
 
-function applyProjection(next: ReadOnlyProjection, mode: 'fixture' | 'external', result?: RefreshResult): void {
+function applyProjection(next: ReadOnlyProjection, mode: SourceMode, result?: RefreshResult): void {
   const previous = sourceProjection;
   if (result) {
     lastRefreshEvidence = refreshEvidenceFromProjections(previous, next, result);
