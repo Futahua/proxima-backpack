@@ -688,8 +688,10 @@ function bindInteractions(): void {
   });
   const restoreBacklogSearchFocus = (caret: number) => { const field = root.querySelector<HTMLInputElement>('[data-project-backlog-search-input]'); if (!field) return; field.focus(); field.setSelectionRange(caret, caret); };
   bindProjectBacklogInteractions(root, {
-    openTask: (taskId) => { const task = appState?.tasks.find((candidate) => candidate.id === taskId && candidate.projectId === selection); if (!task) return; projectBacklogView = { ...EMPTY_PROJECT_BACKLOG_VIEW, projectId: selection, selectedTaskId: taskId }; render(); },
-    closeTask: () => { projectBacklogView = { ...projectBacklogView, selectedTaskId: null }; render(); },
+    // A row click opens that task in the Backlog's Task editor, which starts with no draft:
+    // the record is what the form shows until something is typed.
+    openTask: (taskId) => { const task = appState?.tasks.find((candidate) => candidate.id === taskId && candidate.projectId === selection); if (!task) return; projectBacklogView = { ...EMPTY_PROJECT_BACKLOG_VIEW, projectId: selection, selectedTaskId: taskId, editorDraft: null }; render(); },
+    closeTask: () => { projectBacklogView = { ...projectBacklogView, selectedTaskId: null, editorDraft: null }; render(); },
     startDrag: (taskId) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: taskId, dragTargetIndex: null, writeRefusal: null, lastRefusedMove: null }; },
     previewMove: ({ taskId, targetIndex }) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: taskId, dragTargetIndex: targetIndex }; },
     refuseMove: (intent) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: null, dragTargetIndex: null, writeRefusal: PROJECT_BACKLOG_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
@@ -730,6 +732,11 @@ function bindInteractions(): void {
     closeTemplate: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, templateOpen: false }; render(); },
     // A column width is how this reader is looking at the table, not what the table means: it never leaves view state.
     resizeColumn: (columnId, width) => { projectBacklogView = { ...projectBacklogView, projectId: selection, columnWidths: resizeBacklogColumn(projectBacklogView.columnWidths, columnId, width) }; render(); },
+    // The Backlog's own Task editor draft, drawn from the same projection the board's modal
+    // draws. An edit does not re-render, so a keystroke cannot take the field away from the
+    // reader; Cancel restores the record by discarding the draft, which is `null` again.
+    editTask: (edit) => { const task = appState?.tasks.find((candidate) => candidate.id === projectBacklogView.selectedTaskId); if (!task) return; projectBacklogView = { ...projectBacklogView, editorDraft: applyTaskEditorEdit(projectBacklogView.editorDraft ?? taskEditorDraftFor(task), edit) }; },
+    cancelTaskEdit: () => { projectBacklogView = { ...projectBacklogView, editorDraft: null }; render(); },
     setTemplateText: (text) => { projectBacklogView = { ...projectBacklogView, projectId: selection, templateText: text }; render(); const field = root.querySelector<HTMLTextAreaElement>('[data-template-text]'); if (field) { field.focus(); field.setSelectionRange(text.length, text.length); } },
   });
   bindProjectDeadlinesInteractions(root, {

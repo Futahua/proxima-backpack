@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_BULK_NOTE, PROJECT_BACKLOG_WRITE_REFUSAL, renderProjectBacklog, type ProjectBacklogViewState } from '../src/browser/projectBacklog.js';
 import { applyBacklogControl, buildBacklogFilter, buildBacklogPropertyFilter, clearBacklogSelection, resizeBacklogColumn, selectAllBacklogVisible, toggleBacklogSelection } from '../src/app/backlogControls.js';
 import { propertyValueTypeFor } from '../src/app/backlogView.js';
+import { applyTaskEditorEdit, taskEditorDraftFor } from '../src/app/taskEditor.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import type { Project, ProximaState, Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
@@ -11,13 +12,47 @@ const other:Project={...project,id:'other',source:sourceRef('project','other'),n
 const task=(id:string,pid:string,ix:number):Task=>({id,source:sourceRef('task',id),name:id,description:'<script>x</script>',projectId:pid,status:'todo',weight:1,orderIndex:ix,isFixedDuration:false,fixedDuration:null,maxDuration:null,isCompleted:false,createdAt:'2026-09-01T00:00:00.000Z',startDate:null,deadline:null,properties:{}});
 const state=():ProximaState=>({projects:[project,other],tasks:[task('second',project.id,2),task('first',project.id,1),task('other',other.id,0)],events:[],statuses:[],taskSchema:[]});
 /** The query controls a case does not exercise, so each case states only its own. */
-const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{},toggleSelection:()=>{},selectAllVisible:()=>{},clearSelection:()=>{},openTemplate:()=>{},closeTemplate:()=>{},setTemplateText:()=>{},resizeColumn:()=>{}};
+const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{},toggleSelection:()=>{},selectAllVisible:()=>{},clearSelection:()=>{},openTemplate:()=>{},closeTemplate:()=>{},setTemplateText:()=>{},resizeColumn:()=>{},editTask:()=>{},cancelTaskEdit:()=>{}};
 beforeEach(()=>{document.body.innerHTML='';});
 describe('Stage 5 slice 7 detailed Backlog interactions',()=>{
  it('orders and scopes tasks without mutation',()=>{const s=state(),before=JSON.stringify(s);document.body.innerHTML=renderProjectBacklog(s,project);expect(Array.from(document.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId)).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-task-id="other"]')).toBeNull();expect(JSON.stringify(s)).toBe(before);});
- it('opens a read-only inspector',()=>{const s=state();let v:ProjectBacklogViewState=EMPTY_PROJECT_BACKLOG_VIEW;const r=()=>{document.body.innerHTML=renderProjectBacklog(s,project,v);};r();bindProjectBacklogInteractions(document.body,{openTask:id=>{v={...v,projectId:project.id,selectedTaskId:id};r();},closeTask:()=>{v={...v,selectedTaskId:null};r();},startDrag:()=>{},previewMove:()=>{},refuseMove:()=>{},clearDrag:()=>{},...quiet});createInteractionHarness(document).click('project-backlog-task-first');expect(document.querySelector('[data-project-backlog-inspector-task-id="first"]')).not.toBeNull();expect(document.querySelector('.project-backlog-task-inspector script')).toBeNull();});
+ it('opens the Task editor for the row that was clicked',()=>{
+  const s=state();
+  let v:ProjectBacklogViewState=EMPTY_PROJECT_BACKLOG_VIEW;
+  const r=()=>{document.body.innerHTML=renderProjectBacklog(s,project,v);};
+  r();
+  bindProjectBacklogInteractions(document.body,{openTask:id=>{v={...v,projectId:project.id,selectedTaskId:id,editorDraft:null};r();},closeTask:()=>{v={...v,selectedTaskId:null,editorDraft:null};r();},startDrag:()=>{},previewMove:()=>{},refuseMove:()=>{},clearDrag:()=>{},...quiet});
+  createInteractionHarness(document).click('project-backlog-task-first');
+  const editor=document.querySelector('[data-project-backlog-editor-task-id="first"]');
+  expect(editor).not.toBeNull();
+  expect(editor!.getAttribute('aria-label')).toBe('Task editor');
+  // The form carries the record's values, under this surface's own hooks.
+  expect((document.querySelector('[data-c1-key="project-backlog-editor-name"]') as HTMLInputElement).value).toBe('first');
+  expect((document.querySelector('[data-c1-key="project-backlog-editor-executionState"]') as HTMLSelectElement).value).toBe('todo');
+  // The read-only inspector it replaced is gone, rather than shown twice.
+  expect(document.querySelector('.project-backlog-task-inspector')).toBeNull();
+ });
+ it('takes a typed edit into a draft, and Cancel discards it',()=>{
+  const s=state();
+  const before=JSON.stringify(s);
+  const run=session(s);
+  run.harness.click('project-backlog-task-first');
+  expect(run.root().querySelector('[data-project-backlog-editor-dirty="false"]')).not.toBeNull();
+  run.harness.typeText('project-backlog-editor-name','!');
+  expect(run.view().editorDraft!.values.name).toBe('first!');
+  run.draw();
+  expect((run.root().querySelector('[data-c1-key="project-backlog-editor-name"]') as HTMLInputElement).value).toBe('first!');
+  expect(run.root().querySelector('[data-project-backlog-editor-dirty="true"]')).not.toBeNull();
+  run.harness.click('project-backlog-editor-cancel');
+  expect(run.view().editorDraft).toBeNull();
+  expect((run.root().querySelector('[data-c1-key="project-backlog-editor-name"]') as HTMLInputElement).value).toBe('first');
+  expect(run.root().querySelector('[data-project-backlog-editor-dirty="false"]')).not.toBeNull();
+  // Nothing was written: a draft that is discarded is a draft that never existed.
+  expect(JSON.stringify(s)).toBe(before);
+  run.stop();
+ });
  it('refuses provisional reorder drops',()=>{const s=state();let v:ProjectBacklogViewState={...EMPTY_PROJECT_BACKLOG_VIEW,projectId:project.id};let refused:any=null;const r=()=>{document.body.innerHTML=renderProjectBacklog(s,project,v);};r();bindProjectBacklogInteractions(document.body,{openTask:()=>{},closeTask:()=>{},startDrag:id=>{v={...v,dragTaskId:id};},previewMove:()=>{},refuseMove:i=>{refused=i;v={...v,writeRefusal:PROJECT_BACKLOG_WRITE_REFUSAL};r();},clearDrag:()=>{},...quiet});const h=createInteractionHarness(document),d=h.beginDrag('project-backlog-task-first',{clientX:0,clientY:0});d.move('project-backlog-drop-'+project.id+'-1',{clientX:1,clientY:1});expect(document.querySelector('[data-project-backlog-drop-index="1"] .project-backlog-insertion-placeholder')?.getAttribute('style')).toContain('height');d.drop('project-backlog-drop-'+project.id+'-1',{clientX:1,clientY:1});expect(refused).toEqual({taskId:'first',targetIndex:1});});
- it('does not leak foreign view state',()=>{const v:ProjectBacklogViewState={...EMPTY_PROJECT_BACKLOG_VIEW,projectId:other.id,selectedTaskId:'other',writeRefusal:PROJECT_BACKLOG_WRITE_REFUSAL,lastRefusedMove:{taskId:'other',targetIndex:0}};document.body.innerHTML=renderProjectBacklog(state(),project,v);expect(document.querySelector('[data-project-backlog-inspector-task-id]')).toBeNull();expect(document.querySelector('[data-project-backlog-write-refusal]')).toBeNull();});
+ it('does not leak foreign view state',()=>{const v:ProjectBacklogViewState={...EMPTY_PROJECT_BACKLOG_VIEW,projectId:other.id,selectedTaskId:'other',writeRefusal:PROJECT_BACKLOG_WRITE_REFUSAL,lastRefusedMove:{taskId:'other',targetIndex:0}};document.body.innerHTML=renderProjectBacklog(state(),project,v);expect(document.querySelector('[data-project-backlog-editor-task-id]')).toBeNull();expect(document.querySelector('[data-project-backlog-write-refusal]')).toBeNull();});
 });
 /**
  * Drives the Backlog through the real loop — render, click, the handler applies one
@@ -38,7 +73,7 @@ function session(s:ProximaState,start:ProjectBacklogViewState={...EMPTY_PROJECT_
  const stop=()=>{host.remove();};
  draw();
  bindProjectBacklogInteractions(host,{
-  openTask:id=>{view={...view,projectId:project.id,selectedTaskId:id};draw();},
+  openTask:id=>{view={...view,projectId:project.id,selectedTaskId:id,editorDraft:null};draw();},
   closeTask:()=>{view={...view,selectedTaskId:null};draw();},
   startDrag:()=>{},previewMove:()=>{},refuseMove:()=>{},clearDrag:()=>{},
   setSearch:search=>{apply({kind:'set-search',search});draw();},
@@ -67,8 +102,10 @@ function session(s:ProximaState,start:ProjectBacklogViewState={...EMPTY_PROJECT_
   closeTemplate:()=>{view={...view,projectId:project.id,templateOpen:false};draw();},
   setTemplateText:(text)=>{view={...view,projectId:project.id,templateText:text};draw();},
   resizeColumn:(columnId,width)=>{view={...view,projectId:project.id,columnWidths:resizeBacklogColumn(view.columnWidths,columnId,width)};draw();},
+  editTask:(edit)=>{const record=s.tasks.find(x=>x.id===view.selectedTaskId);if(!record)return;view={...view,editorDraft:applyTaskEditorEdit(view.editorDraft??taskEditorDraftFor(record),edit)};},
+  cancelTaskEdit:()=>{view={...view,editorDraft:null};draw();},
  });
- return {root:()=>host,harness:createInteractionHarness(host),view:()=>view,rows:()=>Array.from(host.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId),chipIds:()=>Array.from(host.querySelectorAll('[data-project-backlog-filter-chip]')).map(x=>(x as HTMLElement).dataset.projectBacklogFilterChip),stop};
+ return {root:()=>host,harness:createInteractionHarness(host),draw,view:()=>view,rows:()=>Array.from(host.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId),chipIds:()=>Array.from(host.querySelectorAll('[data-project-backlog-filter-chip]')).map(x=>(x as HTMLElement).dataset.projectBacklogFilterChip),stop};
 }
 describe('Stage 6 Backlog query controls, driven through the document',()=>{
  it('searches as the field is typed, and shows the text that is searching',()=>{const s=state();const run=session(s);run.harness.typeText('project-backlog-search-input','d');expect(run.rows()).toEqual(['second']);expect((document.querySelector('[data-project-backlog-search-input]') as HTMLInputElement).value).toBe('d');expect(document.querySelector('[data-project-backlog-empty-reason]')).toBeNull();run.stop();});

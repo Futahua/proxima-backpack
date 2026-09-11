@@ -179,8 +179,8 @@ describe('no write control can be clicked and do nothing', () => {
     expect(writeControls(document.body).map((button) => button.textContent)).toEqual([
       'Complete selected',
       'Delete selected',
-      'Edit unavailable',
       'Delete unavailable',
+      'Save unavailable',
     ]);
     expect(violationsIn(document.body)).toEqual([]);
   });

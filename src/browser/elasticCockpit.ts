@@ -1,7 +1,8 @@
 import { calculateElasticTimeline, elasticCardHeights } from '../domain/elastic.js';
 import { elasticBoard } from '../domain/selectors.js';
 import type { ElasticColumn, ProximaState, Task, TimelineSlice } from '../domain/types.js';
-import { projectTaskEditor, TASK_EDITOR_SAVE_NOTE, TASK_EDITOR_SAVE_REFUSAL, type TaskEditorDraft, type TaskEditorEdit, type TaskEditorField } from '../app/taskEditor.js';
+import { projectTaskEditor, TASK_EDITOR_SAVE_NOTE, TASK_EDITOR_SAVE_REFUSAL, type TaskEditorDraft, type TaskEditorEdit } from '../app/taskEditor.js';
+import { ELASTIC_EDITOR_HOOKS, renderTaskEditorField, taskEditorEditFrom } from './taskEditorFields.js';
 
 export interface ElasticSessionView {
   targetTime: string;
@@ -203,42 +204,6 @@ function renderColumn(
 }
 
 /**
- * One field of the Task editor, drawn as the control its type calls for.
- *
- * Dates are text inputs holding the stored value on purpose: the vault stores ISO
- * instants, and a date input would normalise `2026-03-10T00:00:00.000Z` to
- * `2026-03-10` on sight and report a change nobody made.
- */
-function renderEditorField(field: TaskEditorField): string {
-  const key = `task-editor-${field.id}`;
-  const attributes = `data-task-editor-field="${escapeHtml(field.id)}"`;
-
-  if (field.control === 'derived') {
-    return `<p class="task-editor-derived" data-c1-key="${escapeHtml(key)}"><strong>${escapeHtml(field.label)}</strong><span>${escapeHtml(field.value || 'No value')}</span><small>${escapeHtml(field.note ?? 'Derived value.')}</small></p>`;
-  }
-
-  if (field.control === 'checkbox') {
-    return `<label class="task-editor-check"><input type="checkbox" data-c1-key="${escapeHtml(key)}" ${attributes} data-task-editor-edit="check"${field.checked ? ' checked' : ''}${field.editable ? '' : ' disabled'}> ${escapeHtml(field.label)}</label>`;
-  }
-
-  if (field.control === 'select') {
-    const options = field.options.map((option) => `<option value="${escapeHtml(option.id)}"${option.id === field.value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('');
-
-    return `<label class="task-editor-field">${escapeHtml(field.label)}<select data-c1-key="${escapeHtml(key)}" ${attributes} data-task-editor-edit="value">${options}</select></label>`;
-  }
-
-  if (field.control === 'multi-select') {
-    const options = field.options.map((option) => `<label class="task-editor-option"><input type="checkbox" data-c1-key="${escapeHtml(key)}-${escapeHtml(option.id)}" ${attributes} data-task-editor-option="${escapeHtml(option.id)}" data-task-editor-edit="selection"${field.selected.includes(option.id) ? ' checked' : ''}> ${escapeHtml(option.label)}</label>`).join('');
-
-    return `<fieldset class="task-editor-field task-editor-multi" data-c1-key="${escapeHtml(key)}"><legend>${escapeHtml(field.label)}</legend>${options}${field.note === null ? '' : `<small class="task-editor-note">${escapeHtml(field.note)}</small>`}</fieldset>`;
-  }
-
-  const type = field.control === 'number' ? 'number' : 'text';
-
-  return `<label class="task-editor-field">${escapeHtml(field.label)}<input type="${type}" data-c1-key="${escapeHtml(key)}" ${attributes} data-task-editor-edit="value" value="${escapeHtml(field.value)}"${field.editable ? '' : ' readonly'}></label>${field.note === null ? '' : `<small class="task-editor-note">${escapeHtml(field.note)}</small>`}`;
-}
-
-/**
  * The Task editor.
  *
  * Everything it shows comes from `projectTaskEditor`, so which fields exist, what each
@@ -251,7 +216,7 @@ export function renderTaskModal(state: ProximaState, taskId: string | null, draf
   const editor = projectTaskEditor(state, taskId, draft);
   if (!editor) return '';
 
-  const sections = editor.sections.map((section) => `<fieldset class="task-editor-section" data-c1-key="task-editor-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map(renderEditorField).join('')}</fieldset>`).join('');
+  const sections = editor.sections.map((section) => `<fieldset class="task-editor-section" data-c1-key="task-editor-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map((field) => renderTaskEditorField(field, ELASTIC_EDITOR_HOOKS)).join('')}</fieldset>`).join('');
   const status = editor.dirty
     ? `<p class="task-editor-dirty" data-c1-key="task-editor-dirty" data-task-editor-dirty="true">Unsaved changes. ${escapeHtml(TASK_EDITOR_SAVE_NOTE)}</p>`
     : `<p class="task-editor-clean" data-c1-key="task-editor-clean" data-task-editor-dirty="false">${escapeHtml(TASK_EDITOR_SAVE_NOTE)}</p>`;
