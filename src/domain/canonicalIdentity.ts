@@ -40,7 +40,12 @@ export interface CanonicalRecordHeader<
   readonly schemaVersion: typeof CANONICAL_RECORD_SCHEMA_VERSION;
   readonly kind: K;
   readonly id: OpaqueRecordId;
-  /** Human-facing display name. It is data, never identity. */
+  /**
+   * Human-facing title/name. It is ordinary canonical data, never identity.
+   *
+   * Storage filenames and legacy Markdown/YAML syntax do not constrain this value.
+   * Standard JSON encoding preserves it without filename or source-syntax normalization.
+   */
   readonly name: string;
 }
 
