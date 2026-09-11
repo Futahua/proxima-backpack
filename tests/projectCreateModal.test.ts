@@ -34,4 +34,24 @@ describe('Stage 5 New Project provisional modal', () => {
     mounted.harness.click('project-create-open'); mounted.harness.typeText('project-create-name', 'Future combined project'); mounted.harness.typeText('project-create-description', 'No task versus schedule type.'); mounted.harness.click('project-create-save');
     expect(mounted.isOpen()).toBe(true); expect(mounted.harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('action-not-available'); expect(mounted.dispatcher.snapshot().stateRevision).toBe(beforeRevision); expect(JSON.stringify(mounted.state)).toBe(before); expect(mounted.state.projects.some((project) => project.name === 'Future combined project')).toBe(false);
   });
+  it('collects exactly the metadata the corrected model keeps, and requires no legacy type', async () => {
+    const mounted = await mountProjectCreate();
+    mounted.harness.click('project-create-open');
+
+    const modal = mounted.harness.target('project-create-modal');
+    const controls = Array.from(modal.querySelectorAll('input, textarea, select'))
+      .map((element) => element.getAttribute('data-c1-key') ?? '')
+      .filter((key) => key.length > 0);
+
+    // Name and description, which `CanonicalProjectRecordV2` keeps. Nothing else is asked
+    // for, so nothing the corrected model drops can be required by this modal.
+    expect(controls).toEqual(['project-create-name', 'project-create-description']);
+    expect(modal.querySelector('[data-project-type]')).toBeNull();
+    expect(modal.querySelector('[data-project-tab-bg-color]')).toBeNull();
+    expect(modal.querySelector('[data-project-tab-text-color]')).toBeNull();
+    expect(modal.querySelector('[data-project-linked-folder]')).toBeNull();
+    // A name is canonical data, not identity: the modal never asks for an id or a filename.
+    expect(modal.querySelector('[data-project-id]')).toBeNull();
+    expect(modal.querySelector('[data-project-source]')).toBeNull();
+  });
 });

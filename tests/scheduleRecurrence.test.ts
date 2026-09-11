@@ -106,4 +106,62 @@ describe('Schedule recurrence projection', () => {
     expect(document.querySelector('[data-schedule-resize-edge]')).toBeNull();
     expect(JSON.stringify(event)).toBe(before);
   });
+
+  it('offers both scopes, lets the choice change, and discards it on Cancel without touching a record', () => {
+    const event = recurringEvent('standup', localInstant(2026, 8, 1, 9, 30), localInstant(2026, 8, 1, 10, 0), { frequency: 'daily', count: 10 });
+    // The whole loaded shape, so "nothing was written" is a claim about the records rather
+    // than about the one event this case happens to look at.
+    const loaded = { projects: [], tasks: [], events: [event], statuses: [], taskSchema: [] };
+    const before = JSON.stringify(loaded);
+    const cursor = localCalendarDate(2026, 8, 6);
+    const occurrence = expandScheduleRecurringOccurrences([event], { start: cursor, end: localCalendarDate(2026, 8, 7) })[0]!;
+    const token = scheduleRecurringOccurrenceToken(occurrence);
+
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.querySelector<HTMLElement>('#root')!;
+    let selected: ScheduleRecurringOccurrenceSelection | null = null;
+    let scope: ScheduleRecurrenceScope | null = null;
+    // The handlers mirror `main.ts`: opening clears the scope, closing clears both, and
+    // choosing records the choice and nothing else.
+    const rerender = () => { root.innerHTML = renderScheduleTimeGrid({ mode: 'day', events: [event], projectNames: new Map(), selectionLabel: 'All projects', calendarCursor: cursor, now: new Date(2026, 8, 6, 12, 0, 0, 0), selectedEventId: null, selectedRecurringOccurrence: selected, selectedRecurringScope: scope }); };
+    bindScheduleRecurrenceInteractions(root, {
+      openOccurrence: (next) => { selected = { ...next }; scope = null; rerender(); },
+      closeOccurrence: () => { selected = null; scope = null; rerender(); },
+      selectScope: (next) => { scope = next; rerender(); },
+    });
+    rerender();
+
+    const harness = createInteractionHarness(root);
+    const card = () => harness.target(`schedule-recurring-standup-${token}-2026-09-06`);
+    const modal = () => harness.target('schedule-recurrence-scope-modal');
+
+    card().click();
+    expect(modal().dataset.scheduleSelectedScope).toBe('');
+    expect(modal().dataset.scheduleEditorMode).toBe('recurrence-scope');
+
+    // Both scopes are offered, and neither is chosen before the creator chooses.
+    expect(harness.target('schedule-recurrence-scope-occurrence').textContent).toContain('This occurrence');
+    expect(harness.target('schedule-recurrence-scope-series').textContent).toContain('Entire series');
+    expect(harness.target('schedule-recurrence-scope-occurrence').getAttribute('aria-pressed')).toBe('false');
+    expect(harness.target('schedule-recurrence-scope-series').getAttribute('aria-pressed')).toBe('false');
+
+    harness.click('schedule-recurrence-scope-series');
+    expect(modal().dataset.scheduleSelectedScope).toBe('series');
+    expect(harness.target('schedule-recurrence-scope-series').getAttribute('aria-pressed')).toBe('true');
+    expect(harness.target('schedule-recurrence-scope-occurrence').getAttribute('aria-pressed')).toBe('false');
+
+    // The choice can be changed while nothing has been decided.
+    harness.click('schedule-recurrence-scope-occurrence');
+    expect(modal().dataset.scheduleSelectedScope).toBe('occurrence');
+    expect(JSON.stringify(loaded)).toBe(before);
+
+    // Cancel discards the choice and closes; reopening starts with nothing chosen.
+    harness.click('schedule-recurrence-scope-close');
+    expect(() => modal()).toThrow();
+    expect(JSON.stringify(loaded)).toBe(before);
+
+    card().click();
+    expect(modal().dataset.scheduleSelectedScope).toBe('');
+    expect(JSON.stringify(loaded)).toBe(before);
+  });
 });
