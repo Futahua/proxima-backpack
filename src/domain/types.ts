@@ -82,6 +82,13 @@ export interface Task {
   status: TaskStatusId;
   /** Relative pull on the elastic timeline. Higher weight claims more of the remaining time. */
   weight: number;
+  /**
+   * Legacy Markdown compatibility order.
+   *
+   * HARD GATE A / A3 does not promote this universal value into the future
+   * canonical model. Canonical Elastic and workflow ordering have independent,
+   * explicitly scoped positions.
+   */
   orderIndex: number;
   isFixedDuration: boolean;
   /** Minutes. Only meaningful when isFixedDuration is true. */
