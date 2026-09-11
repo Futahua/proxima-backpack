@@ -112,9 +112,10 @@ function validRecordFileName(
  * conditional record commit and persists `committed` only after that commit
  * succeeds.
  *
- * This module does not expose semantic mutation authority. Startup loading,
- * reconciliation, process-death injection and multi-caller policy remain
- * separate Stage 7 operations.
+ * This low-level constructor does not expose semantic mutation authority.
+ * `recordRecoveryStartup` gates authority-bearing composition on durable
+ * journal loading and reconciliation. Process-death injection and multi-caller
+ * policy remain separate Stage 7 operations.
  */
 export function createRecordMutationCoordinator(
   options: RecordMutationCoordinatorOptions,
