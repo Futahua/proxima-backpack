@@ -119,4 +119,20 @@ describe('Stage 5 slice 5 detailed Notes tree and preview interactions',()=>{
   expect(json.failure).toBe('unsupported-format');
   for(const [path,text] of Object.entries(files))expect((await vault.read(path)).text).toBe(text);
  });
+ it('states a failed preview and its reason instead of an empty pane',async()=>{
+  const tree=await loadProjectNotesTree(notesVault(),project);
+  const host=document.createElement('div');document.body.append(host);
+  const base:ProjectNotesViewState=ready(tree);
+  const render=(next:ProjectNotesViewState)=>{host.innerHTML=renderProjectNotes(project,next);};
+  render({...base,previewStatus:'idle'});
+  expect(host.querySelector('[data-project-note-preview-status="idle"]')?.textContent).toBe('Select a file to preview it.');
+  render({...base,previewStatus:'loading'});
+  expect(host.querySelector('[data-project-note-preview-status="loading"]')?.textContent).toContain('Loading preview');
+  render({...base,previewStatus:'unavailable',previewFailure:'canvas-invalid'});
+  expect(host.querySelector('[data-project-note-preview-status="unavailable"]')?.textContent).toContain('canvas-invalid');
+  const preview=await loadProjectNotePreview(notesVault(),'Projects/Notes/Research/root.md');
+  expect(preview.failure).toBeNull();
+  render({...base,previewStatus:'ready',preview:preview.preview});
+  expect(host.querySelector('[data-project-note-preview-kind="markdown"]')?.textContent).toBe('# Root');
+ });
 });

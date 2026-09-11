@@ -63,4 +63,31 @@ describe('Stage 5 New Project provisional modal', () => {
     expect(JSON.stringify(mounted.state)).toBe(before);
     expect(mounted.state.projects.some((project) => project.name === 'Future combined project')).toBe(false);
   });
+
+  it('refuses an invalid form with the invalid-input reason, not with the unavailable one', async () => {
+    const mounted = await mountProjectCreate();
+    const before = JSON.stringify(mounted.state);
+    const beforeRevision = mounted.dispatcher.snapshot().stateRevision;
+    mounted.harness.click('project-create-open');
+
+    // Nothing typed at all: the boundary refuses an empty name as invalid input, and the
+    // modal says so rather than answering with the refusal this stage gives every valid
+    // form.
+    mounted.harness.click('project-create-save');
+    expect(mounted.isOpen()).toBe(true);
+    expect(mounted.harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('invalid-action-input');
+
+    // Whitespace is not a name either — the boundary trims before it decides.
+    mounted.harness.typeText('project-create-name', '   ');
+    mounted.harness.click('project-create-save');
+    expect(mounted.harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('invalid-action-input');
+
+    // A name that is a name gets the answer this stage can give.
+    mounted.harness.typeText('project-create-name', 'Named project');
+    mounted.harness.click('project-create-save');
+    expect(mounted.harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('action-not-available');
+
+    expect(mounted.dispatcher.snapshot().stateRevision).toBe(beforeRevision);
+    expect(JSON.stringify(mounted.state)).toBe(before);
+  });
 });
