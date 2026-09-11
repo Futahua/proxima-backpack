@@ -176,4 +176,43 @@ describe('Stage 7 slice 12 observed-revision same-record concurrency', () => {
     expect(records.text(RECORD_FILE)).not.toBe('new-b');
     expect(records.text(SECOND_RECORD_FILE)).not.toBe('new-a');
   });
+
+  it('requires explicit caller refetch and retry after stale without storage-layer retry or merge', async () => {
+    const records = new AtomicMemoryRecordBackend();
+    records.seed(RECORD_FILE, 'old', 'record-r1');
+    const observation = await records.readRecordFile(RECORD_FILE);
+    if (!observation) throw new Error('expected record observation');
+
+    const barrier = pairedPrepareBarrier();
+    const first = createRecordMutationCoordinator({ backend: records, recovery: barrier.first });
+    const second = createRecordMutationCoordinator({ backend: records, recovery: barrier.second });
+    const results = await Promise.all([
+      first.execute(updateFromObservation(observation, 'from-caller-a', 'caller-a')),
+      second.execute(updateFromObservation(observation, 'from-caller-b', 'caller-b')),
+    ]);
+    const winner = results.find((result): result is Extract<typeof result, { ok: true }> => result.ok);
+    const loser = results.find((result): result is Extract<typeof result, { ok: false }> => !result.ok);
+    if (!winner || !loser) throw new Error('expected one winner and one stale loser');
+    expect(loser).toMatchObject({ ok: false, reason: 'stale', actualRevision: winner.revision });
+    const winnerText = winner.requestId === 'caller-a' ? 'from-caller-a' : 'from-caller-b';
+    expect(records.updateAttempts).toHaveLength(2);
+    expect(records.text(RECORD_FILE)).toBe(winnerText);
+    expect(records.revision(RECORD_FILE)).toBe(winner.revision);
+
+    const refetched = await records.readRecordFile(RECORD_FILE);
+    if (!refetched) throw new Error('expected explicit caller refetch');
+    expect(refetched).toEqual({ text: winnerText, revision: winner.revision });
+    expect(records.updateAttempts).toHaveLength(2);
+
+    const loserCoordinator = loser.requestId === 'caller-a' ? first : second;
+    const retry = await loserCoordinator.execute(updateFromObservation(refetched, 'explicit-retry-replacement', `${loser.requestId}-retry`));
+    expect(retry).toMatchObject({ ok: true, requestId: `${loser.requestId}-retry`, revision: 'record-r3' });
+    if (!retry.ok) throw new Error('expected explicit retry to succeed');
+    expect(records.updateAttempts).toHaveLength(3);
+    expect(records.updateAttempts[2]).toEqual({ text: 'explicit-retry-replacement', expectedRevision: winner.revision });
+    expect(records.text(RECORD_FILE)).toBe('explicit-retry-replacement');
+    expect(records.text(RECORD_FILE)).not.toBe(winnerText);
+    expect(records.revision(RECORD_FILE)).toBe(retry.revision);
+    expect(retry.revision).toBe('record-r3');
+  });
 });
