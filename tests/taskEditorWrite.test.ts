@@ -239,8 +239,9 @@ describe('Stage 9 planTaskEditorSave', () => {
     // A vault's own status id is not a canonical column, and writing it would invent one.
     expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'executionState', value: 'doing' }))).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'executionState' });
     expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'fixedDurationOn', checked: true }))).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'fixedDuration' });
-    // Stage 10 owns the canonical mapping a custom property would need.
-    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'property:pxr_effort', value: '3' }))).toMatchObject({ ok: false, reason: 'unsupported-field', fieldId: 'property:pxr_effort' });
+    // A custom property with no schema record to define it: Stage 10's mapping needs the schema, and
+    // a property nobody declared is refused rather than written as free text.
+    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'property:pxr_effort', value: '3' }), [])).toMatchObject({ ok: false, reason: 'unknown-schema', fieldId: 'property:pxr_effort' });
     // A refused plan wrote nothing, which is the point of planning before writing.
     expect((await app.deps.store.read(id))?.observedRevision).toBe(`${taskRecordFileName(id)}@1`);
   });

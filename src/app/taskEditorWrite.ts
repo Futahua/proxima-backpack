@@ -22,11 +22,13 @@
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { CanonicalExecutionState } from '../domain/canonicalTaskState.js';
+import type { PropertySchema } from '../domain/types.js';
 import type { ProximaState, Task } from '../domain/types.js';
 import { taskEditorDraftFor, type TaskEditorDraft } from './taskEditor.js';
 import { taskMoveActionType, type TaskMoveActionType } from './taskMoveGesture.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
+import { planPropertyMutation } from './propertyMutationPlan.js';
 import { convergeAfterWrite } from './writeConvergence.js';
 
 export const TASK_EDITOR_WRITE_SCHEMA_VERSION = 1 as const;
@@ -34,7 +36,7 @@ export const TASK_EDITOR_WRITE_SCHEMA_VERSION = 1 as const;
 /** The canonical execution states, which are the only columns a task may be moved to. */
 const EXECUTION_STATES: readonly CanonicalExecutionState[] = ['backlog', 'running', 'finished'];
 
-export type TaskEditorPlanFailureReason = 'nothing-to-save' | 'unsupported-field' | 'validation-refused';
+export type TaskEditorPlanFailureReason = 'nothing-to-save' | 'unsupported-field' | 'unknown-schema' | 'validation-refused';
 
 export type TaskEditorMutationPlan =
   | {
@@ -88,7 +90,11 @@ function numberOrNull(value: string): { ok: true; value: number } | { ok: false 
  * @param draft - the edits so far, or null while nothing has been edited.
  * @returns one mutation per changed field, or a typed refusal.
  */
-export function planTaskEditorSave(task: Task, draft: TaskEditorDraft | null): TaskEditorMutationPlan {
+export function planTaskEditorSave(
+  task: Task,
+  draft: TaskEditorDraft | null,
+  schemas: readonly PropertySchema[] = [],
+): TaskEditorMutationPlan {
   if (draft === null) return planRefused('nothing-to-save', 'nothing has been edited yet', null);
 
   const seed = taskEditorDraftFor(task);
@@ -161,14 +167,22 @@ export function planTaskEditorSave(task: Task, draft: TaskEditorDraft | null): T
     mutations.push({ kind: 'completion', value: flag('completion') });
   }
 
-  // Anything else the form holds is a custom property, and those are refused by name rather than
-  // half-written: Stage 10 owns the canonical mapping from a projected value back to a stored one.
+  // Custom properties go through the canonical mapping Stage 10 owns: the form holds what the
+  // compatibility projection produced — a select's label, a relation's ids — so writing one back
+  // needs the schema to reverse it, and a value the schema cannot account for is refused by name
+  // rather than half-written.
   for (const id of changedPropertyFieldIds(draft, seed)) {
-    return planRefused(
-      'unsupported-field',
-      `${id} was edited, and custom-property writes need the canonical schema mapping Stage 10 owns`,
-      id,
+    const schemaId = id.slice('property:'.length);
+    const planned = planPropertyMutation(
+      schemas.find((candidate) => candidate.id === schemaId),
+      {
+        value: value(id),
+        checked: flag(id),
+        selected: draft.selections[id] ?? seed.selections[id] ?? [],
+      },
     );
+    if (!planned.ok) return planRefused(planned.reason, planned.detail, id);
+    mutations.push({ kind: 'property', key: schemaId as OpaqueRecordId, value: planned.value });
   }
 
   if (mutations.length === 0) {
@@ -277,7 +291,7 @@ export async function saveTaskFromEditor(
   const task = taskOf(deps, input.taskId);
   if (task === null) return writeRefused('unknown-task', 'the editor has no card with that id');
 
-  const plan = planTaskEditorSave(task, input.draft);
+  const plan = planTaskEditorSave(task, input.draft, deps.state?.taskSchema ?? []);
   if (!plan.ok) return writeRefused(plan.reason, plan.detail, plan.fieldId);
 
   deps.setRefusal(null);
