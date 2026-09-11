@@ -43,6 +43,16 @@ export interface ScheduleRecurrenceInteractionHandlers {
   ): void;
   closeOccurrence(): void;
   selectScope(scope: ScheduleRecurrenceScope): void;
+  /** Save the chosen scope: the occurrence it was opened on, or the whole series. */
+  saveOccurrence(intent: {
+    eventId: string;
+    occurrenceStart: string;
+    scope: ScheduleRecurrenceScope;
+    startDate: string;
+    deadline: string;
+  }): void;
+  /** Skip this occurrence, which is a cancelled exception rather than a deleted record. */
+  skipOccurrence(intent: { eventId: string; occurrenceStart: string }): void;
 }
 
 export const MAX_SCHEDULE_RECURRENCE_EXPANSION = 10_000;
@@ -442,6 +452,8 @@ export function renderScheduleRecurrenceScopeModal(
   selection: ScheduleRecurringOccurrenceSelection | null,
   selectedScope: ScheduleRecurrenceScope | null,
   projectNames: Map<string, string>,
+  writes: { refusal: string | null; feedback: string | null; feedbackRefusal: string | null } | null = null,
+  draft: { startDate: string; deadline: string } | null = null,
 ): string {
   if (!selection) return '';
 
@@ -454,7 +466,17 @@ export function renderScheduleRecurrenceScopeModal(
     ? 'Uncategorised'
     : projectNames.get(event.projectId) ?? event.projectId;
 
-  return `<div class="modal-backdrop" data-c1-key="schedule-recurrence-scope-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Recurring event scope" data-schedule-editor-mode="recurrence-scope" data-schedule-recurring-event-id="${escapeHtml(event.id)}" data-schedule-selected-scope="${escapeHtml(selectedScope ?? '')}" data-c1-key="schedule-recurrence-scope-modal"><header class="surface-header"><div><p class="eyebrow">Recurring event</p><h3>${escapeHtml(event.name)}</h3></div><button type="button" class="icon-button" data-schedule-recurring-action="close-occurrence" data-c1-key="schedule-recurrence-scope-close" aria-label="Close recurrence scope">×</button></header><p>Choose the scope for a later edit.</p><div class="calendar-controls"><button type="button" data-schedule-recurring-action="select-scope" data-schedule-recurrence-scope="occurrence" data-c1-key="schedule-recurrence-scope-occurrence" aria-pressed="${selectedScope === 'occurrence'}">This occurrence</button><button type="button" data-schedule-recurring-action="select-scope" data-schedule-recurrence-scope="series" data-c1-key="schedule-recurrence-scope-series" aria-pressed="${selectedScope === 'series'}">Entire series</button></div><label>Project<input value="${escapeHtml(projectLabel)}" readonly></label><label>Occurrence start<input data-c1-key="schedule-recurrence-occurrence-start" value="${escapeHtml(selection.startDate)}" readonly></label><label>Occurrence end<input data-c1-key="schedule-recurrence-occurrence-end" value="${escapeHtml(selection.deadline)}" readonly></label><label>Description<textarea readonly>${escapeHtml(event.description)}</textarea></label></section></div>`;
+  const writable = writes !== null && writes.refusal === null;
+  const start = draft?.startDate ?? selection.startDate;
+  const deadline = draft?.deadline ?? selection.deadline;
+  const editable = writable ? '' : ' readonly';
+  // The dates are the edit; the scope says which write carries it. Without a write path every control
+  // is inert and the typed reason sits where Save would be, which is what the audit reads.
+  const footer = writable
+    ? `<div class="calendar-controls"><button type="button" data-schedule-recurring-action="skip-occurrence" data-c1-key="schedule-recurrence-scope-skip">Skip this occurrence</button><button type="button" data-schedule-recurring-action="save-occurrence" data-c1-key="schedule-recurrence-scope-save"${selectedScope === null ? ' disabled aria-disabled="true"' : ''}>Save</button></div>${writes?.feedback === null ? '' : `<small data-c1-key="schedule-recurrence-scope-feedback" data-schedule-recurrence-refusal="${escapeHtml(writes?.feedbackRefusal ?? '')}">${escapeHtml(writes?.feedback ?? '')}</small>`}`
+    : `<div class="calendar-controls"><button type="button" data-c1-key="schedule-recurrence-scope-save" data-schedule-recurrence-save-refusal="${escapeHtml(writes?.refusal ?? 'Unavailable until record-store cutover')}" disabled>Save unavailable</button></div>`;
+
+  return `<div class="modal-backdrop" data-c1-key="schedule-recurrence-scope-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Recurring event scope" data-schedule-editor-mode="recurrence-scope" data-schedule-recurring-event-id="${escapeHtml(event.id)}" data-schedule-selected-scope="${escapeHtml(selectedScope ?? '')}" data-schedule-occurrence-start="${escapeHtml(selection.startDate)}" data-schedule-recurrence-writes="${writable ? 'available' : 'unavailable'}" data-c1-key="schedule-recurrence-scope-modal"><header class="surface-header"><div><p class="eyebrow">Recurring event</p><h3>${escapeHtml(event.name)}</h3></div><button type="button" class="icon-button" data-schedule-recurring-action="close-occurrence" data-c1-key="schedule-recurrence-scope-close" aria-label="Close recurrence scope">×</button></header><p>Choose the scope for a later edit.</p><div class="calendar-controls"><button type="button" data-schedule-recurring-action="select-scope" data-schedule-recurrence-scope="occurrence" data-c1-key="schedule-recurrence-scope-occurrence" aria-pressed="${selectedScope === 'occurrence'}">This occurrence</button><button type="button" data-schedule-recurring-action="select-scope" data-schedule-recurrence-scope="series" data-c1-key="schedule-recurrence-scope-series" aria-pressed="${selectedScope === 'series'}">Entire series</button></div><label>Project<input value="${escapeHtml(projectLabel)}" readonly></label><label>Occurrence start<input data-c1-key="schedule-recurrence-occurrence-start" value="${escapeHtml(start)}"${editable}></label><label>Occurrence end<input data-c1-key="schedule-recurrence-occurrence-end" value="${escapeHtml(deadline)}"${editable}></label><label>Description<textarea readonly>${escapeHtml(event.description)}</textarea></label>${footer}</section></div>`;
 }
 
 export function bindScheduleRecurrenceInteractions(
@@ -506,6 +528,58 @@ export function bindScheduleRecurrenceInteractions(
       if (scope === 'occurrence' || scope === 'series') {
         handlers.selectScope(scope);
       }
+      return;
+    }
+
+    // The two writes the scope selects. The dates are read where they are, and the scope is the one
+    // the reader chose — never inferred from which button was pressed.
+    if (
+      control.dataset.scheduleRecurringAction === 'save-occurrence'
+    ) {
+      const modal = control.closest<HTMLElement>(
+        '[data-schedule-editor-mode="recurrence-scope"]',
+      );
+      const eventId = modal?.dataset.scheduleRecurringEventId;
+      const occurrenceStart = modal?.dataset.scheduleOccurrenceStart;
+      const scope = modal?.dataset.scheduleSelectedScope;
+      const start = modal?.querySelector<HTMLInputElement>(
+        '[data-c1-key="schedule-recurrence-occurrence-start"]',
+      );
+      const end = modal?.querySelector<HTMLInputElement>(
+        '[data-c1-key="schedule-recurrence-occurrence-end"]',
+      );
+
+      if (
+        !modal
+        || !eventId
+        || !occurrenceStart
+        || (scope !== 'occurrence' && scope !== 'series')
+        || !start
+        || !end
+      ) {
+        return;
+      }
+
+      handlers.saveOccurrence({
+        eventId,
+        occurrenceStart,
+        scope,
+        startDate: start.value,
+        deadline: end.value,
+      });
+      return;
+    }
+
+    if (
+      control.dataset.scheduleRecurringAction === 'skip-occurrence'
+    ) {
+      const modal = control.closest<HTMLElement>(
+        '[data-schedule-editor-mode="recurrence-scope"]',
+      );
+      const eventId = modal?.dataset.scheduleRecurringEventId;
+      const occurrenceStart = modal?.dataset.scheduleOccurrenceStart;
+      if (!eventId || !occurrenceStart) return;
+      handlers.skipOccurrence({ eventId, occurrenceStart });
     }
   });
 }

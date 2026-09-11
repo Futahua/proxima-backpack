@@ -70,7 +70,7 @@ describe('Schedule recurrence projection', () => {
     let selected: ScheduleRecurringOccurrenceSelection | null = null;
     let scope: ScheduleRecurrenceScope | null = null;
     const rerender = () => { root.innerHTML = renderScheduleTimeGrid({ mode: 'day', events: [event], projectNames: new Map(), selectionLabel: 'All projects', calendarCursor: cursor, now: new Date(2026, 8, 6, 12, 0, 0, 0), selectedEventId: null, selectedRecurringOccurrence: selected, selectedRecurringScope: scope }); };
-    bindScheduleRecurrenceInteractions(root, { openOccurrence: (next) => { selected = { ...next }; scope = null; rerender(); }, closeOccurrence: () => { selected = null; scope = null; rerender(); }, selectScope: (next) => { scope = next; rerender(); } });
+    bindScheduleRecurrenceInteractions(root, { openOccurrence: (next) => { selected = { ...next }; scope = null; rerender(); }, closeOccurrence: () => { selected = null; scope = null; rerender(); }, selectScope: (next) => { scope = next; rerender(); }, saveOccurrence: () => {}, skipOccurrence: () => {} });
     rerender();
     const harness = createInteractionHarness(root);
     const card = harness.target(`schedule-recurring-standup-${token}-2026-09-06`);
@@ -128,6 +128,8 @@ describe('Schedule recurrence projection', () => {
       openOccurrence: (next) => { selected = { ...next }; scope = null; rerender(); },
       closeOccurrence: () => { selected = null; scope = null; rerender(); },
       selectScope: (next) => { scope = next; rerender(); },
+      saveOccurrence: () => {},
+      skipOccurrence: () => {},
     });
     rerender();
 

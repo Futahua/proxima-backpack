@@ -71,6 +71,9 @@ export interface ScheduleTimeGridRenderOptions {
    */
   eventEditorWrites?: { refusal: string | null; feedback: string | null; feedbackRefusal?: string | null } | null;
   eventEditorDraft?: EventEditorDraft | null;
+  /** What the recurrence scope modal draws: the write path, its last answer, and the dates typed. */
+  recurrenceScopeWrites?: { refusal: string | null; feedback: string | null; feedbackRefusal: string | null } | null;
+  occurrenceDraft?: { startDate: string; deadline: string } | null;
 }
 export interface ScheduleEventChangeIntent {
   eventId: string;
@@ -519,6 +522,8 @@ export function renderScheduleTimeGrid(
       options.selectedRecurringOccurrence,
       options.selectedRecurringScope ?? null,
       options.projectNames,
+      options.recurrenceScopeWrites ?? null,
+      options.occurrenceDraft ?? null,
     )
     : renderEventModal(
       options.events,

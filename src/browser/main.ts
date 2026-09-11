@@ -66,6 +66,7 @@ import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor } from './work
 import { archiveProjectAction, createProjectAction, deleteProjectAction, restoreProjectAction, updateProjectAction, type ProjectLifecycleOutcome } from '../app/projectLifecycleActions.js';
 import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
 import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, type EventWriteOutcome } from '../app/eventWriteActions.js';
+import { skipOccurrenceFromScope, updateOccurrenceFromScope } from './scheduleScopeWiring.js';
 import { eventEditorDraftFor, type EventEditorDraft } from '../app/eventEditor.js';
 import type { EventFormValues } from '../app/eventFormPlan.js';
 
@@ -108,6 +109,8 @@ let scheduleWriteFeedback: string | null = null;
 let scheduleWriteRefusalCode: string | null = null;
 /** The Event editor's provisional values, so a refused save does not empty the form (D58). */
 let scheduleEventEditorDraft: EventEditorDraft | null = null;
+/** The scope modal's provisional dates, so a refused scope save does not empty it. */
+let scheduleOccurrenceDraft: { startDate: string; deadline: string } | null = null;
 let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_VIEW;
 /** The workflow board's own state: it groups by stage, so it previews and refuses separately. */
 let projectWorkflowBoardView: ProjectWorkflowBoardViewState = EMPTY_PROJECT_WORKFLOW_BOARD_VIEW;
@@ -323,6 +326,8 @@ function scheduleProjectionSurface(
     problems,
     eventEditorWrites: eventEditorWrites(),
     eventEditorDraft: scheduleEventEditorDraft,
+    recurrenceScopeWrites: recurrenceScopeWrites(),
+    occurrenceDraft: scheduleOccurrenceDraft,
   });
 }
 
@@ -374,6 +379,8 @@ function scheduleTimeGridSurface(
     seedRefusal: scheduleSeedRefusal,
     eventEditorWrites: eventEditorWrites(),
     eventEditorDraft: scheduleEventEditorDraft,
+    recurrenceScopeWrites: recurrenceScopeWrites(),
+    occurrenceDraft: scheduleOccurrenceDraft,
   });
 }
 
@@ -1063,6 +1070,40 @@ function eventEditorWrites(): { refusal: string | null; feedback: string | null;
   };
 }
 
+/**
+ * The recurrence scope modal's two writes.
+ *
+ * They live in `scheduleScopeWiring.ts` because the modal is the one surface whose *shell* half is
+ * more than a re-render: an accepted write closes the modal and clears the occurrence, a refused one
+ * leaves it open with the reader's dates and the operation's own sentence. Keeping that here would
+ * have made `main.ts` carry a second copy of the same shape.
+ */
+function recurrenceScopeWrites(): { refusal: string | null; feedback: string | null; feedbackRefusal: string | null } {
+  return {
+    refusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null,
+    feedback: scheduleWriteFeedback,
+    feedbackRefusal: scheduleWriteRefusalCode,
+  };
+}
+
+/**
+ * What a scope write owes the shell afterwards.
+ *
+ * An accepted write closes the modal and clears the occurrence it was about — the occurrence has
+ * moved or gone, so leaving the reader pointing at the old instant would be a lie about the record. A
+ * refused one keeps both, with the dates that were typed, so the reader can fix them (D58).
+ */
+function closeScopeOnAcceptance(accepted: boolean, form: { startDate: string; deadline: string } | null): void {
+  if (accepted) {
+    selectedScheduleRecurringOccurrence = null;
+    selectedScheduleRecurringScope = null;
+    scheduleOccurrenceDraft = null;
+  } else {
+    scheduleOccurrenceDraft = form;
+  }
+  render();
+}
+
 function bindInteractions(): void {
   const root = element<HTMLElement>('#proxima-app');
   if (root.dataset.interactionsBound === 'true') return;
@@ -1336,7 +1377,26 @@ function bindInteractions(): void {
     },
     selectScope: (scope) => {
       selectedScheduleRecurringScope = scope;
+      scheduleOccurrenceDraft = null;
       render();
+    },
+    saveOccurrence: ({ eventId, occurrenceStart, scope, startDate, deadline }) => {
+      void (async () => {
+        const outcome = await updateOccurrenceFromScope({
+          eventId,
+          occurrenceStart,
+          scope,
+          change: { kind: 'reschedule', startDate, deadline },
+          deps: eventWriteDependencies(),
+        });
+        closeScopeOnAcceptance(outcome.ok, { startDate, deadline });
+      })();
+    },
+    skipOccurrence: ({ eventId, occurrenceStart }) => {
+      void (async () => {
+        const outcome = await skipOccurrenceFromScope({ eventId, occurrenceStart, deps: eventWriteDependencies() });
+        closeScopeOnAcceptance(outcome.ok, null);
+      })();
     },
   });
   bindScheduleProjectionInteractions(root, {
