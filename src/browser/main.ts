@@ -42,6 +42,7 @@ import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter 
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
+import { applyBacklogControl, buildBacklogFilter } from '../app/backlogControls.js';
 import { bindProjectDeadlinesInteractions, EMPTY_PROJECT_DEADLINES_VIEW, type ProjectDeadlinesViewState } from './projectDeadlines.js';
 import { bindProjectScheduleInteractions, EMPTY_PROJECT_SCHEDULE_VIEW, type ProjectScheduleViewState } from './projectSchedule.js';
 import { applyBootState, type BootState } from './bootState.js';
@@ -662,6 +663,7 @@ function bindInteractions(): void {
     refuseMove: (intent) => { projectTaskBoardView = { ...projectTaskBoardView, projectId: selection, dragTaskId: null, dragTargetStatus: null, dragTargetIndex: null, writeRefusal: PROJECT_TASK_BOARD_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
     clearDrag: () => { projectTaskBoardView = { ...projectTaskBoardView, dragTaskId: null, dragTargetStatus: null, dragTargetIndex: null }; },
   });
+  const restoreBacklogSearchFocus = (caret: number) => { const field = root.querySelector<HTMLInputElement>('[data-project-backlog-search-input]'); if (!field) return; field.focus(); field.setSelectionRange(caret, caret); };
   bindProjectBacklogInteractions(root, {
     openTask: (taskId) => { const task = appState?.tasks.find((candidate) => candidate.id === taskId && candidate.projectId === selection); if (!task) return; projectBacklogView = { ...EMPTY_PROJECT_BACKLOG_VIEW, projectId: selection, selectedTaskId: taskId }; render(); },
     closeTask: () => { projectBacklogView = { ...projectBacklogView, selectedTaskId: null }; render(); },
@@ -669,6 +671,12 @@ function bindInteractions(): void {
     previewMove: ({ taskId, targetIndex }) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: taskId, dragTargetIndex: targetIndex }; },
     refuseMove: (intent) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: null, dragTargetIndex: null, writeRefusal: PROJECT_BACKLOG_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
     clearDrag: () => { projectBacklogView = { ...projectBacklogView, dragTaskId: null, dragTargetIndex: null }; },
+    setSearch: (search) => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'set-search', search }) }; render(); restoreBacklogSearchFocus(search.length); },
+    addFilter: (expression, value) => { const built = buildBacklogFilter(projectBacklogView.query.filters, expression, value); if (!built.ok) { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: built.reason }; render(); return; } projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'add-filter', filter: built.filter }) }; render(); },
+    removeFilter: (filterId) => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'remove-filter', filterId }) }; render(); },
+    sortBy: (field) => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'sort-by', field }) }; render(); },
+    clearSort: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'clear-sort' }) }; render(); },
+    clearQuery: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'clear-query' }) }; render(); },
   });
   bindProjectDeadlinesInteractions(root, {
     setFilter: (filter) => { projectDeadlinesView = { ...projectDeadlinesView, projectId: selection, filter, selectedTaskId: null }; render(); },

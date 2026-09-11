@@ -214,6 +214,93 @@ export function operatorsForField(
 }
 
 /**
+ * Every filterable field, in the order a field chooser should offer them. A menu
+ * built from this cannot offer a field the matcher does not know.
+ */
+export const BACKLOG_FIELDS:
+  readonly BacklogField[] = [
+    'name',
+    'description',
+    'status',
+    'weight',
+    'fixedDuration',
+    'maxDuration',
+    'startDate',
+    'deadline',
+    'isCompleted',
+  ];
+
+/**
+ * Whether text names a filterable field.
+ *
+ * The browser layer reads field names out of markup, where everything is a string.
+ * Narrowing through this keeps a value that came from a document from being used as a
+ * field without being checked.
+ * @param value - the text to test.
+ * @returns true when the text names a field.
+ */
+export function isBacklogField(
+  value:
+    string,
+): value is BacklogField {
+  return BACKLOG_FIELDS.some(
+    (field) =>
+      field
+      === value,
+  );
+}
+
+/**
+ * What kind of value a field holds. A text filter takes the typed text as it stands;
+ * a number filter must be given a number, because a numeric comparison against the
+ * text `"9"` matches nothing and would look like a filter that quietly failed.
+ */
+export type BacklogValueType =
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'boolean';
+
+const FIELD_VALUE_TYPES:
+  Readonly<
+    Record<
+      BacklogField,
+      BacklogValueType
+    >
+  > = {
+    name:
+      'text',
+    description:
+      'text',
+    status:
+      'text',
+    weight:
+      'number',
+    fixedDuration:
+      'number',
+    maxDuration:
+      'number',
+    startDate:
+      'date',
+    deadline:
+      'date',
+    isCompleted:
+      'boolean',
+  };
+
+/**
+ * The kind of value a field is compared against.
+ * @param field - the field being filtered.
+ * @returns the value type that field holds.
+ */
+export function valueTypeForField(
+  field:
+    BacklogField,
+): BacklogValueType {
+  return FIELD_VALUE_TYPES[field];
+}
+
+/**
  * Whether an operator tests a value at all. `is-empty` and `is-not-empty` are
  * the two that do not, which is why a filter carrying them must not require one.
  * @param operator - the operator in question.

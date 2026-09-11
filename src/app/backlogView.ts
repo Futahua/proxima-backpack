@@ -12,13 +12,21 @@
 
 import {
   applyBacklogQuery,
+  BACKLOG_FIELDS,
   EMPTY_BACKLOG_QUERY,
+  operatorsForField,
   type BacklogField,
   type BacklogFilter,
   type BacklogOperator,
   type BacklogQuery,
   type BacklogSort,
 } from '../domain/backlogQuery.js';
+
+import {
+  BACKLOG_FIELD_LABELS,
+  BACKLOG_OPERATOR_LABELS,
+  encodeBacklogExpression,
+} from './backlogControls.js';
 
 import type {
   Project,
@@ -113,6 +121,36 @@ export interface BacklogFilterChip {
     string;
 }
 
+/**
+ * One comparison a filter menu offers. `expression` is the single value the menu
+ * carries for the pair, so adding a filter needs no draft state in the view.
+ */
+export interface BacklogFilterOption {
+  readonly expression:
+    string;
+
+  readonly field:
+    BacklogField;
+
+  readonly operator:
+    BacklogOperator;
+
+  readonly label:
+    string;
+}
+
+/** One field's worth of a filter menu. */
+export interface BacklogFilterMenuGroup {
+  readonly field:
+    BacklogField;
+
+  readonly label:
+    string;
+
+  readonly options:
+    readonly BacklogFilterOption[];
+}
+
 export interface BacklogProjection {
   readonly projectId:
     string;
@@ -137,6 +175,10 @@ export interface BacklogProjection {
   readonly sortIndicator:
     BacklogSort | null;
 
+  /** The filter menu, offering each field and only the comparisons it admits. */
+  readonly filterMenu:
+    readonly BacklogFilterMenuGroup[];
+
   readonly filterChips:
     readonly BacklogFilterChip[];
 
@@ -151,33 +193,11 @@ export interface BacklogProjection {
     | null;
 }
 
-const FIELD_LABELS:
-  Readonly<
-    Record<
-      BacklogField,
-      string
-    >
-  > = {
-    name:
-      'Name',
-    description:
-      'Description',
-    status:
-      'Status',
-    weight:
-      'Weight',
-    fixedDuration:
-      'Fixed duration',
-    maxDuration:
-      'Max duration',
-    startDate:
-      'Start',
-    deadline:
-      'Deadline',
-    isCompleted:
-      'Completed',
-  };
-
+/**
+ * The order the Backlog shows its columns in: the task fields, without
+ * `description`, which every row already carries under its name. The filter menu's
+ * field order is {@link BACKLOG_FIELDS}, which does include it.
+ */
 const FIELD_ORDER:
   readonly BacklogField[] = [
     'name',
@@ -189,33 +209,6 @@ const FIELD_ORDER:
     'deadline',
     'isCompleted',
   ];
-
-const OPERATOR_LABELS:
-  Readonly<
-    Record<
-      BacklogOperator,
-      string
-    >
-  > = {
-    contains:
-      'contains',
-    is:
-      'is',
-    'is-not':
-      'is not',
-    'less-than':
-      '<',
-    'greater-than':
-      '>',
-    before:
-      'before',
-    after:
-      'after',
-    'is-empty':
-      'is empty',
-    'is-not-empty':
-      'is not empty',
-  };
 
 /** The order the Backlog has always shown: legacy order, then id. */
 function byLegacyOrder(
@@ -459,7 +452,7 @@ function columnsFor(
         id:
           `field:${field}`,
         label:
-          FIELD_LABELS[field],
+          BACKLOG_FIELD_LABELS[field],
         field,
         propertyKey:
           null,
@@ -495,15 +488,49 @@ function chipLabel(
     BacklogFilter,
 ): string {
   const field =
-    FIELD_LABELS[filter.field];
+    BACKLOG_FIELD_LABELS[filter.field];
 
   const operator =
-    OPERATOR_LABELS[filter.operator];
+    BACKLOG_OPERATOR_LABELS[filter.operator];
 
   return filter.value
     === undefined
     ? `${field} ${operator}`
     : `${field} ${operator} ${String(filter.value)}`;
+}
+
+/**
+ * The filter menu: every field, each offering exactly the comparisons it admits.
+ *
+ * Built from the same operator table the matcher uses, and labelled from the same
+ * tables the chips are labelled from, so a menu cannot offer a comparison that would
+ * be refused and a chip cannot describe a filter differently from the menu that built
+ * it.
+ */
+function filterMenuFor(): BacklogFilterMenuGroup[] {
+  return BACKLOG_FIELDS.map(
+    (field) => ({
+      field,
+      label:
+        BACKLOG_FIELD_LABELS[field],
+      options:
+        operatorsForField(
+          field,
+        ).map(
+          (operator) => ({
+            expression:
+              encodeBacklogExpression(
+                field,
+                operator,
+              ),
+            field,
+            operator,
+            label:
+              BACKLOG_OPERATOR_LABELS[operator],
+          }),
+        ),
+    }),
+  );
 }
 
 /**
@@ -609,6 +636,8 @@ export function projectBacklog(
       view.query.search,
     sortIndicator:
       view.query.sort,
+    filterMenu:
+      filterMenuFor(),
     filterChips:
       view.query.filters.map(
         (filter) => ({
