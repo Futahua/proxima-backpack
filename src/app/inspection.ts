@@ -7,8 +7,12 @@ import type { ActionDispatcherState, ProjectWorkspaceTab, ScheduleMode, Surface,
 import { boundDiagnosticProblems, DIAGNOSTIC_LIMITS } from './diagnostics.js';
 import { sourceProvenance, type ReadOnlyProjectionHealth, type RecordProvenance } from './readOnlyProjection.js';
 import { createUiHealthModel, type UiHealthModel } from './uiHealth.js';
+import type {
+  BlockedRecordMutationAuthority,
+} from './recordRecoveryStartup.js';
 
 export const INSPECTION_SCHEMA_VERSION = 5 as const;
+export const RECORD_RECOVERY_INSPECTION_SCHEMA_VERSION = 1 as const;
 export const MAX_INSPECTION_ITEMS = 500;
 export const MAX_INSPECTION_TEXT = 400;
 
@@ -22,6 +26,33 @@ export interface BuildIdentityLike {
   fixtureHash: string;
   lockfileHash: string;
   fixedClock: string;
+}
+
+export interface RecordRecoveryBlockedInspection {
+  schemaVersion:
+    typeof RECORD_RECOVERY_INSPECTION_SCHEMA_VERSION;
+  code:
+    'record-recovery-blocked';
+  mutationAuthority:
+    'blocked';
+  unresolved:
+    number;
+  reason:
+    string;
+  outcomes: Array<{
+    requestId:
+      string;
+    classification:
+      BlockedRecordMutationAuthority[
+        'outcomes'
+      ][number]['classification'];
+    status:
+      BlockedRecordMutationAuthority[
+        'outcomes'
+      ][number]['status'];
+    reason:
+      string;
+  }>;
 }
 
 export interface InspectionProjection {
@@ -65,6 +96,130 @@ export interface InspectionProjection {
 }
 
 function safeText(value: string, limit = MAX_INSPECTION_TEXT): string { return value.slice(0, limit); }
+
+function isRecoveryClassification(
+  value: unknown,
+): boolean {
+  return value === 'not-applied'
+    || value === 'effect-present'
+    || value === 'conflict'
+    || value === 'already-committed'
+    || value === 'error';
+}
+
+function isRecoveryStatus(
+  value: unknown,
+): boolean {
+  return value === 'committed'
+    || value === 'recovered'
+    || value === 'blocked'
+    || value === 'already-committed'
+    || value === 'error';
+}
+
+/**
+ * Bounded pathless inspection of a startup result that denied record mutation
+ * authority. It deliberately omits recovery-record paths and storage handles.
+ */
+export function createRecordRecoveryBlockedInspection(
+  result:
+    BlockedRecordMutationAuthority,
+): RecordRecoveryBlockedInspection {
+  return {
+    schemaVersion:
+      RECORD_RECOVERY_INSPECTION_SCHEMA_VERSION,
+    code:
+      'record-recovery-blocked',
+    mutationAuthority:
+      'blocked',
+    unresolved:
+      result.unresolved,
+    reason:
+      safeText(
+        result.reason,
+      ),
+    outcomes:
+      result.outcomes
+        .slice(
+          0,
+          MAX_INSPECTION_ITEMS,
+        )
+        .map(
+          (outcome) => ({
+            requestId:
+              safeText(
+                outcome.requestId,
+                200,
+              ),
+            classification:
+              outcome.classification,
+            status:
+              outcome.status,
+            reason:
+              safeText(
+                outcome.reason,
+              ),
+          }),
+        ),
+  };
+}
+
+export function isRecordRecoveryBlockedInspection(
+  value: unknown,
+): value is RecordRecoveryBlockedInspection {
+  if (
+    typeof value !== 'object'
+    || value === null
+  ) {
+    return false;
+  }
+
+  const candidate =
+    value as Partial<
+      RecordRecoveryBlockedInspection
+    >;
+
+  return candidate.schemaVersion
+      === RECORD_RECOVERY_INSPECTION_SCHEMA_VERSION
+    && candidate.code
+      === 'record-recovery-blocked'
+    && candidate.mutationAuthority
+      === 'blocked'
+    && Number.isInteger(
+      candidate.unresolved,
+    )
+    && candidate.unresolved! >= 0
+    && typeof candidate.reason
+      === 'string'
+    && candidate.reason.length
+      <= MAX_INSPECTION_TEXT
+    && Array.isArray(
+      candidate.outcomes,
+    )
+    && candidate.outcomes.length
+      <= MAX_INSPECTION_ITEMS
+    && candidate.outcomes.every(
+      (outcome) => (
+        typeof outcome
+          === 'object'
+        && outcome !== null
+        && typeof outcome.requestId
+          === 'string'
+        && outcome.requestId.length
+          <= 200
+        && isRecoveryClassification(
+          outcome.classification,
+        )
+        && isRecoveryStatus(
+          outcome.status,
+        )
+        && typeof outcome.reason
+          === 'string'
+        && outcome.reason.length
+          <= MAX_INSPECTION_TEXT
+      ),
+    );
+}
 
 function isInspectionProject(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;

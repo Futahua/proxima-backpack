@@ -13,6 +13,9 @@ import {
   type ActionOutcome,
   type RegisteredActionType,
 } from './actionTaxonomy.js';
+import type {
+  RecordMutationOutcome,
+} from './recordMutation.js';
 
 export type { ActionCategory, ActionErrorCode, ActionOutcome } from './actionTaxonomy.js';
 
@@ -122,6 +125,69 @@ export interface ActionFailure {
 }
 
 export type ActionResult = ActionSuccess | ActionFailure;
+
+/**
+ * Adapt the storage/recovery coordinator's uncertain result into the existing
+ * machine-readable semantic-action result vocabulary.
+ *
+ * This does not execute or register an action. A future semantic record action
+ * may use it only after that action has already crossed its own validation and
+ * authority boundary.
+ */
+export function recordMutationRecoveryActionFailure(
+  input: {
+    readonly actionType:
+      RegisteredActionType;
+    readonly stateRevision:
+      number;
+    readonly entityIds:
+      readonly string[];
+    readonly result:
+      RecordMutationOutcome;
+  },
+): ActionFailure | null {
+  if (
+    input.result.ok
+    || input.result.reason
+      !== 'recovery-required'
+  ) {
+    return null;
+  }
+
+  if (
+    categoryOf(
+      input.actionType,
+    ) !== 'record-mutation'
+  ) {
+    throw new Error(
+      'record recovery disclosure requires a record-mutation action type',
+    );
+  }
+
+  return {
+    schemaVersion:
+      ACTION_SCHEMA_VERSION,
+    ok: false,
+    actionType:
+      input.actionType,
+    category:
+      'record-mutation',
+    outcome:
+      'recovery-required',
+    stateRevision:
+      input.stateRevision,
+    requestId:
+      input.result.requestId,
+    entityIds:
+      [...input.entityIds],
+    error: {
+      code:
+        'recovery-required',
+      message:
+        'record mutation requires recovery reconciliation',
+    },
+  };
+}
 
 export interface ActionDispatcherState {
   state: ProximaState;
