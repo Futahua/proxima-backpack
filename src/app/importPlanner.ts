@@ -49,7 +49,7 @@ import {
 } from './importSchemaPlanner.js';
 
 export const LEGACY_IMPORT_PLAN_SCHEMA_VERSION =
-  6 as const;
+  7 as const;
 
 export interface LegacyImportIdentityRequest {
   readonly kind: RecordKind;
@@ -252,6 +252,28 @@ export interface LegacyImportTaskConversionPlan {
     OpaqueRecordId;
   readonly sourcePath:
     string;
+  readonly name:
+    string;
+  readonly description:
+    string;
+  readonly weight:
+    number;
+  readonly isFixedDuration:
+    boolean;
+  readonly fixedDuration:
+    number | null;
+  readonly maxDuration:
+    number | null;
+  readonly isCompleted:
+    boolean;
+  readonly createdAt:
+    string;
+  readonly startDate:
+    string | null;
+  readonly deadline:
+    string | null;
+  readonly recurrence:
+    null;
   readonly legacyStatusId:
     string;
   readonly executionState:
@@ -1322,6 +1344,33 @@ export async function planLegacyMarkdownImport(
     const executionState =
       candidate.compatibility
         .taskExecutionState;
+    const description =
+      candidate.compatibility
+        .taskDescription;
+    const weight =
+      candidate.compatibility
+        .taskWeight;
+    const isFixedDuration =
+      candidate.compatibility
+        .taskIsFixedDuration;
+    const fixedDuration =
+      candidate.compatibility
+        .taskFixedDuration;
+    const maxDuration =
+      candidate.compatibility
+        .taskMaxDuration;
+    const isCompleted =
+      candidate.compatibility
+        .taskIsCompleted;
+    const createdAt =
+      candidate.compatibility
+        .taskCreatedAt;
+    const startDate =
+      candidate.compatibility
+        .taskStartDate;
+    const deadline =
+      candidate.compatibility
+        .taskDeadline;
 
     if (
       legacyStatusId
@@ -1329,6 +1378,16 @@ export async function planLegacyMarkdownImport(
       || legacyOrderIndex
         === null
       || executionState
+        === null
+      || description
+        === null
+      || weight
+        === null
+      || isFixedDuration
+        === null
+      || isCompleted
+        === null
+      || createdAt
         === null
     ) {
       throw new Error(
@@ -1433,6 +1492,19 @@ export async function planLegacyMarkdownImport(
         mapping.recordId,
       sourcePath:
         candidate.source.path,
+      name:
+        mapping.name,
+      description,
+      weight,
+      isFixedDuration,
+      fixedDuration,
+      maxDuration,
+      isCompleted,
+      createdAt,
+      startDate,
+      deadline,
+      recurrence:
+        null,
       legacyStatusId,
       executionState:
         canonicalExecutionState,

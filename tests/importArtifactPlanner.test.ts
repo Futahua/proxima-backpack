@@ -215,7 +215,7 @@ describe(
 
         expect(
           result.schemaVersion,
-        ).toBe(6);
+        ).toBe(7);
 
         expect(artifactPlan)
           .toMatchObject({

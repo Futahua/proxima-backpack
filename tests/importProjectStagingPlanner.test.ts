@@ -237,7 +237,7 @@ describe(
         expect(
           importPlan.schemaVersion,
         ).toBe(
-          6,
+          7,
         );
 
         const conversion =

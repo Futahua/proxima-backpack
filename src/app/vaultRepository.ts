@@ -78,6 +78,24 @@ export interface LegacyPhysicalRecordCandidate {
       Task['orderIndex'] | null;
     readonly taskExecutionState:
       ElasticColumn | null;
+    readonly taskDescription:
+      Task['description'] | null;
+    readonly taskWeight:
+      Task['weight'] | null;
+    readonly taskIsFixedDuration:
+      Task['isFixedDuration'] | null;
+    readonly taskFixedDuration:
+      Task['fixedDuration'] | null;
+    readonly taskMaxDuration:
+      Task['maxDuration'] | null;
+    readonly taskIsCompleted:
+      Task['isCompleted'] | null;
+    readonly taskCreatedAt:
+      Task['createdAt'] | null;
+    readonly taskStartDate:
+      Task['startDate'] | null;
+    readonly taskDeadline:
+      Task['deadline'] | null;
     readonly projectType:
       Project['projectType'] | null;
     readonly projectDescription:
@@ -499,6 +517,24 @@ function toPhysicalCandidate(
           null,
         taskExecutionState:
           null,
+        taskDescription:
+          null,
+        taskWeight:
+          null,
+        taskIsFixedDuration:
+          null,
+        taskFixedDuration:
+          null,
+        taskMaxDuration:
+          null,
+        taskIsCompleted:
+          null,
+        taskCreatedAt:
+          null,
+        taskStartDate:
+          null,
+        taskDeadline:
+          null,
         projectType:
           project.projectType,
         projectDescription:
@@ -555,6 +591,24 @@ function toPhysicalCandidate(
             task,
             DEFAULT_STATUSES,
           ),
+        taskDescription:
+          task.description,
+        taskWeight:
+          task.weight,
+        taskIsFixedDuration:
+          task.isFixedDuration,
+        taskFixedDuration:
+          task.fixedDuration,
+        taskMaxDuration:
+          task.maxDuration,
+        taskIsCompleted:
+          task.isCompleted,
+        taskCreatedAt:
+          task.createdAt,
+        taskStartDate:
+          task.startDate,
+        taskDeadline:
+          task.deadline,
         projectType:
           null,
         projectDescription:
@@ -592,6 +646,24 @@ function toPhysicalCandidate(
       taskOrderIndex:
         null,
       taskExecutionState:
+        null,
+      taskDescription:
+        null,
+      taskWeight:
+        null,
+      taskIsFixedDuration:
+        null,
+      taskFixedDuration:
+        null,
+      taskMaxDuration:
+        null,
+      taskIsCompleted:
+        null,
+      taskCreatedAt:
+        null,
+      taskStartDate:
+        null,
+      taskDeadline:
         null,
       projectType: null,
       projectDescription:
