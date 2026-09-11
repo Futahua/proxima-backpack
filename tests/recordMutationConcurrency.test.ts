@@ -16,6 +16,10 @@ const RECORD_FILE = (
   'pxr_00000000000000000000000000000001.json'
 ) as RecordStoreFileName;
 
+const SECOND_RECORD_FILE = (
+  'pxr_00000000000000000000000000000002.json'
+) as RecordStoreFileName;
+
 class AtomicMemoryRecordBackend implements RecordStoreFileBackend {
   private readonly files = new Map<string, { text: string; revision: string }>();
   readonly updateAttempts: Array<{ text: string; expectedRevision: string }> = [];
@@ -133,5 +137,43 @@ describe('Stage 7 slice 12 observed-revision same-record concurrency', () => {
     expect(records.revision(RECORD_FILE)).toBe(winner.revision);
     const expectedText = winner.requestId === 'caller-a' ? 'from-caller-a' : 'from-caller-b';
     expect(records.text(RECORD_FILE)).toBe(expectedText);
+  });
+
+  it('lets independent callers commit different observed records without cross-record blocking or overwrite', async () => {
+    const records = new AtomicMemoryRecordBackend();
+    records.seed(RECORD_FILE, 'old-a', 'record-r1');
+    records.seed(SECOND_RECORD_FILE, 'old-b', 'record-r7');
+
+    const observationA = await records.readRecordFile(RECORD_FILE);
+    const observationB = await records.readRecordFile(SECOND_RECORD_FILE);
+    if (!observationA || !observationB) throw new Error('expected both record observations');
+    expect(observationA.revision).toBe('record-r1');
+    expect(observationB.revision).toBe('record-r7');
+
+    const barrier = pairedPrepareBarrier();
+    const first = createRecordMutationCoordinator({ backend: records, recovery: barrier.first });
+    const second = createRecordMutationCoordinator({ backend: records, recovery: barrier.second });
+    const results = await Promise.all([
+      first.execute({ kind: 'update', fileName: RECORD_FILE, text: 'new-a', expectedRevision: observationA.revision, requestId: 'different-record-a' }),
+      second.execute({ kind: 'update', fileName: SECOND_RECORD_FILE, text: 'new-b', expectedRevision: observationB.revision, requestId: 'different-record-b' }),
+    ]);
+
+    expect(barrier.preparedRevisions.slice().sort()).toEqual([observationA.revision, observationB.revision].sort());
+    expect(records.updateAttempts.map((attempt) => attempt.expectedRevision).sort()).toEqual([observationA.revision, observationB.revision].sort());
+    expect(results).toHaveLength(2);
+    expect(results.every((result) => result.ok)).toBe(true);
+    const firstResult = results[0];
+    const secondResult = results[1];
+    if (!firstResult || !secondResult || !firstResult.ok || !secondResult.ok) throw new Error('expected both different-record mutations to succeed');
+    expect(firstResult.requestId).toBe('different-record-a');
+    expect(secondResult.requestId).toBe('different-record-b');
+    expect(records.text(RECORD_FILE)).toBe('new-a');
+    expect(records.text(SECOND_RECORD_FILE)).toBe('new-b');
+    expect(records.revision(RECORD_FILE)).toBe(firstResult.revision);
+    expect(records.revision(SECOND_RECORD_FILE)).toBe(secondResult.revision);
+    expect(firstResult.revision).not.toBe(observationA.revision);
+    expect(secondResult.revision).not.toBe(observationB.revision);
+    expect(records.text(RECORD_FILE)).not.toBe('new-b');
+    expect(records.text(SECOND_RECORD_FILE)).not.toBe('new-a');
   });
 });
