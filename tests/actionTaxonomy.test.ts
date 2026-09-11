@@ -23,6 +23,7 @@ import {
   isTerminalRefusal,
   outcomeForErrorCode,
   registeredActionTypes,
+  type ActionCategory,
   type ActionErrorCode,
   type ActionOutcome,
 } from '../src/app/actionTaxonomy.js';
@@ -69,6 +70,50 @@ describe('Stage 0 action taxonomy', () => {
     expect(categoryOf('elastic.unlock')).toBe('local-state');
     expect(categoryOf('')).toBeUndefined();
     expect(categoryOf('toString')).toBeUndefined();
+  });
+
+  it('covers the four action kinds in one union, and names the two with no action yet', () => {
+    // The checklist asks for one public versioned union covering presentation actions,
+    // local-state actions, record mutations and vault-artifact gestures. Those are this
+    // taxonomy's four categories, and `actionProtocol.ts` proves at compile time that the
+    // `ProximaAction` union and this registry name exactly the same types
+    // (`ACTION_TAXONOMY_MATCHES_PROTOCOL`). What is left to state at runtime is which of
+    // the four kinds the product actually populates today.
+    expect(ACTION_CATEGORIES).toEqual([
+      'presentation',
+      'local-state',
+      'record-mutation',
+      'artifact-mutation',
+    ]);
+
+    const populated: Record<ActionCategory, string[]> = {
+      presentation: [],
+      'local-state': [],
+      'record-mutation': [],
+      'artifact-mutation': [],
+    };
+
+    for (const type of registeredActionTypes()) {
+      const category = categoryOf(type);
+      expect(isActionCategory(category)).toBe(true);
+      populated[category as ActionCategory].push(type);
+    }
+
+    expect(populated['local-state'].length).toBeGreaterThan(0);
+    expect(populated['record-mutation'].length).toBeGreaterThan(0);
+    // Nothing is a pure presentation action: every cockpit gesture that changes what is
+    // shown also has to record which way the reader left it, so it is local state. And
+    // no action mutates an ordinary vault file yet — the Notes/drawings write stage owns
+    // that. Ticking either box means giving these two lists a member.
+    expect(populated.presentation).toEqual([]);
+    expect(populated['artifact-mutation']).toEqual([]);
+
+    // Only the two mutation categories can cost the creator something, which is why an
+    // unregistered type may never be defaulted into one of the other two.
+    expect(ACTION_CATEGORIES.filter(isMutationCategory))
+      .toEqual(['record-mutation', 'artifact-mutation']);
+    expect(isMutationCategory('presentation')).toBe(false);
+    expect(isMutationCategory('local-state')).toBe(false);
   });
 
   it('maps every error code to exactly one outcome, and never to accepted', () => {

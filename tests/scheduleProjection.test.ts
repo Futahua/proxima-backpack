@@ -8,7 +8,12 @@ import {
   type ScheduleProjectionMode,
 } from '../src/browser/scheduleProjection.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
+import {
+  renderScheduleTimeGrid,
+  scheduleVisibleDays,
+} from '../src/browser/scheduleTimeGrid.js';
 import { localCalendarDate } from '../src/browser/calendarGrid.js';
+import { localDateKey } from '../src/domain/time.js';
 import { scheduleNavigationDateKey } from '../src/browser/scheduleNavigation.js';
 import type { CalendarEvent } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
@@ -397,6 +402,103 @@ describe('Schedule Month, Year and Agenda projection', () => {
       expect(
         document.querySelector('[draggable="true"]'),
       ).toBeNull();
+    }
+
+    expect(JSON.stringify(events)).toBe(before);
+  });
+
+  it('projects one fixture set onto the same local dates in all six Schedule views', () => {
+    const before = JSON.stringify(events);
+    const cursor = localCalendarDate(2026, 8, 6);
+    const canonical = scheduleDateOccurrenceProjection(events);
+
+    // Month, Agenda and the time grid name both the event and the date it is drawn on;
+    // Year reports how many occurrences fall on a date and nothing else, so it is read
+    // as counts below rather than as pairs.
+    const pairs = (root: ParentNode): string[][] => Array.from(
+      root.querySelectorAll<HTMLElement>('[data-schedule-event-id]'),
+    ).map((card) => [
+      card.dataset.scheduleEventId ?? '',
+      card.dataset.scheduleOccurrenceDate
+        ?? card.closest<HTMLElement>('[data-schedule-day]')?.dataset.scheduleDay
+        ?? '',
+    ]).sort();
+
+    const occurrencesOn = (dayKeys: readonly string[]): string[][] => canonical
+      .filter((occurrence) => dayKeys.includes(occurrence.dayKey))
+      .map((occurrence) => [occurrence.eventId, occurrence.dayKey] as [string, string])
+      .sort();
+
+    for (const mode of ['day', 'four-day', 'week'] as const) {
+      document.body.innerHTML = renderScheduleTimeGrid({
+        mode,
+        events: [...events],
+        projectNames: new Map(),
+        selectionLabel: 'All projects',
+        calendarCursor: cursor,
+        now: NOW,
+        selectedEventId: null,
+      });
+
+      expect(pairs(document.body))
+        .toEqual(occurrencesOn(scheduleVisibleDays(cursor, mode).map((day) => localDateKey(day))));
+    }
+
+    document.body.innerHTML = renderScheduleProjection({
+      mode: 'month',
+      events,
+      projectNames: new Map(),
+      selectionLabel: 'All projects',
+      calendarCursor: cursor,
+      now: NOW,
+      selectedEventId: null,
+      problems: [],
+    });
+
+    // The grid's outside days are drawn but carry no occurrence buttons, so the Month
+    // view is compared against the days its own cells claim, in-month or not.
+    const monthDays = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-schedule-month-day]'),
+    ).filter((cell) => cell.dataset.scheduleOccurrenceCount !== '0')
+      .map((cell) => cell.dataset.scheduleMonthDay ?? '');
+
+    expect(pairs(document.body)).toEqual(occurrencesOn(monthDays));
+
+    document.body.innerHTML = renderScheduleProjection({
+      mode: 'agenda',
+      events,
+      projectNames: new Map(),
+      selectionLabel: 'All projects',
+      calendarCursor: cursor,
+      now: NOW,
+      selectedEventId: null,
+      problems: [],
+    });
+
+    expect(pairs(document.body)).toEqual(occurrencesOn(canonical.map((occurrence) => occurrence.dayKey)));
+
+    document.body.innerHTML = renderScheduleProjection({
+      mode: 'year',
+      events,
+      projectNames: new Map(),
+      selectionLabel: 'All projects',
+      calendarCursor: cursor,
+      now: NOW,
+      selectedEventId: null,
+      problems: [],
+    });
+
+    const expectedCounts = new Map<string, number>();
+    for (const occurrence of canonical) {
+      expectedCounts.set(occurrence.dayKey, (expectedCounts.get(occurrence.dayKey) ?? 0) + 1);
+    }
+
+    for (const [dayKey, count] of expectedCounts) {
+      expect(
+        document.querySelector<HTMLElement>(
+          `[data-schedule-year-event-indicator="${dayKey}"]`,
+        )?.dataset.scheduleOccurrenceCount,
+      ).toBe(String(count));
     }
 
     expect(JSON.stringify(events)).toBe(before);
