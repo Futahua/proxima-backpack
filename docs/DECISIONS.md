@@ -1201,3 +1201,49 @@ discipline.
 grows, and the migration is a `ProjectFieldMutation` case); or the surface gains an autosave model, in
 which case the draft becomes a debounced write and this decision's "only what changed" rule matters
 more, not less.
+
+---
+
+## D59 — A move and a resize are their own verbs, snapping is the gesture's, and dates are validated once
+
+**Decided:** the event write path is five operations in `src/app/eventMutations.ts` —
+`event.create`, `event.update`, `event.delete`, `event.reschedule` and `event.resize`. A reschedule
+names the new **start** and the operation takes the duration from the record; a resize names either
+the new **end** or a **duration** in minutes, never both and never neither. The dates are *not* in
+`event.update`'s field union. Gesture geometry lives in `src/app/eventGesture.ts`, which turns a
+pointer delta into the same request those verbs take, and **snapping to fifteen minutes lives there
+and only there**.
+
+**Why three rules rather than one update verb.** An agent asked to *"move event E to 2026-09-10
+14:30, retaining its current duration"* should be able to say exactly that, and a drag should compile
+to the same thing — so the duration belongs to the record, not to the caller, and neither caller
+computes an end. A resize is the mirror image: the start stays and the caller names what it knows,
+which for a gesture is where the bottom edge landed and for an agent may be "90 minutes". The
+alternative — one `event.update` with a `dates` mutation — would have made every caller reimplement
+"keep the duration" and would have made the two checklist verbs (`event.reschedule`, `event.resize`)
+names without referents.
+
+**Why snapping is not in the write path.** A gesture can only mean a slot boundary, so rounding a
+pixel delta to whole slots is what makes a drag feel like a drag. An agent asking for 14:37 means
+14:37. Putting the rounding in the operation would silently rewrite agent requests to the nearest
+quarter hour, which is the class of "the write path decided something for you" that this tree keeps
+refusing. The two layers share one arithmetic: the provisional block and the request are computed by
+the same function, so what a reader sees while dragging is what will be written, and a drag that
+moved nothing sends no request at all.
+
+**Why validation is once, in the operation.** A start and an end must both be real instants with the
+end strictly after the start — a zero-length event is a point, not a span. The gesture refuses a
+resize that would leave no duration *before* submitting, because "invalid duration refused before
+storage" is a promise about what leaves the gesture; the operation refuses the same thing with the
+same vocabulary, so the two agree rather than merely coexisting.
+
+**Also decided:** `event.update` carries `name`, `description`, `project`, `completion`, `recurrence`
+and schema-keyed `property` mutations — the same closed-union style as `task.update`, with a property
+whose key names no schema record refused as a semantic conflict rather than written as a field
+nobody defines. Recurrence *series* semantics (this occurrence versus the whole series) are Stage 13's
+and are not invented here.
+
+**Reverses if:** Stage 13 needs occurrence-scoped writes, at which point `reschedule` and `resize`
+gain a scope parameter rather than a second operation; or a gesture appears that must express a
+non-slot boundary (a five-minute grid, a free-form timeline), at which point snapping moves to the
+grid that knows its own resolution.
