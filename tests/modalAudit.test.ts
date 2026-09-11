@@ -295,6 +295,8 @@ describe('no write control can be clicked and do nothing', () => {
       });
     };
     bindScheduleTimeGridInteractions(root, {
+      saveEvent: () => {},
+      deleteEvent: () => {},
       openEvent: () => {},
       closeEvent: () => { seeded = null; refusal = null; rerender(); },
       seedEvent: (draft) => { seeded = { ...draft }; refusal = null; rerender(); },

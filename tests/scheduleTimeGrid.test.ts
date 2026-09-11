@@ -178,6 +178,8 @@ function mountInteractiveSchedule(
   setScheduleTrackGeometry(root);
 
   bindScheduleTimeGridInteractions(root, {
+    saveEvent: () => {},
+    deleteEvent: () => {},
     openEvent: () => {},
     closeEvent: () => {},
     seedEvent: () => {},
@@ -648,6 +650,8 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
     };
 
     bindScheduleTimeGridInteractions(root, {
+      saveEvent: () => {},
+      deleteEvent: () => {},
       openEvent: (eventId) => {
         selectedEventId = eventId;
         rerender();
@@ -742,6 +746,8 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
       };
 
       bindScheduleTimeGridInteractions(root, {
+        saveEvent: () => {},
+        deleteEvent: () => {},
         openEvent: () => {},
         closeEvent: () => {
           seededEvent = null;
@@ -816,6 +822,8 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
     };
 
     bindScheduleTimeGridInteractions(root, {
+      saveEvent: () => {},
+      deleteEvent: () => {},
       openEvent: () => {},
       closeEvent: () => {
         seededEvent = null;

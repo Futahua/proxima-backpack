@@ -2,7 +2,9 @@ import type {
   ActionResult,
   ScheduleChangeOperation,
 } from '../app/actionProtocol.js';
-import { renderEventModal as renderEventEditorModal } from './eventModal.js';
+import { eventFormValuesFrom, renderEventModal as renderEventEditorModal } from './eventModal.js';
+import type { EventEditorDraft } from '../app/eventEditor.js';
+import type { EventFormValues } from '../app/eventFormPlan.js';
 import type { CalendarEvent } from '../domain/types.js';
 import { localDateKey } from '../domain/time.js';
 import { localCalendarDate } from './calendarGrid.js';
@@ -63,6 +65,12 @@ export interface ScheduleTimeGridRenderOptions {
   writeFeedback?: string | null;
   /** What the seeded form's last save answered, drawn on the form. */
   seedRefusal?: string | null;
+  /**
+   * What the Event editor draws: the resolved write path, its last answer, and the form's draft.
+   * `refusal === null` is what makes the editor a form rather than a projection.
+   */
+  eventEditorWrites?: { refusal: string | null; feedback: string | null; feedbackRefusal?: string | null } | null;
+  eventEditorDraft?: EventEditorDraft | null;
 }
 export interface ScheduleEventChangeIntent {
   eventId: string;
@@ -78,6 +86,9 @@ export interface ScheduleTimeGridHandlers {
   seedEvent(draft: ScheduleEventDraft): void;
   createEvent(intent: ScheduleEventCreateIntent): void;
   changeEvent(intent: ScheduleEventChangeIntent): void;
+  /** The Event editor's Save and Delete, which only run when the editor is a form. */
+  saveEvent(intent: { eventId: string; values: EventFormValues }): void;
+  deleteEvent(intent: { eventId: string }): void;
 }
 
 const MINUTES_PER_DAY = 1_440;
@@ -333,6 +344,8 @@ function renderEventModal(
   seededEvent: ScheduleEventDraft | null,
   projectNames: Map<string, string>,
   seedRefusal: string | null,
+  writes: { refusal: string | null; feedback: string | null } | null,
+  draft: EventEditorDraft | null,
 ): string {
   if (seededEvent) {
     const projectLabel = seededEvent.projectId === null
@@ -341,7 +354,7 @@ function renderEventModal(
 
     return `<div class="modal-backdrop" data-c1-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-schedule-editor-mode="create" data-schedule-draft-project-id="${escapeHtml(seededEvent.projectId ?? '')}"${seedRefusal === null ? '' : ` data-schedule-refusal="${escapeHtml(seedRefusal)}"`} data-c1-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>New event</h3></div><button type="button" class="icon-button" data-schedule-action="close-event" data-c1-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><label>Name<input data-c1-key="schedule-event-name" value="${escapeHtml(seededEvent.name)}"></label><label>Project<input data-c1-key="schedule-event-project" value="${escapeHtml(projectLabel)}" readonly></label><label>Start<input data-c1-key="schedule-event-start" value="${escapeHtml(seededEvent.startDate)}" readonly></label><label>End<input data-c1-key="schedule-event-end" value="${escapeHtml(seededEvent.deadline)}" readonly></label><label>Description<textarea data-c1-key="schedule-event-description">${escapeHtml(seededEvent.description)}</textarea></label>${seedRefusal === null ? '' : `<small data-schedule-seed-feedback="${escapeHtml(seedRefusal)}">${escapeHtml(seedRefusal)}</small>`}<button type="button" data-schedule-action="save-seeded-event" data-c1-key="schedule-event-save">Save</button></section></div>`;
   }
-  return renderEventEditorModal({ events, projectNames, eventId, closeAction: 'close-event', closeAttribute: 'data-schedule-action', mode: 'edit' });
+  return renderEventEditorModal({ events, projectNames, eventId, closeAction: 'close-event', closeAttribute: 'data-schedule-action', mode: 'edit', writes, draft });
 }
 
 function renderAllDayRegion(
@@ -513,6 +526,8 @@ export function renderScheduleTimeGrid(
       options.seededEvent ?? null,
       options.projectNames,
       options.seedRefusal ?? null,
+      options.eventEditorWrites ?? null,
+      options.eventEditorDraft ?? null,
     );
 
   return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-c1-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header>${renderAllDayRegion(ordinaryEvents, recurringOccurrences, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-c1-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${modal}</section>`;
@@ -833,6 +848,29 @@ export function bindScheduleTimeGridInteractions(
         startDate: start.value,
         deadline: deadline.value,
       });
+      return;
+    }
+
+    // The Event editor's Save and Delete. The form is read where it is and handed over: the sequence
+    // runs in the shell, and what it answers is what the next render draws.
+    if (control.dataset.scheduleAction === 'save-event') {
+      const modal = control.closest<HTMLElement>(
+        '[data-schedule-editor-mode="edit"]',
+      );
+      const eventId = modal?.dataset.scheduleEventId;
+      const values = modal ? eventFormValuesFrom(modal) : null;
+      if (!modal || !eventId || !values) return;
+      handlers.saveEvent({ eventId, values });
+      return;
+    }
+
+    if (control.dataset.scheduleAction === 'delete-event') {
+      const modal = control.closest<HTMLElement>(
+        '[data-schedule-editor-mode="edit"]',
+      );
+      const eventId = modal?.dataset.scheduleEventId;
+      if (!eventId) return;
+      handlers.deleteEvent({ eventId });
       return;
     }
 

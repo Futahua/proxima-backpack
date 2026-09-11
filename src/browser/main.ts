@@ -47,6 +47,7 @@ import { scheduleNavigationDateKey, type ScheduleNavigationDirection } from './s
 import { scheduleEventsForSelection } from './scheduleSelection.js';
 import { bindScheduleRecurrenceInteractions, type ScheduleRecurrenceScope, type ScheduleRecurringOccurrenceSelection } from './scheduleRecurrence.js';
 import { projectPresentation } from './projectPresentation.js';
+import { eventRecurrenceFor } from './eventModal.js';
 import { bindProjectsHubInteractions, renderProjectsHub, type ProjectCreateIntent, type ProjectEditView, type ProjectFormRefusal, type ProjectsHubFilter } from './projectsHub.js';
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
@@ -64,7 +65,9 @@ import { cockpitSubmode, renderCockpitNavigation } from './cockpitNavigation.js'
 import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor } from './workspaceIdentity.js';
 import { archiveProjectAction, createProjectAction, deleteProjectAction, restoreProjectAction, updateProjectAction, type ProjectLifecycleOutcome } from '../app/projectLifecycleActions.js';
 import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
-import { createEventAction, rescheduleEventAction, resizeEventAction, type EventWriteOutcome } from '../app/eventWriteActions.js';
+import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, type EventWriteOutcome } from '../app/eventWriteActions.js';
+import { eventEditorDraftFor, type EventEditorDraft } from '../app/eventEditor.js';
+import type { EventFormValues } from '../app/eventFormPlan.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -101,6 +104,10 @@ let scheduleWriteRefusal: { eventId: string; code: string } | null = null;
 let scheduleSeedRefusal: string | null = null;
 /** The last Schedule write's own sentence. */
 let scheduleWriteFeedback: string | null = null;
+/** The refusal code that sentence belongs to, null when the last write was accepted. */
+let scheduleWriteRefusalCode: string | null = null;
+/** The Event editor's provisional values, so a refused save does not empty the form (D58). */
+let scheduleEventEditorDraft: EventEditorDraft | null = null;
 let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_VIEW;
 /** The workflow board's own state: it groups by stage, so it previews and refuses separately. */
 let projectWorkflowBoardView: ProjectWorkflowBoardViewState = EMPTY_PROJECT_WORKFLOW_BOARD_VIEW;
@@ -314,6 +321,8 @@ function scheduleProjectionSurface(
     selectedRecurringOccurrence: selectedScheduleRecurringOccurrence,
     selectedRecurringScope: selectedScheduleRecurringScope,
     problems,
+    eventEditorWrites: eventEditorWrites(),
+    eventEditorDraft: scheduleEventEditorDraft,
   });
 }
 
@@ -363,6 +372,8 @@ function scheduleTimeGridSurface(
     writeRefusal: scheduleWriteRefusal,
     writeFeedback: scheduleWriteFeedback,
     seedRefusal: scheduleSeedRefusal,
+    eventEditorWrites: eventEditorWrites(),
+    eventEditorDraft: scheduleEventEditorDraft,
   });
 }
 
@@ -987,6 +998,71 @@ async function changeEventFromGesture(intent: ScheduleEventChangeIntent): Promis
   render();
 }
 
+/**
+ * The Event editor's Save and Delete.
+ *
+ * The same two sequences the gesture path uses for its own verbs, and the same rule about the form:
+ * the mutations are planned from the record and what was typed, so only what changed is submitted,
+ * and a refusal leaves the form open with the reader's values still in it (D58). An accepted save or
+ * delete closes the editor, because the record now says what the form said.
+ */
+async function saveEventFromEditor(intent: { eventId: string; values: EventFormValues }): Promise<void> {
+  const outcome = await saveEventAction(eventWriteDependencies(), intent);
+  scheduleWriteFeedback = eventWriteSentence(outcome);
+  scheduleWriteRefusalCode = outcome.ok ? null : outcome.reason;
+  if (outcome.ok) {
+    selectedScheduleEventId = null;
+    scheduleEventEditorDraft = null;
+  } else {
+    // The draft is the form's own values, which is what makes the next render show them again.
+    scheduleEventEditorDraft = eventEditorDraftFromValues(intent.eventId, intent.values);
+  }
+  render();
+}
+
+async function deleteEventFromEditor(eventId: string): Promise<void> {
+  const outcome = await deleteEventAction(eventWriteDependencies(), { eventId });
+  scheduleWriteFeedback = eventWriteSentence(outcome);
+  scheduleWriteRefusalCode = outcome.ok ? null : outcome.reason;
+  if (outcome.ok) {
+    selectedScheduleEventId = null;
+    scheduleEventEditorDraft = null;
+  }
+  render();
+}
+
+/** The form's values as a draft: the record with what was typed over it, which is what D58 asks for. */
+function eventEditorDraftFromValues(eventId: string, values: EventFormValues): EventEditorDraft | null {
+  const event = appState?.events.find((candidate) => candidate.id === eventId);
+  if (event === undefined) return null;
+  return eventEditorDraftFor(
+    {
+      ...event,
+      name: values.name,
+      description: values.description,
+      projectId: values.projectId,
+      startDate: values.startDate,
+      deadline: values.deadline,
+      isCompleted: values.isCompleted,
+    },
+    eventRecurrenceForView(event),
+  );
+}
+
+/** The recurrence the editor shows for an event, which the draft has to carry with its values. */
+function eventRecurrenceForView(event: ProximaState['events'][number]) {
+  return eventRecurrenceFor(event);
+}
+
+/** What the Event editor draws: the write path, the last answer, and the form's draft. */
+function eventEditorWrites(): { refusal: string | null; feedback: string | null; feedbackRefusal: string | null } {
+  return {
+    refusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null,
+    feedback: scheduleWriteFeedback,
+    feedbackRefusal: scheduleWriteRefusalCode,
+  };
+}
+
 function bindInteractions(): void {
   const root = element<HTMLElement>('#proxima-app');
   if (root.dataset.interactionsBound === 'true') return;
@@ -1266,6 +1342,10 @@ function bindInteractions(): void {
   bindScheduleProjectionInteractions(root, {
     openEvent: (eventId) => {
       scheduleEventDraft = null;
+      // The editor starts from the record: the draft is what has been typed since, and nothing has.
+      scheduleEventEditorDraft = null;
+      scheduleWriteFeedback = null;
+      scheduleWriteRefusalCode = null;
       selectedScheduleRecurringOccurrence = null;
       selectedScheduleRecurringScope = null;
       selectedScheduleEventId = eventId;
@@ -1274,10 +1354,13 @@ function bindInteractions(): void {
     closeEvent: () => {
       selectedScheduleEventId = null;
       scheduleEventDraft = null;
+      scheduleEventEditorDraft = null;
       selectedScheduleRecurringOccurrence = null;
       selectedScheduleRecurringScope = null;
       render();
     },
+    saveEvent: ({ eventId, values }) => { void saveEventFromEditor({ eventId, values }); },
+    deleteEvent: ({ eventId }) => { void deleteEventFromEditor(eventId); },
     selectMonth: (month) => {
       dispatchAction({
         type: 'schedule.cursor.set',
@@ -1300,6 +1383,9 @@ function bindInteractions(): void {
   bindScheduleTimeGridInteractions(root, {
     openEvent: (eventId) => {
       scheduleEventDraft = null;
+      scheduleEventEditorDraft = null;
+      scheduleWriteFeedback = null;
+      scheduleWriteRefusalCode = null;
       selectedScheduleRecurringOccurrence = null;
       selectedScheduleRecurringScope = null;
       selectedScheduleEventId = eventId;
@@ -1308,10 +1394,13 @@ function bindInteractions(): void {
     closeEvent: () => {
       selectedScheduleEventId = null;
       scheduleEventDraft = null;
+      scheduleEventEditorDraft = null;
       selectedScheduleRecurringOccurrence = null;
       selectedScheduleRecurringScope = null;
       render();
     },
+    saveEvent: ({ eventId, values }) => { void saveEventFromEditor({ eventId, values }); },
+    deleteEvent: ({ eventId }) => { void deleteEventFromEditor(eventId); },
     seedEvent: (draft) => {
       selectedScheduleEventId = null;
       selectedScheduleRecurringOccurrence = null;

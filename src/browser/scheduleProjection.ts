@@ -1,7 +1,9 @@
 import type { LoadProblem } from '../domain/problems.js';
-import { renderEventModal as renderEventEditorModal } from './eventModal.js';
+import { eventFormValuesFrom, renderEventModal as renderEventEditorModal } from './eventModal.js';
 import { eventsByDay } from '../domain/selectors.js';
 import { localDateKey } from '../domain/time.js';
+import type { EventEditorDraft } from '../app/eventEditor.js';
+import type { EventFormValues } from '../app/eventFormPlan.js';
 import type { CalendarEvent } from '../domain/types.js';
 import {
   calendarGridDates,
@@ -37,11 +39,17 @@ export interface ScheduleProjectionRenderOptions {
   selectedRecurringOccurrence?: ScheduleRecurringOccurrenceSelection | null;
   selectedRecurringScope?: ScheduleRecurrenceScope | null;
   problems?: LoadProblem[];
+  /** What the Event editor draws: the resolved write path, its last answer, and the form's draft. */
+  eventEditorWrites?: { refusal: string | null; feedback: string | null; feedbackRefusal?: string | null } | null;
+  eventEditorDraft?: EventEditorDraft | null;
 }
 
 export interface ScheduleProjectionHandlers {
   openEvent(eventId: string): void;
   closeEvent(): void;
+  /** The Event editor's Save and Delete, which only run when the editor is a form. */
+  saveEvent(intent: { eventId: string; values: EventFormValues }): void;
+  deleteEvent(intent: { eventId: string }): void;
   selectMonth(month: string): void;
   drillMonth(month: string): void;
 }
@@ -185,12 +193,30 @@ export function scheduleDateOccurrenceProjection(
   return projection;
 }
 
-function renderReadOnlyEventModal(
+/**
+ * The projection surfaces' Event editor.
+ *
+ * It is the same modal the time grid draws, so a Month or Agenda reader edits the record the same way
+ * a Day reader does — the only difference is which action attribute its controls carry. Without a
+ * resolved write path it stays the read-only projection it has always been.
+ */
+function renderProjectionEventModal(
   events: readonly CalendarEvent[],
   eventId: string | null,
   projectNames: Map<string, string>,
+  writes: { refusal: string | null; feedback: string | null; feedbackRefusal?: string | null } | null,
+  draft: EventEditorDraft | null,
 ): string {
-  return renderEventEditorModal({ events, projectNames, eventId, closeAction: 'close-event', closeAttribute: 'data-schedule-projection-action', mode: 'read-only' });
+  return renderEventEditorModal({
+    events,
+    projectNames,
+    eventId,
+    closeAction: 'close-event',
+    closeAttribute: 'data-schedule-projection-action',
+    mode: writes !== null && writes.refusal === null ? 'edit' : 'read-only',
+    writes,
+    draft,
+  });
 }
 
 function renderOccurrenceButton(
@@ -231,7 +257,7 @@ function renderMonth(
     return `<div class="calendar-day${outside ? ' outside' : ''}${key === todayKey ? ' today' : ''}" data-schedule-month-day="${escapeHtml(key)}" data-schedule-occurrence-count="${dayEvents.length}" data-c1-key="schedule-month-day-${escapeHtml(key)}" aria-label="${escapeHtml(key)}"${key === todayKey ? ' aria-current="date"' : ''}><span class="day-number">${day.getDate()}</span><div class="day-events">${events}</div></div>`;
   }).join('');
 
-  return `<section class="surface calendar-surface schedule-month-projection" data-schedule-projection-mode="month" data-c1-key="schedule-month-region" aria-label="Month schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Month</h2><p class="surface-description">Date-level event occurrences on local civil days.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${cells}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames) : renderReadOnlyEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
+  return `<section class="surface calendar-surface schedule-month-projection" data-schedule-projection-mode="month" data-c1-key="schedule-month-region" aria-label="Month schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Month</h2><p class="surface-description">Date-level event occurrences on local civil days.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${cells}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames) : renderProjectionEventModal(options.events, options.selectedEventId, options.projectNames, options.eventEditorWrites ?? null, options.eventEditorDraft ?? null)}</section>`;
 }
 
 function renderYear(
@@ -267,7 +293,7 @@ function renderYear(
     },
   ).join('');
 
-  return `<section class="surface calendar-surface schedule-year-projection" data-schedule-projection-mode="year" data-c1-key="schedule-year-region" aria-label="Year schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Year</h2><p class="surface-description">Twelve mini-months with date-level event indicators.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="schedule-year-grid">${months}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames) : renderReadOnlyEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
+  return `<section class="surface calendar-surface schedule-year-projection" data-schedule-projection-mode="year" data-c1-key="schedule-year-region" aria-label="Year schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Year</h2><p class="surface-description">Twelve mini-months with date-level event indicators.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="schedule-year-grid">${months}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames) : renderProjectionEventModal(options.events, options.selectedEventId, options.projectNames, options.eventEditorWrites ?? null, options.eventEditorDraft ?? null)}</section>`;
 }
 
 function renderAgenda(
@@ -282,7 +308,7 @@ function renderAgenda(
     return `<section class="schedule-agenda-date-group" data-schedule-agenda-date="${escapeHtml(dayKey)}" data-c1-key="schedule-agenda-date-${escapeHtml(dayKey)}"><header><h3>${escapeHtml(dayKey)}</h3><span>${dayEvents.length}</span></header>${rows}</section>`;
   }).join('');
 
-  return `<section class="surface calendar-surface schedule-agenda-projection" data-schedule-projection-mode="agenda" data-c1-key="schedule-agenda-region" aria-label="Agenda schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Agenda</h2><p class="surface-description">Chronological local-date groups of event occurrences.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="schedule-agenda-groups">${groups || '<p class="empty-state" data-c1-key="schedule-agenda-empty">No dated events.</p>'}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames) : renderReadOnlyEventModal(options.events, options.selectedEventId, options.projectNames)}</section>`;
+  return `<section class="surface calendar-surface schedule-agenda-projection" data-schedule-projection-mode="agenda" data-c1-key="schedule-agenda-region" aria-label="Agenda schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Agenda</h2><p class="surface-description">Chronological local-date groups of event occurrences.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="schedule-agenda-groups">${groups || '<p class="empty-state" data-c1-key="schedule-agenda-empty">No dated events.</p>'}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames) : renderProjectionEventModal(options.events, options.selectedEventId, options.projectNames, options.eventEditorWrites ?? null, options.eventEditorDraft ?? null)}</section>`;
 }
 
 export function renderScheduleProjection(
@@ -317,6 +343,33 @@ export function bindScheduleProjectionInteractions(
     ) {
       const eventId = control.dataset.scheduleEventId;
       if (eventId) handlers.openEvent(eventId);
+      return;
+    }
+
+    // The Event editor's Save and Delete. The form is read where it is and handed over: the sequence
+    // runs in the shell, and what it answers is what the next render draws.
+    if (
+      control.dataset.scheduleProjectionAction === 'save-event'
+    ) {
+      const modal = control.closest<HTMLElement>(
+        '[data-schedule-editor-mode="edit"]',
+      );
+      const eventId = modal?.dataset.scheduleEventId;
+      const values = modal ? eventFormValuesFrom(modal) : null;
+      if (!modal || !eventId || !values) return;
+      handlers.saveEvent({ eventId, values });
+      return;
+    }
+
+    if (
+      control.dataset.scheduleProjectionAction === 'delete-event'
+    ) {
+      const modal = control.closest<HTMLElement>(
+        '[data-schedule-editor-mode="edit"]',
+      );
+      const eventId = modal?.dataset.scheduleEventId;
+      if (!eventId) return;
+      handlers.deleteEvent({ eventId });
       return;
     }
 

@@ -138,6 +138,8 @@ function mount(
     selectMonth: (month) => {
       selectedMonths.push(month);
     },
+    saveEvent: () => {},
+    deleteEvent: () => {},
     drillMonth: (month) => {
       drilledMonths.push(month);
     },

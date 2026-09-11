@@ -15,8 +15,10 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createCanonicalJsonRecordStore } from '../src/app/canonicalRecordCodec.js';
-import { createEvent, rescheduleEvent, resizeEvent, type EventMutationDependencies } from '../src/app/eventMutations.js';
-import { createEventAction, rescheduleEventAction, resizeEventAction, type EventWriteDependencies } from '../src/app/eventWriteActions.js';
+import { createEvent, deleteEvent, rescheduleEvent, resizeEvent, updateEvent, type EventMutationDependencies } from '../src/app/eventMutations.js';
+import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, type EventWriteDependencies } from '../src/app/eventWriteActions.js';
+import { eventEditorDraftFor, type EventEditorDraft } from '../src/app/eventEditor.js';
+import { eventRecurrenceFor } from '../src/browser/eventModal.js';
 import { createProject } from '../src/app/projectMutations.js';
 import { startRecordMutationAuthority } from '../src/app/recordRecoveryStartup.js';
 import { recordStoreStateSource } from '../src/app/stateSource.js';
@@ -25,7 +27,7 @@ import { fixedClock } from '../src/domain/clock.js';
 import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
 import type { ProximaState } from '../src/domain/types.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
-import { renderScheduleProjection } from '../src/browser/scheduleProjection.js';
+import { bindScheduleProjectionInteractions, renderScheduleProjection } from '../src/browser/scheduleProjection.js';
 import {
   bindScheduleTimeGridInteractions,
   renderScheduleTimeGrid,
@@ -92,8 +94,8 @@ async function scheduleWorld(startHour = 9) {
     eventId: created.recordId,
     operations: {
       createEvent: async (request: Parameters<typeof createEvent>[1]) => await createEvent(deps, request),
-      updateEvent: async () => { throw new Error('not used here'); },
-      deleteEvent: async () => { throw new Error('not used here'); },
+      updateEvent: async (input: Parameters<typeof updateEvent>[1]) => await updateEvent(deps, input),
+      deleteEvent: async (input: Parameters<typeof deleteEvent>[1]) => await deleteEvent(deps, input),
       rescheduleEvent: async (input: Parameters<typeof rescheduleEvent>[1]) => await rescheduleEvent(deps, input),
       resizeEvent: async (input: Parameters<typeof resizeEvent>[1]) => await resizeEvent(deps, input),
     },
@@ -138,9 +140,11 @@ function mount(
 ): HTMLElement {
   const host = document.createElement('div');
   document.body.append(host);
-  // The seeded form is shell state, exactly as it is in `main.ts`: the grid asks for it, the shell
-  // holds it, and a re-render draws it.
+  // The seeded form, the open editor and its draft are shell state, exactly as they are in `main.ts`:
+  // the grid asks for them, the shell holds them, and a re-render draws them.
   let seeded: ScheduleEventDraft | null = null;
+  let selected: string | null = null;
+  let draft: EventEditorDraft | null = null;
 
   const draw = (current: ProximaState): void => {
     host.innerHTML = renderScheduleTimeGrid({
@@ -150,11 +154,13 @@ function mount(
       selectionLabel: 'All projects',
       calendarCursor: DAY,
       now: new Date(2026, 8, 6, 12, 0),
-      selectedEventId: null,
+      selectedEventId: selected,
       seededEvent: seeded,
       writeRefusal: view.writeRefusal,
       writeFeedback: view.writeFeedback,
       seedRefusal: view.seedRefusal,
+      eventEditorWrites: { refusal: null, feedback: view.writeFeedback, feedbackRefusal: view.writeRefusal?.code ?? null },
+      eventEditorDraft: draft,
     });
     setGeometry(host);
   };
@@ -171,8 +177,41 @@ function mount(
   });
 
   bindScheduleTimeGridInteractions(host, {
-    openEvent: () => undefined,
-    closeEvent: () => { seeded = null; view.seedRefusal = null; draw(state); },
+    saveEvent: ({ eventId, values }) => {
+      pending.push((async () => {
+        const outcome = await saveEventAction(dependencies(state), { eventId, values });
+        view.writeRefusal = outcome.ok ? null : { eventId, code: outcome.reason };
+        view.writeFeedback = outcome.ok ? `${outcome.outcome} at revision ${outcome.revision}` : `${outcome.reason}: ${outcome.detail}`;
+        // An accepted save closes the editor, as the shell does; a refused one leaves it open with
+        // the reader's values still in it, which is what the draft is for (D58).
+        if (outcome.ok) selected = null;
+        else {
+          const event = state.events.find((candidate) => candidate.id === eventId);
+          if (event !== undefined) {
+            draft = eventEditorDraftFor(
+              { ...event, name: values.name, description: values.description, projectId: values.projectId, startDate: values.startDate, deadline: values.deadline, isCompleted: values.isCompleted },
+              eventRecurrenceFor(event),
+            );
+          }
+        }
+        state = await app.read();
+        onState(state);
+        draw(state);
+      })());
+    },
+    deleteEvent: ({ eventId }) => {
+      pending.push((async () => {
+        const outcome = await deleteEventAction(dependencies(state), { eventId });
+        view.writeRefusal = outcome.ok ? null : { eventId, code: outcome.reason };
+        view.writeFeedback = outcome.ok ? `${outcome.outcome} at revision ${outcome.revision}` : `${outcome.reason}: ${outcome.detail}`;
+        if (outcome.ok) selected = null;
+        state = await app.read();
+        onState(state);
+        draw(state);
+      })());
+    },
+    openEvent: (eventId) => { selected = eventId; draft = null; view.writeFeedback = null; view.writeRefusal = null; draw(state); },
+    closeEvent: () => { selected = null; seeded = null; draft = null; view.seedRefusal = null; draw(state); },
     seedEvent: (draft) => { seeded = { ...draft }; view.seedRefusal = null; draw(state); },
     createEvent: (intent) => {
       pending.push((async () => {
@@ -200,6 +239,69 @@ function mount(
         draw(state);
       })());
     },
+  });
+
+  return host;
+}
+
+/**
+ * The Month surface's editor, mounted the same way: the shell's half is identical, and only the
+ * binder and the action attributes differ.
+ */
+function mountProjection(
+  state: ProximaState,
+  app: Awaited<ReturnType<typeof scheduleWorld>>,
+  view: View,
+  pending: Promise<void>[],
+  onState: (next: ProximaState) => void,
+): HTMLElement {
+  const host = document.createElement('div');
+  document.body.append(host);
+  let selected: string | null = null;
+  let draft: EventEditorDraft | null = null;
+
+  const draw = (current: ProximaState): void => {
+    host.innerHTML = renderScheduleProjection({
+      mode: 'month',
+      events: current.events,
+      projectNames: new Map(),
+      selectionLabel: 'All projects',
+      calendarCursor: DAY,
+      now: new Date(2026, 8, 6, 12, 0),
+      selectedEventId: selected,
+      eventEditorWrites: { refusal: null, feedback: view.writeFeedback, feedbackRefusal: view.writeRefusal?.code ?? null },
+      eventEditorDraft: draft,
+    });
+  };
+  draw(state);
+
+  bindScheduleProjectionInteractions(host, {
+    openEvent: (eventId) => { selected = eventId; draft = null; view.writeFeedback = null; view.writeRefusal = null; draw(state); },
+    closeEvent: () => { selected = null; draft = null; draw(state); },
+    saveEvent: ({ eventId, values }) => {
+      pending.push((async () => {
+        const outcome = await saveEventAction(
+          {
+            state,
+            writes: async () => app.operations,
+            unavailableReason: () => null,
+            refresh: async () => null,
+            setRefusal: () => undefined,
+            render: () => undefined,
+          },
+          { eventId, values },
+        );
+        view.writeRefusal = outcome.ok ? null : { eventId, code: outcome.reason };
+        view.writeFeedback = outcome.ok ? `${outcome.outcome} at revision ${outcome.revision}` : `${outcome.reason}: ${outcome.detail}`;
+        if (outcome.ok) selected = null;
+        state = await app.read();
+        onState(state);
+        draw(state);
+      })());
+    },
+    deleteEvent: () => undefined,
+    selectMonth: () => undefined,
+    drillMonth: () => undefined,
   });
 
   return host;
@@ -404,6 +506,112 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
         expect(projection.querySelectorAll('[data-schedule-event-id]').length).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('saves the Event editor by submitting the difference, and closes it only on acceptance', async () => {
+    const app = await scheduleWorld();
+    const state = await app.read();
+    const view: View = { writeRefusal: null, writeFeedback: null, seedRefusal: null };
+    const pending: Promise<void>[] = [];
+    let drawn = state;
+    const host = mount(state, app, view, pending, (next) => { drawn = next; });
+    const harness = createInteractionHarness(host);
+
+    // The editor opens on the record: the fields show what the store holds, not a rebuilt guess.
+    const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
+    harness.click(card.dataset.c1Key!);
+    expect(host.querySelector<HTMLElement>('[data-schedule-editor-mode="edit"]')!.dataset.scheduleEventWrites).toBe('available');
+    const name = host.querySelector<HTMLInputElement>('[data-schedule-event-field="name"]')!;
+    expect(name.readOnly).toBe(false);
+    expect(name.value).toBe('Dragged event');
+
+    // Only the fields that changed are submitted, so the record's other fields are not rewritten.
+    name.value = 'Renamed in the editor';
+    const end = host.querySelector<HTMLInputElement>('[data-schedule-event-field="end"]')!;
+    const originalEnd = end.value;
+    harness.click('schedule-event-save');
+    await Promise.all(pending);
+
+    const saved = drawn.events.find((event) => event.id === app.eventId)!;
+    expect(saved.name).toBe('Renamed in the editor');
+    expect(saved.deadline).toBe(originalEnd);
+    expect(view.writeFeedback).toContain('updated');
+    // Accepted, so the editor goes: the record now says what the form said.
+    expect(host.querySelector('[data-schedule-editor-mode="edit"]')).toBeNull();
+  });
+
+  it('keeps the editor open with what was typed when a save is refused, and deletes only on acceptance', async () => {
+    const app = await scheduleWorld();
+    const state = await app.read();
+    const view: View = { writeRefusal: null, writeFeedback: null, seedRefusal: null };
+    const pending: Promise<void>[] = [];
+    let drawn = state;
+    const host = mount(state, app, view, pending, (next) => { drawn = next; });
+    const harness = createInteractionHarness(host);
+
+    const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
+    harness.click(card.dataset.c1Key!);
+
+    // Somebody else moves the event while the form is open, from the revision the block was drawn
+    // with, so the save is the loser of a race rather than a plain refusal.
+    const startValue = drawn.events.find((event) => event.id === app.eventId)!.startDate;
+    const moved = new Date(Date.parse(startValue) + 60 * 60_000).toISOString();
+    expect(await app.moveEvent(app.eventId, drawn.events.find((event) => event.id === app.eventId)!.source.revision, moved))
+      .toMatchObject({ ok: true });
+    drawn = await app.read();
+
+    const name = host.querySelector<HTMLInputElement>('[data-schedule-event-field="name"]')!;
+    name.value = 'Typed before the refusal';
+    harness.click('schedule-event-save');
+    await Promise.all(pending);
+
+    // The refusal is drawn on the form, and the form still says what the reader typed.
+    expect(view.writeRefusal).toEqual({ eventId: app.eventId, code: 'stale-revision' });
+    const note = host.querySelector<HTMLElement>('[data-schedule-event-refusal]')!;
+    expect(note.getAttribute('data-schedule-event-refusal')).toBe('stale-revision');
+    expect(note.textContent).toContain('another writer changed this event first');
+    expect(host.querySelector<HTMLInputElement>('[data-schedule-event-field="name"]')!.value).toBe('Typed before the refusal');
+
+    // Delete is the same sequence the other verbs use, and it closes the editor only when accepted.
+    harness.click('schedule-event-delete');
+    await Promise.all(pending);
+    expect(drawn.events.some((event) => event.id === app.eventId)).toBe(false);
+    expect(host.querySelector('[data-schedule-editor-mode="edit"]')).toBeNull();
+  });
+
+  it('writes the same record through the Month editor as through the Day editor', async () => {
+    // Two identical worlds, one edited from Day and one from Month. The claim the box makes is that
+    // the surface does not change what the write means, so the two resulting records are compared
+    // field by field with only the identity and the revision (which names the record file) removed.
+    const editThrough = async (surface: 'day' | 'month') => {
+      const app = await scheduleWorld();
+      const state = await app.read();
+      const view: View = { writeRefusal: null, writeFeedback: null, seedRefusal: null };
+      const pending: Promise<void>[] = [];
+      let drawn = state;
+      const host = surface === 'day'
+        ? mount(state, app, view, pending, (next) => { drawn = next; })
+        : mountProjection(state, app, view, pending, (next) => { drawn = next; });
+      const harness = createInteractionHarness(host);
+
+      const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"], [data-schedule-event-id]')!;
+      harness.click(card.dataset.c1Key!);
+      const modal = host.querySelector<HTMLElement>('[data-schedule-editor-mode="edit"]')!;
+      expect(modal.dataset.scheduleEventWrites).toBe('available');
+      const name = modal.querySelector<HTMLInputElement>('[data-schedule-event-field="name"]')!;
+      name.value = 'Renamed once';
+      harness.click('schedule-event-save');
+      await Promise.all(pending);
+
+      expect(view.writeFeedback).toContain('updated');
+      return { record: drawn.events.find((event) => event.id === app.eventId)!, revision: drawn.events.find((event) => event.id === app.eventId)!.source.revision };
+    };
+
+    const viaDay = await editThrough('day');
+    const viaMonth = await editThrough('month');
+    expect(viaDay.record.name).toBe('Renamed once');
+    expect({ ...viaMonth.record, id: 'same', source: { ...viaMonth.record.source, path: 'same' } })
+      .toEqual({ ...viaDay.record, id: 'same', source: { ...viaDay.record.source, path: 'same' } });
   });
 
   it('creates the event a seeded form describes, and closes the form it came from', async () => {
