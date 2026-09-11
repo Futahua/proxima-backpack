@@ -97,14 +97,13 @@ async function acquireOpfsRoot():
 Promise<OpfsDirectoryHandleLike> {
   assertProximaBackpackOrigin();
 
-  const getDirectory =
+  const storage =
     browserRuntime()
       .navigator
-      ?.storage
-      ?.getDirectory;
+      ?.storage;
 
   if (
-    typeof getDirectory
+    typeof storage?.getDirectory
     !== 'function'
   ) {
     throw new Error(
@@ -113,7 +112,7 @@ Promise<OpfsDirectoryHandleLike> {
   }
 
   const root =
-    await getDirectory();
+    await storage.getDirectory();
 
   if (
     typeof root !== 'object'

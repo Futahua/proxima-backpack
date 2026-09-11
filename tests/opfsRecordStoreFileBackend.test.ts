@@ -253,8 +253,27 @@ function installBrowserOpfs(
   href =
     `${PROXIMA_RECORD_STORE_ORIGIN}/surface`,
 ) {
+  const storage = {
+    getDirectory:
+      vi.fn(),
+  };
+
   const getDirectory =
-    vi.fn(async () => root);
+    storage.getDirectory;
+
+  getDirectory.mockImplementation(
+    async function (
+      this: unknown,
+    ) {
+      if (this !== storage) {
+        throw new TypeError(
+          'Illegal invocation',
+        );
+      }
+
+      return root;
+    },
+  );
 
   vi.stubGlobal(
     'location',
@@ -263,9 +282,7 @@ function installBrowserOpfs(
   vi.stubGlobal(
     'navigator',
     {
-      storage: {
-        getDirectory,
-      },
+      storage,
     },
   );
 
