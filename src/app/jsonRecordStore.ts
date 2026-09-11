@@ -231,8 +231,9 @@ function mutationResult(
 /**
  * JSON record-store adapter over an already-authorized backing namespace.
  *
- * The backend's physical location is intentionally absent. Selecting that
- * location is HARD GATE B and is not answered by this adapter.
+ * The backend's physical location remains intentionally absent from this
+ * adapter. HARD GATE B selects Proxima's Backpack-origin OPFS for browser
+ * production while this JSON layer stays location-agnostic.
  */
 export function createJsonRecordStore<
   T extends CanonicalRecordHeader,

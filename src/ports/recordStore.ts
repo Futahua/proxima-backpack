@@ -9,8 +9,9 @@ declare const recordStoreFileNameBrand: unique symbol;
  * One opaque record-file name inside an already-authorized Proxima-owned
  * record-files namespace.
  *
- * This is deliberately not a filesystem/vault path. Physical backing location
- * remains a host concern and is unresolved while HARD GATE B is open.
+ * This is deliberately not a filesystem/vault path. HARD GATE B binds browser
+ * production backing to Proxima's Backpack-origin OPFS, but no physical root,
+ * machine path or arbitrary caller-selected target crosses this seam.
  */
 export type RecordStoreFileName = string & {
   readonly [recordStoreFileNameBrand]: 'RecordStoreFileName';
