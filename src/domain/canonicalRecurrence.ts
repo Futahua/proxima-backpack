@@ -21,3 +21,25 @@ export interface CanonicalRecurrenceSeries { readonly seriesId:OpaqueRecurrenceS
 export function defineCanonicalRecurrenceSeries(input:{seriesId:OpaqueRecurrenceSeriesId;ownerKind:CanonicalRecurrenceOwnerKind;ownerRecordId:OpaqueRecordId;rule:CanonicalRecurrenceRule;exceptions?:readonly CanonicalRecurrenceException[]}):CanonicalRecurrenceSeries { const seriesId=parseOpaqueRecurrenceSeriesId(input.seriesId); const exceptions=(input.exceptions??[]).map((e)=>copyException(seriesId,e)); const seen=new Set(exceptions.map((e)=>`${e.occurrence.seriesId}:${e.occurrence.scheduledStart}`)); if(seen.size!==exceptions.length)throw new Error('Duplicate canonical recurrence exception'); return {seriesId,ownerKind:input.ownerKind,ownerRecordId:parseOpaqueRecordId(input.ownerRecordId),rule:defineCanonicalRecurrenceRule(input.rule),exceptions}; }
 export type CanonicalRecurrenceActionTarget = {readonly scope:'occurrence';readonly occurrence:CanonicalOccurrenceIdentity}|{readonly scope:'series';readonly seriesId:OpaqueRecurrenceSeriesId};
 export function defineCanonicalRecurrenceActionTarget(target:CanonicalRecurrenceActionTarget):CanonicalRecurrenceActionTarget { return target.scope==='series'?{scope:'series',seriesId:parseOpaqueRecurrenceSeriesId(target.seriesId)}:{scope:'occurrence',occurrence:defineCanonicalOccurrenceIdentity(target.occurrence)}; }
+/**
+ * The instant a rule generates for one sequence number, or null when the rule cannot express it.
+ *
+ * The anchor is the series owner's own start: sequence 0 is the event exactly as it was written, and
+ * every later sequence is the rule applied to it. Two callers need this and they must agree — the
+ * expansion that draws occurrences and the planner that decides whether an override names a slot the
+ * rule actually generates. A planner with its own arithmetic could accept an override for an instant
+ * the calendar will never draw, which is how a displayed occurrence becomes a durable one.
+ */
+export function canonicalOccurrenceStart(anchor:string,rule:CanonicalRecurrenceRule,sequence:number):string|null { const start=Date.parse(anchor); if(!Number.isFinite(start)||!Number.isSafeInteger(sequence)||sequence<0)return null; const amount=sequence*rule.interval; switch(rule.frequency){ case 'daily': return new Date(shiftUtcDays(start,amount)).toISOString(); case 'weekly': return new Date(shiftUtcDays(start,amount*7)).toISOString(); case 'monthly': return shiftUtcMonths(start,amount); case 'yearly': return shiftUtcMonths(start,amount*12); } }
+
+/**
+ * The sequence number a start instant belongs to, or null when the rule does not generate it.
+ *
+ * The inverse of `canonicalOccurrenceStart`, and deliberately computed by *searching* rather than by
+ * dividing: month and year lengths make the arithmetic uneven, and a division that is nearly right
+ * would accept an instant a day off.
+ */
+export function canonicalOccurrenceSequence(anchor:string,rule:CanonicalRecurrenceRule,start:string):number|null { if(!Number.isFinite(Date.parse(anchor))||!Number.isFinite(Date.parse(start)))return null; for(let sequence=0;sequence<10_000;sequence+=1){ const candidate=canonicalOccurrenceStart(anchor,rule,sequence); if(candidate===null)return null; if(Date.parse(candidate)===Date.parse(start))return sequence; if(Date.parse(candidate)>Date.parse(start))return null; } return null; }
+
+function shiftUtcDays(milliseconds:number,days:number):number { return milliseconds+days*86_400_000; }
+function shiftUtcMonths(milliseconds:number,months:number):string|null { const date=new Date(milliseconds); const targetMonth=date.getUTCMonth()+months; const day=date.getUTCDate(); const shifted=new Date(Date.UTC(date.getUTCFullYear(),targetMonth,1,date.getUTCHours(),date.getUTCMinutes(),date.getUTCSeconds(),date.getUTCMilliseconds())); const daysInTarget=new Date(Date.UTC(shifted.getUTCFullYear(),shifted.getUTCMonth()+1,0)).getUTCDate(); shifted.setUTCDate(Math.min(day,daysInTarget)); return shifted.toISOString(); }

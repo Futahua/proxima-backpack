@@ -1,3 +1,4 @@
+import type { CanonicalRecurrenceException } from '../domain/canonicalRecurrence.js';
 import type { CalendarEvent } from '../domain/types.js';
 
 export type ScheduleRecurrenceFrequency =
@@ -356,19 +357,31 @@ export function expandScheduleRecurringOccurrences(
       if (untilMs !== null && startMs > untilMs) break;
       if (startMs >= rangeEnd) break;
 
-      if (
-        deadlineMs > rangeStart
-        && startMs < rangeEnd
-        && deadlineMs > startMs
-      ) {
-        const startDate = occurrenceStart.toISOString();
-        result.push({
-          eventId: event.id,
-          occurrenceKey: `${event.id}@${startDate}`,
-          startDate,
-          deadline: occurrenceDeadline.toISOString(),
-          event,
-        });
+      const scheduledStart = occurrenceStart.toISOString();
+      const exception = recurrenceExceptionFor(event, scheduledStart);
+
+      // A cancelled occurrence is a hole in the series, and a detached one is its own record by now:
+      // neither is drawn here. A rescheduled occurrence is drawn where the record says it went, while
+      // its identity stays the slot the rule generated.
+      if (exception === null || exception.state === 'rescheduled') {
+        const startDate = exception === null ? scheduledStart : exception.startDate;
+        const deadline = exception === null ? occurrenceDeadline.toISOString() : exception.deadline;
+        const startMsDrawn = Date.parse(startDate);
+        const deadlineMsDrawn = Date.parse(deadline);
+
+        if (
+          deadlineMsDrawn > rangeStart
+          && startMsDrawn < rangeEnd
+          && deadlineMsDrawn > startMsDrawn
+        ) {
+          result.push({
+            eventId: event.id,
+            occurrenceKey: `${event.id}@${scheduledStart}`,
+            startDate,
+            deadline,
+            event,
+          });
+        }
       }
 
       sequence += 1;
@@ -384,6 +397,31 @@ export function expandScheduleRecurringOccurrences(
   );
 }
 
+/**
+ * The exception a series carries for one scheduled occurrence, if any.
+ *
+ * The key is the occurrence's **scheduled** start — what the rule generated — not where the reader
+ * moved it to. That is what makes an exception an override of a rule slot rather than a new event,
+ * and it is what keeps a rescheduled occurrence recognisable after it has moved.
+ */
+function recurrenceExceptionFor(
+  event: CalendarEvent,
+  scheduledStart: string,
+): CanonicalRecurrenceException | null {
+  const raw = event.properties.recurrenceSeries;
+  if (!isRecord(raw) || !Array.isArray(raw.exceptions)) return null;
+  for (const candidate of raw.exceptions) {
+    if (!isRecord(candidate) || !isRecord(candidate.occurrence)) continue;
+    if (candidate.occurrence.scheduledStart !== scheduledStart) continue;
+    const state = candidate.state;
+    if (state === 'cancelled' || state === 'detached') return candidate as unknown as CanonicalRecurrenceException;
+    if (state === 'rescheduled' && typeof candidate.startDate === 'string' && typeof candidate.deadline === 'string') {
+      return candidate as unknown as CanonicalRecurrenceException;
+    }
+    return null;
+  }
+  return null;
+}
 export function scheduleRecurringOccurrenceToken(
   occurrence: Pick<ScheduleRecurringOccurrence, 'startDate'>,
 ): string {

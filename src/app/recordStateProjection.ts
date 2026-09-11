@@ -29,6 +29,7 @@ import {
 } from '../domain/canonicalRecordV2.js';
 import type { CanonicalPropertyDefinition, CanonicalPropertySchemaRecord } from '../domain/canonicalSchema.js';
 import type { CanonicalExecutionState, CanonicalWorkflowStageStateRecord } from '../domain/canonicalTaskState.js';
+import type { CanonicalRecurrenceSeries } from '../domain/canonicalRecurrence.js';
 import type { SourceRef } from '../domain/records.js';
 import type {
   CalendarEvent,
@@ -62,7 +63,8 @@ export type RecordStateProjectionGapReason =
   | 'task-workflow-stage-missing'
   | 'artifact-binding-not-resolvable-from-records'
   | 'property-option-not-in-schema'
-  | 'property-value-not-representable';
+  | 'property-value-not-representable'
+  | 'recurrence-rule-not-representable';
 
 export interface RecordStateProjectionGap {
   readonly kind: CanonicalRecordKind;
@@ -250,6 +252,62 @@ function taskFrom(
   };
 }
 
+/**
+ * A canonical recurrence series as the readable world carries it.
+ *
+ * Two keys, because the two readers want different things. `recurrence` is the **rule** in the
+ * vocabulary the schedule already reads (`frequency`, `interval`, `count`, `until`), so the
+ * projections expand a record-store series exactly as they expand a legacy one. `recurrenceSeries`
+ * is the canonical series itself — its id and its exceptions — which is what an occurrence-scoped
+ * write needs and what the schedule reads to skip a cancelled occurrence or honour a rescheduled one.
+ *
+ * A rule this vocabulary cannot express is **reported rather than dropped**: a series that vanished
+ * silently would look like an event that no longer recurs, which is a different fact.
+ */
+function recurrenceProperties(
+  series: CanonicalRecurrenceSeries | null,
+  gaps: RecordStateProjectionGap[],
+  recordId: string,
+): Record<string, unknown> {
+  if (series === null) return {};
+  const rule = series.rule;
+  if (rule.frequency === 'weekly' && rule.weekdays.length !== 1) {
+    gaps.push({
+      kind: 'event',
+      id: recordId,
+      reason: 'recurrence-rule-not-representable',
+      detail: `series ${series.seriesId} recurs on ${rule.weekdays.length} weekdays, which the readable rule cannot carry`,
+    });
+    return {};
+  }
+
+  return {
+    recurrence: {
+      frequency: rule.frequency,
+      interval: rule.interval,
+      ...(rule.frequency === 'weekly' ? { weekdays: [...rule.weekdays] } : {}),
+      ...(rule.frequency === 'monthly' ? { dayOfMonth: rule.dayOfMonth } : {}),
+      ...(rule.frequency === 'yearly' ? { month: rule.month, dayOfMonth: rule.dayOfMonth } : {}),
+      ...(rule.end.kind === 'count' ? { count: rule.end.count } : {}),
+      ...(rule.end.kind === 'until' ? { until: rule.end.until } : {}),
+    },
+    // The canonical rule travels too, because the planner that decides whether an override names a
+    // generated slot needs the rule's own vocabulary rather than the readable one.
+    recurrenceRule: {
+      frequency: rule.frequency,
+      interval: rule.interval,
+      ...(rule.frequency === 'weekly' ? { weekdays: [...rule.weekdays] } : {}),
+      ...(rule.frequency === 'monthly' ? { dayOfMonth: rule.dayOfMonth } : {}),
+      ...(rule.frequency === 'yearly' ? { month: rule.month, dayOfMonth: rule.dayOfMonth } : {}),
+      end: { ...rule.end },
+    },
+    recurrenceSeries: {
+      seriesId: series.seriesId,
+      exceptions: series.exceptions.map((exception) => ({ ...exception, occurrence: { ...exception.occurrence } })),
+    },
+  };
+}
+
 function eventFrom(
   record: CanonicalEventRecordV2,
   revisions: Readonly<Record<string, string>>,
@@ -266,7 +324,10 @@ function eventFrom(
     startDate: record.startDate,
     deadline: record.deadline,
     isCompleted: record.isCompleted,
-    properties: legacyProperties(record.properties, labels, gaps, 'event', record.id),
+    properties: {
+      ...legacyProperties(record.properties, labels, gaps, 'event', record.id),
+      ...recurrenceProperties(record.recurrence, gaps, record.id),
+    },
   };
 }
 
