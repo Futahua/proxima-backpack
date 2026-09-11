@@ -16,9 +16,10 @@ import {
 import type {
   CanonicalExecutionState,
 } from '../domain/canonicalTaskState.js';
-import type {
-  IdOrigin,
-  RecordKind,
+import {
+  legacyIdOriginOf,
+  type IdOrigin,
+  type RecordKind,
 } from '../domain/records.js';
 import type {
   VaultReader,
@@ -867,7 +868,7 @@ export async function planLegacyMarkdownImport(
         sourceRevision:
           candidate.source.revision,
         idOrigin:
-          candidate.source.idOrigin,
+          legacyIdOriginOf(candidate.source),
       };
 
     const recordId =
@@ -914,8 +915,7 @@ export async function planLegacyMarkdownImport(
               value:
                 candidate.legacyId,
               origin:
-                candidate.source
-                  .idOrigin,
+                legacyIdOriginOf(candidate.source),
             },
           ],
         ),
@@ -930,7 +930,7 @@ export async function planLegacyMarkdownImport(
         sourceRevision:
           candidate.source.revision,
         idOrigin:
-          candidate.source.idOrigin,
+          legacyIdOriginOf(candidate.source),
         legacyId:
           candidate.legacyId,
         recordId:
@@ -969,8 +969,7 @@ export async function planLegacyMarkdownImport(
           candidate.source
             .revision,
         idOrigin:
-          candidate.source
-            .idOrigin,
+          legacyIdOriginOf(candidate.source),
       },
       disposition:
         (

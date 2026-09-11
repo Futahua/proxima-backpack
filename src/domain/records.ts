@@ -25,16 +25,56 @@ export type RecordKind = 'project' | 'task' | 'event';
  */
 export type IdOrigin = 'frontmatter' | 'filename' | 'folder';
 
+/**
+ * Where a record's identity came from.
+ *
+ * `legacy-markdown` covers the three `IdOrigin` answers above. `record-store` says the
+ * record is canonical and its identity is the opaque record id, so `SourceRef.path` and
+ * `SourceRef.revision` describe the record itself rather than a vault file. HARD GATE C
+ * asks inspection to identify record-store provenance instead of pretending JSON records
+ * are Markdown; this is the value that lets it.
+ */
+export type RecordOrigin = 'legacy-markdown' | 'record-store';
+
+/** `SourceRef.idOrigin` is the legacy answer, or the record store's. */
+export type SourceIdOrigin = IdOrigin | 'record-store';
+
 /** Where a loaded record came from. Every record carries one; none is inferred later. */
 export interface SourceRef {
-  /** Vault-relative path, forward-slashed, of the file that produced this record. */
+  /**
+   * Vault-relative path, forward-slashed, of the file that produced this record — or, for
+   * a `record-store` origin, the opaque canonical record id, because there is no file in
+   * the creator's vault to name.
+   */
   path: string;
-  /** Opaque revision as read. Changes when the file changes. */
+  /**
+   * Opaque revision as read: the file's revision for legacy Markdown, the record store's
+   * observed revision for a canonical record.
+   */
   revision: string;
   /** What the reader interpreted this file as. */
   kind: RecordKind;
   /** How the logical id was decided. */
-  idOrigin: IdOrigin;
+  idOrigin: SourceIdOrigin;
+}
+
+/** The origin a `SourceRef` records, without every caller re-deriving it. */
+export function recordOriginOf(source: Pick<SourceRef, 'idOrigin'>): RecordOrigin {
+  return source.idOrigin === 'record-store' ? 'record-store' : 'legacy-markdown';
+}
+
+/**
+ * The legacy id origin, refusing a record that did not come from legacy Markdown.
+ *
+ * Import provenance is a legacy-Markdown concept: a canonical record's identity is opaque and
+ * has no `frontmatter`/`filename`/`folder` answer. A caller that needs the legacy answer must
+ * say so here rather than receive `'record-store'` in a field that cannot mean it.
+ */
+export function legacyIdOriginOf(source: Pick<SourceRef, 'idOrigin'>): IdOrigin {
+  if (source.idOrigin === 'record-store') {
+    throw new Error('legacy id origin requested for a record that came from the record store');
+  }
+  return source.idOrigin;
 }
 
 /** Anything loaded out of the vault can be traced back to its file. */
