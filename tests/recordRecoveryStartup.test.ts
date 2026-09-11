@@ -159,7 +159,10 @@ function recoveryRecord(
   requestId: string,
   status:
     | 'prepared'
-    | 'recovery-required',
+    | 'recovery-required'
+    | 'committed'
+    | 'recovered'
+    | 'blocked',
 ): RecoveryRecord {
   return {
     requestId,
@@ -636,6 +639,216 @@ describe(
           .toHaveProperty(
             'coordinator',
           );
+
+        expect(events)
+          .toEqual([
+            'journal:read',
+          ]);
+      },
+    );
+
+    it.each([
+      {
+        status:
+          'committed' as const,
+        expectedAuthority:
+          'available' as const,
+        expectedOutcomes: [
+          {
+            requestId:
+              'terminal-committed',
+            classification:
+              'already-committed',
+            status:
+              'already-committed',
+            reason:
+              'journal already committed',
+          },
+        ],
+      },
+      {
+        status:
+          'recovered' as const,
+        expectedAuthority:
+          'available' as const,
+        expectedOutcomes: [],
+      },
+      {
+        status:
+          'blocked' as const,
+        expectedAuthority:
+          'blocked' as const,
+        expectedOutcomes: [
+          {
+            requestId:
+              'terminal-blocked',
+            classification:
+              'conflict',
+            status:
+              'blocked',
+            reason:
+              'journal already blocked',
+          },
+        ],
+      },
+    ])(
+      'is idempotent across repeated startup for terminal $status recovery state',
+      async ({
+        status,
+        expectedAuthority,
+        expectedOutcomes,
+      }) => {
+        const events:
+          string[] = [];
+
+        const records =
+          new MemoryRecordBackend(
+            events,
+          );
+
+        records.seed(
+          RECORD_FILE,
+          'peer-bytes',
+          'record-r9',
+        );
+
+        const journal =
+          new MemoryRecoveryJournal(
+            events,
+          );
+
+        await journal.seed(
+          recoveryRecord(
+            `terminal-${status}`,
+            status,
+          ),
+        );
+
+        const recovery =
+          createDurableRecoveryStore(
+            journal,
+          );
+
+        const first =
+          await startRecordMutationAuthority({
+            backend: records,
+            recovery,
+          });
+
+        expect(events)
+          .toEqual([
+            'journal:read',
+          ]);
+
+        expect(
+          first.mutationAuthority,
+        ).toBe(
+          expectedAuthority,
+        );
+
+        expect(
+          first.unresolved,
+        ).toBe(0);
+
+        expect(
+          first.outcomes,
+        ).toEqual(
+          expectedOutcomes,
+        );
+
+        expect(
+          first.outcomes,
+        ).toHaveLength(
+          expectedOutcomes.length,
+        );
+
+        if (
+          expectedAuthority
+          === 'available'
+        ) {
+          expect(first)
+            .toHaveProperty(
+              'coordinator',
+            );
+        } else {
+          expect(first)
+            .not
+            .toHaveProperty(
+              'coordinator',
+            );
+
+          expect(first)
+            .toMatchObject({
+              reason:
+                'blocked recovery record requires explicit resolution',
+            });
+        }
+
+        events.length = 0;
+
+        const second =
+          await startRecordMutationAuthority({
+            backend: records,
+            recovery,
+          });
+
+        expect(events)
+          .toEqual([
+            'journal:read',
+          ]);
+
+        expect(
+          second.mutationAuthority,
+        ).toBe(
+          first.mutationAuthority,
+        );
+
+        expect(
+          second.unresolved,
+        ).toBe(0);
+
+        expect(
+          second.outcomes,
+        ).toEqual(
+          expectedOutcomes,
+        );
+
+        expect(
+          second.outcomes,
+        ).toHaveLength(
+          expectedOutcomes.length,
+        );
+
+        if (
+          expectedAuthority
+          === 'available'
+        ) {
+          expect(second)
+            .toHaveProperty(
+              'coordinator',
+            );
+        } else {
+          expect(second)
+            .not
+            .toHaveProperty(
+              'coordinator',
+            );
+
+          expect(second)
+            .toMatchObject({
+              reason:
+                'blocked recovery record requires explicit resolution',
+            });
+        }
+
+        events.length = 0;
+
+        const persisted =
+          createDurableRecoveryStore(
+            journal,
+          );
+
+        await persisted.load();
 
         expect(events)
           .toEqual([
