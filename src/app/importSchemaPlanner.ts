@@ -9,11 +9,15 @@ import {
   SCHEMA_PRESENTATION_STATE_CATEGORY,
   type CanonicalPropertyDefinition,
   type CanonicalPropertySchemaRecord,
+  type CanonicalRelatableRecordKind,
   type OpaqueSchemaOptionId,
 } from '../domain/canonicalSchema.js';
 import type {
   PropertySchema,
 } from '../domain/types.js';
+import type {
+  VaultLayout,
+} from './vaultLayout.js';
 
 export const LEGACY_IMPORT_SCHEMA_SETTINGS_PLAN_SCHEMA_VERSION =
   1 as const;
@@ -639,19 +643,98 @@ function schemaCandidates(
   return candidates;
 }
 
+function normalizeLegacyTargetFolder(
+  value:
+    string,
+): string {
+  return value
+    .split('\\')
+    .join('/')
+    .replace(
+      /^\/+|\/+$/g,
+      '',
+    );
+}
+
+function relationTargetKindsForFolder(
+  legacyTargetFolder:
+    string | undefined,
+  layout:
+    VaultLayout | null,
+): readonly CanonicalRelatableRecordKind[] | null {
+  if (
+    layout === null
+    || legacyTargetFolder === undefined
+  ) {
+    return null;
+  }
+
+  const target =
+    normalizeLegacyTargetFolder(
+      legacyTargetFolder,
+    );
+
+  if (target === '') {
+    return null;
+  }
+
+  const configured = [
+    {
+      kind:
+        'task',
+      directory:
+        layout.tasks,
+    },
+    {
+      kind:
+        'project',
+      directory:
+        layout.projects,
+    },
+    {
+      kind:
+        'event',
+      directory:
+        layout.events,
+    },
+  ] as const;
+
+  const targetKinds =
+    configured
+      .filter(
+        (candidate) =>
+          normalizeLegacyTargetFolder(
+            candidate.directory,
+          ) === target,
+      )
+      .map(
+        (candidate) =>
+          candidate.kind,
+      );
+
+  return targetKinds.length === 0
+    ? null
+    : targetKinds;
+}
+
 /**
  * Convert explicitly interpreted legacy property-schema settings into a
  * zero-write canonical conversion plan.
  *
- * Relation target folders, rollup property-name references and incomplete
- * formulas deliberately remain pending. Custom property values are not read
- * or converted here.
+ * When the caller supplies the exact interpreted vault layout, a legacy
+ * relation target folder that exactly names one or more configured Proxima
+ * record directories becomes canonical target-kind semantics. Unknown
+ * folders remain pending rather than being guessed. Rollup property-name
+ * references and incomplete formulas remain pending. Custom property values
+ * are not read or converted here.
  */
 export function planLegacySchemaSettings(
   input:
     LegacyImportSchemaPlanningInput,
   reservedRecordIds:
     readonly OpaqueRecordId[] = [],
+  relationTargetLayout:
+    VaultLayout | null = null,
 ): LegacyImportSchemaSettingsPlan {
   const prior =
     normalizeSchemaIdentityMapping(
@@ -1123,28 +1206,43 @@ export function planLegacySchemaSettings(
         }
         break;
 
-      case 'relation':
-        conversions.push({
-          disposition:
-            'pending',
-          scope:
-            cloneScope(
-              scope,
-            ),
-          legacySchemaId:
-            schema.id,
-          recordId,
-          name:
-            schema.name,
-          pending: {
-            reason:
-              'relation-target-resolution-pending',
-            legacyTargetFolder:
-              schema.targetFolder
-              ?? null,
-          },
-        });
+      case 'relation': {
+        const targetKinds =
+          relationTargetKindsForFolder(
+            schema.targetFolder,
+            relationTargetLayout,
+          );
+
+        if (targetKinds === null) {
+          conversions.push({
+            disposition:
+              'pending',
+            scope:
+              cloneScope(
+                scope,
+              ),
+            legacySchemaId:
+              schema.id,
+            recordId,
+            name:
+              schema.name,
+            pending: {
+              reason:
+                'relation-target-resolution-pending',
+              legacyTargetFolder:
+                schema.targetFolder
+                ?? null,
+            },
+          });
+        } else {
+          appendReady({
+            type:
+              'relation',
+            targetKinds,
+          });
+        }
         break;
+      }
 
       case 'rollup':
         conversions.push({

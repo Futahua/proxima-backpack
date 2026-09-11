@@ -789,7 +789,7 @@ describe(
     );
 
     it(
-      'defers relation and derived families and refuses malformed or unmapped ordinary values instead of guessing',
+      'refuses malformed relation and ordinary values while deferring derived families instead of guessing',
       async () => {
         const snapshot:
           LegacyInterpretedPropertySchemaSettingsSnapshot = {
@@ -963,8 +963,8 @@ describe(
           ],
           [
             'related',
-            'deferred',
-            'relation-resolution-pending',
+            'unresolved',
+            'legacy-relation-link-invalid',
           ],
           [
             'total',
@@ -988,8 +988,8 @@ describe(
           schemaProperties: 8,
           canonicalReady: 0,
           absent: 0,
-          deferred: 3,
-          unresolved: 5,
+          deferred: 2,
+          unresolved: 6,
         });
       },
     );

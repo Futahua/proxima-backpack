@@ -1,10 +1,19 @@
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import {
+  defineCanonicalRelationValue,
+} from '../domain/canonicalRelation.js';
 import type {
   CanonicalStoredPropertyValue,
   CanonicalStoredPropertyValues,
 } from '../domain/canonicalRecordV2.js';
-import type { OpaqueSchemaOptionId } from '../domain/canonicalSchema.js';
-import type { RecordKind } from '../domain/records.js';
+import type {
+  CanonicalRelatableRecordKind,
+  OpaqueSchemaOptionId,
+} from '../domain/canonicalSchema.js';
+import {
+  baseName,
+  type RecordKind,
+} from '../domain/records.js';
 import type { PropertySchema } from '../domain/types.js';
 import type { LegacyPhysicalRecordCandidate } from './vaultRepository.js';
 import type {
@@ -13,7 +22,7 @@ import type {
   LegacyImportSchemaSettingsPlan,
 } from './importSchemaPlanner.js';
 
-export const LEGACY_IMPORT_PROPERTY_VALUE_PLAN_SCHEMA_VERSION = 1 as const;
+export const LEGACY_IMPORT_PROPERTY_VALUE_PLAN_SCHEMA_VERSION = 2 as const;
 
 export interface LegacyImportPropertyRecordIdentity {
   readonly kind: RecordKind;
@@ -26,7 +35,43 @@ export type LegacyImportPropertyValueUnresolvedReason =
   | 'legacy-date-invalid'
   | 'legacy-option-unresolved'
   | 'legacy-option-ambiguous'
-  | 'duplicate-option-selection';
+  | 'duplicate-option-selection'
+  | 'legacy-relation-link-invalid'
+  | 'legacy-relation-target-missing'
+  | 'legacy-relation-target-ambiguous'
+  | 'legacy-relation-target-kind-not-permitted'
+  | 'duplicate-relation-target';
+
+export type LegacyImportRelationTargetResolution =
+  | {
+      readonly legacyLink: string;
+      readonly linkPath: null;
+      readonly resolution: 'invalid';
+    }
+  | {
+      readonly legacyLink: string;
+      readonly linkPath: string;
+      readonly resolution: 'missing';
+    }
+  | {
+      readonly legacyLink: string;
+      readonly linkPath: string;
+      readonly resolution: 'kind-not-permitted';
+      readonly candidateRecordIds: readonly OpaqueRecordId[];
+    }
+  | {
+      readonly legacyLink: string;
+      readonly linkPath: string;
+      readonly resolution: 'ambiguous';
+      readonly candidateRecordIds: readonly OpaqueRecordId[];
+    }
+  | {
+      readonly legacyLink: string;
+      readonly linkPath: string;
+      readonly resolution: 'resolved';
+      readonly targetKind: CanonicalRelatableRecordKind;
+      readonly targetRecordId: OpaqueRecordId;
+    };
 
 interface LegacyImportPropertyValueConversionBase {
   readonly scope: LegacyImportSchemaScope;
@@ -55,6 +100,8 @@ export type LegacyImportPropertyValueConversion =
       readonly disposition: 'unresolved';
       readonly reason: LegacyImportPropertyValueUnresolvedReason;
       readonly legacyValue: unknown;
+      readonly relationTargets?:
+        readonly LegacyImportRelationTargetResolution[];
     });
 
 export interface LegacyImportRecordPropertyValuePlan {
@@ -304,6 +351,374 @@ function resolveLegacyMultiOptions(
   };
 }
 
+interface LegacyRelationCandidate {
+  readonly kind:
+    CanonicalRelatableRecordKind;
+  readonly legacyId:
+    string;
+  readonly sourcePath:
+    string;
+  readonly recordId:
+    OpaqueRecordId;
+}
+
+type LegacyRelationValueResolution =
+  | {
+      readonly disposition:
+        'resolved';
+      readonly targetRecordIds:
+        readonly OpaqueRecordId[];
+      readonly targets:
+        readonly LegacyImportRelationTargetResolution[];
+    }
+  | {
+      readonly disposition:
+        'unresolved';
+      readonly reason:
+        LegacyImportPropertyValueUnresolvedReason;
+      readonly targets:
+        readonly LegacyImportRelationTargetResolution[];
+    };
+
+function normalizedSourceStem(
+  sourcePath:
+    string,
+): string {
+  return sourcePath
+    .split('\\')
+    .join('/')
+    .replace(
+      /^\/+/,
+      '',
+    )
+    .replace(
+      /\.md$/i,
+      '',
+    );
+}
+
+function parseLegacyRelationLink(
+  legacyLink:
+    string,
+): string | null {
+  const match =
+    /^\[\[([^\[\]]+)\]\]$/
+      .exec(
+        legacyLink.trim(),
+      );
+
+  if (match === null) {
+    return null;
+  }
+
+  const captured =
+    (
+      match[1]
+      ?? ''
+    ).trim();
+
+  if (
+    captured === ''
+    || captured.includes('|')
+    || captured.includes('#')
+    || captured.includes('^')
+  ) {
+    return null;
+  }
+
+  const normalized =
+    captured
+      .split('\\')
+      .join('/')
+      .replace(
+        /^\/+|\/+$/g,
+        '',
+      );
+
+  if (
+    normalized === ''
+    || normalized
+      .split('/')
+      .some(
+        (segment) =>
+          segment === ''
+          || segment === '.'
+          || segment === '..',
+      )
+  ) {
+    return null;
+  }
+
+  return normalized.replace(
+    /\.md$/i,
+    '',
+  );
+}
+
+function resolveLegacyRelationTarget(
+  legacyLink:
+    string,
+  targetKinds:
+    readonly CanonicalRelatableRecordKind[],
+  candidates:
+    readonly LegacyRelationCandidate[],
+): LegacyImportRelationTargetResolution {
+  const linkPath =
+    parseLegacyRelationLink(
+      legacyLink,
+    );
+
+  if (linkPath === null) {
+    return {
+      legacyLink,
+      linkPath: null,
+      resolution:
+        'invalid',
+    };
+  }
+
+  const pathShaped =
+    linkPath.includes('/');
+
+  const matches =
+    candidates
+      .filter(
+        (candidate) =>
+          pathShaped
+            ? normalizedSourceStem(
+                candidate.sourcePath,
+              ) === linkPath
+            : candidate.legacyId === linkPath
+              || baseName(
+                candidate.sourcePath,
+              ) === linkPath,
+      )
+      .sort(
+        (left, right) =>
+          left.sourcePath
+            .localeCompare(
+              right.sourcePath,
+            )
+          || left.recordId
+            .localeCompare(
+              right.recordId,
+            ),
+      );
+
+  if (matches.length === 0) {
+    return {
+      legacyLink,
+      linkPath,
+      resolution:
+        'missing',
+    };
+  }
+
+  const allowedKinds =
+    new Set<
+      CanonicalRelatableRecordKind
+    >(
+      targetKinds,
+    );
+
+  const permitted =
+    matches.filter(
+      (candidate) =>
+        allowedKinds.has(
+          candidate.kind,
+        ),
+    );
+
+  if (permitted.length === 0) {
+    return {
+      legacyLink,
+      linkPath,
+      resolution:
+        'kind-not-permitted',
+      candidateRecordIds:
+        matches.map(
+          (candidate) =>
+            candidate.recordId,
+        ),
+    };
+  }
+
+  if (permitted.length > 1) {
+    return {
+      legacyLink,
+      linkPath,
+      resolution:
+        'ambiguous',
+      candidateRecordIds:
+        permitted.map(
+          (candidate) =>
+            candidate.recordId,
+        ),
+    };
+  }
+
+  const target =
+    permitted[0];
+
+  if (target === undefined) {
+    throw new Error(
+      `Property-value planner lost resolved relation target for ${legacyLink}.`,
+    );
+  }
+
+  return {
+    legacyLink,
+    linkPath,
+    resolution:
+      'resolved',
+    targetKind:
+      target.kind,
+    targetRecordId:
+      target.recordId,
+  };
+}
+
+function relationReasonFor(
+  target:
+    LegacyImportRelationTargetResolution,
+): LegacyImportPropertyValueUnresolvedReason | null {
+  switch (target.resolution) {
+    case 'invalid':
+      return 'legacy-relation-link-invalid';
+    case 'missing':
+      return 'legacy-relation-target-missing';
+    case 'ambiguous':
+      return 'legacy-relation-target-ambiguous';
+    case 'kind-not-permitted':
+      return 'legacy-relation-target-kind-not-permitted';
+    case 'resolved':
+      return null;
+  }
+}
+
+function resolveLegacyRelationValue(
+  legacyValue:
+    unknown,
+  hasValue:
+    boolean,
+  targetKinds:
+    readonly CanonicalRelatableRecordKind[],
+  candidates:
+    readonly LegacyRelationCandidate[],
+): LegacyRelationValueResolution {
+  const rawLinks:
+    readonly unknown[] =
+      !hasValue
+        ? []
+        : Array.isArray(
+            legacyValue,
+          )
+          ? legacyValue
+          : typeof legacyValue
+            === 'string'
+            ? [
+                legacyValue,
+              ]
+            : [];
+
+  if (
+    hasValue
+    && !Array.isArray(
+      legacyValue,
+    )
+    && typeof legacyValue
+      !== 'string'
+  ) {
+    return {
+      disposition:
+        'unresolved',
+      reason:
+        'legacy-value-type-mismatch',
+      targets: [],
+    };
+  }
+
+  if (
+    rawLinks.some(
+      (value) =>
+        typeof value
+        !== 'string',
+    )
+  ) {
+    return {
+      disposition:
+        'unresolved',
+      reason:
+        'legacy-value-type-mismatch',
+      targets: [],
+    };
+  }
+
+  const targets =
+    (rawLinks as readonly string[]).map(
+      (legacyLink) =>
+        resolveLegacyRelationTarget(
+          legacyLink,
+          targetKinds,
+          candidates,
+        ),
+    );
+
+  for (const target of targets) {
+    const reason =
+      relationReasonFor(
+        target,
+      );
+
+    if (reason !== null) {
+      return {
+        disposition:
+          'unresolved',
+        reason,
+        targets,
+      };
+    }
+  }
+
+  const targetRecordIds =
+    targets.map(
+      (target) => {
+        if (
+          target.resolution
+          !== 'resolved'
+        ) {
+          throw new Error(
+            'Property-value planner relation target narrowed inconsistently.',
+          );
+        }
+
+        return target.targetRecordId;
+      },
+    );
+
+  if (
+    new Set(
+      targetRecordIds,
+    ).size
+    !== targetRecordIds.length
+  ) {
+    return {
+      disposition:
+        'unresolved',
+      reason:
+        'duplicate-relation-target',
+      targets,
+    };
+  }
+
+  return {
+    disposition:
+      'resolved',
+    targetRecordIds,
+    targets,
+  };
+}
+
 export function planLegacyPropertyValues(
   input: LegacyImportPropertyValuePlanningInput,
 ): LegacyImportPropertyValuePlan {
@@ -354,6 +769,72 @@ export function planLegacyPropertyValues(
       entry.optionId,
     );
   }
+
+  const relationTargetKindsBySchema =
+    new Map<
+      string,
+      readonly CanonicalRelatableRecordKind[]
+    >();
+
+  for (
+    const conversion
+    of input.schemaSettings
+      .conversions
+  ) {
+    if (
+      conversion.disposition
+      !== 'canonical-ready'
+      || conversion.record
+        .definition.type
+        !== 'relation'
+    ) {
+      continue;
+    }
+
+    relationTargetKindsBySchema.set(
+      schemaIdentityKey(
+        conversion.scope,
+        conversion.legacySchemaId,
+      ),
+      [
+        ...conversion.record
+          .definition.targetKinds,
+      ],
+    );
+  }
+
+  const relationCandidates:
+    LegacyRelationCandidate[] =
+      input.candidates.map(
+        (candidate) => {
+          const identity =
+            identityByPhysical.get(
+              physicalKey(
+                candidate.kind,
+                candidate.source.path,
+              ),
+            );
+
+          if (
+            identity === undefined
+          ) {
+            throw new Error(
+              `Property-value planner cannot find canonical relation-target identity for ${candidate.source.path}.`,
+            );
+          }
+
+          return {
+            kind:
+              candidate.kind,
+            legacyId:
+              candidate.legacyId,
+            sourcePath:
+              candidate.source.path,
+            recordId:
+              identity.recordId,
+          };
+        },
+      );
 
   const records: LegacyImportRecordPropertyValuePlan[] = [];
 
@@ -438,15 +919,6 @@ export function planLegacyPropertyValues(
           legacyType: schema.type,
         };
 
-      if (schema.type === 'relation') {
-        conversions.push({
-          ...base,
-          disposition: 'deferred',
-          reason: 'relation-resolution-pending',
-        });
-        continue;
-      }
-
       if (schema.type === 'rollup') {
         conversions.push({
           ...base,
@@ -493,9 +965,73 @@ export function planLegacyPropertyValues(
           disposition: 'unresolved',
           reason,
           legacyValue:
-            cloneLegacyValue(legacyValue),
+          cloneLegacyValue(legacyValue),
         });
       };
+
+      if (
+        schema.type
+        === 'relation'
+      ) {
+        const targetKinds =
+          relationTargetKindsBySchema.get(
+            schemaKey,
+          );
+
+        if (
+          targetKinds === undefined
+        ) {
+          conversions.push({
+            ...base,
+            disposition:
+              'deferred',
+            reason:
+              'relation-resolution-pending',
+          });
+          continue;
+        }
+
+        const relation =
+          resolveLegacyRelationValue(
+            legacyValue,
+            hasValue,
+            targetKinds,
+            relationCandidates,
+          );
+
+        if (
+          relation.disposition
+          === 'unresolved'
+        ) {
+          conversions.push({
+            ...base,
+            disposition:
+              'unresolved',
+            reason:
+              relation.reason,
+            legacyValue:
+              cloneLegacyValue(
+                legacyValue,
+              ),
+            relationTargets:
+              relation.targets,
+          });
+          continue;
+        }
+
+        appendReady({
+          type:
+            'relation',
+          value:
+            defineCanonicalRelationValue({
+              relationSchemaId:
+                schemaRecordId,
+              targetRecordIds:
+                relation.targetRecordIds,
+            }),
+        });
+        continue;
+      }
 
       if (!hasValue) {
         if (schema.type === 'multi-select') {

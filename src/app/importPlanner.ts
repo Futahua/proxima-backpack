@@ -881,6 +881,7 @@ export async function planLegacyMarkdownImport(
     [
       ...claimedCanonicalIds.keys(),
     ],
+    loaded.layout,
   );
 
   const propertyValues =
