@@ -705,6 +705,13 @@ function bindInteractions(): void {
     toggleSelection: (taskId) => { projectBacklogView = { ...projectBacklogView, projectId: selection, selectedTaskIds: toggleBacklogSelection(projectBacklogView.selectedTaskIds, taskId) }; render(); },
     selectAllVisible: (visibleTaskIds) => { projectBacklogView = { ...projectBacklogView, projectId: selection, selectedTaskIds: selectAllBacklogVisible(projectBacklogView.selectedTaskIds, visibleTaskIds) }; render(); },
     clearSelection: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, selectedTaskIds: clearBacklogSelection(projectBacklogView.selectedTaskIds) }; render(); },
+    // The template composer is the Backlog's: a template plans tasks for the project being
+    // looked at, and the panel parses on render rather than keeping a second copy of what
+    // the text means. Typing re-renders (so the preview and the error list follow the text),
+    // which is why the caret is put back afterwards.
+    openTemplate: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, templateOpen: true }; render(); },
+    closeTemplate: () => { projectBacklogView = { ...projectBacklogView, projectId: selection, templateOpen: false }; render(); },
+    setTemplateText: (text) => { projectBacklogView = { ...projectBacklogView, projectId: selection, templateText: text }; render(); const field = root.querySelector<HTMLTextAreaElement>('[data-template-text]'); if (field) { field.focus(); field.setSelectionRange(text.length, text.length); } },
   });
   bindProjectDeadlinesInteractions(root, {
     setFilter: (filter) => { projectDeadlinesView = { ...projectDeadlinesView, projectId: selection, filter, selectedTaskId: null }; render(); },

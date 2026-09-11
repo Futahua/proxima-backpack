@@ -10,7 +10,7 @@ const other:Project={...project,id:'other',source:sourceRef('project','other'),n
 const task=(id:string,pid:string,ix:number):Task=>({id,source:sourceRef('task',id),name:id,description:'<script>x</script>',projectId:pid,status:'todo',weight:1,orderIndex:ix,isFixedDuration:false,fixedDuration:null,maxDuration:null,isCompleted:false,createdAt:'2026-09-01T00:00:00.000Z',startDate:null,deadline:null,properties:{}});
 const state=():ProximaState=>({projects:[project,other],tasks:[task('second',project.id,2),task('first',project.id,1),task('other',other.id,0)],events:[],statuses:[],taskSchema:[]});
 /** The query controls a case does not exercise, so each case states only its own. */
-const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{},toggleSelection:()=>{},selectAllVisible:()=>{},clearSelection:()=>{}};
+const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{},toggleSelection:()=>{},selectAllVisible:()=>{},clearSelection:()=>{},openTemplate:()=>{},closeTemplate:()=>{},setTemplateText:()=>{}};
 beforeEach(()=>{document.body.innerHTML='';});
 describe('Stage 5 slice 7 detailed Backlog interactions',()=>{
  it('orders and scopes tasks without mutation',()=>{const s=state(),before=JSON.stringify(s);document.body.innerHTML=renderProjectBacklog(s,project);expect(Array.from(document.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId)).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-task-id="other"]')).toBeNull();expect(JSON.stringify(s)).toBe(before);});
@@ -49,6 +49,9 @@ function session(s:ProximaState,start:ProjectBacklogViewState={...EMPTY_PROJECT_
   toggleSelection:(taskId)=>{view={...view,projectId:project.id,selectedTaskIds:toggleBacklogSelection(view.selectedTaskIds,taskId)};draw();},
   selectAllVisible:(visibleTaskIds)=>{view={...view,projectId:project.id,selectedTaskIds:selectAllBacklogVisible(view.selectedTaskIds,visibleTaskIds)};draw();},
   clearSelection:()=>{view={...view,projectId:project.id,selectedTaskIds:clearBacklogSelection(view.selectedTaskIds)};draw();},
+  openTemplate:()=>{view={...view,projectId:project.id,templateOpen:true};draw();},
+  closeTemplate:()=>{view={...view,projectId:project.id,templateOpen:false};draw();},
+  setTemplateText:(text)=>{view={...view,projectId:project.id,templateText:text};draw();},
  });
  return {root:()=>host,harness:createInteractionHarness(host),view:()=>view,rows:()=>Array.from(host.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId),chipIds:()=>Array.from(host.querySelectorAll('[data-project-backlog-filter-chip]')).map(x=>(x as HTMLElement).dataset.projectBacklogFilterChip),stop};
 }
@@ -179,6 +182,61 @@ describe('Stage 6 Backlog selection',()=>{
   run.harness.click('project-backlog-select-second');
   run.harness.click('project-backlog-select-first');
   expect(run.view().selectedTaskIds).toEqual(['second','first']);
+  expect(JSON.stringify(s)).toBe(before);
+  run.stop();
+ });
+});
+describe('Stage 6 template composer',()=>{
+ it('opens from the Backlog, takes text, and previews the tasks it read',()=>{
+  const s=state();const run=session(s);
+  expect(run.root().querySelector('[data-c1-key="template-composer"]')).toBeNull();
+  run.harness.click('project-backlog-open-template');
+  expect(run.root().querySelector('[data-c1-key="template-composer"]')).not.toBeNull();
+  expect((run.root().querySelector('[data-template-text]') as HTMLTextAreaElement).value).toBe('');
+  expect(run.root().querySelector('[data-template-preview-empty="true"]')).not.toBeNull();
+  // Typing re-renders, so the preview and the report follow the text as it is written.
+  run.harness.typeText('template-text','S');
+  expect(run.view().templateText).toBe('S');
+  expect((run.root().querySelector('[data-template-text]') as HTMLTextAreaElement).value).toBe('S');
+  expect(run.root().querySelector('[data-template-preview-task="S"]')).not.toBeNull();
+  expect(run.root().querySelector('[data-template-preview-count]')!.getAttribute('data-template-preview-count')).toBe('1');
+  expect(run.root().querySelector('[data-template-errors-clean="true"]')).not.toBeNull();
+  run.stop();
+ });
+ it('reports one positioned complaint per line it could not read, and keeps the rest',()=>{
+  const s=state();const run=session(s);
+  run.harness.click('project-backlog-open-template');
+  const text=['Ship','  weight: heavy','  nope: x','Notes'].join('\n');
+  run.harness.target('template-text').textContent=text;
+  (run.root().querySelector('[data-template-text]') as HTMLTextAreaElement).value=text;
+  (run.root().querySelector('[data-template-text]') as HTMLTextAreaElement).dispatchEvent(new Event('input',{bubbles:true}));
+  const errors=Array.from(run.root().querySelectorAll('[data-template-error]')).map(x=>x as HTMLElement);
+  expect(errors.map(x=>x.dataset.templateError)).toEqual(['invalid-number','unknown-field']);
+  expect(errors.map(x=>x.dataset.templateErrorLine)).toEqual(['2','3']);
+  expect(errors[0]!.textContent).toContain('Line 2, column 11');
+  expect(run.root().querySelector('[data-template-error-count]')!.getAttribute('data-template-error-count')).toBe('2');
+  // Both tasks were still read, and the message quotes the line it is about.
+  expect(Array.from(run.root().querySelectorAll('[data-template-preview-task]')).map(x=>x.getAttribute('data-template-preview-task'))).toEqual(['Ship','Notes']);
+  expect(errors[1]!.querySelector('code')!.textContent).toBe('nope: x');
+  run.stop();
+ });
+ it('refuses execution with a typed result rather than hiding the control',()=>{
+  const s=state();const before=JSON.stringify(s);const run=session(s);
+  run.harness.click('project-backlog-open-template');
+  const execute=run.root().querySelector<HTMLButtonElement>('[data-c1-key="template-execute"]')!;
+  expect(execute.disabled).toBe(true);
+  expect(execute.getAttribute('data-template-execute-refusal')).toBe('action-not-available');
+  expect(run.root().querySelector('[data-c1-key="template-execute-note"]')!.textContent).toContain('until task records can be written');
+  expect(JSON.stringify(s)).toBe(before);
+  run.stop();
+ });
+ it('closes on Cancel, and forgets nothing about the project',()=>{
+  const s=state();const before=JSON.stringify(s);const run=session(s);
+  run.harness.click('project-backlog-open-template');
+  run.harness.typeText('template-text','S');
+  run.harness.click('template-composer-cancel');
+  expect(run.root().querySelector('[data-c1-key="template-composer"]')).toBeNull();
+  expect(run.view().templateOpen).toBe(false);
   expect(JSON.stringify(s)).toBe(before);
   run.stop();
  });
