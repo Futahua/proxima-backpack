@@ -70,6 +70,8 @@ function render(selectedTaskId: string | null = null): string {
     editorDraft: null,
     dropRefusal: null,
     taskWrites: { refusal: 'action-not-available', editorRefusal: null },
+    newTaskDraft: null,
+    newTaskRefusal: null,
     containerHeight: 800,
   });
 }
@@ -198,6 +200,8 @@ describe('Stage 2 Elastic execution cockpit', () => {
       editorDraft: null,
       dropRefusal: null,
       taskWrites: { refusal: 'action-not-available', editorRefusal: null },
+      newTaskDraft: null,
+      newTaskRefusal: null,
       containerHeight: 800,
     });
 
@@ -228,6 +232,10 @@ describe('Stage 2 Elastic execution cockpit', () => {
       editTask: () => undefined,
       cancelTaskEdit: () => undefined,
       saveTask: () => undefined,
+      openNewTask: () => undefined,
+      cancelNewTask: () => undefined,
+      editNewTask: () => undefined,
+      createTask: () => undefined,
       deleteTask: () => undefined,
     };
 
@@ -260,6 +268,8 @@ describe('Stage 2 Elastic execution cockpit', () => {
       editorDraft: null,
       dropRefusal: 'action-not-available',
       taskWrites: { refusal: 'action-not-available', editorRefusal: null },
+      newTaskDraft: null,
+      newTaskRefusal: null,
       containerHeight: 800,
     });
 
@@ -284,6 +294,10 @@ describe('Stage 2 Elastic execution cockpit', () => {
       editTask: () => undefined,
       cancelTaskEdit: () => undefined,
       saveTask: () => undefined,
+      openNewTask: () => undefined,
+      cancelNewTask: () => undefined,
+      editNewTask: () => undefined,
+      createTask: () => undefined,
       deleteTask: () => undefined,
     });
 
@@ -341,6 +355,10 @@ describe('Stage 2 Elastic execution cockpit', () => {
       editTask: () => undefined,
       cancelTaskEdit: () => undefined,
       saveTask: () => undefined,
+      openNewTask: () => undefined,
+      cancelNewTask: () => undefined,
+      editNewTask: () => undefined,
+      createTask: () => undefined,
       deleteTask: () => undefined,
     });
 
@@ -473,6 +491,8 @@ describe('Stage 6 Task editor in the Task modal', () => {
         editorDraft: draft,
         dropRefusal: null,
         taskWrites: { refusal: writes.refusal, editorRefusal },
+        newTaskDraft: null,
+        newTaskRefusal: null,
       });
     };
 
@@ -494,6 +514,11 @@ describe('Stage 6 Task editor in the Task modal', () => {
       // does with it is the app layer's business, and its own suite proves that.
       saveTask: () => { saves.push(draft); editorRefusal = null; draw(); },
       deleteTask: () => { deletes.push(selectedTaskId ?? ''); selectedTaskId = null; draft = null; draw(); },
+      // The New Task form has its own suite; here it only needs to be bindable.
+      openNewTask: () => undefined,
+      cancelNewTask: () => undefined,
+      editNewTask: () => undefined,
+      createTask: () => undefined,
     });
 
     return {

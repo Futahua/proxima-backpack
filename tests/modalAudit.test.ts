@@ -165,6 +165,8 @@ describe('no write control can be clicked and do nothing', () => {
       editorDraft: null,
       dropRefusal: null,
       taskWrites: { refusal: 'action-not-available', editorRefusal: null },
+      newTaskDraft: null,
+      newTaskRefusal: null,
     });
 
     // The Task editor's Delete is present and typed, so the audit has something to check.
@@ -277,6 +279,8 @@ describe('every editor opens from state alone', () => {
       editorDraft: null,
       dropRefusal: null,
       taskWrites: { refusal: 'action-not-available', editorRefusal: null },
+      newTaskDraft: null,
+      newTaskRefusal: null,
     });
     document.body.innerHTML = elastic;
     expect(document.querySelector('[data-c1-key="elastic-task-modal"]')).not.toBeNull();

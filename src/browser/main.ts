@@ -10,6 +10,7 @@ import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupS
 import { resolveBrowserTaskMutations, type BrowserTaskMutations } from '../adapters/browserTaskMutations.js';
 import { performElasticDrop } from '../app/elasticDropAction.js';
 import { deleteTaskAction, saveTaskAction } from '../app/taskEditorWrite.js';
+import { createTaskAction, newTaskDraft as newTaskDraftFor } from '../app/taskCreate.js';
 import { TASK_EDITOR_SAVE_REFUSAL } from '../app/taskEditor.js';
 import type { SourceMode, SourceSession } from '../app/sourceSession.js';
 import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
@@ -106,6 +107,9 @@ let taskMutationResolution: Promise<BrowserTaskMutations | null> | null = null;
 let taskMutationUnavailable: string | null = null;
 /** The last refusal the Task editor's Save or Delete produced, shown beside the form. */
 let taskEditorRefusal: string | null = null;
+/** The New Task form's provisional values while it is open, null while it is closed. */
+let newTaskFormDraft: TaskEditorDraft | null = null;
+let newTaskRefusal: string | null = null;
 let elasticProgressTimer: number | null = null;
 let actionDispatcher: ProximaActionDispatcher | null = null;
 let sourceSession: SourceSession | null = null;
@@ -235,6 +239,8 @@ function boardSurface(state: ProximaState, lookup: Map<string, string>): string 
     editorDraft: taskEditorDraft,
     dropRefusal: elasticDropRefusal,
     taskWrites: taskModalWriteView(),
+    newTaskDraft: newTaskFormDraft,
+    newTaskRefusal,
     containerHeight: 460,
   });
 }
@@ -665,6 +671,32 @@ async function deleteTaskFromEditorAction(): Promise<void> {
 }
 
 /**
+ * The New Task form's Save.
+ *
+ * The sequence lives in `src/app/taskCreate.ts`; the shell supplies the same pieces it supplies the
+ * editor, plus the selection the form's project defaults from. An accepted create closes the form,
+ * because the task it described now exists and the board is about to draw it.
+ */
+function taskCreateDependencies() {
+  return {
+    state: appState,
+    writes: resolveTaskWritePath,
+    unavailableReason: () => taskMutationUnavailable,
+    refresh: refreshFromSource,
+    setRefusal: (reason: string | null) => { newTaskRefusal = reason; },
+    render,
+  };
+}
+
+async function createTaskFromFormAction(): Promise<void> {
+  const effect = await createTaskAction(taskCreateDependencies(), { draft: newTaskFormDraft });
+  if (effect.closeEditor) {
+    newTaskFormDraft = null;
+    render();
+  }
+}
+
+/**
  * An Elastic drop.
  *
  * The sequence itself lives in `src/app/elasticDropAction.ts`, where it is executed by tests
@@ -796,6 +828,29 @@ function bindInteractions(): void {
     },
     deleteTask: () => {
       void deleteTaskFromEditorAction();
+    },
+    openNewTask: () => {
+      // The form starts from where the reader is: a real project selection becomes the default
+      // project, and a selection that is not a project defaults to no project rather than guessing.
+      if (appState === null) return;
+      newTaskFormDraft = newTaskDraftFor(appState, selection);
+      newTaskRefusal = null;
+      render();
+    },
+    cancelNewTask: () => {
+      newTaskFormDraft = null;
+      newTaskRefusal = null;
+      render();
+    },
+    editNewTask: (edit) => {
+      if (newTaskFormDraft === null) return;
+      // No render, for the same reason the editor's keystrokes do not render: the field a person is
+      // typing into must not be taken away from them mid-word.
+      newTaskFormDraft = applyTaskEditorEdit(newTaskFormDraft, edit);
+      newTaskRefusal = null;
+    },
+    createTask: () => {
+      void createTaskFromFormAction();
     },
     setTarget: (targetTime) => {
       elasticDropRefusal = null;

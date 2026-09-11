@@ -117,6 +117,17 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     expect(source).toContain('taskWrites: taskModalWriteView(),');
     expect(source).toContain('taskMutations === null');
 
+    // The New Task form is wired the third way, and it is the same way: the shell opens a draft,
+    // the app layer plans and executes it.
+    expect(source).toContain('createTaskAction(');
+    expect(source).toContain('newTaskDraftFor(');
+    expect(source).toMatch(/createTask:\s*\(\)\s*=>\s*\{[\s\S]{0,120}?createTaskFromFormAction\(\)/);
+    const create = await readFile(new URL('../src/app/taskCreate.ts', import.meta.url), 'utf8');
+    for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(create).not.toContain(forbidden);
+    expect(create).not.toContain('RecordStore');
+    // And the request it writes comes from the plan, not from the form's markup.
+    expect(create).toContain('planTaskCreate(deps.state, input.draft)');
+
     for (const type of DISPATCHER_UI_RECORD_MUTATIONS) expect(source).toMatch(new RegExp(`dispatchAction\\(\\{[\\s\\S]{0,500}?type:\\s*'${escapeRegExp(type)}'`));
     for (const type of UNWIRED_UI_RECORD_MUTATIONS) expect(source).not.toContain(`type: '${type}'`);
     expect([...DISPATCHER_UI_RECORD_MUTATIONS, ...OPERATION_UI_RECORD_MUTATIONS, ...UNWIRED_UI_RECORD_MUTATIONS].sort()).toEqual(registeredActionTypes().filter((type) => categoryOf(type) === 'record-mutation'));

@@ -376,9 +376,9 @@ export function taskEditorSaveActionType(
  * authoritative revision rather than retyping), and only an accepted one clears them, because
  * only then does the record actually match the form.
  */
-export interface TaskEditorActionEffect {
+export interface TaskEditorActionEffect<Outcome = TaskEditorWriteOutcome> {
   /** Null when there was nothing to act on: no card was open. */
-  readonly outcome: TaskEditorWriteOutcome | null;
+  readonly outcome: Outcome | null;
   readonly clearDraft: boolean;
   readonly closeEditor: boolean;
 }

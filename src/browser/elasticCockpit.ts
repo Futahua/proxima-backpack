@@ -2,7 +2,8 @@ import { calculateElasticTimeline, elasticCardHeights } from '../domain/elastic.
 import { elasticBoard } from '../domain/selectors.js';
 import type { ElasticColumn, ProximaState, Task, TimelineSlice } from '../domain/types.js';
 import { projectTaskEditor, TASK_EDITOR_SAVE_NOTE, TASK_EDITOR_SAVE_REFUSAL, type TaskEditorDraft, type TaskEditorEdit } from '../app/taskEditor.js';
-import { ELASTIC_EDITOR_HOOKS, renderTaskEditorField, taskEditorEditFrom } from './taskEditorFields.js';
+import { ELASTIC_EDITOR_HOOKS, NEW_TASK_EDITOR_HOOKS, renderTaskEditorField, taskEditorEditFrom } from './taskEditorFields.js';
+import { renderNewTaskModal } from './newTaskModal.js';
 
 export interface ElasticSessionView {
   targetTime: string;
@@ -31,6 +32,10 @@ export interface ElasticCockpitRenderOptions {
   dropRefusal: string | null;
   /** Whether this run may write records, and the last refusal the editor produced. */
   taskWrites: TaskModalWriteView;
+  /** The New Task form's provisional values, or null while the form is closed. */
+  newTaskDraft: TaskEditorDraft | null;
+  /** The last refusal the New Task form produced. */
+  newTaskRefusal: string | null;
   containerHeight?: number;
 }
 
@@ -55,6 +60,14 @@ export interface ElasticCockpitHandlers {
   saveTask(): void;
   /** Delete the record the editor is showing. */
   deleteTask(): void;
+  /** Open the New Task form. */
+  openNewTask(): void;
+  /** Close the New Task form and discard what was typed. */
+  cancelNewTask(): void;
+  /** One edit of the New Task form. */
+  editNewTask(edit: TaskEditorEdit): void;
+  /** Create the task the New Task form describes. */
+  createTask(): void;
 }
 
 /**
@@ -273,8 +286,12 @@ export function renderElasticCockpit(options: ElasticCockpitRenderOptions): stri
   );
   const locked = options.session.lockedAt !== null;
   const targetValue = localTargetValue(options.session.targetTime);
+  const newTaskControl = '<button type="button" data-elastic-action="open-new-task" data-c1-key="elastic-new-task">New task</button>';
+  const newTaskModal = options.newTaskDraft === null
+    ? ''
+    : renderNewTaskModal(options.state, options.newTaskDraft, { refusal: options.taskWrites.refusal, editorRefusal: options.newTaskRefusal });
 
-  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Elastic Boards</h2><p class="surface-description">Backlog, live execution and finished work.</p></div><span class="surface-count">${options.tasks.length} tasks</span></header><section class="elastic-session-controls" data-c1-key="elastic-session-controls"><label>Execution target<input type="datetime-local" value="${escapeHtml(targetValue)}" data-elastic-action="target" data-c1-key="elastic-target-input"${locked ? ' disabled' : ''}></label>${locked ? '<button type="button" data-elastic-action="unlock" data-c1-key="elastic-unlock">Unlock</button>' : `<button type="button" data-elastic-action="lock" data-c1-key="elastic-lock"${presentation.targetExpired ? ' disabled' : ''}>Lock</button>`}<div class="elastic-run-progress" data-c1-key="elastic-run-progress" data-progress-ratio="${presentation.overallProgress.toFixed(4)}"><div class="elastic-progress-fill" style="width:${(presentation.overallProgress * 100).toFixed(2)}%"></div></div>${presentation.targetExpired ? '<span class="task-overdue" data-c1-key="elastic-target-expired">Target has passed</span>' : ''}</section>${options.dropRefusal ? `<p class="diagnostics" data-c1-key="elastic-drop-refusal">Move unavailable: ${escapeHtml(options.dropRefusal)}. Task data was not changed.</p>` : ''}<div class="board-grid">${renderColumn(options.state, 'backlog', 'Backlog', board.backlog, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'running', 'Running', board.running, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'finished', 'Finished', board.finished, presentation, options.projectNames, options.now)}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft, options.taskWrites)}</section>`;
+  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Elastic Boards</h2><p class="surface-description">Backlog, live execution and finished work.</p></div><span class="surface-count">${options.tasks.length} tasks</span>${newTaskControl}</header><section class="elastic-session-controls" data-c1-key="elastic-session-controls"><label>Execution target<input type="datetime-local" value="${escapeHtml(targetValue)}" data-elastic-action="target" data-c1-key="elastic-target-input"${locked ? ' disabled' : ''}></label>${locked ? '<button type="button" data-elastic-action="unlock" data-c1-key="elastic-unlock">Unlock</button>' : `<button type="button" data-elastic-action="lock" data-c1-key="elastic-lock"${presentation.targetExpired ? ' disabled' : ''}>Lock</button>`}<div class="elastic-run-progress" data-c1-key="elastic-run-progress" data-progress-ratio="${presentation.overallProgress.toFixed(4)}"><div class="elastic-progress-fill" style="width:${(presentation.overallProgress * 100).toFixed(2)}%"></div></div>${presentation.targetExpired ? '<span class="task-overdue" data-c1-key="elastic-target-expired">Target has passed</span>' : ''}</section>${options.dropRefusal ? `<p class="diagnostics" data-c1-key="elastic-drop-refusal">Move unavailable: ${escapeHtml(options.dropRefusal)}. Task data was not changed.</p>` : ''}<div class="board-grid">${renderColumn(options.state, 'backlog', 'Backlog', board.backlog, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'running', 'Running', board.running, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'finished', 'Finished', board.finished, presentation, options.projectNames, options.now)}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft, options.taskWrites)}${newTaskModal}</section>`;
 }
 
 function clearDragFeedback(root: HTMLElement): void {
@@ -320,6 +337,12 @@ export function bindElasticCockpitInteractions(root: HTMLElement, handlers: Elas
       handlers.saveTask();
     } else if (action === 'delete-task') {
       handlers.deleteTask();
+    } else if (action === 'open-new-task') {
+      handlers.openNewTask();
+    } else if (action === 'cancel-new-task') {
+      handlers.cancelNewTask();
+    } else if (action === 'create-task') {
+      handlers.createTask();
     } else if (action === 'lock') {
       handlers.lock();
     } else if (action === 'unlock') {
@@ -329,8 +352,27 @@ export function bindElasticCockpitInteractions(root: HTMLElement, handlers: Elas
 
   root.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
-    if (!root.querySelector('[data-task-editor-task-id]')) return;
-    handlers.cancelTaskEdit();
+    // The editor first: it is the modal that can be open over the board. The New Task form is the
+    // other one, and Escape closes whichever is actually there.
+    if (root.querySelector('[data-task-editor-task-id]')) {
+      handlers.cancelTaskEdit();
+      return;
+    }
+    if (root.querySelector('[data-c1-key="new-task-modal"]')) handlers.cancelNewTask();
+  });
+
+  /**
+   * The New Task form's own controls.
+   *
+   * A separate listener over separate attributes on purpose: both forms can be on the board at
+   * once, and a shared attribute would have one binder answering the other form's keystroke — the
+   * failure the hooks in `taskEditorFields` exist to prevent.
+   */
+  root.addEventListener('input', (event) => {
+    const control = (event.target as HTMLElement).closest<HTMLElement>('[data-new-task-field]');
+    if (!control) return;
+    const edit = taskEditorEditFrom(root, NEW_TASK_EDITOR_HOOKS, control);
+    if (edit !== null) handlers.editNewTask(edit);
   });
 
   /**

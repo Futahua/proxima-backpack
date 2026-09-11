@@ -185,6 +185,10 @@ function mount(
     editTask: () => undefined,
     cancelTaskEdit: () => undefined,
     saveTask: () => undefined,
+    openNewTask: () => undefined,
+    cancelNewTask: () => undefined,
+    editNewTask: () => undefined,
+    createTask: () => undefined,
     deleteTask: () => undefined,
   });
 

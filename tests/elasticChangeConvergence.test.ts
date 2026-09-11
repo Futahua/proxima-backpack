@@ -134,6 +134,8 @@ function mountSurfaces(state: ProximaState, selectedTaskId: string | null = null
       editorDraft: null,
       dropRefusal: null,
       taskWrites: { refusal: null, editorRefusal: null },
+      newTaskDraft: null,
+      newTaskRefusal: null,
     }),
     renderProjectTaskBoard(state, project, EMPTY_PROJECT_TASK_BOARD_VIEW),
     renderProjectBacklog(state, project, { ...EMPTY_PROJECT_BACKLOG_VIEW, projectId: project.id }),

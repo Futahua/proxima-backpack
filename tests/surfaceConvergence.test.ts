@@ -138,6 +138,8 @@ function elasticColumn(state: ProximaState, taskId: string): string | null {
     editorDraft: null,
     dropRefusal: null,
     taskWrites: { refusal: 'action-not-available', editorRefusal: null },
+    newTaskDraft: null,
+    newTaskRefusal: null,
     containerHeight: 800,
   }));
   return document

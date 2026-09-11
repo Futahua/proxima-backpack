@@ -60,6 +60,25 @@ export const BACKLOG_EDITOR_HOOKS:
   };
 
 /**
+ * The New Task form.
+ *
+ * It shares the vocabulary — the same field projections draw the same controls — and it does *not*
+ * share the attributes. Both the editor and the New Task form can be open at once on the board, and
+ * one binder answering the other form's keystroke is the failure these hooks exist to prevent.
+ */
+export const NEW_TASK_EDITOR_HOOKS:
+  TaskEditorHooks = {
+    keyPrefix:
+      'new-task-editor',
+    fieldAttribute:
+      'data-new-task-field',
+    editAttribute:
+      'data-new-task-edit',
+    optionAttribute:
+      'data-new-task-option',
+  };
+
+/**
  * One field of the Task editor, drawn as the control its type calls for.
  *
  * Dates are text inputs holding the stored value on purpose: the vault stores ISO
