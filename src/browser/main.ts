@@ -10,6 +10,7 @@ import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupS
 import { resolveBrowserTaskMutations, type BrowserTaskMutations } from '../adapters/browserTaskMutations.js';
 import { performElasticDrop } from '../app/elasticDropAction.js';
 import { performWorkflowDrop } from '../app/workflowBoardDrop.js';
+import { bulkCompleteTasks, bulkDeleteTasks, type BulkTaskActionReport } from '../app/bulkTaskActions.js';
 import { deleteTaskAction, saveTaskAction } from '../app/taskEditorWrite.js';
 import { createTaskAction, newTaskDraft as newTaskDraftFor } from '../app/taskCreate.js';
 import { TASK_EDITOR_SAVE_REFUSAL } from '../app/taskEditor.js';
@@ -367,7 +368,7 @@ function selectProjectNote(path: string): void {
 }
 function projectsHubSurface(state: ProximaState): string {
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: { ...projectWorkflowBoardView, writeRefusal: projectWorkflowRefusal }, projectBacklog: projectBacklogView, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: { ...projectWorkflowBoardView, writeRefusal: projectWorkflowRefusal }, projectBacklog: { ...projectBacklogView, bulkWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null }, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -693,6 +694,46 @@ function taskCreateDependencies() {
   };
 }
 
+/**
+ * A Backlog bulk action over the marked selection.
+ *
+ * The report is the view state: the entities are drawn where the selection is, so a reader sees
+ * which rows changed and which refused rather than only how many. An accepted run also clears the
+ * selection, because the rows it referred to are no longer the same rows.
+ */
+async function runBacklogBulk(action: 'task.bulk.complete' | 'task.bulk.delete'): Promise<void> {
+  const taskIds = [...projectBacklogView.selectedTaskIds];
+  const report: BulkTaskActionReport = action === 'task.bulk.delete'
+    ? await bulkDeleteTasks(
+        {
+          state: appState,
+          writes: resolveTaskWritePath,
+          unavailableReason: () => taskMutationUnavailable,
+          refresh: refreshFromSource,
+          render,
+        },
+        { taskIds },
+      )
+    : await bulkCompleteTasks(
+        {
+          state: appState,
+          writes: resolveTaskWritePath,
+          unavailableReason: () => taskMutationUnavailable,
+          refresh: refreshFromSource,
+          render,
+        },
+        { taskIds },
+      );
+
+  projectBacklogView = {
+    ...projectBacklogView,
+    bulkReport: report,
+    // A run that wrote nothing leaves the selection alone: the reader's marks still mean something.
+    selectedTaskIds: report.accepted > 0 ? [] : projectBacklogView.selectedTaskIds,
+  };
+  render();
+}
+
 async function createTaskFromFormAction(): Promise<void> {
   const effect = await createTaskAction(taskCreateDependencies(), { draft: newTaskFormDraft });
   if (effect.closeEditor) {
@@ -940,6 +981,8 @@ function bindInteractions(): void {
     previewMove: ({ taskId, targetIndex }) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: taskId, dragTargetIndex: targetIndex }; },
     refuseMove: (intent) => { projectBacklogView = { ...projectBacklogView, projectId: selection, dragTaskId: null, dragTargetIndex: null, writeRefusal: PROJECT_BACKLOG_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
     clearDrag: () => { projectBacklogView = { ...projectBacklogView, dragTaskId: null, dragTargetIndex: null }; },
+    bulkComplete: () => { void runBacklogBulk('task.bulk.complete'); },
+    bulkDelete: () => { void runBacklogBulk('task.bulk.delete'); },
     setSearch: (search) => { projectBacklogView = { ...projectBacklogView, projectId: selection, queryRefusal: null, query: applyBacklogControl(projectBacklogView.query, { kind: 'set-search', search }) }; render(); restoreBacklogSearchFocus(search.length); },
     // One menu, two builders: an expression beginning `property.` names a custom property, and
     // the type it is compared as comes from the schema — the same lookup the menu used to

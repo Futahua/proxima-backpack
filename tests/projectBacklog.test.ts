@@ -12,7 +12,7 @@ const other:Project={...project,id:'other',source:sourceRef('project','other'),n
 const task=(id:string,pid:string,ix:number):Task=>({id,source:sourceRef('task',id),name:id,description:'<script>x</script>',projectId:pid,status:'todo',weight:1,orderIndex:ix,isFixedDuration:false,fixedDuration:null,maxDuration:null,isCompleted:false,createdAt:'2026-09-01T00:00:00.000Z',startDate:null,deadline:null,properties:{}});
 const state=():ProximaState=>({projects:[project,other],tasks:[task('second',project.id,2),task('first',project.id,1),task('other',other.id,0)],events:[],statuses:[],taskSchema:[]});
 /** The query controls a case does not exercise, so each case states only its own. */
-const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{},toggleSelection:()=>{},selectAllVisible:()=>{},clearSelection:()=>{},openTemplate:()=>{},closeTemplate:()=>{},setTemplateText:()=>{},resizeColumn:()=>{},editTask:()=>{},cancelTaskEdit:()=>{}};
+const quiet={setSearch:()=>{},addFilter:()=>{},removeFilter:()=>{},sortBy:()=>{},clearSort:()=>{},clearQuery:()=>{},toggleSelection:()=>{},selectAllVisible:()=>{},clearSelection:()=>{},openTemplate:()=>{},closeTemplate:()=>{},setTemplateText:()=>{},resizeColumn:()=>{},editTask:()=>{},cancelTaskEdit:()=>{},bulkComplete:()=>{},bulkDelete:()=>{}};
 beforeEach(()=>{document.body.innerHTML='';});
 describe('Stage 5 slice 7 detailed Backlog interactions',()=>{
  it('orders and scopes tasks without mutation',()=>{const s=state(),before=JSON.stringify(s);document.body.innerHTML=renderProjectBacklog(s,project);expect(Array.from(document.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId)).toEqual(['first','second']);expect(document.querySelector('[data-project-backlog-task-id="other"]')).toBeNull();expect(JSON.stringify(s)).toBe(before);});
@@ -104,6 +104,8 @@ function session(s:ProximaState,start:ProjectBacklogViewState={...EMPTY_PROJECT_
   resizeColumn:(columnId,width)=>{view={...view,projectId:project.id,columnWidths:resizeBacklogColumn(view.columnWidths,columnId,width)};draw();},
   editTask:(edit)=>{const record=s.tasks.find(x=>x.id===view.selectedTaskId);if(!record)return;view={...view,editorDraft:applyTaskEditorEdit(view.editorDraft??taskEditorDraftFor(record),edit)};},
   cancelTaskEdit:()=>{view={...view,editorDraft:null};draw();},
+  bulkComplete:()=>{},
+  bulkDelete:()=>{},
  });
  return {root:()=>host,harness:createInteractionHarness(host),draw,view:()=>view,rows:()=>Array.from(host.querySelectorAll('[data-project-backlog-task-id]')).map(x=>(x as HTMLElement).dataset.projectBacklogTaskId),chipIds:()=>Array.from(host.querySelectorAll('[data-project-backlog-filter-chip]')).map(x=>(x as HTMLElement).dataset.projectBacklogFilterChip),stop};
 }
