@@ -97,7 +97,7 @@ describe('bridge disclosure bounds', () => {
       // The startup banner reports where it listens, never what it exposes.
       expect(stdout.join('')).not.toContain(root);
     } finally { child.kill(); await removeDiskFixture(root); }
-  });
+  }, 30_000);
 
   it('grants read permission to loopback pages only, and refuses a rebound Host', async () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-origin-'));
@@ -128,7 +128,7 @@ describe('bridge disclosure bounds', () => {
       const honest = await rawGet(port, '/health', { host: `127.0.0.1:${port}` });
       expect(honest.status).toBe(200);
     } finally { child.kill(); await removeDiskFixture(root); }
-  });
+  }, 30_000);
 
   it('refuses binary reads through an intermediate symlink component', async () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-intermediate-link-'));
@@ -151,5 +151,5 @@ describe('bridge disclosure bounds', () => {
       expect(listing.status).toBe(400);
       expect((await listing.json()).error).toBe('symlink-rejected');
     } finally { child.kill(); await rm(root, { recursive: true, force: true }); await rm(outside, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 });

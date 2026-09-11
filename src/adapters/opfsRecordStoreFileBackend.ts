@@ -2,6 +2,9 @@ import type {
   RecoveryJournalBackend,
 } from '../app/vaultRecovery.js';
 import type {
+  RecordStoreActivationStorage,
+} from '../app/recordStoreActivation.js';
+import type {
   RecordStoreFileBackend,
   RecordStoreFileMutationResult,
   RecordStoreFileName,
@@ -15,6 +18,8 @@ const RECORD_STORE_DIRECTORY = 'record-store';
 const RECORDS_DIRECTORY = 'records';
 const RECOVERY_DIRECTORY = 'recovery';
 const RECOVERY_JOURNAL_FILE = 'journal.json';
+const ACTIVATION_DIRECTORY = 'activation';
+const ACTIVATION_MARKER_FILE = 'marker.json';
 const RECORD_FILE_NAME =
   /^pxr_[0-9a-f]{32}\.json$/;
 
@@ -549,6 +554,81 @@ Promise<RecoveryJournalBackend> {
         await recoveryDirectory
           .getFileHandle(
             RECOVERY_JOURNAL_FILE,
+            { create: true },
+          );
+
+      const writable =
+        await handle.createWritable();
+
+      await writable.write(value);
+      await writable.close();
+    },
+  };
+}
+
+/**
+ * The activation marker, in its own namespace beside `records/` and `recovery/`:
+ *
+ *     record-store/
+ *       records/
+ *       recovery/
+ *         journal.json
+ *       activation/
+ *         marker.json
+ *
+ * Same contract as the recovery journal: fixed directory, fixed filename, no caller-supplied
+ * path or handle, and text in and out so the app layer owns what the text means. A missing
+ * file is `undefined`, which the caller reads as "never activated" rather than as an error.
+ */
+export async function
+createBrowserOpfsRecordStoreActivationStorage():
+Promise<RecordStoreActivationStorage> {
+  const root =
+    await acquireOpfsRoot();
+
+  const recordStoreDirectory =
+    await root.getDirectoryHandle(
+      RECORD_STORE_DIRECTORY,
+      { create: true },
+    );
+
+  const activationDirectory =
+    await recordStoreDirectory
+      .getDirectoryHandle(
+        ACTIVATION_DIRECTORY,
+        { create: true },
+      );
+
+  return {
+    async read() {
+      let handle:
+        OpfsFileHandleLike;
+
+      try {
+        handle =
+          await activationDirectory
+            .getFileHandle(
+              ACTIVATION_MARKER_FILE,
+            );
+      } catch (error) {
+        if (isNotFound(error)) {
+          return undefined;
+        }
+
+        throw error;
+      }
+
+      const snapshot =
+        await handle.getFile();
+
+      return snapshot.text();
+    },
+
+    async write(value) {
+      const handle =
+        await activationDirectory
+          .getFileHandle(
+            ACTIVATION_MARKER_FILE,
             { create: true },
           );
 

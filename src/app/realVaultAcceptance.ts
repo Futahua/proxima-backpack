@@ -20,7 +20,7 @@ export interface AcceptanceStage {
 export interface RealVaultAcceptanceInput {
   build: BuildIdentityLike;
   startup: Pick<StartupInspection, 'startupSourceMode' | 'restoredHandlePresent' | 'bootstrapStatus'>;
-  session: { sourceMode: 'fixture' | 'external'; sourceGeneration: number; transitionState: 'stable' | 'switching' | 'failed' };
+  session: { sourceMode: 'fixture' | 'external' | 'record-store'; sourceGeneration: number; transitionState: 'stable' | 'switching' | 'failed' };
   projection: { generation: number; state: ProximaState; health: ReadOnlyProjectionHealth; revisions: Record<string, string>; problems: Array<{ code: string; path: string; detail: string; severity?: string }> };
   inspection: InspectionProjection;
   refreshEvidence?: { outcome: 'changed' | 'deleted' | 'renamed' | 'unchanged' | 'unreadable' | 'malformed'; changed: boolean; previousGeneration: number; currentGeneration: number; beforeRevision: string; afterRevision: string; beforeMarker: string; afterMarker: string };
@@ -32,7 +32,7 @@ export interface RealVaultAcceptanceInput {
 export interface RealVaultAcceptanceReport {
   schemaVersion: typeof REAL_VAULT_ACCEPTANCE_SCHEMA_VERSION;
   build: BuildIdentityLike;
-  sourceMode: 'fixture' | 'external';
+  sourceMode: 'fixture' | 'external' | 'record-store';
   restoredHandlePresent: boolean;
   bootstrapStatus: string;
   transitionState: 'stable' | 'switching' | 'failed';

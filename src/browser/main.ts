@@ -6,6 +6,7 @@ import { evaluateCreatorVaultPreflight, isCreatorVaultPreflightReport, type Crea
 import { coexistenceReadiness, declareCoexistenceReadiness } from './coexistenceReadiness.js';
 import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
+import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupSource.js';
 import type { SourceMode, SourceSession } from '../app/sourceSession.js';
 import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
 import { executeSourceRefreshAction } from '../app/sourceRefreshAction.js';
@@ -352,7 +353,7 @@ function exposeInspection(): void {
   const report = evaluateRealVaultAcceptance({
     build: BUILD_IDENTITY,
     startup: startupInspection ?? { startupSourceMode: 'fixture', restoredHandlePresent: false, bootstrapStatus: 'no-restored-handle' },
-    session: { sourceMode: session?.sourceMode === 'external' ? 'external' : 'fixture', sourceGeneration: session?.sourceGeneration ?? sourceProjection?.generation ?? 1, transitionState: session?.transitionState ?? 'stable' },
+    session: { sourceMode: session?.sourceMode ?? 'fixture', sourceGeneration: session?.sourceGeneration ?? sourceProjection?.generation ?? 1, transitionState: session?.transitionState ?? 'stable' },
     projection: sourceProjection ?? { generation: 1, state: actionDispatcher.snapshot().state, health: currentUiHealth(), revisions: actionDispatcher.snapshot().revisions, problems: actionDispatcher.snapshot().problems },
     inspection,
     refreshEvidence: lastRefreshEvidence,
@@ -997,8 +998,19 @@ async function boot(): Promise<void> {
   const automationDirectory = bridgeUrl ? createHttpDirectoryHandle(bridgeUrl) : null;
   const fixture = createBrowserSource();
   const loaded = await loadVaultState(fixture.reader);
+
+  // HARD GATE C: an activated record store is the record source; anything else keeps the
+  // legacy reader and says why. The resolution happens in the adapter layer and hands back a
+  // read-only source, because the shell must hold no RecordStore authority of its own — the
+  // containment guard asserts that, and it is a better rule than a comment.
+  const resolved = await resolveBrowserRecordStoreSource();
+  const recordStore = resolved.source;
+  const sourceDecision = resolved.decision;
+
   const startup = createStartupSessionOrchestrator({
     fixture: { mode: 'fixture', reader: fixture.reader, initial: loaded },
+    recordStore,
+    sourceDecision,
     restored: { store: { restore: async () => automationDirectory }, permissions: { queryPermission: async () => automationDirectory ? 'granted' : 'denied' } },
     intervalMs: 60_000,
     onProjection: (projection, mode, result) => applyProjection(projection, mode, result),
