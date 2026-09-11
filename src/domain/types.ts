@@ -8,10 +8,17 @@
 
 import type { SourceRef } from './records.js';
 
+/**
+ * Legacy Markdown compatibility status id.
+ *
+ * This remains part of the pre-record-store reader only. Future canonical tasks do not
+ * share one status concept between Elastic execution and project workflow: HARD GATE A /
+ * A2 gives them independent executionState and workflowStageId fields.
+ */
 export type TaskStatusId = string;
 export type ProjectStatus = 'active' | 'archived';
 
-/** Where a task sits on the Elastic board. Column membership is derived, never stored. */
+/** Where a legacy task appears on the current Elastic board. */
 export type ElasticColumn = 'backlog' | 'running' | 'finished';
 
 export type PropertyType =
@@ -71,6 +78,7 @@ export interface Task {
   name: string;
   description: string;
   projectId: string | null;
+  /** Legacy compatibility status. Not the future canonical execution/workflow model. */
   status: TaskStatusId;
   /** Relative pull on the elastic timeline. Higher weight claims more of the remaining time. */
   weight: number;
@@ -109,6 +117,7 @@ export interface TimelineSlice {
   duration: number;
 }
 
+/** Legacy compatibility mapping from one Markdown status to an Elastic column. */
 export interface StatusDefinition {
   id: TaskStatusId;
   name: string;
