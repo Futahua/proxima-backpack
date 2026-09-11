@@ -82,6 +82,12 @@ export interface Project {
   tabBgColor?: string;
   tabTextColor?: string;
   /** Vault-relative or machine paths the creator attached to this project. */
+  /**
+   * Legacy Markdown compatibility association.
+   *
+   * HARD GATE A / A8 does not promote these paths into canonical project identity.
+   * Future project/filesystem association uses explicit external-artifact references.
+   */
   linkedFolders: LinkedFolder[];
 }
 
