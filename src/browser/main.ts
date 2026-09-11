@@ -9,6 +9,7 @@ import { createStartupSessionOrchestrator, type StartupInspection } from '../app
 import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupSource.js';
 import { resolveBrowserTaskMutations, type BrowserTaskMutations } from '../adapters/browserTaskMutations.js';
 import { performElasticDrop } from '../app/elasticDropAction.js';
+import { performWorkflowDrop } from '../app/workflowBoardDrop.js';
 import { deleteTaskAction, saveTaskAction } from '../app/taskEditorWrite.js';
 import { createTaskAction, newTaskDraft as newTaskDraftFor } from '../app/taskCreate.js';
 import { TASK_EDITOR_SAVE_REFUSAL } from '../app/taskEditor.js';
@@ -48,6 +49,7 @@ import { projectPresentation } from './projectPresentation.js';
 import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter } from './projectsHub.js';
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
+import { bindProjectWorkflowBoardInteractions, EMPTY_PROJECT_WORKFLOW_BOARD_VIEW, NO_WORKFLOW_STAGE, type ProjectWorkflowBoardViewState } from './projectWorkflowBoard.js';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
 import { applyBacklogControl, buildBacklogFilter, buildBacklogPropertyFilter, clearBacklogSelection, resizeBacklogColumn, selectAllBacklogVisible, toggleBacklogSelection } from '../app/backlogControls.js';
 import { propertyValueTypeFor } from '../app/backlogView.js';
@@ -82,6 +84,9 @@ let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let projectsHubFilter: ProjectsHubFilter = 'active';
 let projectCreateOpen = false;
 let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_VIEW;
+/** The workflow board's own state: it groups by stage, so it previews and refuses separately. */
+let projectWorkflowBoardView: ProjectWorkflowBoardViewState = EMPTY_PROJECT_WORKFLOW_BOARD_VIEW;
+let projectWorkflowRefusal: string | null = null;
 let projectBacklogView: ProjectBacklogViewState = EMPTY_PROJECT_BACKLOG_VIEW;
 let projectDeadlinesView: ProjectDeadlinesViewState = EMPTY_PROJECT_DEADLINES_VIEW;
 let projectScheduleView: ProjectScheduleViewState = EMPTY_PROJECT_SCHEDULE_VIEW;
@@ -362,7 +367,7 @@ function selectProjectNote(path: string): void {
 }
 function projectsHubSurface(state: ProximaState): string {
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectBacklog: projectBacklogView, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: { ...projectWorkflowBoardView, writeRefusal: projectWorkflowRefusal }, projectBacklog: projectBacklogView, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -721,6 +726,38 @@ async function moveTaskFromDrop(
   );
 }
 
+/**
+ * A dropped card on the project workflow board.
+ *
+ * The sequence lives in `src/app/workflowBoardDrop.ts`; the shell supplies the same pieces it
+ * supplies a drop on the Elastic board, and the refusal it draws is this board's own — the two
+ * boards report their own drops because they are two dimensions, and one banner for both would say
+ * something happened somewhere.
+ */
+async function moveTaskFromWorkflowDrop(intent: { taskId: string; targetStageId: string | null; targetIndex: number }): Promise<void> {
+  const outcome = await performWorkflowDrop(
+    {
+      state: appState,
+      writes: resolveTaskWritePath,
+      unavailableReason: () => taskMutationUnavailable,
+      refresh: refreshFromSource,
+      setRefusal: (reason) => { projectWorkflowRefusal = reason; },
+      render,
+    },
+    intent,
+  );
+  projectWorkflowBoardView = {
+    ...projectWorkflowBoardView,
+    projectId: selection,
+    dragTaskId: null,
+    dragTargetStageId: null,
+    dragTargetIndex: null,
+    writeRefusal: outcome.ok ? null : outcome.reason,
+    lastRefusedMove: outcome.ok ? null : { ...intent },
+  };
+  render();
+}
+
 function bindInteractions(): void {
   const root = element<HTMLElement>('#proxima-app');
   if (root.dataset.interactionsBound === 'true') return;
@@ -884,6 +921,14 @@ function bindInteractions(): void {
     previewMove: ({ taskId, targetStatus, targetIndex }) => { projectTaskBoardView = { ...projectTaskBoardView, projectId: selection, dragTaskId: taskId, dragTargetStatus: targetStatus, dragTargetIndex: targetIndex }; },
     refuseMove: (intent) => { projectTaskBoardView = { ...projectTaskBoardView, projectId: selection, dragTaskId: null, dragTargetStatus: null, dragTargetIndex: null, writeRefusal: PROJECT_TASK_BOARD_WRITE_REFUSAL, lastRefusedMove: { ...intent } }; render(); },
     clearDrag: () => { projectTaskBoardView = { ...projectTaskBoardView, dragTaskId: null, dragTargetStatus: null, dragTargetIndex: null }; },
+  });
+  bindProjectWorkflowBoardInteractions(root, {
+    openTask: (taskId) => { const task = appState?.tasks.find((candidate) => candidate.id === taskId && candidate.projectId === selection); if (!task) return; projectWorkflowBoardView = { ...EMPTY_PROJECT_WORKFLOW_BOARD_VIEW, projectId: selection, selectedTaskId: taskId }; render(); },
+    closeTask: () => { projectWorkflowBoardView = { ...projectWorkflowBoardView, selectedTaskId: null }; render(); },
+    startDrag: (taskId) => { projectWorkflowBoardView = { ...projectWorkflowBoardView, projectId: selection, dragTaskId: taskId, dragTargetStageId: null, dragTargetIndex: null, writeRefusal: null, lastRefusedMove: null }; },
+    previewMove: ({ taskId, targetStageId, targetIndex }) => { projectWorkflowBoardView = { ...projectWorkflowBoardView, projectId: selection, dragTaskId: taskId, dragTargetStageId: targetStageId ?? NO_WORKFLOW_STAGE, dragTargetIndex: targetIndex }; },
+    dropMove: (intent) => { void moveTaskFromWorkflowDrop(intent); },
+    clearDrag: () => { projectWorkflowBoardView = { ...projectWorkflowBoardView, dragTaskId: null, dragTargetStageId: null, dragTargetIndex: null }; },
   });
   const restoreBacklogSearchFocus = (caret: number) => { const field = root.querySelector<HTMLInputElement>('[data-project-backlog-search-input]'); if (!field) return; field.focus(); field.setSelectionRange(caret, caret); };
   bindProjectBacklogInteractions(root, {

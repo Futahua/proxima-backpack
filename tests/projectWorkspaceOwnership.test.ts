@@ -18,9 +18,15 @@ describe('Stage 5 slice 10 project workspace ownership closeout', () => {
     expect(source).toContain(
       "return renderProjectNotes(options.project,options.notes??EMPTY_PROJECT_NOTES_VIEW)",
     );
+    // The task-board tab is owned by two modules now, and which one draws is a fact about the
+    // state rather than about the tab: a project that declares workflow stages gets the workflow
+    // board, and one that declares none (a legacy vault) keeps the status board. Both are still
+    // dedicated modules, which is what this case is about.
     expect(source).toContain(
-      "return renderProjectTaskBoard(options.state,options.project,options.taskBoard??EMPTY_PROJECT_TASK_BOARD_VIEW)",
+      "projectHasWorkflow(options.state,options.project)?renderProjectWorkflowBoard(options.state,options.project,options.workflowBoard??EMPTY_PROJECT_WORKFLOW_BOARD_VIEW):renderProjectTaskBoard(options.state,options.project,options.taskBoard??EMPTY_PROJECT_TASK_BOARD_VIEW)",
     );
+    expect(source).toContain("from './projectWorkflowBoard.js'");
+    expect(source).toContain("from './projectTaskBoard.js'");
     expect(source).toContain(
       "return renderProjectBacklog(options.state,options.project,options.backlog??EMPTY_PROJECT_BACKLOG_VIEW)",
     );
