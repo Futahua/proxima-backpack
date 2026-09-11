@@ -1171,3 +1171,33 @@ explaining what had happened.
 **Reverses if:** the deletion policy is answered (D56), at which point Delete's sentence changes and
 nothing about its enablement does; or a surface appears that can write records but not projects, in
 which case the option becomes per-verb rather than one `ProjectWriteView` for all three.
+
+---
+
+## D58 — A refused form keeps what was typed, and the project editor offers exactly two fields
+
+**Decided:** both project forms — New Project and the project editor — hold their values in the
+**shell**, not in the DOM. The New Project draft (`projectCreateDraft`) is set before the write is
+attempted and cleared only when it is accepted or cancelled; the editor holds a `ProjectEditorDraft`
+built from the record when it opens (`src/app/projectEditor.ts`). A refusal is drawn *on* the form
+with the operation's code and sentence, the form stays open, and the values stay where the reader put
+them. The editor offers `name` and `description` and nothing else.
+
+**Why:** the draft rule was found by a test rather than chosen in advance — a case asserted that a
+refused save left "Kept while refused" in the box and the box was empty, because the refusal was
+shown by re-rendering and the values only ever existed in the DOM. A form that discards a reader's
+typing in order to tell them why it could not save makes them type it again to fix it, and it makes
+the refusal look like a reset. Holding the draft also makes "what changed" a computation over two
+values rather than a reading of the DOM: only the changed fields are submitted, and a save with
+nothing changed is the operation's own `validation-refused` — asserted with the record's revision
+unchanged, because a record rewritten to say the same thing is a write nobody asked for.
+
+**Also decided:** `projectType` is not offered by the editor. A4 removed that legacy label from
+capability decisions, so a form that could set it would be reintroducing the silo the stage removed;
+`project.update` cannot express it either, which makes the two agree by construction rather than by
+discipline.
+
+**Reverses if:** a project field is added that a reader must be able to edit (the editor's union
+grows, and the migration is a `ProjectFieldMutation` case); or the surface gains an autosave model, in
+which case the draft becomes a debounced write and this decision's "only what changed" rule matters
+more, not less.

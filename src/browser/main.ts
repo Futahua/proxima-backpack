@@ -47,7 +47,7 @@ import { scheduleNavigationDateKey, type ScheduleNavigationDirection } from './s
 import { scheduleEventsForSelection } from './scheduleSelection.js';
 import { bindScheduleRecurrenceInteractions, type ScheduleRecurrenceScope, type ScheduleRecurringOccurrenceSelection } from './scheduleRecurrence.js';
 import { projectPresentation } from './projectPresentation.js';
-import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter } from './projectsHub.js';
+import { bindProjectsHubInteractions, renderProjectsHub, type ProjectCreateIntent, type ProjectEditView, type ProjectFormRefusal, type ProjectsHubFilter } from './projectsHub.js';
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectWorkflowBoardInteractions, EMPTY_PROJECT_WORKFLOW_BOARD_VIEW, NO_WORKFLOW_STAGE, type ProjectWorkflowBoardViewState } from './projectWorkflowBoard.js';
@@ -62,7 +62,8 @@ import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
 import { cockpitSubmode, renderCockpitNavigation } from './cockpitNavigation.js';
 import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor } from './workspaceIdentity.js';
-import { archiveProjectAction, deleteProjectAction, restoreProjectAction, type ProjectLifecycleOutcome } from '../app/projectLifecycleActions.js';
+import { archiveProjectAction, createProjectAction, deleteProjectAction, restoreProjectAction, updateProjectAction, type ProjectLifecycleOutcome } from '../app/projectLifecycleActions.js';
+import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -87,6 +88,12 @@ let scheduleMode: ScheduleMode = 'month';
 let projectWorkspaceTab: ProjectWorkspaceTab = 'notes';
 let projectsHubFilter: ProjectsHubFilter = 'active';
 let projectCreateOpen = false;
+/** What the New Project form's last save answered, drawn on the form rather than replacing it. */
+let projectCreateRefusal: ProjectFormRefusal | null = null;
+/** What the New Project form currently says, so a refused save does not empty it. */
+let projectCreateDraft: ProjectCreateIntent | null = null;
+/** The open project editor, null while it is closed. The draft is the form, not the record. */
+let projectEditor: ProjectEditView | null = null;
 let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_VIEW;
 /** The workflow board's own state: it groups by stage, so it previews and refuses separately. */
 let projectWorkflowBoardView: ProjectWorkflowBoardViewState = EMPTY_PROJECT_WORKFLOW_BOARD_VIEW;
@@ -381,8 +388,13 @@ function projectsHubSurface(state: ProximaState): string {
     feedback: projectLifecycleFeedback ?? (taskMutations === null ? null : PROJECT_LIFECYCLE_IDLE_FEEDBACK),
     feedbackRefusal: projectLifecycleRefusalCode,
   };
+  const projectForms = {
+    projectCreateRefusal,
+    projectCreateDraft,
+    projectEdit: projectEditor,
+  };
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: { ...projectWorkflowBoardView, writeRefusal: projectWorkflowRefusal }, projectBacklog: { ...projectBacklogView, bulkWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null }, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView, projectWrites: lifecycleWrites });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: { ...projectWorkflowBoardView, writeRefusal: projectWorkflowRefusal }, projectBacklog: { ...projectBacklogView, bulkWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null }, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView, projectWrites: lifecycleWrites, ...projectForms });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -836,6 +848,12 @@ function projectLifecycleDependencies() {
   };
 }
 
+/** One place where an outcome becomes the sentence the hub draws beside its controls. */
+function recordLifecycleOutcome(outcome: ProjectLifecycleOutcome): void {
+  projectLifecycleFeedback = projectLifecycleSentence(outcome);
+  projectLifecycleRefusalCode = outcome.ok ? null : outcome.reason;
+}
+
 function projectLifecycleSentence(outcome: ProjectLifecycleOutcome): string {
   if (outcome.ok) return `${outcome.outcome} at revision ${outcome.revision}`;
   return `${outcome.reason}: ${outcome.detail}`;
@@ -849,8 +867,53 @@ async function runProjectLifecycle(kind: 'archive' | 'restore' | 'delete', proje
       ? await restoreProjectAction(dependencies, { projectId })
       : await deleteProjectAction(dependencies, { projectId });
   // The operation's own sentence replaces the progress line, and stays until the next attempt.
-  projectLifecycleFeedback = projectLifecycleSentence(outcome);
-  projectLifecycleRefusalCode = outcome.ok ? null : outcome.reason;
+  recordLifecycleOutcome(outcome);
+  render();
+}
+
+/**
+ * The New Project form's Save.
+ *
+ * The sequence is `src/app/projectLifecycleActions.ts`; the shell supplies the resolved record
+ * operations, what to say when this run has none, and the sink the form's refusal is drawn from. An
+ * accepted create closes the form, because the project it described now exists and the hub is about
+ * to draw it; a refused one keeps the form open with the reader's values still in it.
+ */
+async function createProjectFromFormAction(intent: ProjectCreateIntent): Promise<void> {
+  // The draft is held before the write, so a refusal leaves the reader's words where they were.
+  projectCreateDraft = { ...intent };
+  const outcome = await createProjectAction(projectLifecycleDependencies(), intent);
+  recordLifecycleOutcome(outcome);
+  if (outcome.ok) { projectCreateOpen = false; projectCreateDraft = null; }
+  else projectCreateRefusal = { code: outcome.reason, sentence: projectLifecycleSentence(outcome) };
+  render();
+}
+
+/**
+ * The project editor's Save.
+ *
+ * The mutations are planned from the record and the draft (`src/app/projectEditor.ts`), so only the
+ * fields that actually changed are submitted, and a save with nothing changed is answered by the
+ * operation rather than written as a record that says the same thing. An accepted save closes the
+ * editor: the record now says what the form said, so a form still offering unsaved changes would be
+ * describing a state that no longer exists.
+ */
+async function saveProjectEditAction(projectId: string, draft: ProjectEditorDraft): Promise<void> {
+  const project = appState?.projects.find((candidate) => candidate.id === projectId);
+  if (project === undefined) {
+    projectEditor = null;
+    render();
+    return;
+  }
+
+  const outcome = await updateProjectAction(projectLifecycleDependencies(), {
+    projectId,
+    mutations: planProjectFieldMutations(project, draft),
+  });
+  recordLifecycleOutcome(outcome);
+  projectEditor = outcome.ok
+    ? null
+    : { projectId, draft, refusal: { code: outcome.reason, sentence: projectLifecycleSentence(outcome) } };
   render();
 }
 
@@ -1006,9 +1069,17 @@ function bindInteractions(): void {
     setFilter: (filter) => { projectsHubFilter = filter; render(); },
     openProject: (projectId) => { dispatchAction({ type: 'project.select', projectId }); },
     showHub: () => { dispatchAction({ type: 'project.select', projectId: ALL_PROJECTS }); },
-    openNewProject: () => { projectCreateOpen = true; render(); },
-    closeNewProject: () => { projectCreateOpen = false; render(); },
-    createProject: ({ name, description }) => dispatchAction({ type: 'project.create', name, description }),
+    openNewProject: () => { projectCreateOpen = true; projectCreateRefusal = null; projectCreateDraft = { name: '', description: '' }; render(); },
+    closeNewProject: () => { projectCreateOpen = false; projectCreateRefusal = null; projectCreateDraft = null; render(); },
+    createProject: ({ name, description }) => { void createProjectFromFormAction({ name, description }); },
+    openProjectEditor: (projectId) => {
+      const project = appState?.projects.find((candidate) => candidate.id === projectId);
+      if (project === undefined) return;
+      projectEditor = { projectId, draft: projectEditorDraftFor(project), refusal: null };
+      render();
+    },
+    closeProjectEditor: () => { projectEditor = null; render(); },
+    saveProjectEdit: ({ projectId, name, description }) => { void saveProjectEditAction(projectId, { name, description }); },
     archiveProject: (projectId) => { void runProjectLifecycle('archive', projectId); },
     restoreProject: (projectId) => { void runProjectLifecycle('restore', projectId); },
     deleteProject: (projectId) => { void runProjectLifecycle('delete', projectId); },

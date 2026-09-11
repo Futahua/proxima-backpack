@@ -140,6 +140,24 @@ export async function createProjectAction(
   return await runLifecycle(deps, 'create', null, async (operations) => await operations.createProject(input));
 }
 
+/**
+ * Update a project's own fields — the edit form's Save.
+ *
+ * An empty mutation list is passed through rather than short-circuited here: the operation's own
+ * answer for it (`validation-refused`, "an update with no field to change is not an update") is the
+ * one a caller should hear, and it is reached without reading or writing the store.
+ */
+export async function updateProjectAction(
+  deps: ProjectLifecycleDependencies,
+  input: { readonly projectId: string; readonly mutations: readonly ProjectFieldMutation[] },
+): Promise<ProjectLifecycleOutcome> {
+  return await runLifecycle(deps, 'update', input.projectId, async (operations, revision) => await operations.updateProject({
+    projectId: input.projectId as OpaqueRecordId,
+    expectedRevision: revision,
+    mutations: input.mutations,
+  }));
+}
+
 export async function archiveProjectAction(
   deps: ProjectLifecycleDependencies,
   input: { readonly projectId: string },

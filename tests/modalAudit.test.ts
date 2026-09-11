@@ -17,6 +17,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createActionDispatcher } from '../src/app/actionProtocol.js';
+import { createProjectAction } from '../src/app/projectLifecycleActions.js';
 import { fixedClock } from '../src/domain/clock.js';
 import { bindElasticCockpitInteractions, renderElasticCockpit } from '../src/browser/elasticCockpit.js';
 import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter } from '../src/browser/projectsHub.js';
@@ -99,10 +100,20 @@ function writeControls(root: ParentNode): HTMLButtonElement[] {
 }
 
 /**
- * Buttons that legitimately stay clickable because the dispatcher, not the markup, refuses.
- * Clicking one has to produce a typed refusal, which is what the cases below check.
+ * Buttons that legitimately stay clickable because the operation layer, not the markup, answers.
+ * Clicking one either writes or refuses with a typed reason, which is what the cases below check.
  */
-const DISPATCHER_ROUTED = new Set(['project-create-save']);
+const OPERATION_ROUTED = new Set(['project-create-save']);
+
+/**
+ * The Projects Hub's lifecycle controls are routed by its own binder to
+ * `src/app/projectLifecycleActions.ts`, so an enabled Archive, Restore or Delete is the honest
+ * state once a write path resolved — its answer is the operation's, and Delete's answer while the
+ * policy is undecided is a refusal a reader can act on rather than a missing feature (D57).
+ */
+function isOperationRouted(button: HTMLElement): boolean {
+  return OPERATION_ROUTED.has(button.getAttribute('data-c1-key') ?? '') || button.hasAttribute('data-project-lifecycle-action');
+}
 
 /** A label that is nothing but a write verb, which no sort or filter control ever is. */
 const BARE_WRITE_VERB = /^(save|delete|edit|archive|restore|complete)$/i;
@@ -128,7 +139,7 @@ function violationsIn(root: ParentNode): string[] {
   // allowed to stay clickable here because a case below clicks it and checks the refusal.
   for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>('button'))) {
     const key = button.getAttribute('data-c1-key') ?? '';
-    if (!button.disabled && BARE_WRITE_VERB.test((button.textContent ?? '').trim()) && refusalOf(button) === null && !DISPATCHER_ROUTED.has(key)) {
+    if (!button.disabled && BARE_WRITE_VERB.test((button.textContent ?? '').trim()) && refusalOf(button) === null && !isOperationRouted(button)) {
       violations.push(`${button.outerHTML.slice(0, 120)} is an enabled write control with no hook at all`);
     }
   }
@@ -138,7 +149,7 @@ function violationsIn(root: ParentNode): string[] {
     const refusal = refusalOf(button);
 
     if (!button.disabled) {
-      if (!DISPATCHER_ROUTED.has(key)) violations.push(`${key} is enabled and carries no refusal: ${button.outerHTML.slice(0, 120)}`);
+      if (!isOperationRouted(button)) violations.push(`${key} is enabled and carries no refusal: ${button.outerHTML.slice(0, 120)}`);
       continue;
     }
 
@@ -188,10 +199,26 @@ describe('no write control can be clicked and do nothing', () => {
     expect(violationsIn(document.body)).toEqual([]);
   });
 
-  it('holds for the Projects Hub lifecycle controls', () => {
+  it('holds for the Projects Hub lifecycle controls, disabled before a write path and enabled after one', () => {
     document.body.innerHTML = renderProjectsHub({ state: state(), selection: 'all', filter: 'active', workspaceTab: 'notes', now: NOW, newProjectOpen: false });
 
     expect(writeControls(document.body).length).toBeGreaterThan(0);
+    expect(violationsIn(document.body)).toEqual([]);
+
+    // And the same surface once a record write path has resolved: the controls are real buttons
+    // now, so the audit has to know they are routed rather than merely unlabelled.
+    document.body.innerHTML = renderProjectsHub({
+      state: state(),
+      selection: 'all',
+      filter: 'active',
+      workspaceTab: 'notes',
+      now: NOW,
+      newProjectOpen: false,
+      projectWrites: { refusal: null, feedback: null },
+    });
+    const enabled = writeControls(document.body).filter((button) => !button.disabled);
+    // One project, so one Archive and one Delete: the shape is what is asserted, not a count.
+    expect(enabled.map((button) => button.dataset.projectLifecycleAction)).toEqual(['archive', 'delete']);
     expect(violationsIn(document.body)).toEqual([]);
   });
 
@@ -201,20 +228,35 @@ describe('no write control can be clicked and do nothing', () => {
     expect(violationsIn(document.body)).toEqual([]);
   });
 
-  it('routes the project create Save to a typed refusal rather than a fake success', () => {
+  it('routes the project create Save to the create sequence rather than a fake success', async () => {
     const loaded = state();
-    const dispatcher = createActionDispatcher({ state: loaded, problems: [], revisions: { state: '1', source: '1' }, mode: 'fixture', clock: fixedClock(NOW.toISOString()) });
     let open = false;
+    let refusal: { code: string; sentence: string } | null = null;
+    let draft: { name: string; description: string } | null = null;
+    const pending: Promise<void>[] = [];
     document.body.innerHTML = '<div id="root"></div>';
     const root = document.querySelector<HTMLElement>('#root')!;
-    const rerender = () => { root.innerHTML = renderProjectsHub({ state: loaded, selection: 'all', filter: 'active', workspaceTab: 'notes', now: NOW, newProjectOpen: open }); };
+    const rerender = () => { root.innerHTML = renderProjectsHub({ state: loaded, selection: 'all', filter: 'active', workspaceTab: 'notes', now: NOW, newProjectOpen: open, projectCreateRefusal: refusal, projectCreateDraft: draft }); };
     bindProjectsHubInteractions(root, {
       setFilter: () => {},
       openProject: () => {},
       showHub: () => {},
-      openNewProject: () => { open = true; rerender(); },
-      closeNewProject: () => { open = false; rerender(); },
-      createProject: ({ name, description }) => dispatcher.dispatch({ type: 'project.create', name, description }),
+      openNewProject: () => { open = true; refusal = null; draft = { name: '', description: '' }; rerender(); },
+      closeNewProject: () => { open = false; refusal = null; draft = null; rerender(); },
+      // The shell's half, as `main.ts` performs it: no record write path in this fixture, so the
+      // sequence answers with the reason there is none, and the modal draws what it was told.
+      createProject: ({ name, description }) => {
+        draft = { name, description };
+        pending.push((async () => {
+          const outcome = await createProjectAction({ state: loaded, writes: async () => null, unavailableReason: () => 'record-writes-need-an-activated-store', refresh: async () => null, setRefusal: () => {}, render: () => {} }, { name, description });
+          if (outcome.ok) draft = null;
+          refusal = outcome.ok ? null : { code: outcome.reason, sentence: `${outcome.reason}: ${outcome.detail}` };
+          rerender();
+        })());
+      },
+      openProjectEditor: () => {},
+      closeProjectEditor: () => {},
+      saveProjectEdit: () => {},
       archiveProject: () => undefined,
       restoreProject: () => undefined,
       deleteProject: () => undefined,
@@ -226,8 +268,10 @@ describe('no write control can be clicked and do nothing', () => {
     harness.typeText('project-create-name', 'Audit project');
     expect(violationsIn(root)).toEqual([]);
     harness.click('project-create-save');
+    await Promise.all(pending);
 
-    expect(harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('action-not-available');
+    expect(harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('writes-unavailable');
+    expect(root.querySelector<HTMLElement>('[data-project-create-feedback]')!.textContent).toContain('record-writes-need-an-activated-store');
     expect(loaded.projects).toHaveLength(1);
   });
 

@@ -34,6 +34,17 @@ const TASK_MOVE_GESTURE_SOURCE = readFileSync(
   'utf8',
 );
 
+/**
+ * The project verbs' canonical names live here rather than in the shell, for the same reason: once
+ * the Projects Hub's forms and lifecycle controls were wired to the sequences, the shell names
+ * `createProjectFromFormAction` and `runProjectLifecycle` instead of an action type, and the
+ * vocabulary moved with the behaviour.
+ */
+const PROJECT_LIFECYCLE_SOURCE = readFileSync(
+  resolve(process.cwd(), 'src/app/projectLifecycleActions.ts'),
+  'utf8',
+);
+
 async function dispatcher() {
   const loaded = await loadVaultState(
     fixtureVault('vault-basic'),
@@ -72,7 +83,6 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
       'tasks.mode.select',
       'project.workspace-tab.select',
       'project.select',
-      'project.create',
       'elastic.target.set',
       'elastic.lock',
       'elastic.unlock',
@@ -101,6 +111,17 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
     );
     expect(TASK_MOVE_GESTURE_SOURCE).toContain(
       "'task.execution.reorder'",
+    );
+
+    // The five project verbs left the dispatcher the same way, when the Hub's two forms and its
+    // three lifecycle controls were wired: the shell reaches the sequences, and the vocabulary
+    // lives with the behaviour rather than with the caller.
+    expect(MAIN_SOURCE).toContain('createProjectFromFormAction(');
+    expect(MAIN_SOURCE).toContain('saveProjectEditAction(');
+    expect(MAIN_SOURCE).toContain('runProjectLifecycle(');
+    expect(MAIN_SOURCE).not.toContain("type: 'project.create'");
+    expect(PROJECT_LIFECYCLE_SOURCE).toContain(
+      "export type ProjectLifecycleVerb = 'create' | 'update' | 'archive' | 'restore' | 'delete';",
     );
 
     expect(MAIN_SOURCE).toContain(
@@ -156,8 +177,10 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
   });
 
   it('keeps browser-exposed mutation intents on the same typed-unavailable dispatcher contract used by tests', async () => {
+    // `project.create` no longer belongs to this list: the dispatcher still refuses it — the case
+    // below proves that through the headless dispatcher — but no browser surface reaches it that
+    // way any more, so claiming the shell exposes it would be claiming a caller that is gone.
     for (const type of [
-      'project.create',
       'event.schedule.create',
       'canvas.node.remove',
     ]) {

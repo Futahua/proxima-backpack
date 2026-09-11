@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createActionDispatcher } from '../src/app/actionProtocol.js';
+import { createProjectAction } from '../src/app/projectLifecycleActions.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
 import { fixedClock } from '../src/domain/clock.js';
-import { bindProjectsHubInteractions, renderProjectsHub, type ProjectsHubFilter } from '../src/browser/projectsHub.js';
+import { bindProjectsHubInteractions, renderProjectsHub, type ProjectCreateIntent, type ProjectFormRefusal, type ProjectsHubFilter } from '../src/browser/projectsHub.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import { createMemoryVault } from '../src/adapters/memoryVault.js';
 
@@ -12,17 +12,34 @@ const NOW = new Date('2026-09-06T12:00:00.000Z');
 async function mountProjectCreate() {
   const loaded = await loadVaultState(createMemoryVault({}));
   const state = loaded.state;
-  const dispatcher = createActionDispatcher({ state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture', clock: fixedClock(NOW.toISOString()) });
   document.body.innerHTML = '<div id="root"></div>';
   const root = document.querySelector<HTMLElement>('#root')!;
   let filter: ProjectsHubFilter = 'active';
   let newProjectOpen = false;
-  const rerender = () => { root.innerHTML = renderProjectsHub({ state, selection: 'all', filter, workspaceTab: 'notes', now: NOW, newProjectOpen }); };
-  bindProjectsHubInteractions(root, { setFilter: (next) => { filter = next; rerender(); }, openProject: () => {}, showHub: () => {}, openNewProject: () => { newProjectOpen = true; rerender(); }, closeNewProject: () => { newProjectOpen = false; rerender(); }, createProject: ({ name, description }) => dispatcher.dispatch({ type: 'project.create', name, description }),
+  let refusal: ProjectFormRefusal | null = null;
+  /** What the form says, held by the shell so a refused save does not empty it. */
+  let draft: ProjectCreateIntent | null = null;
+  const pending: Promise<void>[] = [];
+  const rerender = () => { root.innerHTML = renderProjectsHub({ state, selection: 'all', filter, workspaceTab: 'notes', now: NOW, newProjectOpen, projectCreateRefusal: refusal, projectCreateDraft: draft }); };
+  bindProjectsHubInteractions(root, { setFilter: (next) => { filter = next; rerender(); }, openProject: () => {}, showHub: () => {}, openNewProject: () => { newProjectOpen = true; refusal = null; draft = { name: '', description: '' }; rerender(); }, closeNewProject: () => { newProjectOpen = false; refusal = null; draft = null; rerender(); },
+    // The shell's half of Save, which `main.ts` performs: run the real sequence, hold what it
+    // answered, re-render. This fixture has no record write path, so the answer is the reason there
+    // is none — the same code a real run without an activated store reports, rather than a code the
+    // dispatcher used to invent.
+    createProject: ({ name, description }) => {
+      draft = { name, description };
+      pending.push((async () => {
+        const outcome = await createProjectAction({ state, writes: async () => null, unavailableReason: () => 'record-writes-need-an-activated-store', refresh: async () => null, setRefusal: () => {}, render: () => {} }, { name, description });
+        refusal = outcome.ok ? null : { code: outcome.reason, sentence: `${outcome.reason}: ${outcome.detail}` };
+        if (outcome.ok) { newProjectOpen = false; draft = null; }
+        rerender();
+      })());
+    },
+    openProjectEditor: () => {}, closeProjectEditor: () => {}, saveProjectEdit: () => {},
     archiveProject: () => undefined, restoreProject: () => undefined, deleteProject: () => undefined,
   });
   rerender();
-  return { root, harness: createInteractionHarness(root), state, dispatcher, isOpen: () => newProjectOpen };
+  return { root, harness: createInteractionHarness(root), state, pending, isOpen: () => newProjectOpen };
 }
 
 beforeEach(() => { document.body.innerHTML = ''; });
@@ -51,45 +68,37 @@ describe('Stage 5 New Project provisional modal', () => {
     expect(JSON.stringify(mounted.state)).toBe(before);
   });
 
-  it('routes Save through project.create, keeps the provisional modal open on typed unavailable, and creates no record', async () => {
+  it('routes Save through the create sequence, keeps the provisional modal open on a refusal, and creates no record', async () => {
     const mounted = await mountProjectCreate();
     const before = JSON.stringify(mounted.state);
-    const beforeRevision = mounted.dispatcher.snapshot().stateRevision;
     mounted.harness.click('project-create-open');
     mounted.harness.typeText('project-create-name', 'Future combined project');
     mounted.harness.typeText('project-create-description', 'No task versus schedule type.');
     mounted.harness.click('project-create-save');
+    await Promise.all(mounted.pending);
     expect(mounted.isOpen()).toBe(true);
-    expect(mounted.harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('action-not-available');
-    expect(mounted.dispatcher.snapshot().stateRevision).toBe(beforeRevision);
+    expect(mounted.harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('writes-unavailable');
     expect(JSON.stringify(mounted.state)).toBe(before);
     expect(mounted.state.projects.some((project) => project.name === 'Future combined project')).toBe(false);
   });
 
-  it('refuses an invalid form with the invalid-input reason, not with the unavailable one', async () => {
+  it('keeps what was typed when a save is refused, and clears the refusal when the form is reopened', async () => {
     const mounted = await mountProjectCreate();
     const before = JSON.stringify(mounted.state);
-    const beforeRevision = mounted.dispatcher.snapshot().stateRevision;
     mounted.harness.click('project-create-open');
-
-    // Nothing typed at all: the boundary refuses an empty name as invalid input, and the
-    // modal says so rather than answering with the refusal this stage gives every valid
-    // form.
+    mounted.harness.typeText('project-create-name', 'Kept while refused');
     mounted.harness.click('project-create-save');
-    expect(mounted.isOpen()).toBe(true);
-    expect(mounted.harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('invalid-action-input');
+    await Promise.all(mounted.pending);
 
-    // Whitespace is not a name either — the boundary trims before it decides.
-    mounted.harness.typeText('project-create-name', '   ');
-    mounted.harness.click('project-create-save');
-    expect(mounted.harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('invalid-action-input');
+    // A refusal that emptied the form would make the reader type it again to fix it.
+    expect((mounted.harness.target('project-create-name') as HTMLInputElement).value).toBe('Kept while refused');
+    expect(mounted.root.querySelector<HTMLElement>('[data-project-create-feedback]')!.textContent)
+      .toContain('record-writes-need-an-activated-store');
 
-    // A name that is a name gets the answer this stage can give.
-    mounted.harness.typeText('project-create-name', 'Named project');
-    mounted.harness.click('project-create-save');
-    expect(mounted.harness.target('project-create-modal').dataset.projectCreateRefusal).toBe('action-not-available');
-
-    expect(mounted.dispatcher.snapshot().stateRevision).toBe(beforeRevision);
+    mounted.harness.click('project-create-cancel');
+    mounted.harness.click('project-create-open');
+    expect(mounted.root.querySelector('[data-project-create-refusal]')).toBeNull();
+    expect((mounted.harness.target('project-create-name') as HTMLInputElement).value).toBe('');
     expect(JSON.stringify(mounted.state)).toBe(before);
   });
 });

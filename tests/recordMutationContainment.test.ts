@@ -13,20 +13,28 @@ import { fixtureVault } from './fixtures.js';
  * authority of its own.
  */
 const DISPATCHER_UI_RECORD_MUTATIONS = [
-  'canvas.node.geometry.change', 'canvas.node.remove', 'project.create',
+  'canvas.node.geometry.change', 'canvas.node.remove',
   'event.schedule.create', 'event.schedule.change', 'task.timeline.change',
 ] as const;
 
 /**
- * The one record mutation with a semantic write path: an Elastic drop is routed to
- * `moveTaskByGesture`, which writes through the operation layer. It is deliberately *not*
- * dispatched any more — the dispatcher would answer `action-not-available`, and recording a
- * rejection the reader never experienced is worse than recording nothing.
+ * The record mutations with a semantic write path: the UI reaches each through a sequence in
+ * `src/app/`, which either writes through the operation layer or refuses with a typed reason. They
+ * are deliberately *not* dispatched any more — the dispatcher would answer `action-not-available`,
+ * and recording a rejection the reader never experienced is worse than recording nothing.
+ *
+ * `task.execution.move` joined at `abf8204` (the Elastic drop). The four project verbs joined when
+ * the Projects Hub's two forms and its three lifecycle controls were wired to
+ * `src/app/projectLifecycleActions.ts`: `project.delete` is in this list even though it refuses,
+ * because its refusal is the operation's own answer (`policy-not-decided`) rather than the
+ * dispatcher's placeholder.
  */
-const OPERATION_UI_RECORD_MUTATIONS = ['task.execution.move'] as const;
+const OPERATION_UI_RECORD_MUTATIONS = [
+  'task.execution.move', 'project.create', 'project.archive', 'project.restore', 'project.delete',
+] as const;
 
 const UNWIRED_UI_RECORD_MUTATIONS = [
-  'project.archive', 'project.restore', 'project.delete', 'event.schedule.recurrence.change',
+  'event.schedule.recurrence.change',
 ] as const;
 /** How a mutation reaches storage must live behind the adapter seam, never in the shell. */
 const STORE_AUTHORITY_COMPOSITION = [
@@ -127,6 +135,31 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     expect(create).not.toContain('RecordStore');
     // And the request it writes comes from the plan, not from the form's markup.
     expect(create).toContain('planTaskCreate(deps.state, input.draft)');
+
+    // The Projects Hub's forms and its three lifecycle controls are wired the same way, and they are
+    // the last record-mutation UI to leave the dispatcher: the shell runs the sequence, holds the
+    // answer the form or the hub draws, and re-reads; the app layer owns validation, the revision
+    // and the write. A project form does not name an action type, so the guard follows the
+    // sequences instead — that is what "routed to the operation layer" means here.
+    expect(source).toContain('createProjectAction(');
+    expect(source).toContain('updateProjectAction(');
+    expect(source).toContain('archiveProjectAction(');
+    expect(source).toContain('restoreProjectAction(');
+    expect(source).toContain('deleteProjectAction(');
+    expect(source).toMatch(/createProject:\s*\(\{ name, description \}\)\s*=>\s*\{[\s\S]{0,120}?createProjectFromFormAction\(/);
+    expect(source).toMatch(/saveProjectEdit:\s*\(\{ projectId, name, description \}\)\s*=>\s*\{[\s\S]{0,120}?saveProjectEditAction\(/);
+    expect(source).toMatch(/archiveProject:\s*\(projectId\)\s*=>\s*\{[\s\S]{0,120}?runProjectLifecycle\('archive'/);
+    const lifecycleActions = await readFile(new URL('../src/app/projectLifecycleActions.ts', import.meta.url), 'utf8');
+    for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(lifecycleActions).not.toContain(forbidden);
+    expect(lifecycleActions).not.toContain('RecordStore');
+    // The revision a lifecycle write carries is the one the surface was rendering, and the re-read
+    // follows an accepted write rather than a redraw from a guess.
+    expect(lifecycleActions).toContain('revision = project.source.revision');
+    expect(lifecycleActions).toContain('convergeAfterWrite(');
+    // The editor's mutations are planned from the record and the draft, not read out of the markup.
+    const editor = await readFile(new URL('../src/app/projectEditor.ts', import.meta.url), 'utf8');
+    expect(editor).toContain('planProjectFieldMutations');
+    for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(editor).not.toContain(forbidden);
 
     for (const type of DISPATCHER_UI_RECORD_MUTATIONS) expect(source).toMatch(new RegExp(`dispatchAction\\(\\{[\\s\\S]{0,500}?type:\\s*'${escapeRegExp(type)}'`));
     for (const type of UNWIRED_UI_RECORD_MUTATIONS) expect(source).not.toContain(`type: '${type}'`);

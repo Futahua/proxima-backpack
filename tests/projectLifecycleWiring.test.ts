@@ -31,7 +31,8 @@ import {
   updateProject,
   type ProjectMutationDependencies,
 } from '../src/app/projectMutations.js';
-import { archiveProjectAction, deleteProjectAction, restoreProjectAction } from '../src/app/projectLifecycleActions.js';
+import { archiveProjectAction, createProjectAction, deleteProjectAction, restoreProjectAction, updateProjectAction } from '../src/app/projectLifecycleActions.js';
+import { planProjectFieldMutations, projectEditorDraftFor } from '../src/app/projectEditor.js';
 import { startRecordMutationAuthority } from '../src/app/recordRecoveryStartup.js';
 import { recordStoreStateSource } from '../src/app/stateSource.js';
 import { createTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
@@ -44,6 +45,9 @@ import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import {
   bindProjectsHubInteractions,
   renderProjectsHub,
+  type ProjectCreateIntent,
+  type ProjectEditView,
+  type ProjectFormRefusal,
   type ProjectsHubHandlers,
   type ProjectWriteView,
 } from '../src/browser/projectsHub.js';
@@ -59,7 +63,10 @@ const quietHandlers: ProjectsHubHandlers = {
   showHub: () => undefined,
   openNewProject: () => undefined,
   closeNewProject: () => undefined,
-  createProject: () => null,
+  createProject: () => undefined,
+  openProjectEditor: () => undefined,
+  closeProjectEditor: () => undefined,
+  saveProjectEdit: () => undefined,
   archiveProject: () => undefined,
   restoreProject: () => undefined,
   deleteProject: () => undefined,
@@ -390,5 +397,201 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     expect(app.files.size).toBe(filesBefore);
     expect((await app.read()).projects).toHaveLength(1);
     expect(host.querySelector('[data-project-lifecycle-action="delete"]')).not.toBeNull();
+  });
+});
+
+/**
+ * The two project forms.
+ *
+ * `main.ts` is not importable from a test, so each case here performs the shell's half explicitly —
+ * run the real sequence, hold what it answered, re-read, redraw — and asserts the surface contract
+ * around it. The sequences themselves are covered in `tests/projectLifecycleActions.test.ts`; what
+ * these cases add is that the forms are wired to them, that only the fields that changed are
+ * submitted, and that a refusal is drawn on the form instead of replacing it.
+ */
+describe('Stage 11 the project forms', () => {
+  it('creates the project the New Project form described, and answers an invalid one with the operation\'s own reason', async () => {
+    const app = await projectWorld(2300);
+    let state = await app.read();
+    let open = true;
+    let draft: ProjectCreateIntent | null = { name: '', description: '' };
+    const form: { refusal: ProjectFormRefusal | null } = { refusal: null };
+    const pending: Promise<void>[] = [];
+    const draw = (): string => renderProjectsHub({ state, selection: ALL_PROJECTS, filter: 'active', workspaceTab: 'notes', now: NOW, newProjectOpen: open, projectCreateRefusal: form.refusal, projectCreateDraft: draft });
+    const host = mount(draw());
+    const rerender = (): void => { host.innerHTML = draw(); };
+
+    bindProjectsHubInteractions(host, {
+      ...quietHandlers,
+      openNewProject: () => { open = true; form.refusal = null; draft = { name: '', description: '' }; rerender(); },
+      closeNewProject: () => { open = false; form.refusal = null; draft = null; rerender(); },
+      createProject: ({ name, description }) => {
+        draft = { name, description };
+        pending.push((async () => {
+          const outcome = await createProjectAction(
+            {
+              state,
+              writes: async () => app.operations,
+              unavailableReason: () => null,
+              refresh: async () => null,
+              setRefusal: () => undefined,
+              render: () => undefined,
+            },
+            { name, description },
+          );
+          if (outcome.ok) { open = false; draft = null; }
+          else form.refusal = { code: outcome.reason, sentence: `${outcome.reason}: ${outcome.detail}` };
+          state = await app.read();
+          rerender();
+        })());
+      },
+    });
+    const harness = createInteractionHarness(host);
+
+    // A project needs a name, and the answer comes from the operation rather than from the form:
+    // the form's job is to say what it was told, not to decide what is valid.
+    harness.click('project-create-save');
+    await Promise.all(pending);
+    expect(form.refusal?.code).toBe('validation-refused');
+    expect(open).toBe(true);
+    expect(host.querySelector<HTMLElement>('[data-project-create-refusal]')!.getAttribute('data-project-create-refusal')).toBe('validation-refused');
+    expect(host.querySelector<HTMLElement>('[data-project-create-feedback]')!.textContent).toContain('a project needs a name');
+    expect((await app.read()).projects).toHaveLength(1);
+
+    harness.typeText('project-create-name', 'Second project');
+    harness.typeText('project-create-description', 'Named while the refusal was on screen');
+    harness.click('project-create-save');
+    await Promise.all(pending);
+
+    const created = (await app.read()).projects.map((project) => project.name).sort();
+    expect(created).toEqual(['Atlas', 'Second project']);
+    // Accepted, so the form goes: the project it described exists and the hub is drawing it.
+    expect(open).toBe(false);
+    expect(host.querySelector('[data-c1-key="project-create-modal"]')).toBeNull();
+    expect(host.querySelector('[data-project-create-refusal]')).toBeNull();
+    expect(host.querySelectorAll('[data-projects-hub-action="open-project"]').length).toBe(2);
+  });
+
+  it('keeps the New Project form open with the reason when this run has no write path', async () => {
+    const app = await projectWorld(2400);
+    const filesBefore = app.files.size;
+    const form: { refusal: ProjectFormRefusal | null } = { refusal: null };
+    let draft: ProjectCreateIntent | null = { name: '', description: '' };
+    const host = mount(renderProjectsHub({ state: await app.read(), selection: ALL_PROJECTS, filter: 'active', workspaceTab: 'notes', now: NOW, newProjectOpen: true, projectCreateRefusal: null, projectCreateDraft: draft }));
+    const pending: Promise<void>[] = [];
+
+    bindProjectsHubInteractions(host, {
+      ...quietHandlers,
+      createProject: ({ name, description }) => {
+        draft = { name, description };
+        pending.push((async () => {
+          const outcome = await createProjectAction(
+            {
+              state: await app.read(),
+              writes: async () => null,
+              unavailableReason: () => 'record-writes-need-an-activated-store',
+              refresh: async () => null,
+              setRefusal: () => undefined,
+              render: () => undefined,
+            },
+            { name, description },
+          );
+          draft = { name, description };
+          form.refusal = outcome.ok ? null : { code: outcome.reason, sentence: `${outcome.reason}: ${outcome.detail}` };
+          host.innerHTML = renderProjectsHub({ state: await app.read(), selection: ALL_PROJECTS, filter: 'active', workspaceTab: 'notes', now: NOW, newProjectOpen: true, projectCreateRefusal: form.refusal, projectCreateDraft: draft });
+        })());
+      },
+    });
+
+    const harness = createInteractionHarness(host);
+    harness.typeText('project-create-name', 'Wanted anyway');
+    harness.click('project-create-save');
+    await Promise.all(pending);
+
+    expect(form.refusal?.code).toBe('writes-unavailable');
+    expect(host.querySelector<HTMLElement>('[data-project-create-refusal]')!.getAttribute('data-project-create-refusal')).toBe('writes-unavailable');
+    expect(host.querySelector<HTMLElement>('[data-project-create-feedback]')!.textContent).toContain('record-writes-need-an-activated-store');
+    // The form is still there with what was typed in it, and nothing was written.
+    expect((harness.target('project-create-name') as HTMLInputElement).value).toBe('Wanted anyway');
+    expect(app.files.size).toBe(filesBefore);
+    expect((await app.read()).projects).toHaveLength(1);
+  });
+
+  it('saves the fields the editor changed, refuses a save with nothing changed, and closes only on acceptance', async () => {
+    const app = await projectWorld(2500);
+    let state = await app.read();
+    const editorState: { editor: ProjectEditView | null } = { editor: null };
+    const pending: Promise<void>[] = [];
+    const draw = (): string => renderProjectsHub({ state, selection: app.projectId, filter: 'active', workspaceTab: 'notes', now: NOW, projectEdit: editorState.editor });
+    const host = mount(draw());
+    const rerender = (): void => { host.innerHTML = draw(); };
+
+    bindProjectsHubInteractions(host, {
+      ...quietHandlers,
+      openProjectEditor: (projectId) => {
+        const project = state.projects.find((candidate) => candidate.id === projectId);
+        if (project === undefined) return;
+        editorState.editor = { projectId, draft: projectEditorDraftFor(project), refusal: null };
+        rerender();
+      },
+      closeProjectEditor: () => { editorState.editor = null; rerender(); },
+      saveProjectEdit: ({ projectId, name, description }) => {
+        pending.push((async () => {
+          const project = state.projects.find((candidate) => candidate.id === projectId)!;
+          const outcome = await updateProjectAction(
+            {
+              state,
+              writes: async () => app.operations,
+              unavailableReason: () => null,
+              refresh: async () => null,
+              setRefusal: () => undefined,
+              render: () => undefined,
+            },
+            { projectId, mutations: planProjectFieldMutations(project, { name, description }) },
+          );
+          editorState.editor = outcome.ok
+            ? null
+            : { projectId, draft: { name, description }, refusal: { code: outcome.reason, sentence: `${outcome.reason}: ${outcome.detail}` } };
+          state = await app.read();
+          rerender();
+        })());
+      },
+    });
+    const harness = createInteractionHarness(host);
+
+    // The form starts from the record, which is what makes "only what changed" a real computation.
+    harness.click('project-edit-open');
+    const name = harness.target('project-edit-name') as HTMLInputElement;
+    expect(name.value).toBe('Atlas');
+    expect((harness.target('project-edit-description') as HTMLTextAreaElement).value).toBe('The project under the controls');
+    name.setSelectionRange(name.value.length, name.value.length);
+    harness.typeText('project-edit-name', ' Renamed');
+    expect(name.value).toBe('Atlas Renamed');
+    harness.click('project-edit-save');
+    await Promise.all(pending);
+
+    const renamed = (await app.read()).projects.find((project) => project.id === app.projectId)!;
+    expect(renamed.name).toBe('Atlas Renamed');
+    // The description was not in the draft's changes, so it was not submitted and not rewritten.
+    expect(renamed.description).toBe('The project under the controls');
+    expect(editorState.editor).toBeNull();
+    expect(host.querySelector('[data-project-editor-mode="edit"]')).toBeNull();
+
+    // A second save with nothing changed is the operation's no-op refusal, and the record keeps its
+    // revision: a form that wrote a record saying the same thing would be a write nobody asked for.
+    harness.click('project-edit-open');
+    const revisionBefore = (await app.store.list()).find((observation) => observation.record.id === app.projectId)!.observedRevision;
+    harness.click('project-edit-save');
+    await Promise.all(pending);
+    expect(editorState.editor?.refusal?.code).toBe('validation-refused');
+    expect(host.querySelector<HTMLElement>('[data-project-edit-refusal]')!.getAttribute('data-project-edit-refusal')).toBe('validation-refused');
+    expect(host.querySelector<HTMLElement>('[data-project-edit-feedback]')!.textContent).toContain('an update with no field to change is not an update');
+    expect((await app.store.list()).find((observation) => observation.record.id === app.projectId)!.observedRevision).toBe(revisionBefore);
+    expect((await app.read()).projects.find((project) => project.id === app.projectId)!.name).toBe('Atlas Renamed');
+
+    // Escape closes it, and cancelling leaves the record where it was.
+    harness.escape('project-edit-name');
+    expect(editorState.editor).toBeNull();
+    expect(host.querySelector('[data-project-editor-mode="edit"]')).toBeNull();
   });
 });

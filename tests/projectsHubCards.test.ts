@@ -92,7 +92,10 @@ function mount(hubState: ProximaState = state(), filter: ProjectsHubFilter = 'ac
     showHub: () => { selection = 'all'; rerender(); },
     openNewProject: () => {},
     closeNewProject: () => {},
-    createProject: () => null,
+    createProject: () => undefined,
+    openProjectEditor: () => undefined,
+    closeProjectEditor: () => undefined,
+    saveProjectEdit: () => undefined,
     archiveProject: () => undefined, restoreProject: () => undefined, deleteProject: () => undefined,
   });
   rerender();
