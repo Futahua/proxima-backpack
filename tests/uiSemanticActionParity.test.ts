@@ -45,6 +45,12 @@ const PROJECT_LIFECYCLE_SOURCE = readFileSync(
   'utf8',
 );
 
+/** The Schedule's write sequences, where the two gesture verbs' names now live. */
+const EVENT_WRITE_ACTIONS_SOURCE = readFileSync(
+  resolve(process.cwd(), 'src/app/eventWriteActions.ts'),
+  'utf8',
+);
+
 async function dispatcher() {
   const loaded = await loadVaultState(
     fixtureVault('vault-basic'),
@@ -91,8 +97,6 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
       'calendar.today',
       'schedule.mode.select',
       'schedule.cursor.set',
-      'event.schedule.create',
-      'event.schedule.change',
       'canvas.node.select',
       'canvas.node.geometry.change',
       'canvas.node.remove',
@@ -122,6 +126,17 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
     expect(MAIN_SOURCE).not.toContain("type: 'project.create'");
     expect(PROJECT_LIFECYCLE_SOURCE).toContain(
       "export type ProjectLifecycleVerb = 'create' | 'update' | 'archive' | 'restore' | 'delete';",
+    );
+
+    // The Schedule's two verbs went the same way, and their vocabulary lives in the module that owns
+    // the write: a move is a reschedule (the new start, the record's duration) and a resize is a new
+    // end, which is what the grid's binder hands over instead of an action type.
+    expect(MAIN_SOURCE).toContain('createEventFromSeed(');
+    expect(MAIN_SOURCE).toContain('changeEventFromGesture(');
+    expect(MAIN_SOURCE).not.toContain("type: 'event.schedule.create'");
+    expect(MAIN_SOURCE).not.toContain("type: 'event.schedule.change'");
+    expect(EVENT_WRITE_ACTIONS_SOURCE).toContain(
+      "export type EventWriteVerb = 'create' | 'update' | 'delete' | 'reschedule' | 'resize';",
     );
 
     expect(MAIN_SOURCE).toContain(
@@ -177,11 +192,11 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
   });
 
   it('keeps browser-exposed mutation intents on the same typed-unavailable dispatcher contract used by tests', async () => {
-    // `project.create` no longer belongs to this list: the dispatcher still refuses it — the case
-    // below proves that through the headless dispatcher — but no browser surface reaches it that
-    // way any more, so claiming the shell exposes it would be claiming a caller that is gone.
+    // `project.create` and the two Schedule mutations no longer belong to this list: the dispatcher
+    // still refuses them — the case below proves that through the headless dispatcher — but no
+    // browser surface reaches them that way any more, so claiming the shell exposes them would be
+    // claiming callers that are gone.
     for (const type of [
-      'event.schedule.create',
       'canvas.node.remove',
     ]) {
       expect(MAIN_SOURCE).toContain(`type: '${type}'`);

@@ -14,7 +14,7 @@ import { fixtureVault } from './fixtures.js';
  */
 const DISPATCHER_UI_RECORD_MUTATIONS = [
   'canvas.node.geometry.change', 'canvas.node.remove',
-  'event.schedule.create', 'event.schedule.change', 'task.timeline.change',
+  'task.timeline.change',
 ] as const;
 
 /**
@@ -31,6 +31,7 @@ const DISPATCHER_UI_RECORD_MUTATIONS = [
  */
 const OPERATION_UI_RECORD_MUTATIONS = [
   'task.execution.move', 'project.create', 'project.archive', 'project.restore', 'project.delete',
+  'event.schedule.create', 'event.schedule.change',
 ] as const;
 
 const UNWIRED_UI_RECORD_MUTATIONS = [
@@ -160,6 +161,20 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     const editor = await readFile(new URL('../src/app/projectEditor.ts', import.meta.url), 'utf8');
     expect(editor).toContain('planProjectFieldMutations');
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(editor).not.toContain(forbidden);
+
+    // The Schedule's three write paths, wired the same way: the grid's binder hands over an intent,
+    // the shell runs the sequence, and the app layer owns the span rule and the write.
+    expect(source).toContain('createEventAction(');
+    expect(source).toContain('rescheduleEventAction(');
+    expect(source).toContain('resizeEventAction(');
+    expect(source).toMatch(/createEvent:\s*\(\{ name, projectId, description, startDate, deadline \}\)\s*=>\s*\{[\s\S]{0,120}?createEventFromSeed\(/);
+    expect(source).toMatch(/changeEvent:\s*\(\{ eventId, operation, proposedStartDate, proposedDeadline \}\)\s*=>\s*\{[\s\S]{0,120}?changeEventFromGesture\(/);
+    const eventActions = await readFile(new URL('../src/app/eventWriteActions.ts', import.meta.url), 'utf8');
+    for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(eventActions).not.toContain(forbidden);
+    expect(eventActions).not.toContain('RecordStore');
+    // The revision is the one the surface was rendering, and a lost race re-reads.
+    expect(eventActions).toContain('revision = event.source.revision');
+    expect(eventActions).toContain('convergeAfterWrite(');
 
     for (const type of DISPATCHER_UI_RECORD_MUTATIONS) expect(source).toMatch(new RegExp(`dispatchAction\\(\\{[\\s\\S]{0,500}?type:\\s*'${escapeRegExp(type)}'`));
     for (const type of UNWIRED_UI_RECORD_MUTATIONS) expect(source).not.toContain(`type: '${type}'`);

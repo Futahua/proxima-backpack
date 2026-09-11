@@ -57,6 +57,12 @@ export interface ScheduleTimeGridRenderOptions {
   seededEvent?: ScheduleEventDraft | null;
   selectedRecurringOccurrence?: ScheduleRecurringOccurrenceSelection | null;
   selectedRecurringScope?: ScheduleRecurrenceScope | null;
+  /** The last refused write on this surface, drawn on the block it was about. */
+  writeRefusal?: { eventId: string; code: string } | null;
+  /** The last accepted write's sentence, drawn at the surface level. */
+  writeFeedback?: string | null;
+  /** What the seeded form's last save answered, drawn on the form. */
+  seedRefusal?: string | null;
 }
 export interface ScheduleEventChangeIntent {
   eventId: string;
@@ -70,8 +76,8 @@ export interface ScheduleTimeGridHandlers {
   openEvent(eventId: string): void;
   closeEvent(): void;
   seedEvent(draft: ScheduleEventDraft): void;
-  createEvent(intent: ScheduleEventCreateIntent): ActionResult | null;
-  changeEvent(intent: ScheduleEventChangeIntent): ActionResult | null;
+  createEvent(intent: ScheduleEventCreateIntent): void;
+  changeEvent(intent: ScheduleEventChangeIntent): void;
 }
 
 const MINUTES_PER_DAY = 1_440;
@@ -326,13 +332,14 @@ function renderEventModal(
   eventId: string | null,
   seededEvent: ScheduleEventDraft | null,
   projectNames: Map<string, string>,
+  seedRefusal: string | null,
 ): string {
   if (seededEvent) {
     const projectLabel = seededEvent.projectId === null
       ? 'Uncategorised'
       : projectNames.get(seededEvent.projectId) ?? seededEvent.projectId;
 
-    return `<div class="modal-backdrop" data-c1-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-schedule-editor-mode="create" data-schedule-draft-project-id="${escapeHtml(seededEvent.projectId ?? '')}" data-c1-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>New event</h3></div><button type="button" class="icon-button" data-schedule-action="close-event" data-c1-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><label>Name<input data-c1-key="schedule-event-name" value="${escapeHtml(seededEvent.name)}"></label><label>Project<input data-c1-key="schedule-event-project" value="${escapeHtml(projectLabel)}" readonly></label><label>Start<input data-c1-key="schedule-event-start" value="${escapeHtml(seededEvent.startDate)}" readonly></label><label>End<input data-c1-key="schedule-event-end" value="${escapeHtml(seededEvent.deadline)}" readonly></label><label>Description<textarea data-c1-key="schedule-event-description">${escapeHtml(seededEvent.description)}</textarea></label><button type="button" data-schedule-action="save-seeded-event" data-c1-key="schedule-event-save">Save</button></section></div>`;
+    return `<div class="modal-backdrop" data-c1-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-schedule-editor-mode="create" data-schedule-draft-project-id="${escapeHtml(seededEvent.projectId ?? '')}"${seedRefusal === null ? '' : ` data-schedule-refusal="${escapeHtml(seedRefusal)}"`} data-c1-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>New event</h3></div><button type="button" class="icon-button" data-schedule-action="close-event" data-c1-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><label>Name<input data-c1-key="schedule-event-name" value="${escapeHtml(seededEvent.name)}"></label><label>Project<input data-c1-key="schedule-event-project" value="${escapeHtml(projectLabel)}" readonly></label><label>Start<input data-c1-key="schedule-event-start" value="${escapeHtml(seededEvent.startDate)}" readonly></label><label>End<input data-c1-key="schedule-event-end" value="${escapeHtml(seededEvent.deadline)}" readonly></label><label>Description<textarea data-c1-key="schedule-event-description">${escapeHtml(seededEvent.description)}</textarea></label>${seedRefusal === null ? '' : `<small data-schedule-seed-feedback="${escapeHtml(seedRefusal)}">${escapeHtml(seedRefusal)}</small>`}<button type="button" data-schedule-action="save-seeded-event" data-c1-key="schedule-event-save">Save</button></section></div>`;
   }
   return renderEventEditorModal({ events, projectNames, eventId, closeAction: 'close-event', closeAttribute: 'data-schedule-action', mode: 'edit' });
 }
@@ -381,6 +388,7 @@ function renderTimedDay(
   recurringByKey: Map<string, ScheduleRecurringOccurrence>,
   projectNames: Map<string, string>,
   now: Date,
+  writeRefusal: { eventId: string; code: string } | null,
 ): string {
   const dayKey = localDateKey(day);
   const daySegments = segments.filter((segment) => segment.dayKey === dayKey);
@@ -422,7 +430,7 @@ function renderTimedDay(
       ? `<span data-schedule-resize-edge="end" data-c1-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}-resize-end" aria-label="Resize event end" style="position:absolute;left:0;right:0;bottom:0;height:8px;border-bottom:2px solid currentColor;cursor:ns-resize;z-index:4;"></span>`
       : '';
 
-    return `<article class="event-card schedule-timed-event${event.isCompleted ? ' completed' : ''}" role="button" tabindex="0" data-schedule-action="open-event" data-schedule-timed-event="true" data-schedule-event-id="${escapeHtml(event.id)}" data-schedule-start-value="${escapeHtml(event.startDate)}" data-schedule-deadline-value="${escapeHtml(event.deadline)}" data-schedule-start-minute="${segment.startMinute}" data-schedule-end-minute="${segment.endMinute}" data-c1-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}" style="position:absolute;left:4px;right:4px;top:${(segment.startMinute / MINUTES_PER_DAY) * 100}%;height:${(durationMinutes / MINUTES_PER_DAY) * 100}%;z-index:2;cursor:grab;">${resizeHandle}<strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
+    return `<article class="event-card schedule-timed-event${event.isCompleted ? ' completed' : ''}" role="button" tabindex="0" data-schedule-action="open-event" data-schedule-timed-event="true" data-schedule-event-id="${escapeHtml(event.id)}" data-schedule-start-value="${escapeHtml(event.startDate)}" data-schedule-deadline-value="${escapeHtml(event.deadline)}" data-schedule-start-minute="${segment.startMinute}" data-schedule-end-minute="${segment.endMinute}"${writeRefusal !== null && writeRefusal.eventId === event.id ? ` data-schedule-refusal="${escapeHtml(writeRefusal.code)}"` : ''} data-c1-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}" style="position:absolute;left:4px;right:4px;top:${(segment.startMinute / MINUTES_PER_DAY) * 100}%;height:${(durationMinutes / MINUTES_PER_DAY) * 100}%;z-index:2;cursor:grab;">${resizeHandle}<strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small>${writeRefusal !== null && writeRefusal.eventId === event.id ? `<small class="schedule-write-refusal" data-schedule-write-refusal="${escapeHtml(writeRefusal.code)}">${escapeHtml(writeRefusal.code)}</small>` : ''}</article>`;
   }).join('');
 
   return `<div class="schedule-day-column" data-schedule-day="${escapeHtml(dayKey)}" data-c1-key="schedule-day-${escapeHtml(dayKey)}"><div class="schedule-time-track" data-c1-key="schedule-time-track-${escapeHtml(dayKey)}" style="position:relative;height:${SLOTS_PER_DAY * 8}px;">${slots}${eventCards}${currentTime}</div></div>`;
@@ -488,6 +496,7 @@ export function renderScheduleTimeGrid(
       recurringByKey,
       options.projectNames,
       options.now,
+      options.writeRefusal ?? null,
     )
   )).join('');
 
@@ -503,6 +512,7 @@ export function renderScheduleTimeGrid(
       options.selectedEventId,
       options.seededEvent ?? null,
       options.projectNames,
+      options.seedRefusal ?? null,
     );
 
   return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-c1-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header>${renderAllDayRegion(ordinaryEvents, recurringOccurrences, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-c1-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${modal}</section>`;
@@ -814,19 +824,15 @@ export function bindScheduleTimeGridInteractions(
         return;
       }
 
-      const result = handlers.createEvent({
+      // The sequence runs in the shell, so the refusal it answers with is drawn by the next render
+      // where the form is — not written into the DOM here, which the next render would erase.
+      handlers.createEvent({
         name: name.value,
         projectId: modal.dataset.scheduleDraftProjectId || null,
         description: description.value,
         startDate: start.value,
         deadline: deadline.value,
       });
-
-      if (result && !result.ok) {
-        modal.dataset.scheduleRefusal = result.error.code;
-      } else {
-        delete modal.dataset.scheduleRefusal;
-      }
       return;
     }
 
@@ -942,20 +948,17 @@ export function bindScheduleTimeGridInteractions(
       return;
     }
 
-    const result = handlers.changeEvent({
+    // The block goes back to where the surface was rendering it, and the shell's answer — accepted
+    // or refused — arrives as the next render. A lost race re-reads first, which is what puts the
+    // block where the store says it is rather than where the pointer left it.
+    restoreScheduleGesture(finished);
+
+    handlers.changeEvent({
       eventId: finished.eventId,
       operation: finished.operation,
       proposedStartDate: finished.proposedStartDate,
       proposedDeadline: finished.proposedDeadline,
     });
-
-    restoreScheduleGesture(finished);
-
-    if (result && !result.ok) {
-      scheduleEventCards(finished.eventId).forEach((card) => {
-        card.dataset.scheduleRefusal = result.error.code;
-      });
-    }
   });
 
   root.addEventListener('pointercancel', () => {

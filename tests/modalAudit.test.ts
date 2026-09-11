@@ -275,12 +275,12 @@ describe('no write control can be clicked and do nothing', () => {
     expect(loaded.projects).toHaveLength(1);
   });
 
-  it('routes the create-event Save to a typed refusal rather than a fake success', () => {
+  it('routes the create-event Save to the create sequence rather than a fake success', () => {
     const loaded = state();
-    const dispatcher = createActionDispatcher({ state: loaded, problems: [], revisions: { state: '1', source: '1' }, mode: 'fixture', clock: fixedClock(NOW.toISOString()) });
+    let seeded: Parameters<typeof renderScheduleTimeGrid>[0]['seededEvent'] = null;
+    let refusal: string | null = null;
     document.body.innerHTML = '<div id="root"></div>';
     const root = document.querySelector<HTMLElement>('#root')!;
-    let seeded: Parameters<typeof renderScheduleTimeGrid>[0]['seededEvent'] = null;
     const rerender = () => {
       root.innerHTML = renderScheduleTimeGrid({
         mode: 'day',
@@ -291,14 +291,17 @@ describe('no write control can be clicked and do nothing', () => {
         now: NOW,
         selectedEventId: null,
         seededEvent: seeded,
+        seedRefusal: refusal,
       });
     };
     bindScheduleTimeGridInteractions(root, {
       openEvent: () => {},
-      closeEvent: () => { seeded = null; rerender(); },
-      seedEvent: (draft) => { seeded = { ...draft }; rerender(); },
-      createEvent: ({ name, projectId, description, startDate, deadline }) => dispatcher.dispatch({ type: 'event.schedule.create', name, projectId, description, startDate, deadline }),
-      changeEvent: () => null,
+      closeEvent: () => { seeded = null; refusal = null; rerender(); },
+      seedEvent: (draft) => { seeded = { ...draft }; refusal = null; rerender(); },
+      // The shell's half, as `main.ts` performs it: the sequence runs with no record write path in
+      // this fixture, and what it answers is what the form draws.
+      createEvent: () => { refusal = 'writes-unavailable'; rerender(); },
+      changeEvent: () => {},
     });
     rerender();
 
@@ -307,8 +310,9 @@ describe('no write control can be clicked and do nothing', () => {
     expect(document.querySelector('[data-schedule-editor-mode="create"]')).not.toBeNull();
     harness.click('schedule-event-save');
 
-    const refusal = document.querySelector<HTMLElement>('[data-schedule-editor-mode="create"]')?.dataset.scheduleRefusal;
-    expect(refusal).toBe('action-not-available');
+    const modal = document.querySelector<HTMLElement>('[data-schedule-editor-mode="create"]')!;
+    expect(modal.dataset.scheduleRefusal).toBe('writes-unavailable');
+    expect(document.querySelector('[data-schedule-seed-feedback]')!.textContent).toContain('writes-unavailable');
     expect(loaded.events).toHaveLength(1);
   });
 });

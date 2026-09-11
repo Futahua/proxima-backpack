@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createCanonicalJsonRecordStore } from '../src/app/canonicalRecordCodec.js';
-import { createEvent, deleteEvent, updateEvent, type EventMutationDependencies, type EventMutationResult } from '../src/app/eventMutations.js';
+import { createEvent, deleteEvent, rescheduleEvent, resizeEvent, updateEvent, type EventMutationDependencies, type EventMutationResult } from '../src/app/eventMutations.js';
 import {
   eventFormIsDirty,
   eventFormValuesFor,
@@ -157,6 +157,8 @@ async function store() {
       createEvent: async (request: Parameters<typeof createEvent>[1]): Promise<EventMutationResult> => await createEvent(deps, request),
       updateEvent: async (input: Parameters<typeof updateEvent>[1]): Promise<EventMutationResult> => await updateEvent(deps, input),
       deleteEvent: async (input: Parameters<typeof deleteEvent>[1]): Promise<EventMutationResult> => await deleteEvent(deps, input),
+      rescheduleEvent: async (input: Parameters<typeof rescheduleEvent>[1]): Promise<EventMutationResult> => await rescheduleEvent(deps, input),
+      resizeEvent: async (input: Parameters<typeof resizeEvent>[1]): Promise<EventMutationResult> => await resizeEvent(deps, input),
     },
   };
 }

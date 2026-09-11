@@ -41,7 +41,7 @@ import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } 
 import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
 import { bindElasticCockpitInteractions, renderElasticCockpit, shouldTickElasticProgress } from './elasticCockpit.js';
 import { bindTimekeepingCockpitInteractions, renderTimekeepingCockpit, startTimekeepingCountdownTicker } from './timekeepingCockpit.js';
-import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid, startScheduleTimeTicker, type ScheduleEventDraft, type ScheduleTimeGridMode } from './scheduleTimeGrid.js';
+import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid, startScheduleTimeTicker, type ScheduleEventChangeIntent, type ScheduleEventCreateIntent, type ScheduleEventDraft, type ScheduleTimeGridMode } from './scheduleTimeGrid.js';
 import { bindScheduleProjectionInteractions, renderScheduleProjection, type ScheduleProjectionMode } from './scheduleProjection.js';
 import { scheduleNavigationDateKey, type ScheduleNavigationDirection } from './scheduleNavigation.js';
 import { scheduleEventsForSelection } from './scheduleSelection.js';
@@ -64,6 +64,7 @@ import { cockpitSubmode, renderCockpitNavigation } from './cockpitNavigation.js'
 import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor } from './workspaceIdentity.js';
 import { archiveProjectAction, createProjectAction, deleteProjectAction, restoreProjectAction, updateProjectAction, type ProjectLifecycleOutcome } from '../app/projectLifecycleActions.js';
 import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
+import { createEventAction, rescheduleEventAction, resizeEventAction, type EventWriteOutcome } from '../app/eventWriteActions.js';
 
 const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
@@ -94,6 +95,12 @@ let projectCreateRefusal: ProjectFormRefusal | null = null;
 let projectCreateDraft: ProjectCreateIntent | null = null;
 /** The open project editor, null while it is closed. The draft is the form, not the record. */
 let projectEditor: ProjectEditView | null = null;
+/** The last refused Schedule write, drawn on the block it was about rather than in a banner. */
+let scheduleWriteRefusal: { eventId: string; code: string } | null = null;
+/** What the seeded form's last save answered, drawn on the form. */
+let scheduleSeedRefusal: string | null = null;
+/** The last Schedule write's own sentence. */
+let scheduleWriteFeedback: string | null = null;
 let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_VIEW;
 /** The workflow board's own state: it groups by stage, so it previews and refuses separately. */
 let projectWorkflowBoardView: ProjectWorkflowBoardViewState = EMPTY_PROJECT_WORKFLOW_BOARD_VIEW;
@@ -353,6 +360,9 @@ function scheduleTimeGridSurface(
     seededEvent: scheduleEventDraft,
     selectedRecurringOccurrence: selectedScheduleRecurringOccurrence,
     selectedRecurringScope: selectedScheduleRecurringScope,
+    writeRefusal: scheduleWriteRefusal,
+    writeFeedback: scheduleWriteFeedback,
+    seedRefusal: scheduleSeedRefusal,
   });
 }
 
@@ -917,6 +927,66 @@ async function saveProjectEditAction(projectId: string, draft: ProjectEditorDraf
   render();
 }
 
+/**
+ * The Schedule's write sequences.
+ *
+ * A drag or a resize is one of two verbs — `event.reschedule` when the block moved, `event.resize`
+ * when its bottom edge did — and the seeded form's Save is `event.create`. All three run in
+ * `src/app/eventWriteActions.ts`; the shell supplies the resolved operations, the reason there are
+ * none when this run has no record path, and the two sinks the surfaces draw.
+ *
+ * The refusal is kept *per event* because a schedule draws the same event in several columns: a
+ * refusal that belonged to no block would leave a reader looking for which one moved.
+ */
+function eventWriteDependencies() {
+  return {
+    state: appState,
+    writes: resolveTaskWritePath,
+    unavailableReason: () => taskMutationUnavailable,
+    refresh: refreshFromSource,
+    setRefusal: (reason: string | null) => { scheduleWriteFeedback = reason; },
+    render,
+  };
+}
+
+function eventWriteSentence(outcome: EventWriteOutcome): string {
+  return outcome.ok ? `${outcome.outcome} at revision ${outcome.revision}` : `${outcome.reason}: ${outcome.detail}`;
+}
+
+async function createEventFromSeed(intent: ScheduleEventCreateIntent): Promise<void> {
+  const outcome = await createEventAction(eventWriteDependencies(), {
+    values: {
+      name: intent.name,
+      description: intent.description,
+      projectId: intent.projectId,
+      startDate: intent.startDate,
+      deadline: intent.deadline,
+      isCompleted: false,
+    },
+  });
+  scheduleSeedRefusal = outcome.ok ? null : outcome.reason;
+  scheduleWriteFeedback = eventWriteSentence(outcome);
+  // An accepted create closes the form: the event it described now exists, and the grid is about to
+  // draw it. A refused one keeps the form, with the reader's values still in it.
+  if (outcome.ok) scheduleEventDraft = null;
+  render();
+}
+
+async function changeEventFromGesture(intent: ScheduleEventChangeIntent): Promise<void> {
+  const outcome = intent.operation === 'resize-end'
+    ? await resizeEventAction(eventWriteDependencies(), {
+        eventId: intent.eventId,
+        target: { kind: 'end', value: intent.proposedDeadline },
+      })
+    : await rescheduleEventAction(eventWriteDependencies(), {
+        eventId: intent.eventId,
+        startDate: intent.proposedStartDate,
+      });
+  scheduleWriteRefusal = outcome.ok ? null : { eventId: intent.eventId, code: outcome.reason };
+  scheduleWriteFeedback = eventWriteSentence(outcome);
+  render();
+}
+
 function bindInteractions(): void {
   const root = element<HTMLElement>('#proxima-app');
   if (root.dataset.interactionsBound === 'true') return;
@@ -1249,32 +1319,12 @@ function bindInteractions(): void {
       scheduleEventDraft = { ...draft };
       render();
     },
-    createEvent: ({
-      name,
-      projectId,
-      description,
-      startDate,
-      deadline,
-    }) => dispatchAction({
-      type: 'event.schedule.create',
-      name,
-      projectId,
-      description,
-      startDate,
-      deadline,
-    }),
-    changeEvent: ({
-      eventId,
-      operation,
-      proposedStartDate,
-      proposedDeadline,
-    }) => dispatchAction({
-      type: 'event.schedule.change',
-      eventId,
-      operation,
-      proposedStartDate,
-      proposedDeadline,
-    }),
+    createEvent: ({ name, projectId, description, startDate, deadline }) => {
+      void createEventFromSeed({ name, projectId, description, startDate, deadline });
+    },
+    changeEvent: ({ eventId, operation, proposedStartDate, proposedDeadline }) => {
+      void changeEventFromGesture({ eventId, operation, proposedStartDate, proposedDeadline });
+    },
   });
 
   bindTimekeepingCockpitInteractions(root, {

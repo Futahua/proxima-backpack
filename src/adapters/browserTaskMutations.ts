@@ -46,10 +46,13 @@ import {
 import {
   createEvent,
   deleteEvent,
+  rescheduleEvent,
+  resizeEvent,
   updateEvent,
   type CreateEventRequest,
   type EventFieldMutation,
   type EventMutationResult,
+  type EventResizeTarget,
 } from '../app/eventMutations.js';
 import type { Clock } from '../domain/clock.js';
 import { systemClock } from '../domain/clock.js';
@@ -81,6 +84,8 @@ export interface BrowserEventMutations {
   createEvent(request: CreateEventRequest): Promise<EventMutationResult>;
   updateEvent(input: { eventId: OpaqueRecordId; expectedRevision: string; mutations: readonly EventFieldMutation[] }): Promise<EventMutationResult>;
   deleteEvent(input: { eventId: OpaqueRecordId; expectedRevision: string }): Promise<EventMutationResult>;
+  rescheduleEvent(input: { eventId: OpaqueRecordId; expectedRevision: string; startDate: string }): Promise<EventMutationResult>;
+  resizeEvent(input: { eventId: OpaqueRecordId; expectedRevision: string; target: EventResizeTarget }): Promise<EventMutationResult>;
 }
 
 /** Everything one activated store hands a surface, resolved once. */
@@ -180,6 +185,8 @@ export async function resolveBrowserTaskMutations(
       createEvent: (request) => createEvent(projectDeps, request),
       updateEvent: (input) => updateEvent(projectDeps, input),
       deleteEvent: (input) => deleteEvent(projectDeps, input),
+      rescheduleEvent: (input) => rescheduleEvent(projectDeps, input),
+      resizeEvent: (input) => resizeEvent(projectDeps, input),
     },
   };
 }

@@ -94,6 +94,7 @@ function render(
   mode: ScheduleTimeGridMode,
   selectedEventId: string | null = null,
   seededEvent: ScheduleEventDraft | null = null,
+  writeRefusal: { eventId: string; code: string } | null = null,
 ): string {
   return renderScheduleTimeGrid({
     mode,
@@ -104,6 +105,7 @@ function render(
     now: NOW,
     selectedEventId,
     seededEvent,
+    writeRefusal,
   });
 }
 
@@ -179,11 +181,14 @@ function mountInteractiveSchedule(
     openEvent: () => {},
     closeEvent: () => {},
     seedEvent: () => {},
-    createEvent: () => null,
+    createEvent: () => {},
     changeEvent: (intent) => {
       changes.push(intent);
-      return refusal ? unavailableScheduleResult(intent.eventId)
-        : null;
+      // The shell's half: it runs the sequence, then draws whatever came back. Here the answer is
+      // fixed, so the mounting case says what the *surface* does with a refusal.
+      if (refusal) {
+        root.innerHTML = render(mode, null, null, { eventId: intent.eventId, code: 'action-not-available' });
+      }
     },
   });
 
@@ -533,10 +538,13 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
         ),
       }]);
 
-      expect(sourceFirst.dataset.scheduleRefusal)
+      // The refusal is drawn on the blocks the *next* render produced, which is what the shell does
+      // with the answer: by the time it arrives, the gesture's own elements are gone.
+      expect(harness.target('schedule-event-overnight-2026-09-06').dataset.scheduleRefusal)
         .toBe('action-not-available');
-      expect(sourceLast.dataset.scheduleRefusal)
+      expect(harness.target('schedule-event-overnight-2026-09-07').dataset.scheduleRefusal)
         .toBe('action-not-available');
+      expect(harness.target('schedule-event-overnight-2026-09-06').style.opacity).toBe('');
       expect(sourceFirst.style.opacity).toBe('');
       expect(sourceLast.style.opacity).toBe('');
       expect(() => (
@@ -613,7 +621,7 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
         30,
       ),
     }]);
-    expect(source.dataset.scheduleRefusal)
+    expect(harness.target('schedule-event-timed-2026-09-06').dataset.scheduleRefusal)
       .toBe('action-not-available');
     expect(source.style.opacity).toBe('');
     expect(() => (
@@ -790,6 +798,7 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
     document.body.innerHTML = '<div id="schedule-root"></div>';
     const root = document.querySelector<HTMLElement>('#schedule-root')!;
     let seededEvent: ScheduleEventDraft | null = null;
+    let refusal: string | null = null;
     const saves: ScheduleEventCreateIntent[] = [];
 
     const rerender = () => {
@@ -802,6 +811,7 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
         now: NOW,
         selectedEventId: null,
         seededEvent,
+        seedRefusal: refusal,
       });
     };
 
@@ -817,9 +827,12 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
       },
       createEvent: (intent) => {
         saves.push(intent);
-        return unavailableScheduleCreateResult();
+        // The shell's half: run the sequence, hold the answer, re-render. This run has no record
+        // write path, so the answer is the reason there is none.
+        refusal = 'action-not-available';
+        rerender();
       },
-      changeEvent: () => null,
+      changeEvent: () => {},
     });
 
     rerender();

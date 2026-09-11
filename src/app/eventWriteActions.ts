@@ -19,6 +19,7 @@ import type {
   EventFieldMutation,
   EventMutationFailureReason,
   EventMutationResult,
+  EventResizeTarget,
 } from './eventMutations.js';
 import { planEventFormMutations, type EventFormValues } from './eventFormPlan.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
@@ -26,7 +27,7 @@ import { convergeAfterWrite } from './writeConvergence.js';
 
 export const EVENT_WRITE_ACTION_SCHEMA_VERSION = 1 as const;
 
-export type EventWriteVerb = 'create' | 'update' | 'delete';
+export type EventWriteVerb = 'create' | 'update' | 'delete' | 'reschedule' | 'resize';
 
 /** The operations the shell resolved, structurally: no store, no coordinator, no paths. */
 export interface EventWriteOperations {
@@ -37,6 +38,10 @@ export interface EventWriteOperations {
     mutations: readonly EventFieldMutation[];
   }): Promise<EventMutationResult>;
   deleteEvent(input: { eventId: OpaqueRecordId; expectedRevision: string }): Promise<EventMutationResult>;
+  /** A move: the new start, with the duration taken from the record. */
+  rescheduleEvent(input: { eventId: OpaqueRecordId; expectedRevision: string; startDate: string }): Promise<EventMutationResult>;
+  /** A resize: the end the pointer landed on, or the duration an agent asked for. */
+  resizeEvent(input: { eventId: OpaqueRecordId; expectedRevision: string; target: EventResizeTarget }): Promise<EventMutationResult>;
 }
 
 export interface EventWriteDependencies {
@@ -59,7 +64,7 @@ export type EventWriteOutcome =
       readonly ok: true;
       readonly schemaVersion: typeof EVENT_WRITE_ACTION_SCHEMA_VERSION;
       readonly verb: EventWriteVerb;
-      readonly outcome: 'created' | 'updated' | 'deleted';
+      readonly outcome: 'created' | 'updated' | 'deleted' | 'rescheduled' | 'resized';
       readonly recordId: OpaqueRecordId;
       readonly revision: string;
       readonly refreshed: boolean;
@@ -127,7 +132,7 @@ async function runEventWrite(
         ok: true,
         schemaVersion: EVENT_WRITE_ACTION_SCHEMA_VERSION,
         verb,
-        outcome: written.outcome as 'created' | 'updated' | 'deleted',
+        outcome: written.outcome,
         recordId: written.recordId,
         revision: written.revision,
         refreshed: convergence.refreshed,
@@ -186,5 +191,40 @@ export async function deleteEventAction(
   return await runEventWrite(deps, 'delete', input.eventId, async (operations, revision) => await operations.deleteEvent({
     eventId: input.eventId as OpaqueRecordId,
     expectedRevision: revision,
+  }));
+}
+
+/**
+ * Move the event a block was dragged from.
+ *
+ * The gesture supplies the new start and nothing else: the duration is the record's, which is what
+ * makes a drag and an agent's sentence the same request. A lost race re-reads, which is what puts
+ * the block back where the store says it is instead of leaving it where the pointer did.
+ */
+export async function rescheduleEventAction(
+  deps: EventWriteDependencies,
+  input: { readonly eventId: string; readonly startDate: string },
+): Promise<EventWriteOutcome> {
+  return await runEventWrite(deps, 'reschedule', input.eventId, async (operations, revision) => await operations.rescheduleEvent({
+    eventId: input.eventId as OpaqueRecordId,
+    expectedRevision: revision,
+    startDate: input.startDate,
+  }));
+}
+
+/**
+ * Resize the event whose bottom edge was dragged.
+ *
+ * The target is the end the pointer landed on. A gesture that would leave no duration is refused by
+ * `eventGesture.ts` before it ever becomes a request, so this sequence is reached only with a span.
+ */
+export async function resizeEventAction(
+  deps: EventWriteDependencies,
+  input: { readonly eventId: string; readonly target: EventResizeTarget },
+): Promise<EventWriteOutcome> {
+  return await runEventWrite(deps, 'resize', input.eventId, async (operations, revision) => await operations.resizeEvent({
+    eventId: input.eventId as OpaqueRecordId,
+    expectedRevision: revision,
+    target: input.target,
   }));
 }
