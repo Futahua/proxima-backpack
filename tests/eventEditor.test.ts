@@ -13,7 +13,6 @@ import { describe, expect, it } from 'vitest';
 import {
   applyEventEditorEdit,
   eventEditorDraftFor,
-  eventEditorPropertyFieldId,
   EVENT_EDITOR_COLOUR_NOTE,
   EVENT_EDITOR_SAVE_NOTE,
   EVENT_EDITOR_SAVE_REFUSAL,
@@ -21,10 +20,11 @@ import {
   projectEventEditor,
   sameEventEditorDraft,
   type EventEditorField,
+  type EventEditorInput,
   type EventEditorRecurrence,
   type EventEditorSection,
 } from '../src/app/eventEditor.js';
-import { EMPTY_STATE, type CalendarEvent, type PropertySchema, type ProximaState } from '../src/domain/types.js';
+import { EMPTY_STATE, type CalendarEvent, type ProximaState } from '../src/domain/types.js';
 
 function event(overrides: Partial<CalendarEvent> & { id: string }): CalendarEvent {
   return {
@@ -41,23 +41,28 @@ function event(overrides: Partial<CalendarEvent> & { id: string }): CalendarEven
   };
 }
 
-const schema: PropertySchema[] = [
-  { id: 'location', name: 'Location', type: 'text' },
-  { id: 'seats', name: 'Seats', type: 'number' },
-  { id: 'track', name: 'Track', type: 'select', options: [{ id: 'a', name: 'Track A', color: '#111' }] },
-  { id: 'prep', name: 'Prep', type: 'date' },
-  { id: 'confirmed', name: 'Confirmed', type: 'checkbox' },
-  { id: 'total', name: 'Total', type: 'rollup', aggregation: 'sum', targetProperty: 'seats' },
-];
-
 function state(overrides: Partial<ProximaState> = {}): ProximaState {
   return {
     ...EMPTY_STATE,
     projects: [
       { id: 'p1', source: { path: 'Proxima/projects/p1.md', revision: 'r1', kind: 'project', idOrigin: 'frontmatter' }, name: 'Alpha project', description: '', createdAt: '2026-01-01T00:00:00.000Z', status: 'active', projectType: 'task', linkedFolders: [] },
     ],
-    taskSchema: schema,
+    taskSchema: [],
     ...overrides,
+  };
+}
+
+/**
+ * The editor's own input: the events it may open and the projects it may offer. The
+ * schedule surfaces carry the project names as a lookup, so this is what a caller has.
+ */
+function inputOf(loaded: ProximaState): EventEditorInput {
+  return {
+    events: loaded.events,
+    projectChoices: [
+      ...loaded.projects.filter((project) => project.status === 'active').map((project) => ({ id: project.id, label: project.name })),
+      { id: '', label: 'No project' },
+    ],
   };
 }
 
@@ -89,7 +94,7 @@ describe('Event editor projection', () => {
       })],
     });
 
-    const editor = projectEventEditor(loaded, 'e1', null, none)!;
+    const editor = projectEventEditor(inputOf(loaded), 'e1', null, none)!;
 
     expect(editor.eventId).toBe('e1');
     expect(editor.title).toBe('Kickoff');
@@ -108,7 +113,7 @@ describe('Event editor projection', () => {
 
   it('states why there is no colour control instead of inventing one', () => {
     const loaded = state({ events: [event({ id: 'e1' })] });
-    const editor = projectEventEditor(loaded, 'e1', null, none)!;
+    const editor = projectEventEditor(inputOf(loaded), 'e1', null, none)!;
 
     expect(editor.colourNote).toBe(EVENT_EDITOR_COLOUR_NOTE);
     expect(editor.colourNote).toContain('no colour');
@@ -118,7 +123,7 @@ describe('Event editor projection', () => {
 
   it('offers the recurrence controls, and answers "does not recur" with them', () => {
     const loaded = state({ events: [event({ id: 'e1' })] });
-    const editor = projectEventEditor(loaded, 'e1', null, none)!;
+    const editor = projectEventEditor(inputOf(loaded), 'e1', null, none)!;
     const recurrence = editor.sections.find((section) => section.id === 'recurrence')!;
 
     expect(recurrence.fields.map((field) => field.id)).toEqual([
@@ -146,7 +151,7 @@ describe('Event editor projection', () => {
   it('shows a series rule with the end condition it actually has', () => {
     const loaded = state({ events: [event({ id: 'e1' })] });
 
-    const until = projectEventEditor(loaded, 'e1', null, { kind: 'series', frequency: 'weekly', interval: 2, count: null, until: '2026-06-30' })!;
+    const until = projectEventEditor(inputOf(loaded), 'e1', null, { kind: 'series', frequency: 'weekly', interval: 2, count: null, until: '2026-06-30' })!;
     expect(fieldFor(until.sections, 'recurrenceFrequency').value).toBe('weekly');
     expect(fieldFor(until.sections, 'recurrenceInterval').value).toBe('2');
     expect(fieldFor(until.sections, 'recurrenceEndKind').value).toBe('until');
@@ -155,87 +160,65 @@ describe('Event editor projection', () => {
     expect(fieldFor(until.sections, 'recurrenceCount').note).toContain('number of times');
     expect(until.recurrenceKind).toBe('series');
 
-    const counted = projectEventEditor(loaded, 'e1', null, { kind: 'series', frequency: 'monthly', interval: 1, count: 6, until: null })!;
+    const counted = projectEventEditor(inputOf(loaded), 'e1', null, { kind: 'series', frequency: 'monthly', interval: 1, count: 6, until: null })!;
     expect(fieldFor(counted.sections, 'recurrenceEndKind').value).toBe('count');
     expect(fieldFor(counted.sections, 'recurrenceCount').value).toBe('6');
     expect(fieldFor(counted.sections, 'recurrenceCount').note).toBeNull();
 
-    const endless = projectEventEditor(loaded, 'e1', null, { kind: 'series', frequency: 'daily', interval: 1, count: null, until: null })!;
+    const endless = projectEventEditor(inputOf(loaded), 'e1', null, { kind: 'series', frequency: 'daily', interval: 1, count: null, until: null })!;
     expect(fieldFor(endless.sections, 'recurrenceEndKind').value).toBe('never');
   });
 
   it('reports recurrence it cannot read rather than showing the event as plain', () => {
     const loaded = state({ events: [event({ id: 'e1' })] });
-    const editor = projectEventEditor(loaded, 'e1', null, { kind: 'unsupported', detail: 'The stored interval is not a whole number.' })!;
+    const editor = projectEventEditor(inputOf(loaded), 'e1', null, { kind: 'unsupported', detail: 'The stored interval is not a whole number.' })!;
 
     expect(editor.recurrenceKind).toBe('unsupported');
     expect(fieldFor(editor.sections, 'recurrenceEndKind').note).toBe('The stored interval is not a whole number.');
     expect(fieldFor(editor.sections, 'recurrenceEndKind').value).toBe('none');
   });
 
-  it('represents every schema property, and shows a value the schema does not declare', () => {
-    const loaded = state({
-      events: [event({
-        id: 'e1',
-        properties: { location: 'Room 2', seats: 12, track: 'a', confirmed: true, mystery: 'unknown' },
-      })],
-    });
+  it('shows the projects the surface knows as the project choices, and nothing it cannot know', () => {
+    const loaded = state({ events: [event({ id: 'e1' })] });
 
-    const editor = projectEventEditor(loaded, 'e1', null, none)!;
-    const properties = editor.sections.find((section) => section.id === 'properties')!;
+    // The schedule surfaces carry a name lookup rather than the loaded state, so the
+    // choices are what the caller passes and the editor invents no others.
+    const editor = projectEventEditor({
+      events: loaded.events,
+      projectChoices: [{ id: 'p1', label: 'Alpha project' }, { id: '', label: 'No project' }],
+    }, 'e1', null, none)!;
 
-    expect(properties.fields.map((field) => field.id)).toEqual([
-      eventEditorPropertyFieldId('location'),
-      eventEditorPropertyFieldId('seats'),
-      eventEditorPropertyFieldId('track'),
-      eventEditorPropertyFieldId('prep'),
-      eventEditorPropertyFieldId('confirmed'),
-      eventEditorPropertyFieldId('total'),
-      eventEditorPropertyFieldId('mystery'),
-    ]);
-
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('location')).value).toBe('Room 2');
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('seats')).control).toBe('number');
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('seats')).value).toBe('12');
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('track')).control).toBe('select');
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('track')).options.map((option) => option.label)).toEqual(['Track A']);
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('prep')).control).toBe('date');
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('confirmed')).checked).toBe(true);
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('total')).control).toBe('derived');
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('total')).editable).toBe(false);
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('mystery')).value).toBe('unknown');
-    expect(fieldFor(editor.sections, eventEditorPropertyFieldId('mystery')).note).toContain('not in the schema');
-
-    const ids = fieldsOf(editor.sections).map((field) => field.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expect(fieldFor(editor.sections, 'project').options.map((option) => option.id)).toEqual(['p1', '']);
+    expect(editor.sections.map((section) => section.id)).toEqual(['event', 'recurrence']);
+    expect(editor.sections.some((section) => section.id === 'properties')).toBe(false);
   });
 
   it('counts the fields it shows, and returns nothing for an event that is not loaded', () => {
     const loaded = state({ events: [event({ id: 'e1' })] });
-    const editor = projectEventEditor(loaded, 'e1', null, none)!;
+    const editor = projectEventEditor(inputOf(loaded), 'e1', null, none)!;
 
     expect(editor.fieldCount).toBe(fieldsOf(editor.sections).length);
-    expect(editor.fieldCount).toBe(6 + 6 + schema.length);
-    expect(projectEventEditor(loaded, 'missing', null, none)).toBeNull();
+    expect(editor.fieldCount).toBe(6 + 6);
+    expect(projectEventEditor(inputOf(loaded), 'missing', null, none)).toBeNull();
   });
 });
 
 describe('Event editor draft', () => {
   it('starts from the record, so a fresh draft is not yet a change', () => {
     const loaded = state({
-      events: [event({ id: 'e1', name: 'Kickoff', properties: { location: 'Room 2', confirmed: true } })],
+      events: [event({ id: 'e1', name: 'Kickoff', description: 'First session' })],
     });
     const record = loaded.events[0]!;
     const recurrence: EventEditorRecurrence = { kind: 'series', frequency: 'weekly', interval: 1, count: null, until: '2026-06-30' };
     const draft = eventEditorDraftFor(record, recurrence);
 
     expect(draft.values.name).toBe('Kickoff');
-    expect(draft.values[eventEditorPropertyFieldId('location')]).toBe('Room 2');
+    expect(draft.values.description).toBe('First session');
     expect(draft.values.recurrenceUntil).toBe('2026-06-30');
-    expect(draft.checks[eventEditorPropertyFieldId('confirmed')]).toBe(true);
+    expect(draft.checks.completion).toBe(false);
 
-    const seeded = projectEventEditor(loaded, 'e1', draft, recurrence)!;
-    const unedited = projectEventEditor(loaded, 'e1', null, recurrence)!;
+    const seeded = projectEventEditor(inputOf(loaded), 'e1', draft, recurrence)!;
+    const unedited = projectEventEditor(inputOf(loaded), 'e1', null, recurrence)!;
     expect(seeded.dirty).toBe(false);
     expect(unedited.dirty).toBe(false);
     expect(seeded.sections).toEqual(unedited.sections);
@@ -247,20 +230,20 @@ describe('Event editor draft', () => {
     const seed = eventEditorDraftFor(loaded.events[0]!, none);
 
     const renamed = applyEventEditorEdit(seed, { fieldId: 'name', value: 'Kickoff 2' });
-    expect(projectEventEditor(loaded, 'e1', renamed, none)!.dirty).toBe(true);
-    expect(fieldFor(projectEventEditor(loaded, 'e1', renamed, none)!.sections, 'name').value).toBe('Kickoff 2');
+    expect(projectEventEditor(inputOf(loaded), 'e1', renamed, none)!.dirty).toBe(true);
+    expect(fieldFor(projectEventEditor(inputOf(loaded), 'e1', renamed, none)!.sections, 'name').value).toBe('Kickoff 2');
 
     const ended = applyEventEditorEdit(renamed, { fieldId: 'recurrenceEndKind', value: 'count' });
-    expect(fieldFor(projectEventEditor(loaded, 'e1', ended, none)!.sections, 'recurrenceCount').note).toBeNull();
+    expect(fieldFor(projectEventEditor(inputOf(loaded), 'e1', ended, none)!.sections, 'recurrenceCount').note).toBeNull();
 
     const completed = applyEventEditorEdit(ended, { fieldId: 'completion', checked: true });
-    expect(fieldFor(projectEventEditor(loaded, 'e1', completed, none)!.sections, 'completion').checked).toBe(true);
+    expect(fieldFor(projectEventEditor(inputOf(loaded), 'e1', completed, none)!.sections, 'completion').checked).toBe(true);
 
     const undone = applyEventEditorEdit(completed, { fieldId: 'completion', checked: false });
-    expect(projectEventEditor(loaded, 'e1', undone, none)!.dirty).toBe(true);
+    expect(projectEventEditor(inputOf(loaded), 'e1', undone, none)!.dirty).toBe(true);
 
     const back = applyEventEditorEdit(applyEventEditorEdit(undone, { fieldId: 'name', value: 'Kickoff' }), { fieldId: 'recurrenceEndKind', value: 'none' });
-    expect(projectEventEditor(loaded, 'e1', back, none)!.dirty).toBe(false);
+    expect(projectEventEditor(inputOf(loaded), 'e1', back, none)!.dirty).toBe(false);
   });
 
   it('never mutates the draft it was given, and states the refusal it will answer with', () => {

@@ -2,6 +2,7 @@ import type {
   ActionResult,
   ScheduleChangeOperation,
 } from '../app/actionProtocol.js';
+import { renderEventModal as renderEventEditorModal } from './eventModal.js';
 import type { CalendarEvent } from '../domain/types.js';
 import { localDateKey } from '../domain/time.js';
 import { localCalendarDate } from './calendarGrid.js';
@@ -333,12 +334,7 @@ function renderEventModal(
 
     return `<div class="modal-backdrop" data-c1-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-schedule-editor-mode="create" data-schedule-draft-project-id="${escapeHtml(seededEvent.projectId ?? '')}" data-c1-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>New event</h3></div><button type="button" class="icon-button" data-schedule-action="close-event" data-c1-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><label>Name<input data-c1-key="schedule-event-name" value="${escapeHtml(seededEvent.name)}"></label><label>Project<input data-c1-key="schedule-event-project" value="${escapeHtml(projectLabel)}" readonly></label><label>Start<input data-c1-key="schedule-event-start" value="${escapeHtml(seededEvent.startDate)}" readonly></label><label>End<input data-c1-key="schedule-event-end" value="${escapeHtml(seededEvent.deadline)}" readonly></label><label>Description<textarea data-c1-key="schedule-event-description">${escapeHtml(seededEvent.description)}</textarea></label><button type="button" data-schedule-action="save-seeded-event" data-c1-key="schedule-event-save">Save</button></section></div>`;
   }
-  if (!eventId) return '';
-
-  const event = events.find((candidate) => candidate.id === eventId);
-  if (!event) return '';
-
-  return `<div class="modal-backdrop" data-c1-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-c1-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>${escapeHtml(event.name)}</h3></div><button type="button" class="icon-button" data-schedule-action="close-event" data-c1-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><label>Name<input data-c1-key="schedule-event-name" value="${escapeHtml(event.name)}" readonly></label><label>Project<input data-c1-key="schedule-event-project" value="${escapeHtml(projectName(event, projectNames))}" readonly></label><label>Start<input data-c1-key="schedule-event-start" value="${escapeHtml(event.startDate)}" readonly></label><label>End<input data-c1-key="schedule-event-end" value="${escapeHtml(event.deadline)}" readonly></label><label>Description<textarea data-c1-key="schedule-event-description" readonly>${escapeHtml(event.description)}</textarea></label></section></div>`;
+  return renderEventEditorModal({ events, projectNames, eventId, closeAction: 'close-event', closeAttribute: 'data-schedule-action', mode: 'edit' });
 }
 
 function renderAllDayRegion(

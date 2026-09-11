@@ -17,6 +17,12 @@
  *   a different edit from changing the series, so the editor says that a scope has to be
  *   chosen. Choosing it is the existing occurrence/series scope modal.
  *
+ * It takes a narrow input rather than the whole loaded state: the schedule surfaces carry
+ * a project name lookup and the events, not the schema, so listing the task schema's
+ * custom properties here would need a data path no § Event modal box asks for. What the
+ * editor shows is the event's own fields and its recurrence, which is what those boxes
+ * name.
+ *
  * @module app/eventEditor
  */
 
@@ -29,7 +35,6 @@ import {
 
 import type {
   CalendarEvent,
-  ProximaState,
 } from '../domain/types.js';
 
 /** The control an event field is edited with. */
@@ -183,55 +188,17 @@ export const EVENT_EDITOR_SCOPE_NOTE:
   string =
     'Changing one occurrence is not changing the series: choose this occurrence or the whole series before the change means anything.';
 
-/** The field a schema property is shown under. */
-export function eventEditorPropertyFieldId(
-  propertyId:
-    string,
-): string {
-  return `property:${propertyId}`;
-}
+/**
+ * What the editor needs to know about the world: the events it may open, and the projects
+ * it may offer. Both are passed in rather than read from a loaded state, because the
+ * surfaces that render this editor carry exactly these two things.
+ */
+export interface EventEditorInput {
+  readonly events:
+    readonly CalendarEvent[];
 
-function text(
-  value:
-    unknown,
-): string {
-  return value
-    === null
-    || value
-      === undefined
-      ? ''
-      : String(
-          value,
-        );
-}
-
-/** The active projects as choices, plus taking the event out of a project. */
-function projectOptions(
-  state:
-    ProximaState,
-): EventEditorOption[] {
-  return [
-    ...state.projects
-      .filter(
-        (project) =>
-          project.status
-          === 'active',
-      )
-      .map(
-        (project) => ({
-          id:
-            project.id,
-          label:
-            project.name,
-        }),
-      ),
-    {
-      id:
-        '',
-      label:
-        'No project',
-    },
-  ];
+  readonly projectChoices:
+    readonly EventEditorOption[];
 }
 
 /** The event's own values, as text, keyed by field id. */
@@ -331,54 +298,6 @@ function endKindOf(
     : 'until';
 }
 
-/** The event's custom properties, as text, keyed by field id. */
-function propertyValues(
-  event:
-    CalendarEvent,
-): Readonly<
-  Record<
-    string,
-    string
-  >
-> {
-  const values:
-    Record<
-      string,
-      string
-    > = {};
-
-  for (
-    const [
-      key,
-      value,
-    ]
-    of Object.entries(
-      event.properties,
-    )
-  ) {
-    values[
-      eventEditorPropertyFieldId(
-        key,
-      )
-    ] = Array.isArray(
-      value,
-    )
-      ? value
-          .map(
-            (entry) =>
-              String(
-                entry,
-              ),
-          )
-          .join(', ')
-      : text(
-          value,
-        );
-  }
-
-  return values;
-}
-
 /**
  * The draft an event starts from.
  * @param event - the event being edited.
@@ -401,23 +320,6 @@ export function eventEditorDraftFor(
       === true,
   };
 
-  for (
-    const [
-      key,
-      value,
-    ]
-    of Object.entries(
-      event.properties,
-    )
-  ) {
-    checks[
-      eventEditorPropertyFieldId(
-        key,
-      )
-    ] = value
-      === true;
-  }
-
   return {
     values: {
       ...eventValues(
@@ -425,9 +327,6 @@ export function eventEditorDraftFor(
       ),
       ...recurrenceValues(
         recurrence,
-      ),
-      ...propertyValues(
-        event,
       ),
     },
     checks,
@@ -632,8 +531,8 @@ function recurrenceFields(
  * @returns the editor, or null when no such event is loaded.
  */
 export function projectEventEditor(
-  state:
-    ProximaState,
+  input:
+    EventEditorInput,
   eventId:
     string,
   draft:
@@ -642,7 +541,7 @@ export function projectEventEditor(
     EventEditorRecurrence,
 ): EventEditorProjection | null {
   const event =
-    state.events.find(
+    input.events.find(
       (candidate) =>
         candidate.id
         === eventId,
@@ -698,9 +597,7 @@ export function projectEventEditor(
         edited,
         values.project!,
         false,
-        projectOptions(
-          state,
-        ),
+        input.projectChoices,
         true,
         null,
       ),
@@ -740,119 +637,6 @@ export function projectEventEditor(
       ),
     ];
 
-  const propertyFields:
-    EventEditorField[] = [];
-
-  const schemaIds =
-    new Set<
-      string
-    >();
-
-  for (
-    const schema
-    of state.taskSchema
-  ) {
-    schemaIds.add(
-      schema.id,
-    );
-
-    const id =
-      eventEditorPropertyFieldId(
-        schema.id,
-      );
-
-    const derived =
-      schema.type
-      === 'rollup'
-      || schema.type
-        === 'formula';
-
-    propertyFields.push(
-      field(
-        id,
-        schema.name,
-        derived
-          ? 'derived'
-          : schema.type
-                === 'checkbox'
-            ? 'checkbox'
-            : schema.type
-                  === 'select'
-              ? 'select'
-              : schema.type
-                    === 'number'
-                ? 'number'
-                : schema.type
-                      === 'date'
-                  ? 'date'
-                  : 'text',
-        edited,
-        seed.values[id]
-        ?? '',
-        seed.checks[id]
-        ?? false,
-        schema.options
-          ?.map(
-            (option) => ({
-              id:
-                option.id,
-              label:
-                option.name,
-            }),
-          )
-          ?? [],
-        !derived,
-        derived
-          ? `${schema.name} is derived from other records; it is shown, not entered.`
-          : null,
-      ),
-    );
-  }
-
-  for (
-    const id
-    of Object.keys(
-      seed.values,
-    )
-  ) {
-    if (
-      !id.startsWith(
-        'property:',
-      )
-    ) {
-      continue;
-    }
-
-    const propertyId =
-      id.slice(
-        'property:'.length,
-      );
-
-    if (
-      schemaIds.has(
-        propertyId,
-      )
-    ) {
-      continue;
-    }
-
-    propertyFields.push(
-      field(
-        id,
-        propertyId,
-        'text',
-        edited,
-        seed.values[id]
-        ?? '',
-        seed.checks[id]
-        ?? false,
-        [],
-        true,
-        'This value is in the record but not in the schema; it is shown so an editor can see it.',
-      ),
-    );
-  }
-
   const recurrenceSection:
     EventEditorField[] =
       recurrenceFields(
@@ -860,9 +644,6 @@ export function projectEventEditor(
         edited,
         seed,
       );
-
-  const eventFieldCount =
-    eventFields.length;
 
   return {
     eventId:
@@ -888,19 +669,6 @@ export function projectEventEditor(
         fields:
           recurrenceSection,
       },
-      ...propertyFields.length
-          === 0
-        ? []
-        : [
-            {
-              id:
-                'properties' as const,
-              label:
-                'Properties',
-              fields:
-                propertyFields,
-            },
-          ],
     ],
     dirty:
       draft !== null
@@ -909,9 +677,8 @@ export function projectEventEditor(
         seed,
       ),
     fieldCount:
-      eventFieldCount
-      + recurrenceSection.length
-      + propertyFields.length,
+      eventFields.length
+      + recurrenceSection.length,
     colourNote:
       EVENT_EDITOR_COLOUR_NOTE,
     recurrenceKind:
