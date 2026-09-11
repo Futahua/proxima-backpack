@@ -22,6 +22,18 @@ const SOURCE_REFRESH_ACTION_SOURCE = readFileSync(
   'utf8',
 );
 
+/**
+ * The Elastic drop's canonical operation names live here rather than in the shell.
+ *
+ * The gesture writes a record instead of dispatching a refusal, so the shell routes it to
+ * `moveTaskByGesture` and the module that owns the gesture is what names the operation. The
+ * vocabulary is unchanged; its home moved with the behaviour.
+ */
+const TASK_MOVE_GESTURE_SOURCE = readFileSync(
+  resolve(process.cwd(), 'src/app/taskMoveGesture.ts'),
+  'utf8',
+);
+
 async function dispatcher() {
   const loaded = await loadVaultState(
     fixtureVault('vault-basic'),
@@ -64,7 +76,6 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
       'elastic.target.set',
       'elastic.lock',
       'elastic.unlock',
-      'task.execution.move',
       'task.timeline.change',
       'calendar.navigate',
       'calendar.today',
@@ -80,6 +91,17 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
     for (const type of browserSemanticActionTypes) {
       expect(MAIN_SOURCE).toContain(`type: '${type}'`);
     }
+
+    // The Elastic drag is the one mutation the shell reaches through its operation path, and
+    // it still speaks the taxonomy's own names for the two things a drop can be.
+    expect(MAIN_SOURCE).toContain('moveTaskByGesture(');
+    expect(MAIN_SOURCE).not.toContain("type: 'task.execution.move'");
+    expect(TASK_MOVE_GESTURE_SOURCE).toContain(
+      "'task.execution.move'",
+    );
+    expect(TASK_MOVE_GESTURE_SOURCE).toContain(
+      "'task.execution.reorder'",
+    );
 
     expect(MAIN_SOURCE).toContain(
       'void executeSourceRefreshAction({',

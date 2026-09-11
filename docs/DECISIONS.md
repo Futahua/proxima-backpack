@@ -1078,3 +1078,33 @@ H4. Creator-vault FSA remains separate and read-only under D51/D52.
 retain this namespace across a normal Papers restart, or that OPFS cannot support the
 later required crash-durability and coordinated-writer contract. In that case HARD
 GATE B reopens before any real import; there is no silent fallback location.
+
+---
+
+## D55 — The UI reaches record mutations through the operation layer, not the dispatcher
+
+**Decided:** a surface gesture that mutates a record calls the semantic operation layer
+directly — the Elastic drop calls `moveTaskByGesture`, which validates, writes through the
+recovery coordinator and then re-reads the source. The registered action dispatcher keeps its
+typed refusal for every record-mutation action type and continues to hold no store authority;
+`task.execution.move` is no longer dispatched by the shell at all, because a rejection the
+reader never experienced would be a false entry in the event ring that Stage 17 audits.
+
+Both callers still meet at one operation: the gesture and an agent caller reach the same
+`createTask`/`updateTask`/`deleteTask` functions with the same closed typed mutation union, and
+the same typed refusal vocabulary (`validation-refused`, `not-found`, `stale-revision`,
+`semantic-conflict`, `recovery-required`, `storage-failure`) comes back to either. What the
+dispatcher owns today is presentation and navigation plus the typed-unavailable contract that
+keeps record mutations unreachable while the store is not activated.
+
+**Why:** the dispatcher is a synchronous function over in-memory state, and a record mutation
+is an asynchronous durable write behind a recovery gate. Making one call the other would either
+give the shell store authority — which the containment guard exists to prevent and which
+`d6e2b30` removed — or force a promise through every existing dispatch site. The operation
+layer already speaks the taxonomy's names for what a gesture *is* (`task.execution.move` versus
+`task.execution.reorder`), which is the vocabulary the parity and coverage audits read.
+
+**Reverses if:** `actionProtocol` gains an asynchronous, injected record-mutation executor — an
+authority the shell passes in rather than holds — at which point the gesture should be routed
+through the dispatcher so there is exactly one semantic entry point for a UI caller and an
+agent caller.

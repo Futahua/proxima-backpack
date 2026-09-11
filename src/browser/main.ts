@@ -7,6 +7,9 @@ import { coexistenceReadiness, declareCoexistenceReadiness } from './coexistence
 import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
 import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupSource.js';
+import { resolveBrowserTaskMutations, type BrowserTaskMutations } from '../adapters/browserTaskMutations.js';
+import { moveTaskByGesture } from '../app/taskMoveGesture.js';
+import { executionStateOf } from '../app/recordStateProjection.js';
 import type { SourceMode, SourceSession } from '../app/sourceSession.js';
 import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
 import { executeSourceRefreshAction } from '../app/sourceRefreshAction.js';
@@ -17,8 +20,9 @@ import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirector
 import { loadVaultState } from '../app/vaultRepository.js';
 import { fixedClock, sequentialIdGenerator, systemClock } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
+import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
-import type { ProximaState, Task } from '../domain/types.js';
+import type { ProximaState, ElasticColumn, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
 import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
@@ -93,6 +97,11 @@ let elasticSelectedTaskId: string | null = null;
  */
 let taskEditorDraft: TaskEditorDraft | null = null;
 let elasticDropRefusal: string | null = null;
+/** The browser's task-write operations once a record-store run has been cleared to write. */
+let taskMutations: BrowserTaskMutations | null = null;
+let taskMutationResolution: Promise<BrowserTaskMutations | null> | null = null;
+/** Why there is no write path, in the shell's own words, for the refusal banner. */
+let taskMutationUnavailable: string | null = null;
 let elasticProgressTimer: number | null = null;
 let actionDispatcher: ProximaActionDispatcher | null = null;
 let sourceSession: SourceSession | null = null;
@@ -555,6 +564,92 @@ async function refreshFromSource(
   return await sourceSession?.refresh(reason) ?? null;
 }
 
+/**
+ * The browser's task-write operations, resolved on first use.
+ *
+ * The shell receives *operations*, never storage: the record backend, the recovery journal and
+ * Stage 7's recovery gate are composed behind the adapter, and this call returns either the
+ * four callables or a typed reason there are none. A run whose records are still legacy
+ * Markdown has no record write path at all — the honest answer is a refusal that names why,
+ * not a gesture that appears to work and reverts on the next read.
+ */
+async function resolveTaskWritePath(): Promise<BrowserTaskMutations | null> {
+  if (taskMutations !== null) return taskMutations;
+
+  if (taskMutationResolution === null) {
+    taskMutationResolution = (async () => {
+      if (sourceSession?.snapshot().sourceMode !== 'record-store') {
+        taskMutationUnavailable = 'record-writes-need-an-activated-store';
+        return null;
+      }
+      const resolved = await resolveBrowserTaskMutations({
+        // The same clock rule the dispatcher follows: a deterministic run stays deterministic,
+        // and only a live external source gets wall time. A record store reached by an
+        // acceptance run is deterministic on purpose.
+        clock: sourceSession?.snapshot().sourceMode === 'external' ? systemClock : FIXED_CLOCK,
+      });
+      if (!resolved.ok) {
+        taskMutationUnavailable = resolved.reason;
+        return null;
+      }
+      taskMutations = resolved.mutations;
+      taskMutationUnavailable = null;
+      return taskMutations;
+    })();
+  }
+
+  const resolved = await taskMutationResolution;
+  // A refusal is not cached: a page that activates a store later in its life must not be held
+  // to the answer it would have given before.
+  if (resolved === null) taskMutationResolution = null;
+  return resolved;
+}
+
+/**
+ * An Elastic drop, from gesture to converged surface.
+ *
+ * The card is never redrawn as moved first. The write is attempted and whatever the store then
+ * says is what the next render shows, which is why a refusal needs no undo path: the
+ * authoritative record never changed, so the card is already where it belongs. A lost race is
+ * the one refusal where the board was showing a revision the store no longer holds, so the
+ * gesture re-reads before the refusal is drawn beside the authoritative card.
+ */
+async function moveTaskFromDrop(
+  taskId: string,
+  targetColumn: ElasticColumn,
+  targetIndex: number,
+): Promise<void> {
+  const task = appState?.tasks.find((candidate) => candidate.id === taskId);
+  if (!task) return;
+
+  elasticDropRefusal = null;
+  const mutations = await resolveTaskWritePath();
+  if (mutations === null) {
+    elasticDropRefusal = taskMutationUnavailable ?? 'record-writes-unavailable';
+    render();
+    return;
+  }
+
+  const result = await moveTaskByGesture(
+    {
+      updateTask: (input) => mutations.updateTask(input),
+      refresh: refreshFromSource,
+    },
+    {
+      taskId: task.id as OpaqueRecordId,
+      // The column the board is showing *is* the execution state, and the revision the card
+      // was read at is what makes a stale gesture a refusal rather than a silent overwrite.
+      from: executionStateOf(task),
+      to: targetColumn,
+      targetIndex,
+      expectedRevision: task.source.revision,
+    },
+  );
+
+  if (!result.ok) elasticDropRefusal = result.reason;
+  render();
+}
+
 function bindInteractions(): void {
   const root = element<HTMLElement>('#proxima-app');
   if (root.dataset.interactionsBound === 'true') return;
@@ -666,16 +761,7 @@ function bindInteractions(): void {
       dispatchAction({ type: 'elastic.unlock' });
     },
     moveTask: ({ taskId, targetColumn, targetIndex }) => {
-      const result = dispatchAction({
-        type: 'task.execution.move',
-        taskId,
-        targetColumn,
-        targetIndex,
-      });
-      if (result && !result.ok) {
-        elasticDropRefusal = result.error.code;
-        render();
-      }
+      void moveTaskFromDrop(taskId, targetColumn, targetIndex);
     },
   });
 
