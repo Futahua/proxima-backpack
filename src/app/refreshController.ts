@@ -39,7 +39,14 @@ export interface RefreshController {
 }
 
 function boundedLoad(load: LoadResult): LoadResult {
-  return { state: load.state, problems: boundDiagnosticProblems(load.problems), revisions: { ...load.revisions }, layout: load.layout, census: load.census };
+  return {
+    state: load.state,
+    problems: boundDiagnosticProblems(load.problems),
+    revisions: { ...load.revisions },
+    layout: load.layout,
+    physicalCandidates: load.physicalCandidates,
+    census: load.census,
+  };
 }
 
 function revisionMap(load: LoadResult): Map<string, string> {

@@ -50,6 +50,21 @@ export interface LoadOptions {
   layout?: Partial<VaultLayout>;
 }
 
+/**
+ * One readable physical legacy record before logical-id deduplication.
+ *
+ * Compatibility state still refuses duplicate logical ids. Import planning needs the
+ * physical candidates as separate provenance-bearing inputs so a collision cannot erase
+ * one of the creator's files before migration has had a chance to account for it.
+ */
+export interface LegacyPhysicalRecordCandidate {
+  readonly kind: RecordKind;
+  readonly legacyId: string;
+  readonly name: string;
+  readonly projectId: string | null;
+  readonly source: SourceRef;
+}
+
 export interface LoadResult {
   state: ProximaState;
   /** Everything the reader could not interpret, or interpreted with a caveat. */
@@ -58,6 +73,13 @@ export interface LoadResult {
   revisions: Record<string, string>;
   /** The layout actually used, so a caller can report what it read. */
   layout: VaultLayout;
+  /**
+   * Readable, non-vetoed physical records before compatibility-state id deduplication.
+   *
+   * This is observational import input only. `state` retains the historical first-wins
+   * duplicate refusal contract.
+   */
+  physicalCandidates: LegacyPhysicalRecordCandidate[];
   /**
    * What the transport actually saw, per record kind, and what became of it.
    *
@@ -158,6 +180,12 @@ export async function loadVaultState(
   const taskRead = await readKind(vault, layout, 'task', problems, revisions);
   const eventRead = await readKind(vault, layout, 'event', problems, revisions);
 
+  const physicalCandidates = [
+    ...projectRead.documents.map(toPhysicalCandidate),
+    ...taskRead.documents.map(toPhysicalCandidate),
+    ...eventRead.documents.map(toPhysicalCandidate),
+  ];
+
   const before = problems.length;
   const projects = collect(projectRead.documents, problems, toProject);
   const tasks = collect(taskRead.documents, problems, toTask);
@@ -171,6 +199,7 @@ export async function loadVaultState(
     problems: problems.map(redactDiagnosticProblem),
     revisions,
     layout,
+    physicalCandidates,
     census: {
       project: census(projectRead.scan, projects.length, rejections, 'project'),
       task: census(taskRead.scan, tasks.length, rejections, 'task'),
@@ -394,6 +423,30 @@ function displayName(fm: Record<string, unknown>, id: string): string {
 /** Legacy files wrote `projectId`; the preferred format writes `project`. Both read. */
 function projectReference(fm: Record<string, unknown>): string | null {
   return asStringOrNull(fm.project) ?? asStringOrNull(fm.projectId);
+}
+
+function toPhysicalCandidate(
+  doc: SourcedDocument,
+): LegacyPhysicalRecordCandidate {
+  const legacyId = resolveId(doc);
+
+  return {
+    kind: doc.source.kind,
+    legacyId,
+    name: displayName(
+      doc.frontmatter,
+      legacyId,
+    ),
+    projectId:
+      doc.source.kind === 'project'
+        ? null
+        : projectReference(
+            doc.frontmatter,
+          ),
+    source: {
+      ...doc.source,
+    },
+  };
 }
 
 function toProject(doc: SourcedDocument, id: string, problems: LoadProblem[]): Project {

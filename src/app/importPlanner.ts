@@ -14,17 +14,12 @@ import type {
   RecordKind,
 } from '../domain/records.js';
 import type {
-  CalendarEvent,
-  Project,
-  ProximaState,
-  Task,
-} from '../domain/types.js';
-import type {
   VaultReader,
 } from '../ports/vault.js';
 import {
   loadVaultState,
   type KindCensus,
+  type LegacyPhysicalRecordCandidate,
   type LoadOptions,
 } from './vaultRepository.js';
 
@@ -53,18 +48,85 @@ export interface LegacyImportIdentityAllocator {
   ): string;
 }
 
+export const LEGACY_IMPORT_IDENTITY_MAPPING_SCHEMA_VERSION =
+  1 as const;
+
+/**
+ * Durable import identity metadata.
+ *
+ * The physical source is the reconciliation key because a duplicate legacy alias cannot
+ * itself identify one physical candidate. Legacy ids remain provenance only.
+ */
+export interface LegacyImportIdentityMappingEntry {
+  readonly kind: RecordKind;
+  readonly sourcePath: string;
+  readonly sourceRevision: string;
+  readonly idOrigin: IdOrigin;
+  readonly legacyId: string;
+  readonly recordId: OpaqueRecordId;
+}
+
+export interface LegacyImportIdentityMappingManifest {
+  readonly schemaVersion:
+    typeof LEGACY_IMPORT_IDENTITY_MAPPING_SCHEMA_VERSION;
+  readonly entries:
+    readonly LegacyImportIdentityMappingEntry[];
+}
+
+/**
+ * Persistence boundary for the identity manifest.
+ *
+ * A production implementation must resolve `save` only after the supplied manifest is
+ * durably stored. This slice defines and exercises that boundary but does not select or
+ * materialize a staging-store location.
+ */
+export interface LegacyImportIdentityMappingStore {
+  load():
+    Promise<
+      LegacyImportIdentityMappingManifest | null
+    >;
+
+  save(
+    mapping:
+      LegacyImportIdentityMappingManifest,
+  ): Promise<void>;
+}
+
 export interface LegacyImportIdentityPlan {
   readonly kind: RecordKind;
   readonly legacyId: string;
   readonly recordId:
     OpaqueRecordId;
   readonly name: string;
+  readonly disposition:
+    | 'candidate'
+    | 'duplicate-alias-collision';
   readonly source: {
     readonly path: string;
     readonly revision: string;
     readonly idOrigin:
       IdOrigin;
   };
+}
+
+export interface LegacyImportCollisionCandidate {
+  readonly recordId:
+    OpaqueRecordId;
+  readonly sourcePath:
+    string;
+  readonly sourceRevision:
+    string;
+  readonly idOrigin:
+    IdOrigin;
+}
+
+export interface LegacyImportCollisionPlan {
+  readonly kind:
+    RecordKind;
+  readonly legacyId:
+    string;
+  readonly candidates:
+    readonly LegacyImportCollisionCandidate[];
 }
 
 export interface LegacyImportProjectReferencePlan {
@@ -78,8 +140,12 @@ export interface LegacyImportProjectReferencePlan {
     string;
   readonly projectRecordId:
     OpaqueRecordId | null;
+  readonly candidateProjectRecordIds?:
+    readonly OpaqueRecordId[];
   readonly resolution:
-    'resolved' | 'missing';
+    | 'resolved'
+    | 'missing'
+    | 'ambiguous';
 }
 
 export type LegacyImportProblemDisposition =
@@ -114,6 +180,12 @@ export interface LegacyImportPlan {
   readonly mappings:
     readonly LegacyImportIdentityPlan[];
 
+  readonly identityMapping:
+    LegacyImportIdentityMappingManifest;
+
+  readonly collisions:
+    readonly LegacyImportCollisionPlan[];
+
   readonly projectReferences:
     readonly LegacyImportProjectReferencePlan[];
 
@@ -135,11 +207,17 @@ export interface LegacyImportPlan {
       number;
     readonly events:
       number;
+    readonly physicalCandidates:
+      number;
     readonly mappings:
+      number;
+    readonly collisions:
       number;
     readonly projectReferences:
       number;
     readonly unresolvedProjectReferences:
+      number;
+    readonly ambiguousProjectReferences:
       number;
     readonly readerProblems:
       number;
@@ -157,26 +235,6 @@ export interface LegacyImportPlan {
   };
 }
 
-type LegacyEntry =
-  | {
-      readonly kind:
-        'project';
-      readonly record:
-        Project;
-    }
-  | {
-      readonly kind:
-        'task';
-      readonly record:
-        Task;
-    }
-  | {
-      readonly kind:
-        'event';
-      readonly record:
-        CalendarEvent;
-    };
-
 const KIND_ORDER:
   Readonly<
     Record<
@@ -189,46 +247,20 @@ const KIND_ORDER:
     event: 2,
   };
 
-function entriesOf(
-  state:
-    ProximaState,
-): LegacyEntry[] {
-  const entries:
-    LegacyEntry[] = [
-      ...state.projects.map(
-        (record) => ({
-          kind:
-            'project' as const,
-          record,
-        }),
-      ),
-      ...state.tasks.map(
-        (record) => ({
-          kind:
-            'task' as const,
-          record,
-        }),
-      ),
-      ...state.events.map(
-        (record) => ({
-          kind:
-            'event' as const,
-          record,
-        }),
-      ),
-    ];
-
-  return entries.sort(
-    (left, right) =>
-      KIND_ORDER[left.kind]
-      - KIND_ORDER[right.kind]
-      || left.record.source.path
-        .localeCompare(
-          right.record
-            .source
-            .path,
-        ),
-  );
+function sortedCandidates(
+  candidates:
+    readonly LegacyPhysicalRecordCandidate[],
+): LegacyPhysicalRecordCandidate[] {
+  return [...candidates]
+    .sort(
+      (left, right) =>
+        KIND_ORDER[left.kind]
+        - KIND_ORDER[right.kind]
+        || left.source.path
+          .localeCompare(
+            right.source.path,
+          ),
+    );
 }
 
 function mappingKey(
@@ -238,6 +270,179 @@ function mappingKey(
     string,
 ): string {
   return `${kind}\u0000${legacyId}`;
+}
+
+function physicalKey(
+  kind:
+    RecordKind,
+  sourcePath:
+    string,
+): string {
+  return `${kind}\u0000${sourcePath}`;
+}
+
+function compareIdentityMappingEntries(
+  left:
+    LegacyImportIdentityMappingEntry,
+  right:
+    LegacyImportIdentityMappingEntry,
+): number {
+  return (
+    KIND_ORDER[left.kind]
+    - KIND_ORDER[right.kind]
+    || left.sourcePath
+      .localeCompare(
+        right.sourcePath,
+      )
+  );
+}
+
+function normalizeIdentityMapping(
+  mapping:
+    LegacyImportIdentityMappingManifest | null,
+): LegacyImportIdentityMappingManifest {
+  if (mapping === null) {
+    return {
+      schemaVersion:
+        LEGACY_IMPORT_IDENTITY_MAPPING_SCHEMA_VERSION,
+      entries: [],
+    };
+  }
+
+  if (
+    mapping.schemaVersion
+    !== LEGACY_IMPORT_IDENTITY_MAPPING_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      `Unsupported legacy import identity mapping schema: ${String(mapping.schemaVersion)}`,
+    );
+  }
+
+  const entries =
+    mapping.entries
+      .map(
+        (entry) => ({
+          kind:
+            entry.kind,
+          sourcePath:
+            entry.sourcePath,
+          sourceRevision:
+            entry.sourceRevision,
+          idOrigin:
+            entry.idOrigin,
+          legacyId:
+            entry.legacyId,
+          recordId:
+            parseOpaqueRecordId(
+              entry.recordId,
+            ),
+        }),
+      )
+      .sort(
+        compareIdentityMappingEntries,
+      );
+
+  const byPhysical =
+    new Map<
+      string,
+      LegacyImportIdentityMappingEntry
+    >();
+
+  const byRecordId =
+    new Map<
+      OpaqueRecordId,
+      string
+    >();
+
+  for (
+    const entry
+    of entries
+  ) {
+    if (
+      entry.sourcePath.length
+      === 0
+      || entry.legacyId.length
+        === 0
+    ) {
+      throw new Error(
+        'Legacy import identity mapping entries must include non-empty sourcePath and legacyId.',
+      );
+    }
+
+    const candidateKey =
+      physicalKey(
+        entry.kind,
+        entry.sourcePath,
+      );
+
+    if (
+      byPhysical.has(
+        candidateKey,
+      )
+    ) {
+      throw new Error(
+        `Legacy import identity mapping contains duplicate physical candidate ${entry.kind} ${entry.sourcePath}.`,
+      );
+    }
+
+    const existingSource =
+      byRecordId.get(
+        entry.recordId,
+      );
+
+    if (
+      existingSource !== undefined
+    ) {
+      throw new Error(
+        `Legacy import identity mapping reuses canonical record id ${entry.recordId} for ${entry.sourcePath}; already assigned to ${existingSource}.`,
+      );
+    }
+
+    byPhysical.set(
+      candidateKey,
+      entry,
+    );
+
+    byRecordId.set(
+      entry.recordId,
+      entry.sourcePath,
+    );
+  }
+
+  return {
+    schemaVersion:
+      LEGACY_IMPORT_IDENTITY_MAPPING_SCHEMA_VERSION,
+    entries,
+  };
+}
+
+export async function readLegacyImportIdentityMapping(
+  store:
+    LegacyImportIdentityMappingStore,
+): Promise<
+  LegacyImportIdentityMappingManifest | null
+> {
+  const loaded =
+    await store.load();
+
+  return loaded === null
+    ? null
+    : normalizeIdentityMapping(
+        loaded,
+      );
+}
+
+export async function writeLegacyImportIdentityMapping(
+  store:
+    LegacyImportIdentityMappingStore,
+  mapping:
+    LegacyImportIdentityMappingManifest,
+): Promise<void> {
+  await store.save(
+    normalizeIdentityMapping(
+      mapping,
+    ),
+  );
 }
 
 function cloneCensus(
@@ -277,6 +482,9 @@ export async function planLegacyMarkdownImport(
     LegacyImportIdentityAllocator,
   options:
     LoadOptions = {},
+  priorIdentityMapping:
+    LegacyImportIdentityMappingManifest | null =
+      null,
 ): Promise<
   LegacyImportPlan
 > {
@@ -286,14 +494,21 @@ export async function planLegacyMarkdownImport(
       options,
     );
 
-  const entries =
-    entriesOf(
-      loaded.state,
+  const candidates =
+    sortedCandidates(
+      loaded.physicalCandidates,
     );
 
-  const mappings:
-    LegacyImportIdentityPlan[] =
-      [];
+  const priorMapping =
+    normalizeIdentityMapping(
+      priorIdentityMapping,
+    );
+
+  const reconciledByPhysical =
+    new Map<
+      string,
+      LegacyImportIdentityMappingEntry
+    >();
 
   const claimedCanonicalIds =
     new Map<
@@ -303,35 +518,96 @@ export async function planLegacyMarkdownImport(
 
   for (
     const entry
-    of entries
+    of priorMapping.entries
   ) {
+    const candidateKey =
+      physicalKey(
+        entry.kind,
+        entry.sourcePath,
+      );
+
+    reconciledByPhysical.set(
+      candidateKey,
+      entry,
+    );
+
+    claimedCanonicalIds.set(
+      entry.recordId,
+      candidateKey,
+    );
+  }
+
+  const aliasCounts =
+    new Map<
+      string,
+      number
+    >();
+
+  for (
+    const candidate
+    of candidates
+  ) {
+    const aliasKey =
+      mappingKey(
+        candidate.kind,
+        candidate.legacyId,
+      );
+
+    aliasCounts.set(
+      aliasKey,
+      (
+        aliasCounts.get(
+          aliasKey,
+        )
+        ?? 0
+      ) + 1,
+    );
+  }
+
+  const mappings:
+    LegacyImportIdentityPlan[] =
+      [];
+
+  for (
+    const candidate
+    of candidates
+  ) {
+    const candidateKey =
+      physicalKey(
+        candidate.kind,
+        candidate.source.path,
+      );
+
+    const prior =
+      reconciledByPhysical.get(
+        candidateKey,
+      );
+
     const request:
       LegacyImportIdentityRequest = {
         kind:
-          entry.kind,
+          candidate.kind,
         legacyId:
-          entry.record.id,
+          candidate.legacyId,
         sourcePath:
-          entry.record
-            .source
-            .path,
+          candidate.source.path,
         sourceRevision:
-          entry.record
-            .source
-            .revision,
+          candidate.source.revision,
         idOrigin:
-          entry.record
-            .source
-            .idOrigin,
+          candidate.source.idOrigin,
       };
 
     const recordId =
-      parseOpaqueRecordId(
-        allocator
-          .recordIdFor(
-            request,
-          ),
-      );
+      prior
+        ? parseOpaqueRecordId(
+            prior.recordId,
+          )
+        : parseOpaqueRecordId(
+            allocator
+              .recordIdFor(
+                request,
+              ),
+          );
 
     const existing =
       claimedCanonicalIds.get(
@@ -340,6 +616,8 @@ export async function planLegacyMarkdownImport(
 
     if (
       existing !== undefined
+      && existing
+        !== candidateKey
     ) {
       throw new Error(
         `Import identity allocator reused canonical record id ${recordId} for ${request.sourcePath}; already assigned to ${existing}.`,
@@ -350,41 +628,57 @@ export async function planLegacyMarkdownImport(
       pairCanonicalWithLegacyProvenance(
         defineCanonicalRecordHeader({
           kind:
-            entry.kind,
+            candidate.kind,
           id:
             recordId,
           name:
-            entry.record
-              .name,
+            candidate.name,
         }),
         defineLegacyImportProvenance(
-          entry.record
-            .source
-            .path,
+          candidate.source.path,
           [
             {
               value:
-                entry.record
-                  .id,
+                candidate.legacyId,
               origin:
-                entry.record
-                  .source
+                candidate.source
                   .idOrigin,
             },
           ],
         ),
       );
 
+    const mappingEntry:
+      LegacyImportIdentityMappingEntry = {
+        kind:
+          candidate.kind,
+        sourcePath:
+          candidate.source.path,
+        sourceRevision:
+          candidate.source.revision,
+        idOrigin:
+          candidate.source.idOrigin,
+        legacyId:
+          candidate.legacyId,
+        recordId:
+          assignment.record.id,
+      };
+
+    reconciledByPhysical.set(
+      candidateKey,
+      mappingEntry,
+    );
+
     claimedCanonicalIds.set(
       assignment.record.id,
-      request.sourcePath,
+      candidateKey,
     );
 
     mappings.push({
       kind:
-        entry.kind,
+        candidate.kind,
       legacyId:
-        entry.record.id,
+        candidate.legacyId,
       recordId:
         assignment
           .record
@@ -399,96 +693,266 @@ export async function planLegacyMarkdownImport(
             .provenance
             .sourcePath,
         revision:
-          entry.record
-            .source
+          candidate.source
             .revision,
         idOrigin:
-          entry.record
-            .source
+          candidate.source
             .idOrigin,
       },
+      disposition:
+        (
+          aliasCounts.get(
+            mappingKey(
+              candidate.kind,
+              candidate.legacyId,
+            ),
+          )
+          ?? 0
+        ) > 1
+          ? 'duplicate-alias-collision'
+          : 'candidate',
     });
   }
+
+  const identityMapping:
+    LegacyImportIdentityMappingManifest = {
+      schemaVersion:
+        LEGACY_IMPORT_IDENTITY_MAPPING_SCHEMA_VERSION,
+      entries: [
+        ...reconciledByPhysical
+          .values(),
+      ].sort(
+        compareIdentityMappingEntries,
+      ),
+    };
+
+  const mappingByPhysical =
+    new Map<
+      string,
+      LegacyImportIdentityPlan
+    >();
 
   const mappingByLegacy =
     new Map<
       string,
-      LegacyImportIdentityPlan
+      LegacyImportIdentityPlan[]
     >();
 
   for (
     const mapping
     of mappings
   ) {
-    mappingByLegacy.set(
-      mappingKey(
+    mappingByPhysical.set(
+      physicalKey(
         mapping.kind,
-        mapping.legacyId,
+        mapping.source.path,
       ),
       mapping,
     );
+
+    const aliasKey =
+      mappingKey(
+        mapping.kind,
+        mapping.legacyId,
+      );
+
+    const existing =
+      mappingByLegacy.get(
+        aliasKey,
+      )
+      ?? [];
+
+    existing.push(
+      mapping,
+    );
+
+    mappingByLegacy.set(
+      aliasKey,
+      existing,
+    );
   }
+
+  const collisions:
+    LegacyImportCollisionPlan[] =
+      [];
+
+  for (
+    const [
+      aliasKey,
+      aliasMappings,
+    ]
+    of mappingByLegacy
+  ) {
+    if (
+      aliasMappings.length
+      < 2
+    ) {
+      continue;
+    }
+
+    const first =
+      aliasMappings[0];
+
+    if (!first) {
+      continue;
+    }
+
+    collisions.push({
+      kind:
+        first.kind,
+      legacyId:
+        first.legacyId,
+      candidates:
+        aliasMappings
+          .map(
+            (mapping) => ({
+              recordId:
+                mapping.recordId,
+              sourcePath:
+                mapping.source.path,
+              sourceRevision:
+                mapping.source
+                  .revision,
+              idOrigin:
+                mapping.source
+                  .idOrigin,
+            }),
+          )
+          .sort(
+            (left, right) =>
+              left.sourcePath
+                .localeCompare(
+                  right.sourcePath,
+                ),
+          ),
+    });
+
+    void aliasKey;
+  }
+
+  collisions.sort(
+    (left, right) =>
+      KIND_ORDER[left.kind]
+      - KIND_ORDER[right.kind]
+      || left.legacyId
+        .localeCompare(
+          right.legacyId,
+        ),
+  );
 
   const projectReferences:
     LegacyImportProjectReferencePlan[] =
       [];
 
   for (
-    const entry
-    of entries
+    const candidate
+    of candidates
   ) {
     if (
-      entry.kind
+      candidate.kind
       === 'project'
-      || entry.record
-        .projectId
+      || candidate.projectId
         === null
     ) {
       continue;
     }
 
     const sourceMapping =
-      mappingByLegacy.get(
-        mappingKey(
-          entry.kind,
-          entry.record.id,
+      mappingByPhysical.get(
+        physicalKey(
+          candidate.kind,
+          candidate.source.path,
         ),
       );
 
     if (!sourceMapping) {
       throw new Error(
-        `Import planner lost identity mapping for ${entry.kind} ${entry.record.id}.`,
+        `Import planner lost identity mapping for ${candidate.kind} ${candidate.source.path}.`,
       );
     }
 
-    const projectMapping =
+    const projectMappings =
       mappingByLegacy.get(
         mappingKey(
           'project',
-          entry.record
-            .projectId,
+          candidate.projectId,
         ),
+      )
+      ?? [];
+
+    if (
+      projectMappings.length
+      === 0
+    ) {
+      projectReferences.push({
+        sourceKind:
+          candidate.kind,
+        sourceLegacyId:
+          candidate.legacyId,
+        sourceRecordId:
+          sourceMapping.recordId,
+        legacyProjectId:
+          candidate.projectId,
+        projectRecordId:
+          null,
+        resolution:
+          'missing',
+      });
+
+      continue;
+    }
+
+    if (
+      projectMappings.length
+      > 1
+    ) {
+      projectReferences.push({
+        sourceKind:
+          candidate.kind,
+        sourceLegacyId:
+          candidate.legacyId,
+        sourceRecordId:
+          sourceMapping.recordId,
+        legacyProjectId:
+          candidate.projectId,
+        projectRecordId:
+          null,
+        candidateProjectRecordIds:
+          projectMappings
+            .map(
+              (mapping) =>
+                mapping.recordId,
+            ),
+        resolution:
+          'ambiguous',
+      });
+
+      continue;
+    }
+
+    const projectMapping =
+      projectMappings[0];
+
+    if (!projectMapping) {
+      throw new Error(
+        `Import planner lost the sole project mapping for ${candidate.projectId}.`,
       );
+    }
 
     projectReferences.push({
       sourceKind:
-        entry.kind,
+        candidate.kind,
       sourceLegacyId:
-        entry.record.id,
+        candidate.legacyId,
       sourceRecordId:
         sourceMapping
           .recordId,
       legacyProjectId:
-        entry.record
-          .projectId,
+        candidate.projectId,
       projectRecordId:
-        projectMapping
-          ?.recordId
-        ?? null,
+        projectMapping.recordId,
       resolution:
-        projectMapping
-          ? 'resolved'
-          : 'missing',
+        'resolved',
     });
   }
 
@@ -527,6 +991,8 @@ export async function planLegacyMarkdownImport(
       'legacy-markdown-compatibility-reader',
 
     mappings,
+    identityMapping,
+    collisions,
     projectReferences,
     problems,
 
@@ -548,17 +1014,28 @@ export async function planLegacyMarkdownImport(
         loaded.state
           .events
           .length,
+      physicalCandidates:
+        candidates.length,
       mappings:
         mappings.length,
+      collisions:
+        collisions.length,
       projectReferences:
         projectReferences.length,
       unresolvedProjectReferences:
         projectReferences
           .filter(
             (reference) =>
-              reference
-                .resolution
-              === 'missing',
+              reference.resolution
+              !== 'resolved',
+          )
+          .length,
+      ambiguousProjectReferences:
+        projectReferences
+          .filter(
+            (reference) =>
+              reference.resolution
+              === 'ambiguous',
           )
           .length,
       readerProblems:

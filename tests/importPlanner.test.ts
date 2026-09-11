@@ -9,11 +9,16 @@ import {
 } from '../src/adapters/memoryVault.js';
 import {
   planLegacyMarkdownImport,
+  readLegacyImportIdentityMapping,
+  writeLegacyImportIdentityMapping,
   type LegacyImportIdentityAllocator,
+  type LegacyImportIdentityMappingManifest,
+  type LegacyImportIdentityMappingStore,
   type LegacyImportIdentityRequest,
 } from '../src/app/importPlanner.js';
 import {
   fixtureFiles,
+  fixtureVault,
 } from './fixtures.js';
 
 function opaque(
@@ -51,6 +56,42 @@ function sequentialAllocator(
       return id;
     },
   };
+}
+
+class MemoryDurableIdentityMappingStore
+implements LegacyImportIdentityMappingStore {
+  private mapping:
+    LegacyImportIdentityMappingManifest | null =
+      null;
+
+  saves = 0;
+
+  async load():
+    Promise<
+      LegacyImportIdentityMappingManifest | null
+    > {
+    return this.mapping === null
+      ? null
+      : JSON.parse(
+          JSON.stringify(
+            this.mapping,
+          ),
+        ) as LegacyImportIdentityMappingManifest;
+  }
+
+  async save(
+    mapping:
+      LegacyImportIdentityMappingManifest,
+  ): Promise<void> {
+    this.mapping =
+      JSON.parse(
+        JSON.stringify(
+          mapping,
+        ),
+      ) as LegacyImportIdentityMappingManifest;
+
+    this.saves += 1;
+  }
 }
 
 describe(
@@ -548,6 +589,308 @@ describe(
         ).rejects.toThrow(
           /Legacy identity aliases are provenance only/,
         );
+      },
+    );
+
+    it(
+      'plans every readable physical duplicate candidate separately and records alias collisions',
+      async () => {
+        const plan =
+          await planLegacyMarkdownImport(
+            fixtureVault(
+              'vault-duplicates',
+            ),
+            sequentialAllocator(),
+          );
+
+        expect(
+          plan.counts,
+        ).toMatchObject({
+          projects: 1,
+          tasks: 1,
+          events: 1,
+          physicalCandidates: 5,
+          mappings: 5,
+          collisions: 2,
+        });
+
+        expect(
+          plan.collisions.map(
+            (collision) => ({
+              kind:
+                collision.kind,
+              legacyId:
+                collision.legacyId,
+              sourcePaths:
+                collision.candidates
+                  .map(
+                    (candidate) =>
+                      candidate.sourcePath,
+                  ),
+            }),
+          ),
+        ).toEqual([
+          {
+            kind:
+              'project',
+            legacyId:
+              'proj-twin',
+            sourcePaths: [
+              'Proxima/projects/proj-twin.md',
+              'Proxima/projects/proj-twin/index.md',
+            ],
+          },
+          {
+            kind:
+              'task',
+            legacyId:
+              'task-shared',
+            sourcePaths: [
+              'Proxima/tasks/Another file.md',
+              'Proxima/tasks/task-shared.md',
+            ],
+          },
+        ]);
+
+        const collisionMappings =
+          plan.mappings.filter(
+            (mapping) =>
+              mapping.disposition
+              === 'duplicate-alias-collision',
+          );
+
+        expect(
+          collisionMappings,
+        ).toHaveLength(4);
+
+        expect(
+          new Set(
+            plan.mappings.map(
+              (mapping) =>
+                mapping.recordId,
+            ),
+          ).size,
+        ).toBe(5);
+
+        expect(
+          plan.identityMapping.entries,
+        ).toHaveLength(5);
+
+        expect(
+          plan.identityMapping.entries
+            .map(
+              (entry) => ({
+                kind:
+                  entry.kind,
+                legacyId:
+                  entry.legacyId,
+                sourcePath:
+                  entry.sourcePath,
+                sourceRevision:
+                  entry.sourceRevision,
+                idOrigin:
+                  entry.idOrigin,
+                recordId:
+                  entry.recordId,
+              }),
+            ),
+        ).toEqual(
+          plan.identityMapping.entries,
+        );
+
+        expect(
+          plan.problems.filter(
+            (problem) =>
+              problem.code
+              === 'duplicate-id',
+          ),
+        ).toHaveLength(2);
+
+        expect(
+          plan.writes,
+        ).toEqual({
+          legacyMarkdown: 0,
+          recordStore: 0,
+          staging: 0,
+        });
+      },
+    );
+
+    it(
+      'reuses a durable physical-candidate mapping and refuses to pick through an ambiguous duplicate project alias',
+      async () => {
+        const files = {
+          'Proxima/projects/a.md': [
+            '---',
+            'id: shared-project',
+            'type: project',
+            'name: Shared A',
+            '---',
+            '',
+          ].join('\n'),
+
+          'Proxima/projects/b.md': [
+            '---',
+            'id: shared-project',
+            'type: project',
+            'name: Shared B',
+            '---',
+            '',
+          ].join('\n'),
+
+          'Proxima/tasks/ref.md': [
+            '---',
+            'id: task-ref',
+            'name: References duplicate project',
+            'project: shared-project',
+            '---',
+            '',
+          ].join('\n'),
+        };
+
+        const durableStore =
+          new MemoryDurableIdentityMappingStore();
+
+        const first =
+          await planLegacyMarkdownImport(
+            createMemoryVault(
+              files,
+            ),
+            sequentialAllocator(),
+            {},
+            await readLegacyImportIdentityMapping(
+              durableStore,
+            ),
+          );
+
+        expect(
+          first.counts,
+        ).toMatchObject({
+          physicalCandidates: 3,
+          mappings: 3,
+          collisions: 1,
+          projectReferences: 1,
+          unresolvedProjectReferences: 1,
+          ambiguousProjectReferences: 1,
+        });
+
+        const projectCollision =
+          first.collisions.find(
+            (collision) =>
+              collision.kind
+                === 'project'
+              && collision.legacyId
+                === 'shared-project',
+          );
+
+        expect(
+          projectCollision,
+        ).toBeDefined();
+
+        const reference =
+          first.projectReferences[0];
+
+        expect(
+          reference,
+        ).toMatchObject({
+          sourceKind:
+            'task',
+          sourceLegacyId:
+            'task-ref',
+          legacyProjectId:
+            'shared-project',
+          projectRecordId:
+            null,
+          resolution:
+            'ambiguous',
+        });
+
+        expect(
+          reference
+            ?.candidateProjectRecordIds,
+        ).toEqual(
+          projectCollision
+            ?.candidates
+            .map(
+              (candidate) =>
+                candidate.recordId,
+            ),
+        );
+
+        await writeLegacyImportIdentityMapping(
+          durableStore,
+          first.identityMapping,
+        );
+
+        expect(
+          durableStore.saves,
+        ).toBe(1);
+
+        const persisted =
+          await readLegacyImportIdentityMapping(
+            durableStore,
+          );
+
+        expect(persisted)
+          .toEqual(
+            first.identityMapping,
+          );
+
+        const second =
+          await planLegacyMarkdownImport(
+            createMemoryVault(
+              files,
+            ),
+            {
+              recordIdFor() {
+                throw new Error(
+                  'durable identity reconciliation must reuse existing candidate ids',
+                );
+              },
+            },
+            {},
+            persisted,
+          );
+
+        expect(
+          second.mappings.map(
+            (mapping) => ({
+              kind:
+                mapping.kind,
+              sourcePath:
+                mapping.source.path,
+              recordId:
+                mapping.recordId,
+            }),
+          ),
+        ).toEqual(
+          first.mappings.map(
+            (mapping) => ({
+              kind:
+                mapping.kind,
+              sourcePath:
+                mapping.source.path,
+              recordId:
+                mapping.recordId,
+            }),
+          ),
+        );
+
+        expect(
+          second.identityMapping,
+        ).toEqual(
+          first.identityMapping,
+        );
+
+        expect(
+          second.projectReferences,
+        ).toEqual(
+          first.projectReferences,
+        );
+
+        expect(
+          durableStore.saves,
+        ).toBe(1);
       },
     );
   },
