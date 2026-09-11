@@ -80,6 +80,14 @@ export interface LegacyPhysicalRecordCandidate {
       ElasticColumn | null;
     readonly projectType:
       Project['projectType'] | null;
+    readonly projectDescription:
+      Project['description'] | null;
+    readonly projectCreatedAt:
+      Project['createdAt'] | null;
+    readonly projectStatus:
+      Project['status'] | null;
+    readonly projectArchivedAt:
+      string | null;
     /**
      * Already-interpreted legacy project/filesystem associations.
      *
@@ -493,6 +501,15 @@ function toPhysicalCandidate(
           null,
         projectType:
           project.projectType,
+        projectDescription:
+          project.description,
+        projectCreatedAt:
+          project.createdAt,
+        projectStatus:
+          project.status,
+        projectArchivedAt:
+          project.archivedAt
+          ?? null,
         projectLinkedFolders:
           project.linkedFolders
             .map(
@@ -540,6 +557,14 @@ function toPhysicalCandidate(
           ),
         projectType:
           null,
+        projectDescription:
+          null,
+        projectCreatedAt:
+          null,
+        projectStatus:
+          null,
+        projectArchivedAt:
+          null,
         projectLinkedFolders:
           null,
         propertyValues: {
@@ -569,6 +594,14 @@ function toPhysicalCandidate(
       taskExecutionState:
         null,
       projectType: null,
+      projectDescription:
+        null,
+      projectCreatedAt:
+        null,
+      projectStatus:
+        null,
+      projectArchivedAt:
+        null,
       projectLinkedFolders:
         null,
       propertyValues: {
@@ -581,6 +614,12 @@ function toPhysicalCandidate(
 function toProject(doc: SourcedDocument, id: string, problems: LoadProblem[]): Project {
   const { frontmatter: fm, body, source } = doc;
   const issues: FieldIssue[] = [];
+  const archivedAt =
+    readOptionalDate(
+      fm.archivedAt,
+      'archivedAt',
+      issues,
+    );
   const project: Project = {
     id,
     source,
@@ -588,6 +627,9 @@ function toProject(doc: SourcedDocument, id: string, problems: LoadProblem[]): P
     description: asString(fm.description, body),
     createdAt: readDate(fm.createdAt, 'createdAt', EPOCH, issues),
     status: readEnum(fm.status, 'status', ['active', 'archived'], 'active', issues),
+    ...(archivedAt === null
+      ? {}
+      : { archivedAt }),
     projectType: readEnum(fm.projectType, 'projectType', ['task', 'schedule'], 'task', issues),
     tabBgColor: asString(fm.tabBgColor, '') || undefined,
     tabTextColor: asString(fm.tabTextColor, '') || undefined,

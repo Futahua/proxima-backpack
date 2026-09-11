@@ -49,7 +49,7 @@ import {
 } from './importSchemaPlanner.js';
 
 export const LEGACY_IMPORT_PLAN_SCHEMA_VERSION =
-  5 as const;
+  6 as const;
 
 export interface LegacyImportIdentityRequest {
   readonly kind: RecordKind;
@@ -273,6 +273,16 @@ export interface LegacyImportProjectConversionPlan {
     OpaqueRecordId;
   readonly sourcePath:
     string;
+  readonly name:
+    string;
+  readonly description:
+    string;
+  readonly createdAt:
+    string;
+  readonly status:
+    'active' | 'archived';
+  readonly archivedAt:
+    string | null;
   readonly legacyProjectType:
     'task' | 'schedule';
   readonly disposition:
@@ -1235,12 +1245,32 @@ export async function planLegacyMarkdownImport(
         candidate.compatibility
           .projectType;
 
+      const description =
+        candidate.compatibility
+          .projectDescription;
+      const createdAt =
+        candidate.compatibility
+          .projectCreatedAt;
+      const status =
+        candidate.compatibility
+          .projectStatus;
+
+      const archivedAt =
+        candidate.compatibility
+          .projectArchivedAt;
+
       if (
         legacyProjectType
         === null
+        || description
+          === null
+        || createdAt
+          === null
+        || status
+          === null
       ) {
         throw new Error(
-          `Import planner lost interpreted project type for ${candidate.source.path}.`,
+          `Import planner lost interpreted project conversion input for ${candidate.source.path}.`,
         );
       }
 
@@ -1250,6 +1280,12 @@ export async function planLegacyMarkdownImport(
           mapping.recordId,
         sourcePath:
           candidate.source.path,
+        name:
+          mapping.name,
+        description,
+        createdAt,
+        status,
+        archivedAt,
         legacyProjectType,
         disposition:
           'compatibility-import-metadata-only',
