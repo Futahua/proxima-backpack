@@ -78,6 +78,33 @@ const TASK_ROWS: readonly TaskActionRow[] = [
   { action: 'task.bulk.delete', module: 'src/app/bulkTaskActions.ts', marker: 'export async function bulkDeleteTasks', caller: 'runBacklogBulk(', testFile: 'tests/stageTenAcceptance.test.ts', testMarker: 'bulkDeleteTasks', equivalence: false },
 ];
 
+/**
+ * Stage 17's event rows, in the same shape as the task ones.
+ *
+ * The two halves of an event's life are here: the record's own fields (create, edit, delete, and the
+ * two date verbs a gesture or an agent sentence compiles to) and the series (an occurrence-scoped
+ * change, a series-scoped change, and the rule itself). The last of those is the same kind of row as
+ * task recurrence: the record layer takes a rule, and no surface offers one yet, so the table declares
+ * it operation-only and the audit asserts the missing caller rather than assuming it.
+ */
+const EVENT_ROWS: readonly TaskActionRow[] = [
+  { action: 'event.create', module: 'src/app/eventWriteActions.ts', marker: 'export async function createEventAction', caller: 'createEventFromSeed(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'createEventAction', equivalence: false },
+  { action: 'event.update', module: 'src/app/eventWriteActions.ts', marker: 'export async function saveEventAction', caller: 'saveEventFromEditor(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'saveEventAction', equivalence: false },
+  { action: 'event.delete', module: 'src/app/eventWriteActions.ts', marker: 'export async function deleteEventAction', caller: 'deleteEventFromEditor(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'deleteEventAction', equivalence: false },
+  { action: 'event.reschedule', module: 'src/app/eventWriteActions.ts', marker: 'export async function rescheduleEventAction', caller: 'changeEventFromGesture(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'rescheduleEventAction', equivalence: false },
+  { action: 'event.resize', module: 'src/app/eventWriteActions.ts', marker: 'export async function resizeEventAction', caller: 'changeEventFromGesture(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'resizeEventAction', equivalence: false },
+  { action: 'event occurrence change', module: 'src/app/eventRecurrenceActions.ts', marker: 'export async function updateOccurrenceAction', caller: 'updateOccurrenceFromScope(', testFile: 'tests/recurrenceScopeWiring.test.ts', testMarker: 'updateOccurrenceAction', equivalence: false },
+  // A series-scoped change is the same operation with the other scope, and it is the request's scope that
+  // the case names: the module declares the scope type, and the comment above the branch says which write
+  // each one means.
+  { action: 'event series change', module: 'src/app/eventRecurrenceActions.ts', marker: 'scope: OccurrenceScope', caller: 'updateOccurrenceFromScope(', testFile: 'tests/eventRecurrence.test.ts', testMarker: 'series', equivalence: false },
+];
+
+/** The event rule itself: accepted by the record layer, not offered by a surface yet. */
+const EVENT_OPERATION_ONLY_ROWS = [
+  { action: 'event.recurrence.set/clear (retained)', module: 'src/app/eventRecurrenceActions.ts', marker: 'export async function setRecurrenceAction', absentCaller: 'setRecurrenceAction(' },
+] as const;
+
 /** The one task action the record layer accepts and no surface offers yet. */
 const OPERATION_ONLY_ROWS = [
   { action: 'task recurrence (retained)', module: 'src/app/taskMutations.ts', marker: "kind: 'recurrence'" },
@@ -122,5 +149,40 @@ describe('Stage 17 task action coverage', () => {
     }
     expect(TASK_MUTATIONS).toContain('expectedRevision: input.expectedRevision');
     expect(TASK_MUTATIONS).toContain('actualRevision');
+  });
+});
+
+describe('Stage 17 event action coverage', () => {
+  it('names a module, a caller and a test for every event action the UI reaches', () => {
+    for (const row of EVENT_ROWS) {
+      expect(source(row.module), `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
+      const callerText = row.callerFile === undefined ? MAIN : source(row.callerFile);
+      expect(callerText, `${row.action}: the shell must reach it`).toContain(row.caller!);
+      expect(source(row.testFile), `${row.action}: ${row.testFile} must exercise it`).toContain(row.testMarker);
+      const compared = PARITY.includes(row.testMarker)
+        || (row.equivalenceFile !== undefined && source(row.equivalenceFile).includes(row.testMarker));
+      expect(compared, `${row.action}: equivalence claimed but not asserted`).toBe(row.equivalence);
+    }
+  });
+
+  it('leaves no event action silently agent-only, and says which one is', () => {
+    for (const row of EVENT_OPERATION_ONLY_ROWS) {
+      expect(source(row.module)).toContain(row.marker);
+      // The rule can be written and no surface offers it: that is the gap this row records, and the
+      // assertion is what keeps it from being claimed as wired.
+      expect(MAIN).not.toContain(row.absentCaller);
+    }
+  });
+
+  it('carries the record layer contract the event rows lean on', () => {
+    const mutations = source('src/app/eventMutations.ts');
+    for (const kind of ["kind: 'name'", "kind: 'span'", "kind: 'recurrence'", "kind: 'property'", "kind: 'completion'"]) {
+      expect(mutations, `the event mutation union must carry ${kind}`).toContain(kind);
+    }
+    for (const reason of ["'validation-refused'", "'not-found'", "'stale-revision'", "'semantic-conflict'", "'recovery-required'", "'storage-failure'"]) {
+      expect(mutations, `the event refusal vocabulary must carry ${reason}`).toContain(reason);
+    }
+    expect(mutations).toContain('expectedRevision: input.expectedRevision');
+    expect(mutations).toContain('actualRevision');
   });
 });
