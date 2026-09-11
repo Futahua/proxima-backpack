@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createActionDispatcher } from '../src/app/actionProtocol.js';
+import { elasticExecutionPresentation, shouldTickElasticProgress } from '../src/browser/elasticCockpit.js';
 import { createCanonicalJsonRecordStore } from '../src/app/canonicalRecordCodec.js';
 import { createRefreshController, type RefreshResult } from '../src/app/refreshController.js';
 import { startRecordMutationAuthority } from '../src/app/recordRecoveryStartup.js';
@@ -255,26 +256,75 @@ describe('Stage 9 drop wiring', () => {
     expect(app.refreshCalls).toEqual([]);
   });
 
-  it('keeps the Elastic lock and its target out of the record store', async () => {
+  it('keeps the Elastic lock, its target and a progress tick out of the record store', async () => {
     const app = await harness();
-    const task = await seeded(app.deps, 'Untouched by the clock', 'backlog', 0);
-    const before = await app.deps.store.read(task.id);
+    const running = await seeded(app.deps, 'Being worked on', 'running', 0);
+    const backlog = await seeded(app.deps, 'Waiting', 'backlog', 1);
+    const before = await Promise.all([running, backlog].map(async (task) => (await app.deps.store.read(task.id))?.observedRevision));
 
-    // The lock is session state, not a record: locking the run and moving the target are the
-    // state a progress timer renders, and neither may cost a durable task revision.
+    // The lock is session state, not a record: locking the run, moving the target and drawing
+    // the progress they produce are the same local state, and none of it may cost a durable
+    // task revision.
+    const projection = await recordStoreStateSource(app.deps.store).load();
     const dispatcher = createActionDispatcher({
-      state: (await recordStoreStateSource(app.deps.store).load()).state,
+      state: projection.state,
       clock: fixedClock(CLOCK_ISO),
       idGenerator: sequentialIdGenerator(),
       initialElasticTargetTime: '2026-09-12T05:00:00.000Z',
     });
     expect(dispatcher.dispatch({ type: 'elastic.target.set', targetTime: '2026-09-12T06:00:00.000Z' })).toMatchObject({ ok: true, changed: true });
     expect(dispatcher.dispatch({ type: 'elastic.lock' })).toMatchObject({ ok: true, changed: true, snapshot: { elasticLockedAt: '2026-09-11T21:00:00.000Z' } });
+
+    // A tick: a live run asks for one, a deterministic run derives the same numbers on demand.
+    const session = { targetTime: dispatcher.snapshot().elasticTargetTime, lockedAt: dispatcher.snapshot().elasticLockedAt };
+    expect(shouldTickElasticProgress('external', 'tasks', 'elastic', session.lockedAt)).toBe(true);
+    const presentation = elasticExecutionPresentation(
+      projection.state.tasks.filter((task) => task.status === 'running'),
+      session,
+      new Date(CLOCK_ISO),
+    );
+    expect(presentation.overallProgress).toBeGreaterThanOrEqual(0);
+    expect(presentation.overallProgress).toBeLessThanOrEqual(1);
+
     expect(dispatcher.dispatch({ type: 'elastic.unlock' })).toMatchObject({ ok: true, changed: true });
 
-    const after = await app.deps.store.read(task.id);
-    expect(after?.observedRevision).toBe(before?.observedRevision);
-    expect(app.files.size).toBe(2);
+    const after = await Promise.all([running, backlog].map(async (task) => (await app.deps.store.read(task.id))?.observedRevision));
+    expect(after).toEqual(before);
+    expect(app.files.size).toBe(3);
     expect(app.refreshCalls).toEqual([]);
+  });
+
+  it('makes a drag and the equivalent direct semantic action land on identical durable state', async () => {
+    const app = await harness();
+    const dragged = await seeded(app.deps, 'Dragged', 'backlog', 0);
+    const asked = await seeded(app.deps, 'Asked directly', 'backlog', 0);
+
+    // The human path: one drop.
+    const moved = await app.gesture({ taskId: dragged.id, from: 'backlog', to: 'running', targetIndex: 1, expectedRevision: dragged.revision });
+    expect(moved).toMatchObject({ ok: true, actionType: 'task.execution.move' });
+
+    // The direct path: the same semantic operation a caller would submit, with the same
+    // expected revision. Stage 9's parity is that these are one operation, not two.
+    const direct = await updateTask(app.deps, {
+      taskId: asked.id,
+      expectedRevision: asked.revision,
+      mutations: [{ kind: 'execution-state', value: 'running' }, { kind: 'execution-order', value: 1 }],
+    });
+    expect(direct).toMatchObject({ ok: true, outcome: 'updated' });
+
+    // Identity and the title a human typed are the only fields that differ; everything the move
+    // decided is the same, including the resulting revision the caller is told about.
+    const [{ id: draggedId, name: draggedName, ...draggedRest }, { id: askedId, name: askedName, ...askedRest }] = [
+      await app.stored(dragged.id),
+      await app.stored(asked.id),
+    ];
+    expect(draggedId).not.toBe(askedId);
+    expect(draggedName).not.toBe(askedName);
+    expect(draggedRest).toEqual(askedRest);
+    expect((await app.deps.store.read(dragged.id))?.observedRevision).toBe(`${taskRecordFileName(dragged.id)}@2`);
+    expect((await app.deps.store.read(asked.id))?.observedRevision).toBe(`${taskRecordFileName(asked.id)}@2`);
+    // And both are visible to the surfaces through the same projection.
+    expect(await app.projected(dragged.id)).toMatchObject({ status: 'running', orderIndex: 1 });
+    expect(await app.projected(asked.id)).toMatchObject({ status: 'running', orderIndex: 1 });
   });
 });
