@@ -29,6 +29,8 @@ export interface ElasticCockpitRenderOptions {
   /** The Task editor's provisional edits, or null while nothing has been edited. */
   editorDraft: TaskEditorDraft | null;
   dropRefusal: string | null;
+  /** Whether this run may write records, and the last refusal the editor produced. */
+  taskWrites: TaskModalWriteView;
   containerHeight?: number;
 }
 
@@ -49,6 +51,22 @@ export interface ElasticCockpitHandlers {
   editTask(edit: TaskEditorEdit): void;
   /** Discard the provisional edits and show the record again. */
   cancelTaskEdit(): void;
+  /** Write the provisional edits to the record. */
+  saveTask(): void;
+  /** Delete the record the editor is showing. */
+  deleteTask(): void;
+}
+
+/**
+ * What the Task editor is allowed to do about writing.
+ *
+ * `refusal === null` means a record write path exists, and Save and Delete become real controls.
+ * Anything else is the typed reason they are not — which is a different thing from a *failed*
+ * save, and that is `editorRefusal`, shown beside the form rather than instead of it.
+ */
+export interface TaskModalWriteView {
+  readonly refusal: string | null;
+  readonly editorRefusal: string | null;
 }
 
 function escapeHtml(value: unknown): string {
@@ -208,20 +226,41 @@ function renderColumn(
  *
  * Everything it shows comes from `projectTaskEditor`, so which fields exist, what each
  * one is worth and which of them are derived is a decision this function consumes rather
- * than makes. Save is refused with a typed result rather than being absent, because a
- * form that cannot save should say so where the button is.
+ * than makes. What it may *do* about writing is not decided here either: `write.refusal` is the
+ * write path's answer, so a form that cannot save says so where the button is and a form that
+ * can save lets the write path refuse the save if it has a reason to.
  */
-export function renderTaskModal(state: ProximaState, taskId: string | null, draft: TaskEditorDraft | null): string {
+export function renderTaskModal(
+  state: ProximaState,
+  taskId: string | null,
+  draft: TaskEditorDraft | null,
+  write: TaskModalWriteView,
+): string {
   if (!taskId) return '';
   const editor = projectTaskEditor(state, taskId, draft);
   if (!editor) return '';
 
   const sections = editor.sections.map((section) => `<fieldset class="task-editor-section" data-c1-key="task-editor-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map((field) => renderTaskEditorField(field, ELASTIC_EDITOR_HOOKS)).join('')}</fieldset>`).join('');
+  const note = write.refusal === null
+    ? 'Save writes them to the record store.'
+    : TASK_EDITOR_SAVE_NOTE;
   const status = editor.dirty
-    ? `<p class="task-editor-dirty" data-c1-key="task-editor-dirty" data-task-editor-dirty="true">Unsaved changes. ${escapeHtml(TASK_EDITOR_SAVE_NOTE)}</p>`
-    : `<p class="task-editor-clean" data-c1-key="task-editor-clean" data-task-editor-dirty="false">${escapeHtml(TASK_EDITOR_SAVE_NOTE)}</p>`;
+    ? `<p class="task-editor-dirty" data-c1-key="task-editor-dirty" data-task-editor-dirty="true">Unsaved changes. ${escapeHtml(note)}</p>`
+    : `<p class="task-editor-clean" data-c1-key="task-editor-clean" data-task-editor-dirty="false">${escapeHtml(write.refusal === null ? 'Nothing has been edited yet.' : note)}</p>`;
+  const refusal = write.editorRefusal === null
+    ? ''
+    : `<p class="diagnostics" data-c1-key="task-editor-refusal" data-task-editor-refusal="${escapeHtml(write.editorRefusal)}">Save refused: ${escapeHtml(write.editorRefusal)}. The record was not changed.</p>`;
 
-  return `<section class="task-modal" role="dialog" aria-modal="true" aria-label="Task editor" data-c1-key="elastic-task-modal" data-task-editor-task-id="${escapeHtml(editor.taskId)}" data-task-editor-field-count="${editor.fieldCount}"><header><h2>${escapeHtml(editor.title)}</h2><button type="button" data-elastic-action="close-task" data-c1-key="elastic-task-modal-close" aria-label="Close task editor">×</button></header>${status}${sections}<footer><button type="button" data-elastic-action="cancel-task-edit" data-c1-key="task-editor-cancel">Cancel changes</button><button type="button" data-c1-key="elastic-task-delete" data-task-editor-delete-refusal="${escapeHtml(TASK_EDITOR_SAVE_REFUSAL)}" disabled>Delete unavailable</button><button type="button" data-c1-key="elastic-task-save" data-task-editor-save-refusal="${escapeHtml(TASK_EDITOR_SAVE_REFUSAL)}" disabled>Save unavailable</button></footer></section>`;
+  const deleteControl = write.refusal === null
+    ? '<button type="button" data-elastic-action="delete-task" data-c1-key="elastic-task-delete">Delete</button>'
+    : `<button type="button" data-c1-key="elastic-task-delete" data-task-editor-delete-refusal="${escapeHtml(write.refusal)}" disabled>Delete unavailable</button>`;
+  // Save is offered only when there is something to write: a form that matches the record has no
+  // save, and the button saying so is clearer than a click that comes back refused.
+  const saveControl = write.refusal === null
+    ? `<button type="button" data-elastic-action="save-task" data-c1-key="elastic-task-save"${editor.dirty ? '' : ' disabled'}>Save</button>`
+    : `<button type="button" data-c1-key="elastic-task-save" data-task-editor-save-refusal="${escapeHtml(write.refusal)}" disabled>Save unavailable</button>`;
+
+  return `<section class="task-modal" role="dialog" aria-modal="true" aria-label="Task editor" data-c1-key="elastic-task-modal" data-task-editor-task-id="${escapeHtml(editor.taskId)}" data-task-editor-field-count="${editor.fieldCount}" data-task-editor-writes="${write.refusal === null ? 'available' : 'unavailable'}"><header><h2>${escapeHtml(editor.title)}</h2><button type="button" data-elastic-action="close-task" data-c1-key="elastic-task-modal-close" aria-label="Close task editor">×</button></header>${status}${refusal}${sections}<footer><button type="button" data-elastic-action="cancel-task-edit" data-c1-key="task-editor-cancel">Cancel changes</button>${deleteControl}${saveControl}</footer></section>`;
 }
 
 export function renderElasticCockpit(options: ElasticCockpitRenderOptions): string {
@@ -235,7 +274,7 @@ export function renderElasticCockpit(options: ElasticCockpitRenderOptions): stri
   const locked = options.session.lockedAt !== null;
   const targetValue = localTargetValue(options.session.targetTime);
 
-  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Elastic Boards</h2><p class="surface-description">Backlog, live execution and finished work.</p></div><span class="surface-count">${options.tasks.length} tasks</span></header><section class="elastic-session-controls" data-c1-key="elastic-session-controls"><label>Execution target<input type="datetime-local" value="${escapeHtml(targetValue)}" data-elastic-action="target" data-c1-key="elastic-target-input"${locked ? ' disabled' : ''}></label>${locked ? '<button type="button" data-elastic-action="unlock" data-c1-key="elastic-unlock">Unlock</button>' : `<button type="button" data-elastic-action="lock" data-c1-key="elastic-lock"${presentation.targetExpired ? ' disabled' : ''}>Lock</button>`}<div class="elastic-run-progress" data-c1-key="elastic-run-progress" data-progress-ratio="${presentation.overallProgress.toFixed(4)}"><div class="elastic-progress-fill" style="width:${(presentation.overallProgress * 100).toFixed(2)}%"></div></div>${presentation.targetExpired ? '<span class="task-overdue" data-c1-key="elastic-target-expired">Target has passed</span>' : ''}</section>${options.dropRefusal ? `<p class="diagnostics" data-c1-key="elastic-drop-refusal">Move unavailable: ${escapeHtml(options.dropRefusal)}. Task data was not changed.</p>` : ''}<div class="board-grid">${renderColumn(options.state, 'backlog', 'Backlog', board.backlog, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'running', 'Running', board.running, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'finished', 'Finished', board.finished, presentation, options.projectNames, options.now)}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft)}</section>`;
+  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Elastic Boards</h2><p class="surface-description">Backlog, live execution and finished work.</p></div><span class="surface-count">${options.tasks.length} tasks</span></header><section class="elastic-session-controls" data-c1-key="elastic-session-controls"><label>Execution target<input type="datetime-local" value="${escapeHtml(targetValue)}" data-elastic-action="target" data-c1-key="elastic-target-input"${locked ? ' disabled' : ''}></label>${locked ? '<button type="button" data-elastic-action="unlock" data-c1-key="elastic-unlock">Unlock</button>' : `<button type="button" data-elastic-action="lock" data-c1-key="elastic-lock"${presentation.targetExpired ? ' disabled' : ''}>Lock</button>`}<div class="elastic-run-progress" data-c1-key="elastic-run-progress" data-progress-ratio="${presentation.overallProgress.toFixed(4)}"><div class="elastic-progress-fill" style="width:${(presentation.overallProgress * 100).toFixed(2)}%"></div></div>${presentation.targetExpired ? '<span class="task-overdue" data-c1-key="elastic-target-expired">Target has passed</span>' : ''}</section>${options.dropRefusal ? `<p class="diagnostics" data-c1-key="elastic-drop-refusal">Move unavailable: ${escapeHtml(options.dropRefusal)}. Task data was not changed.</p>` : ''}<div class="board-grid">${renderColumn(options.state, 'backlog', 'Backlog', board.backlog, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'running', 'Running', board.running, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'finished', 'Finished', board.finished, presentation, options.projectNames, options.now)}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft, options.taskWrites)}</section>`;
 }
 
 function clearDragFeedback(root: HTMLElement): void {
@@ -277,6 +316,10 @@ export function bindElasticCockpitInteractions(root: HTMLElement, handlers: Elas
       handlers.closeTask();
     } else if (action === 'cancel-task-edit') {
       handlers.cancelTaskEdit();
+    } else if (action === 'save-task') {
+      handlers.saveTask();
+    } else if (action === 'delete-task') {
+      handlers.deleteTask();
     } else if (action === 'lock') {
       handlers.lock();
     } else if (action === 'unlock') {

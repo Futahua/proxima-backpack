@@ -184,6 +184,8 @@ function mount(
     moveTask: () => {},
     editTask: () => undefined,
     cancelTaskEdit: () => undefined,
+    saveTask: () => undefined,
+    deleteTask: () => undefined,
   });
 
   render();

@@ -9,6 +9,8 @@ import { createStartupSessionOrchestrator, type StartupInspection } from '../app
 import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupSource.js';
 import { resolveBrowserTaskMutations, type BrowserTaskMutations } from '../adapters/browserTaskMutations.js';
 import { performElasticDrop } from '../app/elasticDropAction.js';
+import { deleteTaskAction, saveTaskAction } from '../app/taskEditorWrite.js';
+import { TASK_EDITOR_SAVE_REFUSAL } from '../app/taskEditor.js';
 import type { SourceMode, SourceSession } from '../app/sourceSession.js';
 import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
 import { executeSourceRefreshAction } from '../app/sourceRefreshAction.js';
@@ -101,6 +103,8 @@ let taskMutations: BrowserTaskMutations | null = null;
 let taskMutationResolution: Promise<BrowserTaskMutations | null> | null = null;
 /** Why there is no write path, in the shell's own words, for the refusal banner. */
 let taskMutationUnavailable: string | null = null;
+/** The last refusal the Task editor's Save or Delete produced, shown beside the form. */
+let taskEditorRefusal: string | null = null;
 let elasticProgressTimer: number | null = null;
 let actionDispatcher: ProximaActionDispatcher | null = null;
 let sourceSession: SourceSession | null = null;
@@ -229,8 +233,26 @@ function boardSurface(state: ProximaState, lookup: Map<string, string>): string 
     selectedTaskId: elasticSelectedTaskId,
     editorDraft: taskEditorDraft,
     dropRefusal: elasticDropRefusal,
+    taskWrites: taskModalWriteView(),
     containerHeight: 460,
   });
+}
+
+/**
+ * What the Task editor may do about writing, as the shell currently understands it.
+ *
+ * A resolved write path means Save and Delete are real controls; anything else is the typed
+ * reason they are not, which the modal renders where the buttons are. This is deliberately
+ * derived from the same resolution a gesture uses, so the two cannot disagree about whether
+ * this run can write.
+ */
+function taskModalWriteView(): { refusal: string | null; editorRefusal: string | null } {
+  return {
+    refusal: taskMutations === null
+      ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL
+      : null,
+    editorRefusal: taskEditorRefusal,
+  };
 }
 
 function scheduleProjectionSurface(
@@ -605,6 +627,46 @@ async function resolveTaskWritePath(): Promise<BrowserTaskMutations | null> {
 }
 
 /**
+ * The card editor's Save and Delete.
+ *
+ * Both sequences live in `src/app/taskEditorWrite.ts`, where tests execute them against a real
+ * store; the shell supplies where the operations come from, what to say when this run has none,
+ * and the two sinks a render needs. A successful save clears the draft, because the record now
+ * *is* what the form says — Cancel and Save both stop being offered, which is the honest state
+ * after a write rather than a form still claiming unsaved changes.
+ */
+function taskEditorWriteDependencies() {
+  return {
+    state: appState,
+    writes: resolveTaskWritePath,
+    unavailableReason: () => taskMutationUnavailable,
+    refresh: refreshFromSource,
+    setRefusal: (reason: string | null) => { taskEditorRefusal = reason; },
+    render,
+  };
+}
+
+async function saveTaskFromEditorAction(): Promise<void> {
+  const effect = await saveTaskAction(taskEditorWriteDependencies(), {
+    taskId: elasticSelectedTaskId,
+    draft: taskEditorDraft,
+  });
+  if (effect.clearDraft) {
+    taskEditorDraft = null;
+    render();
+  }
+}
+
+async function deleteTaskFromEditorAction(): Promise<void> {
+  const effect = await deleteTaskAction(taskEditorWriteDependencies(), { taskId: elasticSelectedTaskId });
+  if (effect.closeEditor) {
+    elasticSelectedTaskId = null;
+    taskEditorDraft = null;
+    render();
+  }
+}
+
+/**
  * An Elastic drop.
  *
  * The sequence itself lives in `src/app/elasticDropAction.ts`, where it is executed by tests
@@ -709,11 +771,13 @@ function bindInteractions(): void {
     openTask: (taskId) => {
       elasticSelectedTaskId = taskId;
       taskEditorDraft = null;
+      taskEditorRefusal = null;
       render();
     },
     closeTask: () => {
       elasticSelectedTaskId = null;
       taskEditorDraft = null;
+      taskEditorRefusal = null;
       render();
     },
     editTask: (edit) => {
@@ -722,10 +786,18 @@ function bindInteractions(): void {
       // No render: a keystroke must not be able to take the field away from the reader.
       // The draft is what the next render, Cancel and Save all read.
       taskEditorDraft = applyTaskEditorEdit(taskEditorDraft ?? taskEditorDraftFor(task), edit);
+      taskEditorRefusal = null;
     },
     cancelTaskEdit: () => {
       taskEditorDraft = null;
+      taskEditorRefusal = null;
       render();
+    },
+    saveTask: () => {
+      void saveTaskFromEditorAction();
+    },
+    deleteTask: () => {
+      void deleteTaskFromEditorAction();
     },
     setTarget: (targetTime) => {
       elasticDropRefusal = null;
@@ -1107,6 +1179,9 @@ async function boot(): Promise<void> {
   setText('#boot-status', 'Hydrated');
   bindInteractions();
   render();
+  // Resolved once so the Task editor knows whether Save and Delete are real controls before a
+  // reader opens it: the answer is a property of this run, not of the gesture that needs it.
+  void resolveTaskWritePath().then(() => { render(); }).catch(() => undefined);
   void restoreAndProbeDirectory().then((report) => { if (report) renderFsaProbe(report); }).catch(() => undefined);
 }
 

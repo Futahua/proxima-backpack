@@ -366,3 +366,41 @@ export function taskEditorSaveActionType(
     moved.value,
   );
 }
+
+/**
+ * What a save or a delete means for the form the shell is holding.
+ *
+ * The shell owns two pieces of session state — which card is open and what has been typed — so
+ * the sequences report what should happen to them rather than reaching for them. That keeps the
+ * rule that matters testable: a **refused** save keeps the edits (the reader retries from the
+ * authoritative revision rather than retyping), and only an accepted one clears them, because
+ * only then does the record actually match the form.
+ */
+export interface TaskEditorActionEffect {
+  /** Null when there was nothing to act on: no card was open. */
+  readonly outcome: TaskEditorWriteOutcome | null;
+  readonly clearDraft: boolean;
+  readonly closeEditor: boolean;
+}
+
+function noEditor(): TaskEditorActionEffect {
+  return { outcome: null, clearDraft: false, closeEditor: false };
+}
+
+export async function saveTaskAction(
+  deps: TaskEditorWriteDependencies,
+  input: { readonly taskId: string | null; readonly draft: TaskEditorDraft | null },
+): Promise<TaskEditorActionEffect> {
+  if (input.taskId === null) return noEditor();
+  const outcome = await saveTaskFromEditor(deps, { taskId: input.taskId, draft: input.draft });
+  return { outcome, clearDraft: outcome.ok, closeEditor: false };
+}
+
+export async function deleteTaskAction(
+  deps: TaskEditorWriteDependencies,
+  input: { readonly taskId: string | null },
+): Promise<TaskEditorActionEffect> {
+  if (input.taskId === null) return noEditor();
+  const outcome = await deleteTaskFromEditor(deps, { taskId: input.taskId });
+  return { outcome, clearDraft: outcome.ok, closeEditor: outcome.ok };
+}

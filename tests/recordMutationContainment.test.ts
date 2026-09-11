@@ -28,7 +28,6 @@ const OPERATION_UI_RECORD_MUTATIONS = ['task.execution.move'] as const;
 const UNWIRED_UI_RECORD_MUTATIONS = [
   'project.archive', 'project.restore', 'project.delete', 'event.schedule.recurrence.change',
 ] as const;
-
 /** How a mutation reaches storage must live behind the adapter seam, never in the shell. */
 const STORE_AUTHORITY_COMPOSITION = [
   'createCanonicalJsonRecordStore(', 'createRecordMutationCoordinator(', 'startRecordMutationAuthority(',
@@ -102,6 +101,21 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     // And the app layer holds no storage either: it takes operations, not a store.
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(dropAction).not.toContain(forbidden);
     expect(dropAction).not.toContain('RecordStore');
+
+    // The Task editor's Save and Delete are wired the same way: intents from the binder, sequences
+    // in the app layer, and the shell's only decisions are its own two pieces of state.
+    expect(source).toContain('saveTaskAction(');
+    expect(source).toContain('deleteTaskAction(');
+    expect(source).toMatch(/saveTask:\s*\(\)\s*=>\s*\{[\s\S]{0,120}?saveTaskFromEditorAction\(\)/);
+    expect(source).toMatch(/deleteTask:\s*\(\)\s*=>\s*\{[\s\S]{0,120}?deleteTaskFromEditorAction\(\)/);
+    const editorWrite = await readFile(new URL('../src/app/taskEditorWrite.ts', import.meta.url), 'utf8');
+    expect(editorWrite).toContain('expectedRevision: task.source.revision');
+    for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(editorWrite).not.toContain(forbidden);
+    expect(editorWrite).not.toContain('RecordStore');
+    // The modal's write view is the shell's own resolution, so a form cannot offer a write this
+    // run has no path for.
+    expect(source).toContain('taskWrites: taskModalWriteView(),');
+    expect(source).toContain('taskMutations === null');
 
     for (const type of DISPATCHER_UI_RECORD_MUTATIONS) expect(source).toMatch(new RegExp(`dispatchAction\\(\\{[\\s\\S]{0,500}?type:\\s*'${escapeRegExp(type)}'`));
     for (const type of UNWIRED_UI_RECORD_MUTATIONS) expect(source).not.toContain(`type: '${type}'`);

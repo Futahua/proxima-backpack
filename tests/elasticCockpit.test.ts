@@ -69,6 +69,7 @@ function render(selectedTaskId: string | null = null): string {
     selectedTaskId,
     editorDraft: null,
     dropRefusal: null,
+    taskWrites: { refusal: 'action-not-available', editorRefusal: null },
     containerHeight: 800,
   });
 }
@@ -196,6 +197,7 @@ describe('Stage 2 Elastic execution cockpit', () => {
       selectedTaskId: null,
       editorDraft: null,
       dropRefusal: null,
+      taskWrites: { refusal: 'action-not-available', editorRefusal: null },
       containerHeight: 800,
     });
 
@@ -225,6 +227,8 @@ describe('Stage 2 Elastic execution cockpit', () => {
       moveTask: () => calls.push('move'),
       editTask: () => undefined,
       cancelTaskEdit: () => undefined,
+      saveTask: () => undefined,
+      deleteTask: () => undefined,
     };
 
     bindElasticCockpitInteractions(document.body, handlers);
@@ -255,6 +259,7 @@ describe('Stage 2 Elastic execution cockpit', () => {
       selectedTaskId: null,
       editorDraft: null,
       dropRefusal: 'action-not-available',
+      taskWrites: { refusal: 'action-not-available', editorRefusal: null },
       containerHeight: 800,
     });
 
@@ -278,6 +283,8 @@ describe('Stage 2 Elastic execution cockpit', () => {
       moveTask: (intent) => moves.push(intent),
       editTask: () => undefined,
       cancelTaskEdit: () => undefined,
+      saveTask: () => undefined,
+      deleteTask: () => undefined,
     });
 
     const harness = createInteractionHarness(document);
@@ -333,6 +340,8 @@ describe('Stage 2 Elastic execution cockpit', () => {
       moveTask: (intent) => moves.push(intent),
       editTask: () => undefined,
       cancelTaskEdit: () => undefined,
+      saveTask: () => undefined,
+      deleteTask: () => undefined,
     });
 
     const harness = createInteractionHarness(document);
@@ -439,10 +448,16 @@ describe('Stage 6 Task editor in the Task modal', () => {
    * A session over the production renderer and binder. An edit deliberately does not
    * re-render, which is what production does — a keystroke must not take the field away
    * from the reader — so a case that wants to see the draft drawn asks for `draw()`.
+   *
+   * The write view is a parameter because it is the shell that decides it, not the modal: the
+   * default is "this run cannot write", which is what a fixture boot resolves to.
    */
-  function mount() {
+  function mount(writes: { refusal: string | null; editorRefusal?: string | null } = { refusal: 'action-not-available' }) {
     let selectedTaskId: string | null = editableTask.id;
     let draft: TaskEditorDraft | null = null;
+    let editorRefusal: string | null = writes.editorRefusal ?? null;
+    const saves: (TaskEditorDraft | null)[] = [];
+    const deletes: string[] = [];
     const root = document.createElement('div');
     document.body.appendChild(root);
 
@@ -457,6 +472,7 @@ describe('Stage 6 Task editor in the Task modal', () => {
         selectedTaskId,
         editorDraft: draft,
         dropRefusal: null,
+        taskWrites: { refusal: writes.refusal, editorRefusal },
       });
     };
 
@@ -474,6 +490,10 @@ describe('Stage 6 Task editor in the Task modal', () => {
         draft = applyTaskEditorEdit(draft ?? taskEditorDraftFor(record), edit);
       },
       cancelTaskEdit: () => { draft = null; draw(); },
+      // The shell's half: what the binder reports is what these record. What a write path then
+      // does with it is the app layer's business, and its own suite proves that.
+      saveTask: () => { saves.push(draft); editorRefusal = null; draw(); },
+      deleteTask: () => { deletes.push(selectedTaskId ?? ''); selectedTaskId = null; draft = null; draw(); },
     });
 
     return {
@@ -481,6 +501,8 @@ describe('Stage 6 Task editor in the Task modal', () => {
       harness: createInteractionHarness(root),
       draw,
       draft: () => draft,
+      saves,
+      deletes,
       control: (key: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-c1-key="${key}"]`),
       /** Tick a box the way the document does, then report it. */
       toggle: (key: string) => {
@@ -595,6 +617,45 @@ describe('Stage 6 Task editor in the Task modal', () => {
     expect(save.textContent).toContain('Save unavailable');
     expect(mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="elastic-task-delete"]')!.disabled).toBe(true);
     expect(mounted.root.querySelector('[data-c1-key="task-editor-cancel"]')).not.toBeNull();
+    // And the modal says which of the two worlds it is in, so a caller need not read the buttons.
+    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')!.getAttribute('data-task-editor-writes')).toBe('unavailable');
+  });
+
+  it('offers Save only when there is something to write, and reports both controls through the binder', () => {
+    const mounted = mount({ refusal: null });
+    const save = () => mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="elastic-task-save"]')!;
+    const remove = () => mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="elastic-task-delete"]')!;
+
+    // A form that matches the record has nothing to save, so the button is offered disabled.
+    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')!.getAttribute('data-task-editor-writes')).toBe('available');
+    expect(save().disabled).toBe(true);
+    expect(save().getAttribute('data-task-editor-save-refusal')).toBeNull();
+    expect(remove().disabled).toBe(false);
+    expect(remove().textContent).toBe('Delete');
+
+    mounted.harness.typeText('task-editor-name', '!');
+    mounted.draw();
+
+    expect(save().disabled).toBe(false);
+    mounted.harness.click('elastic-task-save');
+    expect(mounted.saves).toHaveLength(1);
+    expect(mounted.saves[0]!.values.name).toBe('Editable task!');
+
+    mounted.harness.click('elastic-task-delete');
+    expect(mounted.deletes).toEqual([editableTask.id]);
+    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')).toBeNull();
+  });
+
+  it('draws a refused save beside the form without claiming the record changed', () => {
+    const mounted = mount({ refusal: null, editorRefusal: 'stale-revision' });
+    const refusal = mounted.root.querySelector('[data-c1-key="task-editor-refusal"]')!;
+
+    expect(refusal.getAttribute('data-task-editor-refusal')).toBe('stale-revision');
+    expect(refusal.textContent).toContain('stale-revision');
+    expect(refusal.textContent).toContain('The record was not changed');
+    // The form is still there with its edits, which is what lets a reader retry from the
+    // authoritative revision rather than losing what they typed.
+    expect(mounted.control('task-editor-name')).not.toBeNull();
   });
 
   it('closes without leaving a draft behind for the next task', () => {

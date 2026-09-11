@@ -17,8 +17,10 @@ import { recordStoreStateSource } from '../src/app/stateSource.js';
 import { createRefreshController, type RefreshReason, type RefreshResult } from '../src/app/refreshController.js';
 import { applyTaskEditorEdit, taskEditorDraftFor, type TaskEditorDraft } from '../src/app/taskEditor.js';
 import {
+  deleteTaskAction,
   deleteTaskFromEditor,
   planTaskEditorSave,
+  saveTaskAction,
   saveTaskFromEditor,
   taskEditorSaveActionType,
   type TaskEditorWriteDependencies,
@@ -333,5 +335,64 @@ describe('Stage 9 editor save and delete', () => {
     // The loser's value never reached the record, and the card now shows the winner's.
     expect(await app.stored(id)).toMatchObject({ name: 'Renamed first', weight: 1 });
     expect(await app.task(id)).toMatchObject({ name: 'Renamed first' });
+  });
+});
+
+describe('Stage 9 what a save means for the form', () => {
+  it('leaves the edits in place when the save was refused, and clears them when it was accepted', async () => {
+    const app = await world();
+    const id = await app.seed('Keeps its edits', 'backlog');
+    const editor = app.editor();
+    // The record as this editor rendered it, held across both saves below.
+    const rendered = await editor.state();
+    const seed = taskEditorDraftFor(rendered.tasks.find((candidate) => candidate.id === id)!);
+
+    const accepted = await saveTaskAction(
+      editor.depsFor(rendered),
+      { taskId: id, draft: applyTaskEditorEdit(seed, { fieldId: 'name', value: 'Typed' }) },
+    );
+    expect(accepted).toMatchObject({ clearDraft: true, closeEditor: false });
+    expect(accepted.outcome).toMatchObject({ ok: true, outcome: 'updated' });
+    expect(await app.stored(id)).toMatchObject({ name: 'Typed' });
+
+    // A second save built on the record this editor was still showing: the record has moved on,
+    // so the write is refused — and the form keeps what was typed, which is what lets the reader
+    // retry from the authoritative revision instead of retyping it.
+    const stale = await saveTaskAction(
+      editor.depsFor(rendered),
+      { taskId: id, draft: applyTaskEditorEdit(seed, { fieldId: 'weight', value: '7' }) },
+    );
+    expect(stale).toMatchObject({ clearDraft: false, closeEditor: false });
+    expect(stale.outcome).toMatchObject({ ok: false, reason: 'stale-revision' });
+    expect(await app.stored(id)).toMatchObject({ name: 'Typed', weight: 1 });
+  });
+
+  it('closes the editor only when a delete was accepted', async () => {
+    const app = await world();
+    const id = await app.seed('Closes on delete', 'backlog');
+    const editor = app.editor();
+
+    const deleted = await deleteTaskAction(editor.depsFor(await editor.state()), { taskId: id });
+    expect(deleted).toMatchObject({ clearDraft: true, closeEditor: true });
+    expect(deleted.outcome).toMatchObject({ ok: true, outcome: 'deleted' });
+
+    // A second delete of something already gone closes nothing: there was no accepted write.
+    const again = await deleteTaskAction(editor.depsFor(await editor.state()), { taskId: id });
+    expect(again).toMatchObject({ clearDraft: false, closeEditor: false });
+    expect(again.outcome).toMatchObject({ ok: false, reason: 'unknown-task' });
+  });
+
+  it('does nothing at all when no card is open, not even resolving a write path', async () => {
+    const app = await world();
+    const editor = app.editor();
+
+    const saved = await saveTaskAction(editor.depsFor(await editor.state()), { taskId: null, draft: null });
+    const removed = await deleteTaskAction(editor.depsFor(await editor.state()), { taskId: null });
+
+    expect(saved).toEqual({ outcome: null, clearDraft: false, closeEditor: false });
+    expect(removed).toEqual({ outcome: null, clearDraft: false, closeEditor: false });
+    expect(editor.refusals).toEqual([]);
+    expect(editor.renders).toEqual([]);
+    expect(app.refreshCalls).toEqual([]);
   });
 });

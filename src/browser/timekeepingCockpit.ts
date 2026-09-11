@@ -8,7 +8,7 @@ import { deadlineHue, localDateKey } from '../domain/time.js';
 import type { ProximaState, Task } from '../domain/types.js';
 import { calendarGridDates } from './calendarGrid.js';
 import { renderTaskModal } from './elasticCockpit.js';
-import type { TaskEditorDraft } from '../app/taskEditor.js';
+import { TASK_EDITOR_SAVE_REFUSAL, type TaskEditorDraft } from '../app/taskEditor.js';
 
 export interface DeadlineCalendarEntry {
   taskId: string;
@@ -474,7 +474,7 @@ export function renderTimekeepingCockpit(
       : '',
   ].join('');
 
-  return `<section class="surface" data-c1-key="tasks-timekeeping-region" aria-label="Timekeeping"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Timekeeping</h2><p class="surface-description">Calendar, timeline and countdown workspace.</p></div><span class="surface-count">${options.tasks.length} tasks</span></header><div class="surface-switcher secondary" data-c1-key="timekeeping-panel-controls" role="group" aria-label="Timekeeping panels">${panelToggle('calendar', 'Calendar', options.panels.calendar)}${panelToggle('timeline', 'Timeline/Gantt', options.panels.timeline)}${panelToggle('countdowns', 'Countdowns', options.panels.countdowns)}</div><div data-c1-key="timekeeping-panel-stack">${panels || '<p class="empty-state" data-c1-key="timekeeping-no-panels">No Timekeeping panels are visible.</p>'}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft)}</section>`;
+  return `<section class="surface" data-c1-key="tasks-timekeeping-region" aria-label="Timekeeping"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Timekeeping</h2><p class="surface-description">Calendar, timeline and countdown workspace.</p></div><span class="surface-count">${options.tasks.length} tasks</span></header><div class="surface-switcher secondary" data-c1-key="timekeeping-panel-controls" role="group" aria-label="Timekeeping panels">${panelToggle('calendar', 'Calendar', options.panels.calendar)}${panelToggle('timeline', 'Timeline/Gantt', options.panels.timeline)}${panelToggle('countdowns', 'Countdowns', options.panels.countdowns)}</div><div data-c1-key="timekeeping-panel-stack">${panels || '<p class="empty-state" data-c1-key="timekeeping-no-panels">No Timekeeping panels are visible.</p>'}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft, { refusal: TASK_EDITOR_SAVE_REFUSAL, editorRefusal: null })}</section>`;
 }
 
 interface TimelineGestureState {
