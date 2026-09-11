@@ -8,7 +8,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-function runEvidenceOnce(script) {
+function runEvidence(script) {
   return new Promise((resolve, reject) => {
     execFile(process.execPath, [script], { cwd: process.cwd(), windowsHide: true }, (error, stdout, stderr) => {
       const code = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
@@ -24,18 +24,6 @@ function runEvidenceOnce(script) {
       }
     });
   });
-}
-
-async function runEvidence(script) {
-  let lastError;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    try {
-      return await runEvidenceOnce(script);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError;
 }
 
 const beforeCommit = await runEvidence(BEFORE_COMMIT);
