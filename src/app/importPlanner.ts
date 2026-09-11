@@ -30,6 +30,10 @@ import {
   type LoadOptions,
 } from './vaultRepository.js';
 import {
+  planLegacyDerivedProperties,
+  type LegacyImportDerivedPropertyPlan,
+} from './importDerivedPropertyPlanner.js';
+import {
   planLegacyPropertyValues,
   type LegacyImportPropertyValuePlan,
 } from './importPropertyPlanner.js';
@@ -40,7 +44,7 @@ import {
 } from './importSchemaPlanner.js';
 
 export const LEGACY_IMPORT_PLAN_SCHEMA_VERSION =
-  3 as const;
+  4 as const;
 
 export interface LegacyImportIdentityRequest {
   readonly kind: RecordKind;
@@ -326,6 +330,9 @@ export interface LegacyImportPlan {
 
   readonly propertyValues:
     LegacyImportPropertyValuePlan | null;
+
+  readonly derivedProperties:
+    LegacyImportDerivedPropertyPlan | null;
 
   readonly identityMapping:
     LegacyImportIdentityMappingManifest;
@@ -906,6 +913,18 @@ export async function planLegacyMarkdownImport(
           schemaSettings,
         });
 
+  const derivedProperties =
+    schemaPlanning === null
+    || schemaSettings === null
+    || propertyValues === null
+      ? null
+      : planLegacyDerivedProperties({
+          snapshot:
+            schemaPlanning.snapshot,
+          schemaSettings,
+          propertyValues,
+        });
+
   const mappingByPhysical =
     new Map<
       string,
@@ -1421,6 +1440,7 @@ export async function planLegacyMarkdownImport(
     conversions,
     schemaSettings,
     propertyValues,
+    derivedProperties,
     projectReferences,
     problems,
 

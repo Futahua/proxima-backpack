@@ -473,7 +473,7 @@ describe(
 
         expect(
           result.schemaVersion,
-        ).toBe(3);
+        ).toBe(4);
 
         expect(
           record.schemaScope,
