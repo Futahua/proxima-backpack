@@ -2,10 +2,10 @@ import { CANONICAL_DOMAIN_SCHEMA_VERSION } from './canonicalDataOwnership.js';
 import type { IdOrigin } from './records.js';
 
 /**
- * First future canonical-record schema boundary.
+ * Shared identity header for canonical-domain schema version 2.
  *
- * This version covers identity only. Later HARD GATE A slices may add canonical
- * record fields, but they must retain this opaque-id separation.
+ * Complete persisted record shapes are defined by `canonicalRecordV2.ts`; this
+ * header remains the common opaque-identity prefix for every record kind.
  */
 export const CANONICAL_RECORD_SCHEMA_VERSION = CANONICAL_DOMAIN_SCHEMA_VERSION;
 

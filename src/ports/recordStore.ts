@@ -66,8 +66,9 @@ export interface RecordStoreFileBackend {
  * Runtime schema boundary supplied to the store.
  *
  * Stage 7 must never trust parsed JSON merely because TypeScript says it has a
- * record type. The complete canonical-v2 codec is a later Stage 7 slice; this
- * port makes validation mandatory rather than optional.
+ * record type. The canonical-domain-v2 codec is supplied by
+ * `app/canonicalRecordCodec`; this port keeps validation mandatory rather than
+ * optional for every adapter use.
  */
 export interface RecordStoreCodec<
   T extends CanonicalRecordHeader = CanonicalRecordHeader,
