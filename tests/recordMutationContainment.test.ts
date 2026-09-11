@@ -14,7 +14,6 @@ import { fixtureVault } from './fixtures.js';
  */
 const DISPATCHER_UI_RECORD_MUTATIONS = [
   'canvas.node.geometry.change', 'canvas.node.remove',
-  'task.timeline.change',
 ] as const;
 
 /**
@@ -31,7 +30,7 @@ const DISPATCHER_UI_RECORD_MUTATIONS = [
  */
 const OPERATION_UI_RECORD_MUTATIONS = [
   'task.execution.move', 'project.create', 'project.archive', 'project.restore', 'project.delete',
-  'event.schedule.create', 'event.schedule.change',
+  'event.schedule.create', 'event.schedule.change', 'task.timeline.change',
 ] as const;
 
 const UNWIRED_UI_RECORD_MUTATIONS = [
@@ -175,6 +174,18 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     // The revision is the one the surface was rendering, and a lost race re-reads.
     expect(eventActions).toContain('revision = event.source.revision');
     expect(eventActions).toContain('convergeAfterWrite(');
+
+    // The Gantt's date change is wired the same way, and the guard follows it: the shell runs a
+    // sequence, and the row the bar landed in is *reported* rather than written, because A3 keeps
+    // Gantt row placement local instead of making it a third durable task order.
+    expect(source).toContain('changeTaskDatesAction(');
+    expect(source).toMatch(/changeTask:\s*\(\{ taskId, operation, proposedStartDate, proposedDeadline, targetRowIndex \}\)\s*=>\s*\{[\s\S]{0,140}?changeTaskDatesFromGantt\(/);
+    const timeline = await readFile(new URL('../src/app/timelineChangeAction.ts', import.meta.url), 'utf8');
+    for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(timeline).not.toContain(forbidden);
+    expect(timeline).not.toContain('RecordStore');
+    expect(timeline).toContain('expectedRevision: task.source.revision');
+    expect(timeline).toContain('rowApplied: false');
+    expect(timeline).toContain('convergeAfterWrite(');
 
     for (const type of DISPATCHER_UI_RECORD_MUTATIONS) expect(source).toMatch(new RegExp(`dispatchAction\\(\\{[\\s\\S]{0,500}?type:\\s*'${escapeRegExp(type)}'`));
     for (const type of UNWIRED_UI_RECORD_MUTATIONS) expect(source).not.toContain(`type: '${type}'`);

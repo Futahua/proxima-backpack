@@ -45,6 +45,12 @@ const PROJECT_LIFECYCLE_SOURCE = readFileSync(
   'utf8',
 );
 
+/** The Gantt's write sequence, where the three bar operations' names now live. */
+const TIMELINE_CHANGE_SOURCE = readFileSync(
+  resolve(process.cwd(), 'src/app/timelineChangeAction.ts'),
+  'utf8',
+);
+
 /** The Schedule's write sequences, where the two gesture verbs' names now live. */
 const EVENT_WRITE_ACTIONS_SOURCE = readFileSync(
   resolve(process.cwd(), 'src/app/eventWriteActions.ts'),
@@ -92,7 +98,6 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
       'elastic.target.set',
       'elastic.lock',
       'elastic.unlock',
-      'task.timeline.change',
       'calendar.navigate',
       'calendar.today',
       'schedule.mode.select',
@@ -138,6 +143,12 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
     expect(EVENT_WRITE_ACTIONS_SOURCE).toContain(
       "export type EventWriteVerb = 'create' | 'update' | 'delete' | 'reschedule' | 'resize';",
     );
+
+    // The Gantt's date change went the same way: the shell reaches the sequence, and the three
+    // operations a bar gesture can be live in the module that owns the write.
+    expect(MAIN_SOURCE).toContain('changeTaskDatesFromGantt(');
+    expect(MAIN_SOURCE).not.toContain("type: 'task.timeline.change'");
+    expect(TIMELINE_CHANGE_SOURCE).toContain("export type TimelineChangeOperation = 'move' | 'resize-start' | 'resize-end';");
 
     expect(MAIN_SOURCE).toContain(
       'void executeSourceRefreshAction({',

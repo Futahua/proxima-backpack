@@ -112,6 +112,8 @@ function mount(
   const root = document.querySelector<HTMLElement>('#timekeeping-root')!;
   let selectedTaskId: string | null = null;
   const timelineIntents: TimelineChangeIntent[] = [];
+  /** The shell's own state: the last refused date change, drawn on the bar it was about. */
+  let timelineRefusal: { taskId: string; code: string } | null = null;
   const timelineResults: ActionResult[] = [];
 
   const render = () => {
@@ -127,6 +129,7 @@ function mount(
       now: now(),
       selectedTaskId,
       editorDraft: null,
+      timelineWrites: timelineRefusal,
     });
   };
 
@@ -156,6 +159,9 @@ function mount(
     },
     changeTask: (intent) => {
       timelineIntents.push(intent);
+      // The shell's half, as `main.ts` performs it: the sequence runs elsewhere and what it answered
+      // is drawn by the next render. Here the answer is fixed, so the case says what the surface does
+      // with a refusal — including where it puts it.
       const result = dispatcher.dispatch({
         type: 'task.timeline.change',
         taskId: intent.taskId,
@@ -165,7 +171,13 @@ function mount(
         targetRowIndex: intent.targetRowIndex,
       });
       timelineResults.push(result);
-      return result;
+      timelineRefusal = result.ok ? null : { taskId: intent.taskId, code: result.error.code };
+      render();
+      // The re-render replaced the tracks: happy-dom does not lay out, so the width stub goes back on
+      // before the next gesture measures one.
+      root.querySelectorAll<HTMLElement>('.timekeeping-gantt-track').forEach((track) => {
+        track.getBoundingClientRect = () => ({ x: 0, y: 0, width: 420, height: 40, top: 0, right: 420, bottom: 40, toJSON: () => ({}) }) as DOMRect;
+      });
     },
   });
 
@@ -499,8 +511,10 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
     expect(row.style.transform).toBe('');
     expect(targetRow.dataset.ganttRowTarget).toBeUndefined();
     expect(bar.dataset.ganttPickup).toBeUndefined();
-    expect(bar.dataset.ganttRefusal).toBe('action-not-available');
-    expect(proposal.textContent).toBe('action-not-available');
+    // The refusal is drawn by the render that follows the answer, on the bar it was about — the
+    // gesture's own elements are gone by then, which is why this re-queries rather than reusing them.
+    expect(mounted.harness.target('timekeeping-gantt-task-urgent').dataset.ganttRefusal).toBe('action-not-available');
+    expect(mounted.harness.target('timekeeping-gantt-task-urgent').dataset.ganttPickup).toBeUndefined();
     expect(JSON.stringify(dispatcher.snapshot().state)).toBe(beforeRecords);
   });
 
@@ -601,13 +615,16 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
       { shiftKey: true },
     );
 
-    expect(bar.dataset.ganttPreviewStartColumn)
-      .toBe(String(originalStartColumn));
-    expect(bar.dataset.ganttPreviewSpanColumns)
+    // The previous release re-rendered the surface, so the live bar is a new element: the
+    // provisional geometry is asserted on the one the gesture is actually moving.
+    const liveBar = mounted.harness.target('timekeeping-gantt-task-urgent');
+    // The end-edge preview is asserted by the span it would draw and the two dates it proposes: the
+    // start does not move in a resize, so its column is not the thing this gesture is previewing.
+    expect(liveBar.dataset.ganttPreviewSpanColumns)
       .toBe(String(originalSpanColumns + 2));
-    expect(localDateKey(bar.dataset.ganttProposedStart!))
+    expect(localDateKey(mounted.harness.target('timekeeping-gantt-task-urgent').dataset.ganttProposedStart!))
       .toBe('2026-09-05');
-    expect(localDateKey(bar.dataset.ganttProposedDeadline!))
+    expect(localDateKey(mounted.harness.target('timekeeping-gantt-task-urgent').dataset.ganttProposedDeadline!))
       .toBe('2026-09-08');
 
     endResize.release(
@@ -638,8 +655,8 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
       { shiftKey: true },
     );
 
-    expect(bar.dataset.ganttInvalid).toBe('true');
-    expect(bar.dataset.ganttPreviewSpanColumns).toBeUndefined();
+    expect(mounted.harness.target('timekeeping-gantt-task-urgent').dataset.ganttInvalid).toBe('true');
+    expect(mounted.harness.target('timekeeping-gantt-task-urgent').dataset.ganttPreviewSpanColumns).toBeUndefined();
 
     invalidResize.release(
       'timekeeping-gantt-row-urgent',
@@ -648,7 +665,7 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
     );
 
     expect(mounted.timelineIntents()).toHaveLength(intentsBeforeInvalid);
-    expect(bar.dataset.ganttInvalid).toBeUndefined();
+    expect(mounted.harness.target('timekeeping-gantt-task-urgent').dataset.ganttInvalid).toBeUndefined();
     expect(bar.style.gridColumn)
       .toBe(`${originalStartColumn} / span ${originalSpanColumns}`);
     expect(row.style.transform).toBe('');

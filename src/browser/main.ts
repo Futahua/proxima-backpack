@@ -66,6 +66,7 @@ import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor } from './work
 import { archiveProjectAction, createProjectAction, deleteProjectAction, restoreProjectAction, updateProjectAction, type ProjectLifecycleOutcome } from '../app/projectLifecycleActions.js';
 import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
 import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, type EventWriteOutcome } from '../app/eventWriteActions.js';
+import { changeTaskDatesAction } from '../app/timelineChangeAction.js';
 import { skipOccurrenceFromScope, updateOccurrenceFromScope } from './scheduleScopeWiring.js';
 import { eventEditorDraftFor, type EventEditorDraft } from '../app/eventEditor.js';
 import type { EventFormValues } from '../app/eventFormPlan.js';
@@ -111,6 +112,10 @@ let scheduleWriteRefusalCode: string | null = null;
 let scheduleEventEditorDraft: EventEditorDraft | null = null;
 /** The scope modal's provisional dates, so a refused scope save does not empty it. */
 let scheduleOccurrenceDraft: { startDate: string; deadline: string } | null = null;
+/** The last refused Gantt date change, drawn on the bar it was about. */
+let timelineWriteRefusal: { taskId: string; code: string } | null = null;
+/** The last Gantt change's own sentence. */
+let timelineWriteFeedback: string | null = null;
 let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_VIEW;
 /** The workflow board's own state: it groups by stage, so it previews and refuses separately. */
 let projectWorkflowBoardView: ProjectWorkflowBoardViewState = EMPTY_PROJECT_WORKFLOW_BOARD_VIEW;
@@ -347,6 +352,8 @@ function timekeepingSurface(state: ProximaState, lookup: Map<string, string>): s
     now,
     selectedTaskId: elasticSelectedTaskId,
     editorDraft: taskEditorDraft,
+    timelineWrites: timelineWriteRefusal,
+    timelineFeedback: timelineWriteFeedback,
   });
 }
 
@@ -1104,6 +1111,39 @@ function closeScopeOnAcceptance(accepted: boolean, form: { startDate: string; de
   render();
 }
 
+/**
+ * A Gantt bar drag or edge resize, released.
+ *
+ * The gesture hands over the two dates the bar would draw and the row it landed in; the sequence in
+ * `src/app/timelineChangeAction.ts` decides whether they are a span, submits them as one `dates`
+ * mutation at the revision the bar was drawn from, and reports that the row was *not* written —
+ * Gantt row placement is local state (A3), so a scoped row movement cannot reorder the Elastic board.
+ */
+async function changeTaskDatesFromGantt(intent: {
+  taskId: string;
+  operation: 'move' | 'resize-start' | 'resize-end';
+  proposedStartDate: string | null;
+  proposedDeadline: string | null;
+  targetRowIndex: number;
+}): Promise<void> {
+  const outcome = await changeTaskDatesAction(
+    {
+      state: appState,
+      writes: resolveTaskWritePath,
+      unavailableReason: () => taskMutationUnavailable,
+      refresh: refreshFromSource,
+      setRefusal: (reason) => { timelineWriteFeedback = reason; },
+      render,
+    },
+    intent,
+  );
+  timelineWriteRefusal = outcome.ok ? null : { taskId: intent.taskId, code: outcome.reason };
+  timelineWriteFeedback = outcome.ok
+    ? `dates written at revision ${outcome.revision}`
+    : `${outcome.reason}: ${outcome.detail}`;
+  render();
+}
+
 function bindInteractions(): void {
   const root = element<HTMLElement>('#proxima-app');
   if (root.dataset.interactionsBound === 'true') return;
@@ -1498,20 +1538,9 @@ function bindInteractions(): void {
     today: () => {
       dispatchAction({ type: 'calendar.today' });
     },
-    changeTask: ({
-      taskId,
-      operation,
-      proposedStartDate,
-      proposedDeadline,
-      targetRowIndex,
-    }) => dispatchAction({
-      type: 'task.timeline.change',
-      taskId,
-      operation,
-      proposedStartDate,
-      proposedDeadline,
-      targetRowIndex,
-    }),
+    changeTask: ({ taskId, operation, proposedStartDate, proposedDeadline, targetRowIndex }) => {
+      void changeTaskDatesFromGantt({ taskId, operation, proposedStartDate, proposedDeadline, targetRowIndex });
+    },
   });
 
   startTimekeepingCountdownTicker(root, () => {

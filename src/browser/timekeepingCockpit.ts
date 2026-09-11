@@ -54,6 +54,10 @@ export interface TimekeepingCockpitRenderOptions {
   selectedTaskId: string | null;
   /** The Task editor's provisional edits, which this surface's modal also shows. */
   editorDraft: TaskEditorDraft | null;
+  /** The last refused date change, drawn on the bar it was about rather than in a banner. */
+  timelineWrites?: { taskId: string; code: string } | null;
+  /** The last accepted change's sentence. */
+  timelineFeedback?: string | null;
 }
 
 export interface TimelineChangeIntent {
@@ -69,7 +73,7 @@ export interface TimekeepingCockpitHandlers {
   setPanelVisible(panel: TimekeepingPanel, visible: boolean): void;
   navigateMonth(direction: 'previous' | 'next'): void;
   today(): void;
-  changeTask(intent: TimelineChangeIntent): ActionResult | null;
+  changeTask(intent: TimelineChangeIntent): void;
 }
 
 function escapeHtml(value: unknown): string {
@@ -432,13 +436,13 @@ function renderTimelineGantt(
       ? `<span data-gantt-edge="end" data-c1-key="timekeeping-gantt-edge-end-${escapeHtml(task.id)}" aria-label="Resize deadline" title="Shift-drag to resize deadline" style="position:absolute;right:0;top:0;bottom:0;width:8px;border-right:2px solid currentColor;cursor:col-resize;"></span>`
       : '';
 
-    return `<div class="timekeeping-gantt-row" data-gantt-row-index="${rowIndex}" data-c1-key="timekeeping-gantt-row-${escapeHtml(task.id)}"><div class="timekeeping-gantt-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(projectName(options.projectNames, task))} · ${escapeHtml(temporalLabel)}</small><small data-gantt-proposal-for="${escapeHtml(task.id)}" data-c1-key="timekeeping-gantt-proposal-${escapeHtml(task.id)}" aria-live="polite" style="opacity:0;"></small></div><div class="timekeeping-gantt-track" data-c1-key="timekeeping-gantt-track-${escapeHtml(task.id)}" style="display:grid;grid-template-columns:repeat(42,minmax(12px,1fr));position:relative;"><article class="${classes}" role="button" tabindex="0" data-timekeeping-action="open-task" data-timekeeping-task-id="${escapeHtml(task.id)}" data-gantt-task-id="${escapeHtml(task.id)}" data-gantt-kind="${entry.kind}" data-gantt-start="${escapeHtml(entry.startKey ?? '')}" data-gantt-end="${escapeHtml(entry.endKey ?? '')}" data-gantt-start-value="${escapeHtml(task.startDate ?? '')}" data-gantt-deadline-value="${escapeHtml(task.deadline ?? '')}" data-gantt-start-column="${entry.startColumn}" data-gantt-span-columns="${entry.spanColumns}" data-c1-key="timekeeping-gantt-task-${escapeHtml(task.id)}" style="grid-column:${entry.startColumn} / span ${entry.spanColumns};position:relative;cursor:grab;${pressureStyle}">${startHandle}${entry.kind === 'span' ? escapeHtml(task.name) : '◆'}${endHandle}</article></div></div>`;
+    return `<div class="timekeeping-gantt-row" data-gantt-row-index="${rowIndex}" data-c1-key="timekeeping-gantt-row-${escapeHtml(task.id)}"><div class="timekeeping-gantt-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(projectName(options.projectNames, task))} · ${escapeHtml(temporalLabel)}</small><small data-gantt-proposal-for="${escapeHtml(task.id)}" data-c1-key="timekeeping-gantt-proposal-${escapeHtml(task.id)}" aria-live="polite" style="opacity:0;"></small></div><div class="timekeeping-gantt-track" data-c1-key="timekeeping-gantt-track-${escapeHtml(task.id)}" style="display:grid;grid-template-columns:repeat(42,minmax(12px,1fr));position:relative;"><article class="${classes}" role="button" tabindex="0" data-timekeeping-action="open-task" data-timekeeping-task-id="${escapeHtml(task.id)}" data-gantt-task-id="${escapeHtml(task.id)}" data-gantt-kind="${entry.kind}" data-gantt-start="${escapeHtml(entry.startKey ?? '')}" data-gantt-end="${escapeHtml(entry.endKey ?? '')}" data-gantt-start-value="${escapeHtml(task.startDate ?? '')}" data-gantt-deadline-value="${escapeHtml(task.deadline ?? '')}" data-gantt-start-column="${entry.startColumn}" data-gantt-span-columns="${entry.spanColumns}"${options.timelineWrites?.taskId === task.id ? ` data-gantt-refusal="${escapeHtml(options.timelineWrites.code)}"` : ''} data-c1-key="timekeeping-gantt-task-${escapeHtml(task.id)}" style="grid-column:${entry.startColumn} / span ${entry.spanColumns};position:relative;cursor:grab;${pressureStyle}">${startHandle}${entry.kind === 'span' ? escapeHtml(task.name) : '◆'}${endHandle}</article></div></div>`;
   }).join('');
 
   return `<section class="timekeeping-panel project-details" data-c1-key="timekeeping-panel-timeline" aria-label="Timeline/Gantt"><header class="surface-header"><div><h3>Timeline/Gantt</h3><p class="surface-description">Task starts and deadlines across the active calendar window.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-timekeeping-action="month-navigate" data-direction="previous" data-c1-key="timekeeping-gantt-previous" aria-label="Previous month">←</button><button type="button" class="icon-button" data-timekeeping-action="month-today" data-c1-key="timekeeping-gantt-today">Today</button><strong data-c1-key="timekeeping-gantt-month" data-calendar-month="${monthKey(options.calendarCursor)}">${escapeHtml(monthTitle(options.calendarCursor))}</strong><button type="button" class="icon-button" data-timekeeping-action="month-navigate" data-direction="next" data-c1-key="timekeeping-gantt-next" aria-label="Next month">→</button></div></header><div class="timekeeping-gantt-header" style="display:grid;grid-template-columns:220px 1fr;"><span>Task</span><div style="display:grid;grid-template-columns:repeat(42,minmax(12px,1fr));">${days.map((day) => {
     const key = localDateKey(day);
     return `<span class="${key === todayKey ? 'today' : ''}" data-c1-key="timekeeping-gantt-day-${escapeHtml(key)}" aria-current="${key === todayKey ? 'date' : 'false'}">${day.getDate()}</span>`;
-  }).join('')}</div></div><div class="timekeeping-gantt-body" data-c1-key="timekeeping-gantt-body" data-gantt-today-column="${todayColumn > 0 ? todayColumn : ''}">${rows || '<p class="empty-state" data-c1-key="timekeeping-gantt-empty">No task starts or deadlines fall in this window.</p>'}</div></section>`;
+  }).join('')}</div></div><div class="timekeeping-gantt-body" data-c1-key="timekeeping-gantt-body" data-gantt-today-column="${todayColumn > 0 ? todayColumn : ''}">${options.timelineFeedback === null || options.timelineFeedback === undefined ? '' : `<p data-c1-key="timekeeping-gantt-feedback" data-gantt-feedback="${escapeHtml(options.timelineWrites?.code ?? '')}">${escapeHtml(options.timelineFeedback)}</p>`}${rows || '<p class="empty-state" data-c1-key="timekeeping-gantt-empty">No task starts or deadlines fall in this window.</p>'}</div></section>`;
 }
 
 function renderCountdowns(
@@ -876,24 +880,17 @@ export function bindTimekeepingCockpitInteractions(
       return;
     }
 
-    const result = handlers.changeTask({
+    // The bar goes back to the geometry the surface was rendering, and the shell's answer —
+    // accepted or refused — arrives as the next render. A lost race re-reads first, which is what
+    // puts the bar where the store says it is rather than where the pointer left it.
+    restoreGestureGeometry(finished);
+
+    handlers.changeTask({
       taskId: finished.taskId,
       operation: finished.operation,
       proposedStartDate: finished.proposedStartDate,
       proposedDeadline: finished.proposedDeadline,
       targetRowIndex: finished.targetRowIndex,
     });
-
-    restoreGestureGeometry(finished);
-
-    if (result && !result.ok) {
-      finished.bar.dataset.ganttRefusal = result.error.code;
-
-      if (finished.proposal) {
-        finished.proposal.dataset.ganttRefusal = result.error.code;
-        finished.proposal.textContent = result.error.code;
-        finished.proposal.style.opacity = '1';
-      }
-    }
   });
 }
