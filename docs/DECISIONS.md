@@ -1017,3 +1017,64 @@ license serialization from the lossy interpreted projection. The affected key re
 unset/defaulted exactly as before, the structured warning remains visible, and the D7
 source-preservation requirements still govern any later writer. In the current
 record-store-precutover build, all eventual mutation paths remain unavailable.
+
+---
+## D54 — HARD GATE B uses Proxima's Backpack-origin OPFS
+
+**Decided:** the Proxima-owned canonical Record Store lives in the Origin Private File
+System belonging to Proxima's stable Papers Backpack origin:
+
+`papers-backpack://bp-954ea2cd-6261-410d-baf8-0d1fbd8ca0b1`
+
+Proxima reacquires that origin-private root programmatically with
+`navigator.storage.getDirectory()`. Beneath the root it owns one fixed namespace:
+
+- `record-store/records/` — the already-defined opaque RecordStore JSON filenames only.
+- `record-store/recovery/` — the durable recovery-journal representation when Stage 7
+  wires the already-required recovery semantics.
+
+The Chromium/Electron implementation path beneath Papers' persistent profile is not a
+Proxima path contract. It is never discovered, accepted from a semantic caller,
+persisted as canonical data, or exposed through inspection or agent actions.
+
+**Why:** Papers already gives each independently maintained Backpack a stable secure,
+standard origin keyed by exact Backpack ID. The real Proxima Papers surface has already
+proven OPFS availability and disposable OPFS round-trips. The packaged Papers profile
+is persistent across ordinary application restarts. This location therefore supplies
+a Proxima-owned filesystem namespace without selecting a creator directory, putting the
+canonical database in the Obsidian vault, or adding a Papers storage/transaction
+capability.
+
+**Authority restoration:** OPFS authority is reacquired from the stable origin on every
+bootstrap by calling `navigator.storage.getDirectory()` and opening the fixed
+`record-store` children. No `showDirectoryPicker()`, external persisted handle,
+absolute path or recurring creator gesture is part of this store. Failure to reacquire
+the OPFS root is a blocked/unavailable store condition; it must never trigger a silent
+fallback to the creator vault, project checkout or another location.
+
+**Agent boundary:** raw OPFS roots, directory handles and file handles remain private to
+the Proxima storage adapter. Human and agent mutation callers continue to meet only at
+the typed Proxima semantic action layer. No generic backing-store action, pathname
+action or direct agent JSON access is introduced.
+
+**Restart boundary:** this decision settles the physical location/API; it does not
+pretend that the Stage 7 implementation already exists. The separate `Restart retains
+records` acceptance row remains open until an implemented OPFS backend proves a write,
+normal Papers exit/relaunch and exact reread under the same Backpack origin.
+
+**Recovery boundary:** the recovery journal is colocated in the same origin-private
+`record-store` namespace, under `recovery/`, so it has the same lifecycle as the record
+files. This decision does not define a new journal format or wire the mutation
+coordinator; Stage 7 must reuse the already-required recovery semantics.
+
+**Concurrency boundary:** choosing OPFS does not close the multiple-Proxima-callers
+rows. No last-write-wins behavior, locking mechanism or retry policy is selected here.
+Those requirements remain explicit Stage 7 work.
+
+**No host expansion:** this decision requires no Papers modification and does not claim
+H4. Creator-vault FSA remains separate and read-only under D51/D52.
+
+**Reverses if:** implemented acceptance proves that the stable Proxima origin cannot
+retain this namespace across a normal Papers restart, or that OPFS cannot support the
+later required crash-durability and coordinated-writer contract. In that case HARD
+GATE B reopens before any real import; there is no silent fallback location.
