@@ -32,12 +32,25 @@ export type PropertyType =
   | 'rollup'
   | 'formula';
 
+/**
+ * Legacy pre-record-store schema option.
+ *
+ * `color` belongs to the old compatibility/presentation model. HARD GATE A / A5
+ * defines stable canonical option identity separately from local presentation.
+ */
 export interface SelectOption {
   id: string;
   name: string;
   color: string;
 }
 
+/**
+ * Legacy pre-record-store property-schema shape.
+ *
+ * This remains available to existing compatibility code only. It is not the future
+ * canonical schema record: in particular `targetFolder`, display color and the
+ * unbranded string ids must not become canonical schema semantics.
+ */
 export interface PropertySchema {
   id: string;
   name: string;
