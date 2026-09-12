@@ -58,7 +58,7 @@ describe('Stage 5 New Project provisional modal', () => {
 
     const modal = mounted.harness.target('project-create-modal');
     const controls = Array.from(modal.querySelectorAll('input, textarea, select'))
-      .map((element) => element.getAttribute('data-c1-key') ?? '')
+      .map((element) => element.getAttribute('data-papers-visual-key') ?? '')
       .filter((key) => key.length > 0);
 
     // Name and description, which `CanonicalProjectRecordV2` keeps. Nothing else is asked

@@ -156,7 +156,7 @@ describe('Stage 6 slice 15 credential-safe diagnostics', () => {
     expect(result.failure?.code).toBe('renderer-failure');
     expect(result.failure?.detail).toContain('[redacted]');
     expect(result.markup).toContain(
-      'data-c1-key="renderer-failure"',
+      'data-papers-visual-key="renderer-failure"',
     );
     expectSecretsAbsent(result);
   });

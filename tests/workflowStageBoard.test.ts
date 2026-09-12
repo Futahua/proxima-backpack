@@ -217,16 +217,16 @@ describe('the workflow board stage surface', () => {
 
     const available = document.createElement('div');
     available.innerHTML = renderProjectWorkflowBoard(state, state.projects[0]!, boardView());
-    expect(available.querySelector('[data-c1-key="project-workflow-stage-new"]')).not.toBeNull();
-    expect(available.querySelector(`[data-c1-key="project-workflow-stage-rename-${DESIGN}"]`)).not.toBeNull();
-    expect(available.querySelector(`[data-c1-key="project-workflow-stage-delete-${REVIEW}"]`)).not.toBeNull();
+    expect(available.querySelector('[data-papers-visual-key="project-workflow-stage-new"]')).not.toBeNull();
+    expect(available.querySelector(`[data-papers-visual-key="project-workflow-stage-rename-${DESIGN}"]`)).not.toBeNull();
+    expect(available.querySelector(`[data-papers-visual-key="project-workflow-stage-delete-${REVIEW}"]`)).not.toBeNull();
     expect(available.querySelector('[data-project-workflow-stage-write]')!.getAttribute('data-project-workflow-stage-write')).toBe('available');
     // The trailing column is not a stage, so it gets no stage controls.
     expect(available.querySelector('[data-project-workflow-stage-column="no-stage"] [data-project-workflow-action="rename-stage"]')).toBeNull();
 
     const unavailable = document.createElement('div');
     unavailable.innerHTML = renderProjectWorkflowBoard(state, state.projects[0]!, boardView({ stageWriteRefusal: STAGE_UNAVAILABLE }));
-    const button = unavailable.querySelector<HTMLButtonElement>('[data-c1-key="project-workflow-stage-new"]')!;
+    const button = unavailable.querySelector<HTMLButtonElement>('[data-papers-visual-key="project-workflow-stage-new"]')!;
     expect(button.disabled).toBe(true);
     expect(button.getAttribute('data-project-workflow-stage-write-refusal')).toBe(STAGE_UNAVAILABLE);
     expect(unavailable.querySelector('[data-project-workflow-stage-write]')!.getAttribute('data-project-workflow-stage-write')).toBe('unavailable');
@@ -292,10 +292,10 @@ describe('the workflow board stage surface', () => {
     const harness = createInteractionHarness(root);
     harness.click('project-workflow-stage-new');
     expect(view.stageForm).toEqual({ kind: 'create', name: '' });
-    expect(root.querySelector('[data-c1-key="project-workflow-stage-name"]')).not.toBeNull();
+    expect(root.querySelector('[data-papers-visual-key="project-workflow-stage-name"]')).not.toBeNull();
 
     // Typing is the field reporting what it holds, not the shell reading the DOM at Save time.
-    const field = root.querySelector<HTMLInputElement>('[data-c1-key="project-workflow-stage-name"]')!;
+    const field = root.querySelector<HTMLInputElement>('[data-papers-visual-key="project-workflow-stage-name"]')!;
     field.value = 'Waiting';
     field.dispatchEvent(new Event('input', { bubbles: true }));
     expect(view.stageForm).toEqual({ kind: 'create', name: 'Waiting' });
@@ -306,7 +306,7 @@ describe('the workflow board stage surface', () => {
     // Escape is the same discard Cancel is, as it is on every other form in this tree.
     harness.click('project-workflow-stage-cancel');
     expect(view.stageForm).toBeNull();
-    expect(root.querySelector('[data-c1-key="project-workflow-stage-name"]')).toBeNull();
+    expect(root.querySelector('[data-papers-visual-key="project-workflow-stage-name"]')).toBeNull();
   });
 
   it('opens the rename form for the stage that was clicked, pre-filled with that stage name', async () => {
@@ -352,7 +352,7 @@ describe('the workflow board stage surface', () => {
 
     createInteractionHarness(root).click(`project-workflow-stage-rename-${REVIEW}`);
     expect(view.stageForm).toEqual({ kind: 'rename', stageId: REVIEW, name: 'Review' });
-    const field = root.querySelector<HTMLInputElement>(`[data-c1-key="project-workflow-stage-name-${REVIEW}"]`)!;
+    const field = root.querySelector<HTMLInputElement>(`[data-papers-visual-key="project-workflow-stage-name-${REVIEW}"]`)!;
     expect(field.value).toBe('Review');
 
     field.value = 'In review';
@@ -517,14 +517,14 @@ describe('the workflow board stage writes, driven through the rendered surface',
 
     const harness = createInteractionHarness(root);
     harness.click('project-workflow-stage-new');
-    const field = root.querySelector<HTMLInputElement>('[data-c1-key="project-workflow-stage-name"]')!;
+    const field = root.querySelector<HTMLInputElement>('[data-papers-visual-key="project-workflow-stage-name"]')!;
     field.value = 'Waiting on the creator';
     field.dispatchEvent(new Event('input', { bubbles: true }));
     harness.click('project-workflow-stage-save');
     await Promise.all(pending);
 
     // The form is gone, the sentence is drawn, and the column the write created is on the board.
-    expect(root.querySelector('[data-c1-key="project-workflow-stage-name"]')).toBeNull();
+    expect(root.querySelector('[data-papers-visual-key="project-workflow-stage-name"]')).toBeNull();
     expect(root.querySelector('[data-project-workflow-stage-feedback]')!.getAttribute('data-project-workflow-stage-feedback'))
       .toBe('Created the stage Waiting on the creator.');
     expect(Array.from(root.querySelectorAll('[data-project-workflow-stage-column]')).length).toBe(4);

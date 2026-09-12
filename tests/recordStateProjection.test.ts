@@ -198,8 +198,8 @@ describe('Stage 44 canonical records to the readable world', () => {
     expect(backlogHtml).toContain('2026-09-09T09:00:00.000Z');
 
     document.body.innerHTML = renderProjectsHub({ state, selection: 'all', filter: 'active', workspaceTab: 'notes', now: NOW });
-    expect(document.querySelector(`[data-c1-key="project-hub-card-${PROJECT}"]`)).not.toBeNull();
-    expect(document.querySelector(`[data-c1-key="project-hub-card-${OTHER_PROJECT}"]`)).toBeNull();
+    expect(document.querySelector(`[data-papers-visual-key="project-hub-card-${PROJECT}"]`)).not.toBeNull();
+    expect(document.querySelector(`[data-papers-visual-key="project-hub-card-${OTHER_PROJECT}"]`)).toBeNull();
   });
 
   it('carries canonical values into the compatibility shape without losing what it can hold', () => {

@@ -27,8 +27,8 @@ describe('Stage 5 slice 7 detailed Backlog interactions',()=>{
   expect(editor).not.toBeNull();
   expect(editor!.getAttribute('aria-label')).toBe('Task editor');
   // The form carries the record's values, under this surface's own hooks.
-  expect((document.querySelector('[data-c1-key="project-backlog-editor-name"]') as HTMLInputElement).value).toBe('first');
-  expect((document.querySelector('[data-c1-key="project-backlog-editor-executionState"]') as HTMLSelectElement).value).toBe('todo');
+  expect((document.querySelector('[data-papers-visual-key="project-backlog-editor-name"]') as HTMLInputElement).value).toBe('first');
+  expect((document.querySelector('[data-papers-visual-key="project-backlog-editor-executionState"]') as HTMLSelectElement).value).toBe('todo');
   // The read-only inspector it replaced is gone, rather than shown twice.
   expect(document.querySelector('.project-backlog-task-inspector')).toBeNull();
  });
@@ -41,11 +41,11 @@ describe('Stage 5 slice 7 detailed Backlog interactions',()=>{
   run.harness.typeText('project-backlog-editor-name','!');
   expect(run.view().editorDraft!.values.name).toBe('first!');
   run.draw();
-  expect((run.root().querySelector('[data-c1-key="project-backlog-editor-name"]') as HTMLInputElement).value).toBe('first!');
+  expect((run.root().querySelector('[data-papers-visual-key="project-backlog-editor-name"]') as HTMLInputElement).value).toBe('first!');
   expect(run.root().querySelector('[data-project-backlog-editor-dirty="true"]')).not.toBeNull();
   run.harness.click('project-backlog-editor-cancel');
   expect(run.view().editorDraft).toBeNull();
-  expect((run.root().querySelector('[data-c1-key="project-backlog-editor-name"]') as HTMLInputElement).value).toBe('first');
+  expect((run.root().querySelector('[data-papers-visual-key="project-backlog-editor-name"]') as HTMLInputElement).value).toBe('first');
   expect(run.root().querySelector('[data-project-backlog-editor-dirty="false"]')).not.toBeNull();
   // Nothing was written: a draft that is discarded is a draft that never existed.
   expect(JSON.stringify(s)).toBe(before);
@@ -266,9 +266,9 @@ describe('Stage 6 Backlog derived and relation display',()=>{
  it('keys each cell by task and column, so two rows cannot share one',()=>{
   const s=derivedState();
   document.body.innerHTML=renderProjectBacklog(s,project);
-  expect(document.querySelector('[data-c1-key="project-backlog-cell-first-property:blocks"]')).not.toBeNull();
-  expect(document.querySelector('[data-c1-key="project-backlog-cell-second-property:blocks"]')).not.toBeNull();
-  const keys=Array.from(document.querySelectorAll('[data-project-backlog-cell]')).map(x=>x.getAttribute('data-c1-key'));
+  expect(document.querySelector('[data-papers-visual-key="project-backlog-cell-first-property:blocks"]')).not.toBeNull();
+  expect(document.querySelector('[data-papers-visual-key="project-backlog-cell-second-property:blocks"]')).not.toBeNull();
+  const keys=Array.from(document.querySelectorAll('[data-project-backlog-cell]')).map(x=>x.getAttribute('data-papers-visual-key'));
   expect(new Set(keys).size).toBe(keys.length);
  });
  it('shows a row without properties without an empty cell list',()=>{
@@ -282,8 +282,8 @@ describe('Stage 6 Backlog bulk controls',()=>{
  it('shows both bulk controls and refuses with a typed result',()=>{
   const s=state();
   document.body.innerHTML=renderProjectBacklog(s,project,activeView);
-  const complete=document.querySelector<HTMLButtonElement>('[data-c1-key="project-backlog-bulk-complete"]')!;
-  const remove=document.querySelector<HTMLButtonElement>('[data-c1-key="project-backlog-bulk-delete"]')!;
+  const complete=document.querySelector<HTMLButtonElement>('[data-papers-visual-key="project-backlog-bulk-complete"]')!;
+  const remove=document.querySelector<HTMLButtonElement>('[data-papers-visual-key="project-backlog-bulk-delete"]')!;
   expect(complete.disabled).toBe(true);
   expect(remove.disabled).toBe(true);
   expect(complete.getAttribute('data-project-backlog-write-action')).toBe('bulk-complete');
@@ -297,7 +297,7 @@ describe('Stage 6 Backlog bulk controls',()=>{
   const before=JSON.stringify(s);
   document.body.innerHTML=renderProjectBacklog(s,project,activeView);
   expect(document.querySelector('[data-project-backlog-query]')).toBeNull();
-  expect(document.querySelector('[data-c1-key="project-backlog-bulk-complete"]')).not.toBeNull();
+  expect(document.querySelector('[data-papers-visual-key="project-backlog-bulk-complete"]')).not.toBeNull();
   const harness=createInteractionHarness(document);
   harness.click('project-backlog-bulk-complete');
   harness.click('project-backlog-bulk-delete');
@@ -329,10 +329,10 @@ describe('Stage 6 Backlog selection',()=>{
   expect(run.view().selectedTaskIds).toEqual(['first','second']);
   expect(run.root().querySelector('[data-project-backlog-selection-count]')!.getAttribute('data-project-backlog-selection-all-visible')).toBe('true');
   // With everything shown already selected there is nothing left to add.
-  expect(run.root().querySelector('[data-c1-key="project-backlog-select-all"]')!.hasAttribute('disabled')).toBe(true);
+  expect(run.root().querySelector('[data-papers-visual-key="project-backlog-select-all"]')!.hasAttribute('disabled')).toBe(true);
   run.harness.click('project-backlog-select-none');
   expect(run.view().selectedTaskIds).toEqual([]);
-  expect(run.root().querySelector('[data-c1-key="project-backlog-select-none"]')!.hasAttribute('disabled')).toBe(true);
+  expect(run.root().querySelector('[data-papers-visual-key="project-backlog-select-none"]')!.hasAttribute('disabled')).toBe(true);
   run.stop();
  });
  it('counts a marked task the query hides instead of letting the selection cover it silently',()=>{
@@ -348,7 +348,7 @@ describe('Stage 6 Backlog selection',()=>{
   expect(summary().getAttribute('data-project-backlog-selection-hidden')).toBe('1');
   expect(summary().textContent).toContain('1 selected hidden by the query');
   // Select all now means the one row on screen, and it is already marked.
-  expect(run.root().querySelector('[data-c1-key="project-backlog-select-all"]')!.hasAttribute('disabled')).toBe(true);
+  expect(run.root().querySelector('[data-papers-visual-key="project-backlog-select-all"]')!.hasAttribute('disabled')).toBe(true);
   run.harness.click('project-backlog-select-none');
   expect(run.view().selectedTaskIds).toEqual([]);
   run.stop();
@@ -365,9 +365,9 @@ describe('Stage 6 Backlog selection',()=>{
 describe('Stage 6 template composer',()=>{
  it('opens from the Backlog, takes text, and previews the tasks it read',()=>{
   const s=state();const run=session(s);
-  expect(run.root().querySelector('[data-c1-key="template-composer"]')).toBeNull();
+  expect(run.root().querySelector('[data-papers-visual-key="template-composer"]')).toBeNull();
   run.harness.click('project-backlog-open-template');
-  expect(run.root().querySelector('[data-c1-key="template-composer"]')).not.toBeNull();
+  expect(run.root().querySelector('[data-papers-visual-key="template-composer"]')).not.toBeNull();
   expect((run.root().querySelector('[data-template-text]') as HTMLTextAreaElement).value).toBe('');
   expect(run.root().querySelector('[data-template-preview-empty="true"]')).not.toBeNull();
   // Typing re-renders, so the preview and the report follow the text as it is written.
@@ -399,7 +399,7 @@ describe('Stage 6 template composer',()=>{
  it('offers execution with a typed result rather than hiding the control',()=>{
   const s=state();const before=JSON.stringify(s);const run=session(s);
   run.harness.click('project-backlog-open-template');
-  const execute=run.root().querySelector<HTMLButtonElement>('[data-c1-key="template-execute"]')!;
+  const execute=run.root().querySelector<HTMLButtonElement>('[data-papers-visual-key="template-execute"]')!;
   // This used to read disabled===true with an action-not-available refusal: that was the truth while
   // execution was Stage 16 unbuilt job. The button is now the shell action, so what this holds is that it
   // is offered and wired - an enabled control carrying the shell own click convention.
@@ -413,7 +413,7 @@ describe('Stage 6 template composer',()=>{
   run.harness.click('project-backlog-open-template');
   run.harness.typeText('template-text','S');
   run.harness.click('template-composer-cancel');
-  expect(run.root().querySelector('[data-c1-key="template-composer"]')).toBeNull();
+  expect(run.root().querySelector('[data-papers-visual-key="template-composer"]')).toBeNull();
   expect(run.view().templateOpen).toBe(false);
   expect(JSON.stringify(s)).toBe(before);
   run.stop();

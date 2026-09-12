@@ -10,12 +10,12 @@ describe('Stage 1 cockpit navigation', () => {
       projectWorkspaceTab: 'notes',
     });
 
-    expect(html).toContain('data-c1-key="surface-tab-tasks"');
-    expect(html).toContain('data-c1-key="surface-tab-schedule"');
-    expect(html).toContain('data-c1-key="surface-tab-projects"');
-    expect(html).toContain('data-c1-key="surface-tab-canvas"');
-    expect(html).not.toContain('data-c1-key="surface-tab-board"');
-    expect(html).not.toContain('data-c1-key="surface-tab-calendar"');
+    expect(html).toContain('data-papers-visual-key="surface-tab-tasks"');
+    expect(html).toContain('data-papers-visual-key="surface-tab-schedule"');
+    expect(html).toContain('data-papers-visual-key="surface-tab-projects"');
+    expect(html).toContain('data-papers-visual-key="surface-tab-canvas"');
+    expect(html).not.toContain('data-papers-visual-key="surface-tab-board"');
+    expect(html).not.toContain('data-papers-visual-key="surface-tab-calendar"');
   });
 
   it('renders both Tasks modes independently of their visible labels', () => {
@@ -26,8 +26,8 @@ describe('Stage 1 cockpit navigation', () => {
       projectWorkspaceTab: 'notes',
     });
 
-    expect(html).toContain('data-c1-key="tasks-mode-elastic"');
-    expect(html).toContain('data-c1-key="tasks-mode-timekeeping"');
+    expect(html).toContain('data-papers-visual-key="tasks-mode-elastic"');
+    expect(html).toContain('data-papers-visual-key="tasks-mode-timekeeping"');
     expect(html).toContain('data-tasks-mode="timekeeping"');
     expect(cockpitSubmode({
       surface: 'tasks',
@@ -46,7 +46,7 @@ describe('Stage 1 cockpit navigation', () => {
     });
 
     for (const key of ['day', 'four-day', 'week', 'month', 'year', 'agenda']) {
-      expect(html).toContain(`data-c1-key="schedule-mode-${key}"`);
+      expect(html).toContain(`data-papers-visual-key="schedule-mode-${key}"`);
     }
 
     expect(cockpitSubmode({
@@ -66,7 +66,7 @@ describe('Stage 1 cockpit navigation', () => {
     });
 
     for (const key of ['notes', 'task-board', 'backlog', 'deadlines', 'schedule']) {
-      expect(projects).toContain(`data-c1-key="project-tab-${key}"`);
+      expect(projects).toContain(`data-papers-visual-key="project-tab-${key}"`);
     }
 
     expect(cockpitSubmode({

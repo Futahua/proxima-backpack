@@ -47,7 +47,7 @@ describe('Stage 6 slice 19 renderer-independent inspection', () => {
     expect(INSPECTION_SOURCE)
       .not.toContain('renderWithBoundary');
     expect(INSPECTION_SOURCE)
-      .not.toContain('data-c1-key');
+      .not.toContain('data-papers-visual-key');
     expect(INSPECTION_SOURCE)
       .not.toMatch(/\b(?:window|document|HTMLElement)\b/);
   });
@@ -153,7 +153,7 @@ describe('Stage 6 slice 19 renderer-independent inspection', () => {
 
     const serialized = JSON.stringify(projection);
 
-    expect(serialized).not.toContain('data-c1-key');
+    expect(serialized).not.toContain('data-papers-visual-key');
     expect(serialized).not.toContain('innerHTML');
     expect(serialized).not.toContain('querySelector');
     expect(serialized).not.toContain('<section');

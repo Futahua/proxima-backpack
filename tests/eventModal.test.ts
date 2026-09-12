@@ -56,7 +56,7 @@ function modal(events: CalendarEvent[], eventId: string | null, mode: 'edit' | '
 }
 
 function field(id: string): HTMLElement | null {
-  return document.querySelector<HTMLElement>(`[data-c1-key="schedule-event-${id}"]`);
+  return document.querySelector<HTMLElement>(`[data-papers-visual-key="schedule-event-${id}"]`);
 }
 
 /**
@@ -92,7 +92,7 @@ describe('Event modal fields', () => {
 
     const root = modal([detailed], 'e1');
 
-    expect(root.querySelector('[data-c1-key="schedule-event-modal"]')).not.toBeNull();
+    expect(root.querySelector('[data-papers-visual-key="schedule-event-modal"]')).not.toBeNull();
     expect((field('name') as HTMLInputElement).value).toBe('Kickoff');
     expect(field('name')!.getAttribute('data-schedule-event-control')).toBe('text');
     expect((field('description') as HTMLTextAreaElement).value).toBe('First session');
@@ -111,11 +111,11 @@ describe('Event modal fields', () => {
 
     // Nothing here writes, and the modal says where Save would be.
     expect((field('name') as HTMLInputElement).readOnly).toBe(true);
-    expect((root.querySelector('[data-c1-key="schedule-event-save"]') as HTMLButtonElement).disabled).toBe(true);
-    expect(root.querySelector('[data-c1-key="schedule-event-save"]')!.getAttribute('data-schedule-event-save-refusal')).toBe('action-not-available');
-    expect((root.querySelector('[data-c1-key="schedule-event-delete"]') as HTMLButtonElement).disabled).toBe(true);
-    expect(root.querySelector('[data-c1-key="schedule-event-save-note"]')!.textContent).toContain('until the record store can write');
-    expect(root.querySelector('[data-c1-key="schedule-event-modal"]')!.getAttribute('data-schedule-event-field-count')).toBe('12');
+    expect((root.querySelector('[data-papers-visual-key="schedule-event-save"]') as HTMLButtonElement).disabled).toBe(true);
+    expect(root.querySelector('[data-papers-visual-key="schedule-event-save"]')!.getAttribute('data-schedule-event-save-refusal')).toBe('action-not-available');
+    expect((root.querySelector('[data-papers-visual-key="schedule-event-delete"]') as HTMLButtonElement).disabled).toBe(true);
+    expect(root.querySelector('[data-papers-visual-key="schedule-event-save-note"]')!.textContent).toContain('until the record store can write');
+    expect(root.querySelector('[data-papers-visual-key="schedule-event-modal"]')!.getAttribute('data-schedule-event-field-count')).toBe('12');
   });
 
   it('makes the recurrence controls real when the run can write, and leaves them inert when it cannot', () => {
@@ -136,7 +136,7 @@ describe('Event modal fields', () => {
     expect((field('recurrenceUntil') as HTMLInputElement).readOnly).toBe(false);
     // The six field controls stay what they were, and Save is a control.
     expect((field('name') as HTMLInputElement).readOnly).toBe(false);
-    expect((document.querySelector('[data-c1-key="schedule-event-save"]') as HTMLButtonElement).disabled).toBe(false);
+    expect((document.querySelector('[data-papers-visual-key="schedule-event-save"]') as HTMLButtonElement).disabled).toBe(false);
 
     // And the form reads the rule back out of those controls, which is what a save submits. The values are set
     // the way a browser records a reader's choice - in the control itself - rather than by parsing the markup's
@@ -154,7 +154,7 @@ describe('Event modal fields', () => {
   it('says why there is no colour control rather than leaving the question open', () => {
     const root = modal([event({ id: 'e1' })], 'e1');
 
-    const note = root.querySelector('[data-c1-key="schedule-event-colour-note"]')!;
+    const note = root.querySelector('[data-papers-visual-key="schedule-event-colour-note"]')!;
     expect(note.textContent).toContain('no colour');
     expect(root.querySelector('[data-schedule-event-field*="colour"]')).toBeNull();
   });
@@ -164,7 +164,7 @@ describe('Event modal fields', () => {
 
     const root = modal([weekly], 'e1');
 
-    expect(root.querySelector('[data-c1-key="schedule-event-modal"]')!.getAttribute('data-schedule-event-recurrence-kind')).toBe('series');
+    expect(root.querySelector('[data-papers-visual-key="schedule-event-modal"]')!.getAttribute('data-schedule-event-recurrence-kind')).toBe('series');
     expect(selectedOptions('recurrenceFrequency')).toEqual(['weekly']);
     expect((field('recurrenceInterval') as HTMLInputElement).value).toBe('2');
     expect(selectedOptions('recurrenceEndKind')).toEqual(['until']);
@@ -179,7 +179,7 @@ describe('Event modal fields', () => {
   it('offers the recurrence controls for an event that does not recur, saying so', () => {
     const root = modal([event({ id: 'e1' })], 'e1');
 
-    expect(root.querySelector('[data-c1-key="schedule-event-modal"]')!.getAttribute('data-schedule-event-recurrence-kind')).toBe('none');
+    expect(root.querySelector('[data-papers-visual-key="schedule-event-modal"]')!.getAttribute('data-schedule-event-recurrence-kind')).toBe('none');
     expect(selectedOptions('recurrenceEndKind')).toEqual(['none']);
     expect(field('recurrenceEndKind')!.ownerDocument.defaultView).not.toBeNull();
     expect(document.querySelector('[data-schedule-event-note="recurrenceEndKind"]')!.textContent).toContain('does not recur');
@@ -190,7 +190,7 @@ describe('Event modal fields', () => {
 
     const root = modal([broken], 'e1');
 
-    expect(root.querySelector('[data-c1-key="schedule-event-modal"]')!.getAttribute('data-schedule-event-recurrence-kind')).toBe('unsupported');
+    expect(root.querySelector('[data-papers-visual-key="schedule-event-modal"]')!.getAttribute('data-schedule-event-recurrence-kind')).toBe('unsupported');
     expect(document.querySelector('[data-schedule-event-note="recurrenceEndKind"]')!.textContent).toContain('could not be read');
   });
 
@@ -225,13 +225,13 @@ describe('Event modal through the schedule surfaces', () => {
       selectedEventId: 'e1',
     });
 
-    const section = document.querySelector('[data-c1-key="schedule-event-modal"]')!;
+    const section = document.querySelector('[data-papers-visual-key="schedule-event-modal"]')!;
     expect(section).not.toBeNull();
     expect(section.getAttribute('data-schedule-editor-mode')).toBe('read-only');
-    expect((document.querySelector('[data-c1-key="schedule-event-name"]') as HTMLInputElement).value).toBe('Kickoff');
-    expect(document.querySelector('[data-c1-key="schedule-event-modal-close"]')!.getAttribute('data-schedule-projection-action')).toBe('close-event');
-    expect(document.querySelector('[data-c1-key="schedule-event-modal-close"]')!.hasAttribute('data-schedule-action')).toBe(false);
-    expect(document.querySelector('[data-c1-key="schedule-event-save"]')).not.toBeNull();
+    expect((document.querySelector('[data-papers-visual-key="schedule-event-name"]') as HTMLInputElement).value).toBe('Kickoff');
+    expect(document.querySelector('[data-papers-visual-key="schedule-event-modal-close"]')!.getAttribute('data-schedule-projection-action')).toBe('close-event');
+    expect(document.querySelector('[data-papers-visual-key="schedule-event-modal-close"]')!.hasAttribute('data-schedule-action')).toBe(false);
+    expect(document.querySelector('[data-papers-visual-key="schedule-event-save"]')).not.toBeNull();
   });
 
   it('is the modal a time grid opens, with that surface closing it', () => {
@@ -247,10 +247,10 @@ describe('Event modal through the schedule surfaces', () => {
       selectedEventId: 'e1',
     });
 
-    const section = document.querySelector('[data-c1-key="schedule-event-modal"]')!;
+    const section = document.querySelector('[data-papers-visual-key="schedule-event-modal"]')!;
     expect(section).not.toBeNull();
     expect(section.getAttribute('data-schedule-editor-mode')).toBe('edit');
-    expect(document.querySelector('[data-c1-key="schedule-event-modal-close"]')!.getAttribute('data-schedule-action')).toBe('close-event');
-    expect(document.querySelector('[data-c1-key="schedule-event-close"]')).toBeNull();
+    expect(document.querySelector('[data-papers-visual-key="schedule-event-modal-close"]')!.getAttribute('data-schedule-action')).toBe('close-event');
+    expect(document.querySelector('[data-papers-visual-key="schedule-event-close"]')).toBeNull();
   });
 });

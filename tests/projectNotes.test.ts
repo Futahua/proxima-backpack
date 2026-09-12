@@ -28,7 +28,7 @@ describe('Stage 5 slice 5 detailed Notes tree and preview interactions',()=>{
   const h=createInteractionHarness(host);
   const rootKey='project-note-root-'+project.id+'-Projects/Notes/Research';
   const nestedKey='project-note-folder-'+project.id+'-Projects/Notes/Research/Nested';
-  const aria=()=>host.querySelector<HTMLElement>('[data-c1-key="'+rootKey+'"]')?.getAttribute('aria-expanded');
+  const aria=()=>host.querySelector<HTMLElement>('[data-papers-visual-key="'+rootKey+'"]')?.getAttribute('aria-expanded');
   const files=()=>Array.from(host.querySelectorAll<HTMLElement>('[data-project-note-file-path]')).map(entry=>entry.dataset.projectNoteFilePath);
   expect(aria()).toBe('false');
   expect(files()).toEqual([]);
@@ -37,11 +37,11 @@ describe('Stage 5 slice 5 detailed Notes tree and preview interactions',()=>{
   expect(toggles).toEqual(['Projects/Notes/Research']);
   expect(aria()).toBe('true');
   expect(files()).toEqual(['Projects/Notes/Research/root.md','Projects/Notes/Research/sketch.excalidraw']);
-  expect(host.querySelector<HTMLElement>('[data-c1-key="'+nestedKey+'"]')?.getAttribute('aria-expanded')).toBe('false');
+  expect(host.querySelector<HTMLElement>('[data-papers-visual-key="'+nestedKey+'"]')?.getAttribute('aria-expanded')).toBe('false');
   expect(host.querySelector('[data-project-note-file-path="Projects/Notes/Research/Nested/child.md"]')).toBeNull();
   h.click(nestedKey);
   expect(toggles).toEqual(['Projects/Notes/Research','Projects/Notes/Research/Nested']);
-  expect(host.querySelector<HTMLElement>('[data-c1-key="'+nestedKey+'"]')?.getAttribute('aria-expanded')).toBe('true');
+  expect(host.querySelector<HTMLElement>('[data-papers-visual-key="'+nestedKey+'"]')?.getAttribute('aria-expanded')).toBe('true');
   expect(files()).toEqual(['Projects/Notes/Research/Nested/board.canvas','Projects/Notes/Research/Nested/child.md','Projects/Notes/Research/root.md','Projects/Notes/Research/sketch.excalidraw']);
   h.click(rootKey);
   expect(toggles).toEqual(['Projects/Notes/Research','Projects/Notes/Research/Nested','Projects/Notes/Research']);

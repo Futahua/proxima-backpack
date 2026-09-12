@@ -150,7 +150,7 @@ describe('Stage 6 slice 7 diagnostic payload bounds', () => {
     expect(result.failure?.detail)
       .toHaveLength(DIAGNOSTIC_LIMITS.rendererDetail);
     expect(result.markup).toContain(
-      'data-c1-key="renderer-failure"',
+      'data-papers-visual-key="renderer-failure"',
     );
   });
 });

@@ -20,7 +20,7 @@ function tab(
   key: string,
   label: string,
 ): string {
-  return `<button type="button" class="surface-tab${selected ? ' selected' : ''}" data-action="${action}" data-${dataName}="${dataValue}" role="tab" aria-selected="${selected}" data-c1-key="${key}">${label}</button>`;
+  return `<button type="button" class="surface-tab${selected ? ' selected' : ''}" data-action="${action}" data-${dataName}="${dataValue}" role="tab" aria-selected="${selected}" data-papers-visual-key="${key}">${label}</button>`;
 }
 
 export function cockpitSubmode(state: CockpitNavigationState): string | null {
@@ -64,5 +64,5 @@ export function renderCockpitNavigation(state: CockpitNavigationState): string {
     ].join('');
   }
 
-  return `<div class="cockpit-navigation" data-c1-key="cockpit-navigation"><div class="surface-switcher" data-c1-key="surface-switcher" role="tablist" aria-label="Proxima surfaces">${primary}</div>${secondary ? `<div class="surface-switcher secondary" data-c1-key="subsurface-switcher" role="tablist" aria-label="Current workspace">${secondary}</div>` : ''}</div>`;
+  return `<div class="cockpit-navigation" data-papers-visual-key="cockpit-navigation"><div class="surface-switcher" data-papers-visual-key="surface-switcher" role="tablist" aria-label="Proxima surfaces">${primary}</div>${secondary ? `<div class="surface-switcher secondary" data-papers-visual-key="subsurface-switcher" role="tablist" aria-label="Current workspace">${secondary}</div>` : ''}</div>`;
 }

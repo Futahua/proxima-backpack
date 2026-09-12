@@ -46,16 +46,16 @@ describe('Stage 6 slice 1 Canvas selection and inspection', () => {
     for (const id of ids) {
       expect(
         document.querySelector(
-          `[data-c1-key="canvas-card-${id}"][data-canvas-node-id="${id}"]`,
+          `[data-papers-visual-key="canvas-card-${id}"][data-canvas-node-id="${id}"]`,
         ),
       ).not.toBeNull();
     }
 
     expect(
-      document.querySelector('[data-c1-key="canvas-card-0"]'),
+      document.querySelector('[data-papers-visual-key="canvas-card-0"]'),
     ).toBeNull();
     expect(
-      document.querySelector('[data-c1-key="canvas-card-1"]'),
+      document.querySelector('[data-papers-visual-key="canvas-card-1"]'),
     ).toBeNull();
     expect(JSON.stringify(state)).toBe(before);
   });

@@ -103,7 +103,7 @@ function mount(hubState: ProximaState = state(), filter: ProjectsHubFilter = 'ac
 }
 
 function card(root: HTMLElement, id: string): HTMLElement {
-  return root.querySelector<HTMLElement>(`[data-c1-key="project-hub-card-${id}"]`)!;
+  return root.querySelector<HTMLElement>(`[data-papers-visual-key="project-hub-card-${id}"]`)!;
 }
 
 beforeEach(() => {
@@ -164,18 +164,18 @@ describe('Projects Hub cards', () => {
     expect(mounted.root.querySelectorAll('[data-projects-hub-action="open-project"]')).toHaveLength(1);
     expect(card(mounted.root, 'alpha')).not.toBeNull();
     expect(mounted.root.querySelector('[data-projects-hub-filter="active"]')).not.toBeNull();
-    expect(mounted.root.querySelector('[data-c1-key="project-hub-filter-active"]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(mounted.root.querySelector('[data-papers-visual-key="project-hub-filter-active"]')!.getAttribute('aria-pressed')).toBe('true');
     expect(mounted.root.textContent).toContain('1 active');
 
     mounted.harness.click('project-hub-filter-archived');
     expect(mounted.filter()).toBe('archived');
     expect(card(mounted.root, 'beta')).not.toBeNull();
-    expect(mounted.root.querySelector('[data-c1-key="project-hub-card-alpha"]')).toBeNull();
-    expect(mounted.root.querySelector('[data-c1-key="project-hub-filter-archived"]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(mounted.root.querySelector('[data-papers-visual-key="project-hub-card-alpha"]')).toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="project-hub-filter-archived"]')!.getAttribute('aria-pressed')).toBe('true');
 
     // A filter with nothing in it says so rather than showing an empty grid.
     const none = mount(state({ projects: [project({ id: 'alpha' })] }), 'archived');
-    expect(none.root.querySelector('[data-c1-key="project-hub-empty"]')!.textContent).toContain('No archived projects');
+    expect(none.root.querySelector('[data-papers-visual-key="project-hub-empty"]')!.textContent).toContain('No archived projects');
   });
 
   it('opens the workspace of the project that was clicked, and comes back', () => {
@@ -185,13 +185,13 @@ describe('Projects Hub cards', () => {
     expect(mounted.selection()).toBe('alpha');
 
     // The workspace replaces the hub's grid: no cards, and the project's own panels.
-    expect(mounted.root.querySelector('[data-c1-key="project-hub-cards"]')).toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="project-hub-cards"]')).toBeNull();
     expect(mounted.root.querySelector('[data-project-workspace-project-id="alpha"]')).not.toBeNull();
     expect(mounted.root.textContent).toContain('Active project');
 
     mounted.harness.click('project-hub-back');
     expect(mounted.selection()).toBe('all');
-    expect(mounted.root.querySelector('[data-c1-key="project-hub-cards"]')).not.toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="project-hub-cards"]')).not.toBeNull();
   });
 
   it('offers archive, restore and delete with the archive one the project needs', () => {

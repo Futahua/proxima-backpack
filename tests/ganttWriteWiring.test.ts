@@ -213,7 +213,7 @@ describe('Stage 14 the Gantt, driven through its binder', () => {
     // The row is the surface's: the record's own ordering fields are not part of this write.
     expect(app.task(app.dragged).orderIndex).toBe(app.task(app.agent).orderIndex);
     // And the bar the next render draws is the moved one.
-    expect(host.querySelector<HTMLElement>(`[data-c1-key="${barKey}"]`)!.dataset.ganttStartValue).toBe(after.startDate);
+    expect(host.querySelector<HTMLElement>(`[data-papers-visual-key="${barKey}"]`)!.dataset.ganttStartValue).toBe(after.startDate);
   });
 
   it('moves one end when shift-dragging an edge, and refuses an inverted range with the bar restored', async () => {
@@ -249,7 +249,7 @@ describe('Stage 14 the Gantt, driven through its binder', () => {
     expect(pending).toHaveLength(1);
     expect(view.refusal).toBeNull();
     expect(spanOf(app, app.dragged)).toEqual(afterEnd);
-    const restored = host.querySelector<HTMLElement>(`[data-c1-key="timekeeping-gantt-task-${app.dragged}"]`)!;
+    const restored = host.querySelector<HTMLElement>(`[data-papers-visual-key="timekeeping-gantt-task-${app.dragged}"]`)!;
     expect(restored.dataset.ganttStartValue).toBe(afterEnd.startDate);
     expect(restored.dataset.ganttInvalid).toBeUndefined();
   });
@@ -300,8 +300,8 @@ describe('Stage 14 the Gantt, driven through its binder', () => {
     const before = spanOf(app, app.dragged);
     // The day keys the calendar draws are local civil days, so the case reads the one the bar carries
     // rather than slicing an instant and hoping the two agree.
-    const beforeDayKey = host.querySelector<HTMLElement>(`[data-c1-key="timekeeping-gantt-task-${app.dragged}"]`)!.dataset.ganttEnd!;
-    const beforeOldCount = Number(host.querySelector<HTMLElement>(`[data-c1-key="timekeeping-calendar-day-${beforeDayKey}"]`)!.dataset.deadlineCount);
+    const beforeDayKey = host.querySelector<HTMLElement>(`[data-papers-visual-key="timekeeping-gantt-task-${app.dragged}"]`)!.dataset.ganttEnd!;
+    const beforeOldCount = Number(host.querySelector<HTMLElement>(`[data-papers-visual-key="timekeeping-calendar-day-${beforeDayKey}"]`)!.dataset.deadlineCount);
 
     const gesture = harness.pointerDown(`timekeeping-gantt-task-${app.dragged}`, { clientX: 0, clientY: 10 });
     gesture.move(`timekeeping-gantt-row-${app.dragged}`, { clientX: DAY_WIDTH * 5, clientY: 10 });
@@ -314,13 +314,13 @@ describe('Stage 14 the Gantt, driven through its binder', () => {
     // calendar says so: the old day carries nothing and the new one carries the task.
     // The second task still falls on that day, so the count drops by the one that moved rather than
     // to zero: the calendar is a projection of the tasks, not of one bar.
-    const oldDay = host.querySelector<HTMLElement>(`[data-c1-key="timekeeping-calendar-day-${beforeDayKey}"]`)!;
+    const oldDay = host.querySelector<HTMLElement>(`[data-papers-visual-key="timekeeping-calendar-day-${beforeDayKey}"]`)!;
     expect(Number(oldDay.dataset.deadlineCount)).toBe(beforeOldCount - 1);
-    const newDayKey = host.querySelector<HTMLElement>(`[data-c1-key="timekeeping-gantt-task-${app.dragged}"]`)!.dataset.ganttEnd!;
+    const newDayKey = host.querySelector<HTMLElement>(`[data-papers-visual-key="timekeeping-gantt-task-${app.dragged}"]`)!.dataset.ganttEnd!;
     expect(newDayKey).not.toBe(beforeDayKey);
-    const newDay = host.querySelector<HTMLElement>(`[data-c1-key="timekeeping-calendar-day-${newDayKey}"]`)!;
+    const newDay = host.querySelector<HTMLElement>(`[data-papers-visual-key="timekeeping-calendar-day-${newDayKey}"]`)!;
     expect(Number(newDay.dataset.deadlineCount)).toBeGreaterThan(0);
     // And the countdown panel is drawn from the same read rather than from a cached one.
-    expect(host.querySelector('[data-c1-key="timekeeping-panel-countdowns"]')).not.toBeNull();
+    expect(host.querySelector('[data-papers-visual-key="timekeeping-panel-countdowns"]')).not.toBeNull();
   });
 });

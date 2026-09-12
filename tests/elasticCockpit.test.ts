@@ -539,10 +539,10 @@ describe('Stage 6 Task editor in the Task modal', () => {
       draft: () => draft,
       saves,
       deletes,
-      control: (key: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-c1-key="${key}"]`),
+      control: (key: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-papers-visual-key="${key}"]`),
       /** Tick a box the way the document does, then report it. */
       toggle: (key: string) => {
-        const box = root.querySelector<HTMLInputElement>(`[data-c1-key="${key}"]`)!;
+        const box = root.querySelector<HTMLInputElement>(`[data-papers-visual-key="${key}"]`)!;
         box.checked = !box.checked;
         box.dispatchEvent(new Event('input', { bubbles: true }));
         return box.checked;
@@ -581,16 +581,16 @@ describe('Stage 6 Task editor in the Task modal', () => {
     expect((mounted.control('task-editor-property:tags-later') as HTMLInputElement).checked).toBe(false);
 
     // Derived values are shown with what they come from, and have nothing to type in.
-    const derived = mounted.root.querySelector('[data-c1-key="task-editor-property:childCount"]')!;
+    const derived = mounted.root.querySelector('[data-papers-visual-key="task-editor-property:childCount"]')!;
     expect(derived.tagName).toBe('P');
     expect(derived.querySelector('input, select')).toBeNull();
     expect(derived.textContent).toContain('4');
     expect(mounted.root.textContent).toContain('count of children');
     expect(mounted.root.textContent).toContain('done / total');
-    expect(mounted.root.querySelector('[data-c1-key="task-editor-property:progress"]')!.querySelector('input, select')).toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="task-editor-property:progress"]')!.querySelector('input, select')).toBeNull();
 
     // The editor says how many fields it is showing, so a reader need not count markup.
-    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')!.getAttribute('data-task-editor-field-count')).toBe(String(11 + editorSchema.length));
+    expect(mounted.root.querySelector('[data-papers-visual-key="elastic-task-modal"]')!.getAttribute('data-task-editor-field-count')).toBe(String(11 + editorSchema.length));
   });
 
   it('reports a typed value, and draws the draft without pretending it is saved', () => {
@@ -604,7 +604,7 @@ describe('Stage 6 Task editor in the Task modal', () => {
     expect(editableTask.name).toBe('Editable task');
     mounted.draw();
     expect((mounted.control('task-editor-name') as HTMLInputElement).value).toBe('Editable task!');
-    expect(mounted.root.querySelector('[data-c1-key="task-editor-dirty"]')).not.toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="task-editor-dirty"]')).not.toBeNull();
     expect(mounted.root.textContent).toContain('until the record store can write');
   });
 
@@ -628,13 +628,13 @@ describe('Stage 6 Task editor in the Task modal', () => {
     const cancelled = mount();
     cancelled.harness.typeText('task-editor-name', '!');
     cancelled.draw();
-    expect(cancelled.root.querySelector('[data-c1-key="task-editor-dirty"]')).not.toBeNull();
+    expect(cancelled.root.querySelector('[data-papers-visual-key="task-editor-dirty"]')).not.toBeNull();
 
     cancelled.harness.click('task-editor-cancel');
 
     expect(cancelled.draft()).toBeNull();
     expect((cancelled.control('task-editor-name') as HTMLInputElement).value).toBe('Editable task');
-    expect(cancelled.root.querySelector('[data-c1-key="task-editor-clean"]')).not.toBeNull();
+    expect(cancelled.root.querySelector('[data-papers-visual-key="task-editor-clean"]')).not.toBeNull();
 
     const escaped = mount();
     escaped.toggle('task-editor-completion');
@@ -644,29 +644,29 @@ describe('Stage 6 Task editor in the Task modal', () => {
 
     expect(escaped.draft()).toBeNull();
     expect((escaped.control('task-editor-completion') as HTMLInputElement).checked).toBe(false);
-    expect(escaped.root.querySelector('[data-c1-key="elastic-task-modal"]')).not.toBeNull();
+    expect(escaped.root.querySelector('[data-papers-visual-key="elastic-task-modal"]')).not.toBeNull();
   });
 
   it('keeps Save refused with a typed result rather than hiding the button', () => {
     const mounted = mount();
-    const save = mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="elastic-task-save"]')!;
+    const save = mounted.root.querySelector<HTMLButtonElement>('[data-papers-visual-key="elastic-task-save"]')!;
 
     expect(save.disabled).toBe(true);
     expect(save.getAttribute('data-task-editor-save-refusal')).toBe('action-not-available');
     expect(save.textContent).toContain('Save unavailable');
-    expect(mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="elastic-task-delete"]')!.disabled).toBe(true);
-    expect(mounted.root.querySelector('[data-c1-key="task-editor-cancel"]')).not.toBeNull();
+    expect(mounted.root.querySelector<HTMLButtonElement>('[data-papers-visual-key="elastic-task-delete"]')!.disabled).toBe(true);
+    expect(mounted.root.querySelector('[data-papers-visual-key="task-editor-cancel"]')).not.toBeNull();
     // And the modal says which of the two worlds it is in, so a caller need not read the buttons.
-    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')!.getAttribute('data-task-editor-writes')).toBe('unavailable');
+    expect(mounted.root.querySelector('[data-papers-visual-key="elastic-task-modal"]')!.getAttribute('data-task-editor-writes')).toBe('unavailable');
   });
 
   it('offers Save only when there is something to write, and reports both controls through the binder', () => {
     const mounted = mount({ refusal: null });
-    const save = () => mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="elastic-task-save"]')!;
-    const remove = () => mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="elastic-task-delete"]')!;
+    const save = () => mounted.root.querySelector<HTMLButtonElement>('[data-papers-visual-key="elastic-task-save"]')!;
+    const remove = () => mounted.root.querySelector<HTMLButtonElement>('[data-papers-visual-key="elastic-task-delete"]')!;
 
     // A form that matches the record has nothing to save, so the button is offered disabled.
-    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')!.getAttribute('data-task-editor-writes')).toBe('available');
+    expect(mounted.root.querySelector('[data-papers-visual-key="elastic-task-modal"]')!.getAttribute('data-task-editor-writes')).toBe('available');
     expect(save().disabled).toBe(true);
     expect(save().getAttribute('data-task-editor-save-refusal')).toBeNull();
     expect(remove().disabled).toBe(false);
@@ -682,12 +682,12 @@ describe('Stage 6 Task editor in the Task modal', () => {
 
     mounted.harness.click('elastic-task-delete');
     expect(mounted.deletes).toEqual([editableTask.id]);
-    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')).toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="elastic-task-modal"]')).toBeNull();
   });
 
   it('draws a refused save beside the form without claiming the record changed', () => {
     const mounted = mount({ refusal: null, editorRefusal: 'stale-revision' });
-    const refusal = mounted.root.querySelector('[data-c1-key="task-editor-refusal"]')!;
+    const refusal = mounted.root.querySelector('[data-papers-visual-key="task-editor-refusal"]')!;
 
     expect(refusal.getAttribute('data-task-editor-refusal')).toBe('stale-revision');
     expect(refusal.textContent).toContain('stale-revision');
@@ -705,6 +705,6 @@ describe('Stage 6 Task editor in the Task modal', () => {
     mounted.harness.click('elastic-task-modal-close');
 
     expect(mounted.draft()).toBeNull();
-    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')).toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="elastic-task-modal"]')).toBeNull();
   });
 });

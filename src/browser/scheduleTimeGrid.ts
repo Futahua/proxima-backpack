@@ -355,7 +355,7 @@ function renderEventModal(
       ? 'Uncategorised'
       : projectNames.get(seededEvent.projectId) ?? seededEvent.projectId;
 
-    return `<div class="modal-backdrop" data-c1-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-schedule-editor-mode="create" data-schedule-draft-project-id="${escapeHtml(seededEvent.projectId ?? '')}"${seedRefusal === null ? '' : ` data-schedule-refusal="${escapeHtml(seedRefusal)}"`} data-c1-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>New event</h3></div><button type="button" class="icon-button" data-schedule-action="close-event" data-c1-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><label>Name<input data-c1-key="schedule-event-name" value="${escapeHtml(seededEvent.name)}"></label><label>Project<input data-c1-key="schedule-event-project" value="${escapeHtml(projectLabel)}" readonly></label><label>Start<input data-c1-key="schedule-event-start" value="${escapeHtml(seededEvent.startDate)}" readonly></label><label>End<input data-c1-key="schedule-event-end" value="${escapeHtml(seededEvent.deadline)}" readonly></label><label>Description<textarea data-c1-key="schedule-event-description">${escapeHtml(seededEvent.description)}</textarea></label>${seedRefusal === null ? '' : `<small data-schedule-seed-feedback="${escapeHtml(seedRefusal)}">${escapeHtml(seedRefusal)}</small>`}<button type="button" data-schedule-action="save-seeded-event" data-c1-key="schedule-event-save">Save</button></section></div>`;
+    return `<div class="modal-backdrop" data-papers-visual-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-schedule-editor-mode="create" data-schedule-draft-project-id="${escapeHtml(seededEvent.projectId ?? '')}"${seedRefusal === null ? '' : ` data-schedule-refusal="${escapeHtml(seedRefusal)}"`} data-papers-visual-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>New event</h3></div><button type="button" class="icon-button" data-schedule-action="close-event" data-papers-visual-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><label>Name<input data-papers-visual-key="schedule-event-name" value="${escapeHtml(seededEvent.name)}"></label><label>Project<input data-papers-visual-key="schedule-event-project" value="${escapeHtml(projectLabel)}" readonly></label><label>Start<input data-papers-visual-key="schedule-event-start" value="${escapeHtml(seededEvent.startDate)}" readonly></label><label>End<input data-papers-visual-key="schedule-event-end" value="${escapeHtml(seededEvent.deadline)}" readonly></label><label>Description<textarea data-papers-visual-key="schedule-event-description">${escapeHtml(seededEvent.description)}</textarea></label>${seedRefusal === null ? '' : `<small data-schedule-seed-feedback="${escapeHtml(seedRefusal)}">${escapeHtml(seedRefusal)}</small>`}<button type="button" data-schedule-action="save-seeded-event" data-papers-visual-key="schedule-event-save">Save</button></section></div>`;
   }
   return renderEventEditorModal({ events, projectNames, eventId, closeAction: 'close-event', closeAttribute: 'data-schedule-action', mode: 'edit', writes, draft });
 }
@@ -385,16 +385,16 @@ function renderAllDayRegion(
     if (recurring) {
       const event = recurring.event;
       const token = scheduleRecurringOccurrenceToken(recurring);
-      return `<article class="event-card schedule-all-day-event schedule-recurring-occurrence" role="button" tabindex="0" data-schedule-recurring-action="open-occurrence" data-schedule-recurring-event-id="${escapeHtml(event.id)}" data-schedule-occurrence-start="${escapeHtml(recurring.startDate)}" data-schedule-occurrence-deadline="${escapeHtml(recurring.deadline)}" data-schedule-all-day-start-column="${placement.startColumn}" data-schedule-all-day-span-columns="${placement.spanColumns}" data-c1-key="schedule-all-day-recurring-${escapeHtml(event.id)}-${token}" style="grid-column:${placement.startColumn + 1} / span ${placement.spanColumns};"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
+      return `<article class="event-card schedule-all-day-event schedule-recurring-occurrence" role="button" tabindex="0" data-schedule-recurring-action="open-occurrence" data-schedule-recurring-event-id="${escapeHtml(event.id)}" data-schedule-occurrence-start="${escapeHtml(recurring.startDate)}" data-schedule-occurrence-deadline="${escapeHtml(recurring.deadline)}" data-schedule-all-day-start-column="${placement.startColumn}" data-schedule-all-day-span-columns="${placement.spanColumns}" data-papers-visual-key="schedule-all-day-recurring-${escapeHtml(event.id)}-${token}" style="grid-column:${placement.startColumn + 1} / span ${placement.spanColumns};"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
     }
 
     const event = eventsById.get(placement.eventId);
     if (!event) return '';
 
-    return `<article class="event-card schedule-all-day-event" role="button" tabindex="0" data-schedule-action="open-event" data-schedule-event-id="${escapeHtml(event.id)}" data-schedule-all-day-start-column="${placement.startColumn}" data-schedule-all-day-span-columns="${placement.spanColumns}" data-c1-key="schedule-all-day-event-${escapeHtml(event.id)}" style="grid-column:${placement.startColumn + 1} / span ${placement.spanColumns};"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
+    return `<article class="event-card schedule-all-day-event" role="button" tabindex="0" data-schedule-action="open-event" data-schedule-event-id="${escapeHtml(event.id)}" data-schedule-all-day-start-column="${placement.startColumn}" data-schedule-all-day-span-columns="${placement.spanColumns}" data-papers-visual-key="schedule-all-day-event-${escapeHtml(event.id)}" style="grid-column:${placement.startColumn + 1} / span ${placement.spanColumns};"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
   }).join('');
 
-  return `<section class="schedule-all-day-region" data-c1-key="schedule-all-day-region" aria-label="All-day events"><div class="schedule-all-day-grid" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));gap:2px;"><strong style="grid-column:1;">All day</strong>${items}</div></section>`;
+  return `<section class="schedule-all-day-region" data-papers-visual-key="schedule-all-day-region" aria-label="All-day events"><div class="schedule-all-day-grid" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));gap:2px;"><strong style="grid-column:1;">All day</strong>${items}</div></section>`;
 }
 
 function renderTimedDay(
@@ -411,7 +411,7 @@ function renderTimedDay(
   const nowKey = localDateKey(now);
   const currentMinute = minuteOfDay(now);
   const currentTime = nowKey === dayKey
-    ? `<div class="schedule-current-time-indicator" data-current-minute="${currentMinute}" data-c1-key="schedule-current-time-${escapeHtml(dayKey)}" style="position:absolute;left:0;right:0;top:${(currentMinute / MINUTES_PER_DAY) * 100}%;border-top:2px solid currentColor;z-index:3;"></div>`
+    ? `<div class="schedule-current-time-indicator" data-current-minute="${currentMinute}" data-papers-visual-key="schedule-current-time-${escapeHtml(dayKey)}" style="position:absolute;left:0;right:0;top:${(currentMinute / MINUTES_PER_DAY) * 100}%;border-top:2px solid currentColor;z-index:3;"></div>`
     : '';
 
   const slots = Array.from(
@@ -421,7 +421,7 @@ function renderTimedDay(
       const hour = Math.floor(startMinute / 60);
       const minute = startMinute % 60;
       const timeLabel = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-      return `<div class="schedule-time-slot" role="button" tabindex="0" data-schedule-action="seed-event" data-schedule-day-key="${escapeHtml(dayKey)}" data-schedule-slot="${slotIndex}" data-c1-key="schedule-slot-${escapeHtml(dayKey)}-${slotIndex}" aria-label="Create event at ${escapeHtml(dayKey)} ${timeLabel}" style="height:8px;border-top:1px solid currentColor;opacity:0.12;cursor:pointer;"></div>`;
+      return `<div class="schedule-time-slot" role="button" tabindex="0" data-schedule-action="seed-event" data-schedule-day-key="${escapeHtml(dayKey)}" data-schedule-slot="${slotIndex}" data-papers-visual-key="schedule-slot-${escapeHtml(dayKey)}-${slotIndex}" aria-label="Create event at ${escapeHtml(dayKey)} ${timeLabel}" style="height:8px;border-top:1px solid currentColor;opacity:0.12;cursor:pointer;"></div>`;
     },
   ).join('');
 
@@ -432,7 +432,7 @@ function renderTimedDay(
     if (recurring) {
       const event = recurring.event;
       const token = scheduleRecurringOccurrenceToken(recurring);
-      return `<article class="event-card schedule-timed-event schedule-recurring-occurrence${event.isCompleted ? ' completed' : ''}" role="button" tabindex="0" data-schedule-recurring-action="open-occurrence" data-schedule-recurring-event-id="${escapeHtml(event.id)}" data-schedule-occurrence-start="${escapeHtml(recurring.startDate)}" data-schedule-occurrence-deadline="${escapeHtml(recurring.deadline)}" data-schedule-start-minute="${segment.startMinute}" data-schedule-end-minute="${segment.endMinute}" data-c1-key="schedule-recurring-${escapeHtml(event.id)}-${token}-${escapeHtml(dayKey)}" style="position:absolute;left:4px;right:4px;top:${(segment.startMinute / MINUTES_PER_DAY) * 100}%;height:${(durationMinutes / MINUTES_PER_DAY) * 100}%;z-index:2;cursor:pointer;"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
+      return `<article class="event-card schedule-timed-event schedule-recurring-occurrence${event.isCompleted ? ' completed' : ''}" role="button" tabindex="0" data-schedule-recurring-action="open-occurrence" data-schedule-recurring-event-id="${escapeHtml(event.id)}" data-schedule-occurrence-start="${escapeHtml(recurring.startDate)}" data-schedule-occurrence-deadline="${escapeHtml(recurring.deadline)}" data-schedule-start-minute="${segment.startMinute}" data-schedule-end-minute="${segment.endMinute}" data-papers-visual-key="schedule-recurring-${escapeHtml(event.id)}-${token}-${escapeHtml(dayKey)}" style="position:absolute;left:4px;right:4px;top:${(segment.startMinute / MINUTES_PER_DAY) * 100}%;height:${(durationMinutes / MINUTES_PER_DAY) * 100}%;z-index:2;cursor:pointer;"><strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small></article>`;
     }
 
     const event = eventsById.get(segment.eventId);
@@ -443,13 +443,13 @@ function renderTimedDay(
       ? localDateKey(new Date(deadline.getTime() - 1))
       : '';
     const resizeHandle = finalSegmentDayKey === dayKey
-      ? `<span data-schedule-resize-edge="end" data-c1-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}-resize-end" aria-label="Resize event end" style="position:absolute;left:0;right:0;bottom:0;height:8px;border-bottom:2px solid currentColor;cursor:ns-resize;z-index:4;"></span>`
+      ? `<span data-schedule-resize-edge="end" data-papers-visual-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}-resize-end" aria-label="Resize event end" style="position:absolute;left:0;right:0;bottom:0;height:8px;border-bottom:2px solid currentColor;cursor:ns-resize;z-index:4;"></span>`
       : '';
 
-    return `<article class="event-card schedule-timed-event${event.isCompleted ? ' completed' : ''}" role="button" tabindex="0" data-schedule-action="open-event" data-schedule-timed-event="true" data-schedule-event-id="${escapeHtml(event.id)}" data-schedule-start-value="${escapeHtml(event.startDate)}" data-schedule-deadline-value="${escapeHtml(event.deadline)}" data-schedule-start-minute="${segment.startMinute}" data-schedule-end-minute="${segment.endMinute}"${writeRefusal !== null && writeRefusal.eventId === event.id ? ` data-schedule-refusal="${escapeHtml(writeRefusal.code)}"` : ''} data-c1-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}" style="position:absolute;left:4px;right:4px;top:${(segment.startMinute / MINUTES_PER_DAY) * 100}%;height:${(durationMinutes / MINUTES_PER_DAY) * 100}%;z-index:2;cursor:grab;">${resizeHandle}<strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small>${writeRefusal !== null && writeRefusal.eventId === event.id ? `<small class="schedule-write-refusal" data-schedule-write-refusal="${escapeHtml(writeRefusal.code)}">${escapeHtml(writeRefusal.code)}</small>` : ''}</article>`;
+    return `<article class="event-card schedule-timed-event${event.isCompleted ? ' completed' : ''}" role="button" tabindex="0" data-schedule-action="open-event" data-schedule-timed-event="true" data-schedule-event-id="${escapeHtml(event.id)}" data-schedule-start-value="${escapeHtml(event.startDate)}" data-schedule-deadline-value="${escapeHtml(event.deadline)}" data-schedule-start-minute="${segment.startMinute}" data-schedule-end-minute="${segment.endMinute}"${writeRefusal !== null && writeRefusal.eventId === event.id ? ` data-schedule-refusal="${escapeHtml(writeRefusal.code)}"` : ''} data-papers-visual-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}" style="position:absolute;left:4px;right:4px;top:${(segment.startMinute / MINUTES_PER_DAY) * 100}%;height:${(durationMinutes / MINUTES_PER_DAY) * 100}%;z-index:2;cursor:grab;">${resizeHandle}<strong>${escapeHtml(event.name)}</strong><small>${escapeHtml(projectName(event, projectNames))}</small>${writeRefusal !== null && writeRefusal.eventId === event.id ? `<small class="schedule-write-refusal" data-schedule-write-refusal="${escapeHtml(writeRefusal.code)}">${escapeHtml(writeRefusal.code)}</small>` : ''}</article>`;
   }).join('');
 
-  return `<div class="schedule-day-column" data-schedule-day="${escapeHtml(dayKey)}" data-c1-key="schedule-day-${escapeHtml(dayKey)}"><div class="schedule-time-track" data-c1-key="schedule-time-track-${escapeHtml(dayKey)}" style="position:relative;height:${SLOTS_PER_DAY * 8}px;">${slots}${eventCards}${currentTime}</div></div>`;
+  return `<div class="schedule-day-column" data-schedule-day="${escapeHtml(dayKey)}" data-papers-visual-key="schedule-day-${escapeHtml(dayKey)}"><div class="schedule-time-track" data-papers-visual-key="schedule-time-track-${escapeHtml(dayKey)}" style="position:relative;height:${SLOTS_PER_DAY * 8}px;">${slots}${eventCards}${currentTime}</div></div>`;
 }
 
 function renderTimeAxis(): string {
@@ -458,7 +458,7 @@ function renderTimeAxis(): string {
     (_, hour) => `<div style="height:32px;"><small>${String(hour).padStart(2, '0')}:00</small></div>`,
   ).join('');
 
-  return `<div class="schedule-time-axis" data-c1-key="schedule-time-axis" aria-hidden="true">${labels}</div>`;
+  return `<div class="schedule-time-axis" data-papers-visual-key="schedule-time-axis" aria-hidden="true">${labels}</div>`;
 }
 
 export function renderScheduleTimeGrid(
@@ -501,7 +501,7 @@ export function renderScheduleTimeGrid(
     const key = localDateKey(day);
     const isToday = key === localDateKey(options.now);
 
-    return `<div class="schedule-day-header${isToday ? ' today' : ''}" data-c1-key="schedule-day-header-${escapeHtml(key)}"${isToday ? ' aria-current="date"' : ''}><strong>${escapeHtml(day.toLocaleDateString(undefined, { weekday: 'short' }))}</strong><small>${escapeHtml(key)}</small></div>`;
+    return `<div class="schedule-day-header${isToday ? ' today' : ''}" data-papers-visual-key="schedule-day-header-${escapeHtml(key)}"${isToday ? ' aria-current="date"' : ''}><strong>${escapeHtml(day.toLocaleDateString(undefined, { weekday: 'short' }))}</strong><small>${escapeHtml(key)}</small></div>`;
   }).join('');
 
   const dayColumns = visibleDays.map((day) => (
@@ -535,7 +535,7 @@ export function renderScheduleTimeGrid(
       options.eventEditorDraft ?? null,
     );
 
-  return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-c1-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header>${renderAllDayRegion(ordinaryEvents, recurringOccurrences, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-c1-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${modal}</section>`;
+  return `<section class="surface calendar-surface schedule-time-grid" data-schedule-time-grid="true" data-schedule-mode="${options.mode}" data-papers-visual-key="schedule-${options.mode}-region" aria-label="${escapeHtml(title)} schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>${escapeHtml(title)}</h2><p class="surface-description">Schedule workspace · 15-minute time-of-day grid.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header>${renderAllDayRegion(ordinaryEvents, recurringOccurrences, visibleDays, options.projectNames)}<div class="schedule-time-grid-header" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));"><span></span>${headers}</div><div class="schedule-time-grid-body" data-papers-visual-key="schedule-time-grid-body" data-schedule-day-count="${visibleDays.length}" data-schedule-slot-minutes="${SLOT_MINUTES}" style="display:grid;grid-template-columns:64px repeat(${visibleDays.length},minmax(0,1fr));">${renderTimeAxis()}${dayColumns}</div>${modal}</section>`;
 }
 
 export function bindScheduleTimeGridInteractions(
@@ -661,7 +661,7 @@ export function bindScheduleTimeGridInteractions(
         preview.dataset.schedulePreviewEndMinute = String(endMinute);
         preview.dataset.schedulePreviewDurationMinutes = String(durationMinutes);
         preview.setAttribute(
-          'data-c1-key',
+          'data-papers-visual-key',
           `schedule-preview-${state.eventId}-${dayKey}`,
         );
         preview.setAttribute('aria-hidden', 'true');
@@ -828,16 +828,16 @@ export function bindScheduleTimeGridInteractions(
         '[data-schedule-editor-mode="create"]',
       );
       const name = modal?.querySelector<HTMLInputElement>(
-        '[data-c1-key="schedule-event-name"]',
+        '[data-papers-visual-key="schedule-event-name"]',
       );
       const start = modal?.querySelector<HTMLInputElement>(
-        '[data-c1-key="schedule-event-start"]',
+        '[data-papers-visual-key="schedule-event-start"]',
       );
       const deadline = modal?.querySelector<HTMLInputElement>(
-        '[data-c1-key="schedule-event-end"]',
+        '[data-papers-visual-key="schedule-event-end"]',
       );
       const description = modal?.querySelector<HTMLTextAreaElement>(
-        '[data-c1-key="schedule-event-description"]',
+        '[data-papers-visual-key="schedule-event-description"]',
       );
 
       if (!modal || !name || !start || !deadline || !description) {

@@ -37,20 +37,20 @@ export function renderNewTaskModal(
 ): string {
   const form: TaskCreateProjection = projectNewTaskEditor(state, draft);
   const sections = form.sections
-    .map((section) => `<fieldset class="task-editor-section" data-c1-key="new-task-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map((field) => renderTaskEditorField(field, NEW_TASK_EDITOR_HOOKS)).join('')}</fieldset>`)
+    .map((section) => `<fieldset class="task-editor-section" data-papers-visual-key="new-task-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map((field) => renderTaskEditorField(field, NEW_TASK_EDITOR_HOOKS)).join('')}</fieldset>`)
     .join('');
   const status = write.refusal === null
     ? (form.dirty
-      ? '<p class="task-editor-dirty" data-c1-key="new-task-ready" data-new-task-dirty="true">Save creates this task in the record store.</p>'
-      : `<p class="task-editor-clean" data-c1-key="new-task-empty" data-new-task-dirty="false">${escapeHtml(NEW_TASK_NAME_NOTE)}</p>`)
-    : `<p class="task-editor-clean" data-c1-key="new-task-unavailable" data-new-task-dirty="${form.dirty ? 'true' : 'false'}">${escapeHtml(TASK_EDITOR_SAVE_NOTE)}</p>`;
+      ? '<p class="task-editor-dirty" data-papers-visual-key="new-task-ready" data-new-task-dirty="true">Save creates this task in the record store.</p>'
+      : `<p class="task-editor-clean" data-papers-visual-key="new-task-empty" data-new-task-dirty="false">${escapeHtml(NEW_TASK_NAME_NOTE)}</p>`)
+    : `<p class="task-editor-clean" data-papers-visual-key="new-task-unavailable" data-new-task-dirty="${form.dirty ? 'true' : 'false'}">${escapeHtml(TASK_EDITOR_SAVE_NOTE)}</p>`;
   const refusal = write.editorRefusal === null
     ? ''
-    : `<p class="diagnostics" data-c1-key="new-task-refusal" data-new-task-refusal="${escapeHtml(write.editorRefusal)}">Create refused: ${escapeHtml(write.editorRefusal)}. No task was created.</p>`;
+    : `<p class="diagnostics" data-papers-visual-key="new-task-refusal" data-new-task-refusal="${escapeHtml(write.editorRefusal)}">Create refused: ${escapeHtml(write.editorRefusal)}. No task was created.</p>`;
 
   const saveControl = write.refusal !== null
-    ? `<button type="button" data-c1-key="new-task-save" data-new-task-save-refusal="${escapeHtml(write.refusal)}" disabled>Create unavailable</button>`
-    : `<button type="button" data-elastic-action="create-task" data-c1-key="new-task-save"${form.dirty ? '' : ' disabled'}>Create task</button>`;
+    ? `<button type="button" data-papers-visual-key="new-task-save" data-new-task-save-refusal="${escapeHtml(write.refusal)}" disabled>Create unavailable</button>`
+    : `<button type="button" data-elastic-action="create-task" data-papers-visual-key="new-task-save"${form.dirty ? '' : ' disabled'}>Create task</button>`;
 
-  return `<section class="task-modal" role="dialog" aria-modal="true" aria-label="New task" data-c1-key="new-task-modal" data-new-task-schema-version="${TASK_CREATE_SCHEMA_VERSION}" data-new-task-field-count="${form.fieldCount}" data-new-task-writes="${write.refusal === null ? 'available' : 'unavailable'}"><header><h2>${escapeHtml(form.title)}</h2><button type="button" data-elastic-action="cancel-new-task" data-c1-key="new-task-modal-close" aria-label="Close new task">×</button></header>${status}${refusal}${sections}<footer><button type="button" data-elastic-action="cancel-new-task" data-c1-key="new-task-cancel">Cancel</button>${saveControl}</footer></section>`;
+  return `<section class="task-modal" role="dialog" aria-modal="true" aria-label="New task" data-papers-visual-key="new-task-modal" data-new-task-schema-version="${TASK_CREATE_SCHEMA_VERSION}" data-new-task-field-count="${form.fieldCount}" data-new-task-writes="${write.refusal === null ? 'available' : 'unavailable'}"><header><h2>${escapeHtml(form.title)}</h2><button type="button" data-elastic-action="cancel-new-task" data-papers-visual-key="new-task-modal-close" aria-label="Close new task">×</button></header>${status}${refusal}${sections}<footer><button type="button" data-elastic-action="cancel-new-task" data-papers-visual-key="new-task-cancel">Cancel</button>${saveControl}</footer></section>`;
 }

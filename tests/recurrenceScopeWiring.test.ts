@@ -224,7 +224,7 @@ function mountScope(
 function firstOccurrenceKey(host: HTMLElement): string {
   const cards = Array.from(host.querySelectorAll<HTMLElement>('[data-schedule-recurring-action="open-occurrence"]'));
   if (cards.length === 0) throw new Error('no recurring occurrence was drawn');
-  return cards[0]!.getAttribute('data-c1-key')!;
+  return cards[0]!.getAttribute('data-papers-visual-key')!;
 }
 
 beforeEach(() => {

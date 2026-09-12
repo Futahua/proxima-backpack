@@ -133,7 +133,7 @@ export function renderCanvasSurface(
       : null;
 
   const diagnostic = state.lastDropDiagnostic
-    ? `<p class="canvas-diagnostic" data-c1-key="canvas-drop-diagnostic">${escapeHtml(state.lastDropDiagnostic)}</p>`
+    ? `<p class="canvas-diagnostic" data-papers-visual-key="canvas-drop-diagnostic">${escapeHtml(state.lastDropDiagnostic)}</p>`
     : '';
 
   const cards = state.items
@@ -148,7 +148,7 @@ export function renderCanvasSurface(
     )
     .join('');
 
-  return `<section class="surface canvas-surface" data-c1-key="canvas-region" aria-label="Canvas" data-canvas-write-authority="unavailable"><header class="surface-header"><div><p class="eyebrow">Workspace canvas</p><h2>Canvas</h2><p class="surface-description">Drop files to create passive, one-shot file cards. Select a card to inspect it.</p></div><span class="surface-count">${state.items.length} items</span></header><div class="canvas-drop-zone" data-c1-key="canvas-drop-zone" aria-label="Canvas drop zone">${cards || '<p class="empty-state">Drop a file here.</p>'}</div>${diagnostic}${canvasGeometryRefusal(state, view)}${canvasRemovalRefusal(state, view)}${canvasInspector(state, selectedNodeId)}${canvasRemoveConfirmation(state, view)}</section>`;
+  return `<section class="surface canvas-surface" data-papers-visual-key="canvas-region" aria-label="Canvas" data-canvas-write-authority="unavailable"><header class="surface-header"><div><p class="eyebrow">Workspace canvas</p><h2>Canvas</h2><p class="surface-description">Drop files to create passive, one-shot file cards. Select a card to inspect it.</p></div><span class="surface-count">${state.items.length} items</span></header><div class="canvas-drop-zone" data-papers-visual-key="canvas-drop-zone" aria-label="Canvas drop zone">${cards || '<p class="empty-state">Drop a file here.</p>'}</div>${diagnostic}${canvasGeometryRefusal(state, view)}${canvasRemovalRefusal(state, view)}${canvasInspector(state, selectedNodeId)}${canvasRemoveConfirmation(state, view)}</section>`;
 }
 
 function canvasCard(
@@ -222,7 +222,7 @@ function canvasCard(
     ? `<span class="canvas-fallback-icon" aria-label="${escapeHtml(icon.label)}">${icon.token}</span>`
     : '';
 
-  return `<article class="canvas-card${selected ? ' selected' : ''}" role="button" tabindex="0" aria-pressed="${selected}" data-canvas-action="open-node" data-c1-key="canvas-card-${escapeHtml(node.id)}" data-canvas-node-id="${escapeHtml(node.id)}" data-canvas-source-kind="${escapeHtml(node.source.kind)}" data-canvas-layout-x="${node.layout.x}" data-canvas-layout-y="${node.layout.y}" data-canvas-layout-width="${node.layout.width}" data-canvas-layout-height="${node.layout.height}"><header><span class="canvas-move-handle" data-canvas-action="geometry-preview" data-canvas-geometry-handle="move" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-c1-key="canvas-move-${escapeHtml(node.id)}" title="Preview move; write unavailable">⋮⋮</span>${iconMarkup}<strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}${escapeHtml(previewFailure)}</span></header>${image}${drawingSvg}${textMarkup}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(sourceState)}${escapeHtml(reason)}</span></footer><span class="canvas-resize-handle" data-canvas-action="geometry-preview" data-canvas-geometry-handle="resize" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-c1-key="canvas-resize-${escapeHtml(node.id)}" title="Preview resize; write unavailable">↘</span></article>`;
+  return `<article class="canvas-card${selected ? ' selected' : ''}" role="button" tabindex="0" aria-pressed="${selected}" data-canvas-action="open-node" data-papers-visual-key="canvas-card-${escapeHtml(node.id)}" data-canvas-node-id="${escapeHtml(node.id)}" data-canvas-source-kind="${escapeHtml(node.source.kind)}" data-canvas-layout-x="${node.layout.x}" data-canvas-layout-y="${node.layout.y}" data-canvas-layout-width="${node.layout.width}" data-canvas-layout-height="${node.layout.height}"><header><span class="canvas-move-handle" data-canvas-action="geometry-preview" data-canvas-geometry-handle="move" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-papers-visual-key="canvas-move-${escapeHtml(node.id)}" title="Preview move; write unavailable">⋮⋮</span>${iconMarkup}<strong>${escapeHtml(selection.filename)}</strong><span>${escapeHtml(label)}${escapeHtml(previewFailure)}</span></header>${image}${drawingSvg}${textMarkup}<p>${escapeHtml(selection.extension || 'no extension')} · ${escapeHtml(size)} · ${escapeHtml(modified)}</p><footer><span>${escapeHtml(sourceState)}${escapeHtml(reason)}</span></footer><span class="canvas-resize-handle" data-canvas-action="geometry-preview" data-canvas-geometry-handle="resize" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-papers-visual-key="canvas-resize-${escapeHtml(node.id)}" title="Preview resize; write unavailable">↘</span></article>`;
 }
 
 function canvasGeometryRefusal(
@@ -239,7 +239,7 @@ function canvasGeometryRefusal(
   }
 
   const proposed = refusal.proposed;
-  return `<p class="canvas-geometry-refusal" data-canvas-geometry-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-canvas-geometry-kind="${refusal.kind}" data-canvas-geometry-node-id="${escapeHtml(refusal.nodeId)}" data-c1-key="canvas-geometry-refusal">${refusal.kind === 'move' ? 'Move' : 'Resize'} unavailable until record-store cutover · proposed x ${proposed.x}, y ${proposed.y}, ${proposed.width} × ${proposed.height}. Canvas data was not changed.</p>`;
+  return `<p class="canvas-geometry-refusal" data-canvas-geometry-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-canvas-geometry-kind="${refusal.kind}" data-canvas-geometry-node-id="${escapeHtml(refusal.nodeId)}" data-papers-visual-key="canvas-geometry-refusal">${refusal.kind === 'move' ? 'Move' : 'Resize'} unavailable until record-store cutover · proposed x ${proposed.x}, y ${proposed.y}, ${proposed.width} × ${proposed.height}. Canvas data was not changed.</p>`;
 }
 
 function canvasRemovalRefusal(
@@ -255,7 +255,7 @@ function canvasRemovalRefusal(
     return '';
   }
 
-  return `<p class="canvas-remove-refusal" data-canvas-remove-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-canvas-remove-node-id="${escapeHtml(nodeId)}" data-c1-key="canvas-remove-refusal">Remove unavailable until record-store cutover. Canvas data and source data were not changed.</p>`;
+  return `<p class="canvas-remove-refusal" data-canvas-remove-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-canvas-remove-node-id="${escapeHtml(nodeId)}" data-papers-visual-key="canvas-remove-refusal">Remove unavailable until record-store cutover. Canvas data and source data were not changed.</p>`;
 }
 
 function canvasRemoveConfirmation(
@@ -275,7 +275,7 @@ function canvasRemoveConfirmation(
       ? item.node.source.path
       : item.node.source.sourceId;
 
-  return `<section class="canvas-remove-confirmation" role="dialog" aria-modal="false" aria-label="Remove Canvas item" data-canvas-remove-candidate-node-id="${escapeHtml(nodeId)}" data-c1-key="canvas-remove-confirm-${escapeHtml(nodeId)}"><header><div><small>Remove from Canvas</small><h3>${escapeHtml(item.selection.filename)}</h3></div></header><p>This would remove the Canvas node only. Source identity: <code>${escapeHtml(sourceIdentity)}</code>.</p><footer><button type="button" data-canvas-action="cancel-remove" data-c1-key="canvas-remove-cancel-${escapeHtml(nodeId)}">Cancel</button><button type="button" data-canvas-action="refuse-remove" data-canvas-node-id="${escapeHtml(nodeId)}" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-c1-key="canvas-remove-confirm-action-${escapeHtml(nodeId)}">Remove unavailable</button></footer></section>`;
+  return `<section class="canvas-remove-confirmation" role="dialog" aria-modal="false" aria-label="Remove Canvas item" data-canvas-remove-candidate-node-id="${escapeHtml(nodeId)}" data-papers-visual-key="canvas-remove-confirm-${escapeHtml(nodeId)}"><header><div><small>Remove from Canvas</small><h3>${escapeHtml(item.selection.filename)}</h3></div></header><p>This would remove the Canvas node only. Source identity: <code>${escapeHtml(sourceIdentity)}</code>.</p><footer><button type="button" data-canvas-action="cancel-remove" data-papers-visual-key="canvas-remove-cancel-${escapeHtml(nodeId)}">Cancel</button><button type="button" data-canvas-action="refuse-remove" data-canvas-node-id="${escapeHtml(nodeId)}" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-papers-visual-key="canvas-remove-confirm-action-${escapeHtml(nodeId)}">Remove unavailable</button></footer></section>`;
 }
 
 function canvasInspector(
@@ -298,7 +298,7 @@ function canvasInspector(
   const field = (label: string, value: unknown): string =>
     `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? '—')}</dd></div>`;
 
-  return `<section class="canvas-node-inspector" role="dialog" aria-modal="false" aria-label="Canvas item details" data-canvas-inspector-node-id="${escapeHtml(node.id)}" data-c1-key="canvas-node-inspector"><header><div><small>Canvas item</small><h3>${escapeHtml(selection.filename)}</h3></div><button type="button" class="icon-button" data-canvas-action="close-node" data-c1-key="canvas-node-inspector-close" aria-label="Close canvas item details">×</button></header><dl class="canvas-node-fields">${field('Node ID', node.id)}${field('Representation', selection.kind)}${field('Admission', item.status)}${field('Source kind', node.source.kind)}${field(node.source.kind === 'vault-file' ? 'Source path' : 'Ephemeral source ID', sourceIdentity)}${field('Source state', node.source.state)}${field('Revision', node.source.revision)}${field('Size', node.source.size)}${field('Modified', node.source.modifiedAt)}${field('X', node.layout.x)}${field('Y', node.layout.y)}${field('Width', node.layout.width)}${field('Height', node.layout.height)}</dl><footer><button type="button" disabled aria-disabled="true" data-canvas-write-action="move-resize" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Move / resize unavailable</button><button type="button" data-canvas-action="request-remove" data-canvas-node-id="${escapeHtml(node.id)}" data-canvas-write-action="remove-preview" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-c1-key="canvas-remove-${escapeHtml(node.id)}">Remove…</button><small data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Removal remains unavailable until record-store cutover</small></footer></section>`;
+  return `<section class="canvas-node-inspector" role="dialog" aria-modal="false" aria-label="Canvas item details" data-canvas-inspector-node-id="${escapeHtml(node.id)}" data-papers-visual-key="canvas-node-inspector"><header><div><small>Canvas item</small><h3>${escapeHtml(selection.filename)}</h3></div><button type="button" class="icon-button" data-canvas-action="close-node" data-papers-visual-key="canvas-node-inspector-close" aria-label="Close canvas item details">×</button></header><dl class="canvas-node-fields">${field('Node ID', node.id)}${field('Representation', selection.kind)}${field('Admission', item.status)}${field('Source kind', node.source.kind)}${field(node.source.kind === 'vault-file' ? 'Source path' : 'Ephemeral source ID', sourceIdentity)}${field('Source state', node.source.state)}${field('Revision', node.source.revision)}${field('Size', node.source.size)}${field('Modified', node.source.modifiedAt)}${field('X', node.layout.x)}${field('Y', node.layout.y)}${field('Width', node.layout.width)}${field('Height', node.layout.height)}</dl><footer><button type="button" disabled aria-disabled="true" data-canvas-write-action="move-resize" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Move / resize unavailable</button><button type="button" data-canvas-action="request-remove" data-canvas-node-id="${escapeHtml(node.id)}" data-canvas-write-action="remove-preview" data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}" data-papers-visual-key="canvas-remove-${escapeHtml(node.id)}">Remove…</button><small data-canvas-write-refusal="${CANVAS_SURFACE_WRITE_REFUSAL}">Removal remains unavailable until record-store cutover</small></footer></section>`;
 }
 
 interface ActiveCanvasGeometryGesture {
@@ -460,7 +460,7 @@ export function bindCanvasSurfaceInteractions(
 
   const bindInspectorEscape = (): void => {
     const close = root.querySelector<HTMLElement>(
-      '[data-canvas-action="close-node"][data-c1-key="canvas-node-inspector-close"]',
+      '[data-canvas-action="close-node"][data-papers-visual-key="canvas-node-inspector-close"]',
     );
     if (!close || close.dataset.canvasEscapeBound === 'true') return;
 

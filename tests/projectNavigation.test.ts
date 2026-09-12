@@ -43,7 +43,7 @@ describe('the navigator draws the projects the records now describe', () => {
   it('draws an active project as a selectable row, and counts the active ones', () => {
     const html = renderProjectNavigation(stateWith([ACTIVE, ARCHIVED]), ALL_PROJECTS);
 
-    expect(html).toContain('data-c1-key="project-item-pxr_active"');
+    expect(html).toContain('data-papers-visual-key="project-item-pxr_active"');
     expect(html).toContain('data-action="select-project" data-project-id="pxr_active"');
     expect(html).toContain('aria-label="Projects"');
     // The count is the active projects only: one of the two.
@@ -57,7 +57,7 @@ describe('the navigator draws the projects the records now describe', () => {
     expect(html).toContain('Archived · Project');
     // Visible, and not a control: the archived row carries no action and no project id, so the shell's
     // delegated selection has nothing to find. That is the difference between "archived" and "hidden".
-    const archivedRow = html.slice(html.indexOf('data-c1-key="project-item-pxr_archived"'), html.indexOf('data-c1-key="project-item-pxr_archived"') + 260);
+    const archivedRow = html.slice(html.indexOf('data-papers-visual-key="project-item-pxr_archived"'), html.indexOf('data-papers-visual-key="project-item-pxr_archived"') + 260);
     expect(archivedRow).not.toContain('data-action=');
     expect(html).toContain('Old work');
   });
@@ -83,7 +83,7 @@ describe('the navigator draws the projects the records now describe', () => {
     const withFolders = project('pxr_active', 'Active work', 'active', [{ name: 'Specs', path: 'Vault/Specs' }]);
     const html = renderProjectNavigation(stateWith([withFolders]), withFolders.id);
 
-    expect(html).toContain('data-c1-key="project-details"');
+    expect(html).toContain('data-papers-visual-key="project-details"');
     expect(html).toContain('Active work');
     expect(html).toContain('Active work description');
     expect(html).toContain('aria-current="page"');

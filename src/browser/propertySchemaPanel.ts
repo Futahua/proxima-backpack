@@ -84,7 +84,7 @@ function row(row_: PropertySchemaEditorRow, view: PropertySchemaPanelView): stri
   const id = escapeHtml(row_.schemaId);
   const options = row_.options.length === 0
     ? ''
-    : `<ul class="property-schema-options" data-property-schema-options="${id}">${row_.options.map((option) => `<li data-property-schema-option="${escapeHtml(option.optionId)}" data-c1-key="property-schema-option-${id}-${escapeHtml(option.optionId)}">${escapeHtml(option.label)}</li>`).join('')}</ul>`;
+    : `<ul class="property-schema-options" data-property-schema-options="${id}">${row_.options.map((option) => `<li data-property-schema-option="${escapeHtml(option.optionId)}" data-papers-visual-key="property-schema-option-${id}-${escapeHtml(option.optionId)}">${escapeHtml(option.label)}</li>`).join('')}</ul>`;
   const detail = row_.detail === null ? '' : `<small class="property-schema-detail" data-property-schema-detail="${id}">${escapeHtml(row_.detail)}</small>`;
   // A type the editor cannot change says so on the row rather than being silently absent from a control list:
   // the reader is looking at a select whose values may already use its options, and being told is the honest
@@ -92,10 +92,10 @@ function row(row_: PropertySchemaEditorRow, view: PropertySchemaPanelView): stri
   const typeNote = row_.typeEditable ? '' : `<small class="property-schema-type-locked" data-property-schema-type-locked="${id}">type is fixed once values use it</small>`;
   const offersOptions = row_.type === 'select' || row_.type === 'multi-select';
   const addOption = offersOptions
-    ? `<span class="property-schema-add-option"><input type="text" data-property-schema-option-input="${id}" value="${escapeHtml(view.rowOptionLabels[row_.schemaId] ?? '')}" placeholder="New option" aria-label="New option for ${escapeHtml(row_.name)}" data-c1-key="property-schema-option-input-${id}"><button type="button" data-property-schema-action="add-option" data-property-schema-id="${id}" data-c1-key="property-schema-add-option-${id}">Add option</button></span>`
+    ? `<span class="property-schema-add-option"><input type="text" data-property-schema-option-input="${id}" value="${escapeHtml(view.rowOptionLabels[row_.schemaId] ?? '')}" placeholder="New option" aria-label="New option for ${escapeHtml(row_.name)}" data-papers-visual-key="property-schema-option-input-${id}"><button type="button" data-property-schema-action="add-option" data-property-schema-id="${id}" data-papers-visual-key="property-schema-add-option-${id}">Add option</button></span>`
     : '';
 
-  return `<li class="property-schema-row" data-property-schema-row="${id}" data-property-schema-revision="${escapeHtml(row_.revision)}" data-c1-key="property-schema-row-${id}"><div class="property-schema-heading"><strong data-property-schema-name="${id}">${escapeHtml(row_.name)}</strong><span data-property-schema-type="${id}">${escapeHtml(row_.type)}</span>${detail}${typeNote}</div>${options}<span class="property-schema-controls"><input type="text" data-property-schema-rename-input="${id}" value="${escapeHtml(view.rowNames[row_.schemaId] ?? row_.name)}" aria-label="Rename ${escapeHtml(row_.name)}" data-c1-key="property-schema-rename-input-${id}"><button type="button" data-property-schema-action="rename" data-property-schema-id="${id}" data-c1-key="property-schema-rename-${id}">Rename</button>${addOption}<button type="button" data-property-schema-action="delete" data-property-schema-id="${id}" data-c1-key="property-schema-delete-${id}">Delete</button></span></li>`;
+  return `<li class="property-schema-row" data-property-schema-row="${id}" data-property-schema-revision="${escapeHtml(row_.revision)}" data-papers-visual-key="property-schema-row-${id}"><div class="property-schema-heading"><strong data-property-schema-name="${id}">${escapeHtml(row_.name)}</strong><span data-property-schema-type="${id}">${escapeHtml(row_.type)}</span>${detail}${typeNote}</div>${options}<span class="property-schema-controls"><input type="text" data-property-schema-rename-input="${id}" value="${escapeHtml(view.rowNames[row_.schemaId] ?? row_.name)}" aria-label="Rename ${escapeHtml(row_.name)}" data-papers-visual-key="property-schema-rename-input-${id}"><button type="button" data-property-schema-action="rename" data-property-schema-id="${id}" data-papers-visual-key="property-schema-rename-${id}">Rename</button>${addOption}<button type="button" data-property-schema-action="delete" data-property-schema-id="${id}" data-papers-visual-key="property-schema-delete-${id}">Delete</button></span></li>`;
 }
 
 /**
@@ -109,16 +109,16 @@ export function renderPropertySchemaPanel(
   projection: PropertySchemaEditorProjection,
   view: PropertySchemaPanelView = EMPTY_PROPERTY_SCHEMA_PANEL_VIEW,
 ): string {
-  const toggle = `<button type="button" class="property-schema-toggle" data-property-schema-action="toggle" aria-expanded="${view.open ? 'true' : 'false'}" data-c1-key="property-schema-toggle">Properties (${projection.declaredCount})</button>`;
+  const toggle = `<button type="button" class="property-schema-toggle" data-property-schema-action="toggle" aria-expanded="${view.open ? 'true' : 'false'}" data-papers-visual-key="property-schema-toggle">Properties (${projection.declaredCount})</button>`;
   if (!view.open) {
-    return `<section class="property-schema-panel closed" data-property-schema-panel="closed" data-c1-key="property-schema-panel">${toggle}</section>`;
+    return `<section class="property-schema-panel closed" data-property-schema-panel="closed" data-papers-visual-key="property-schema-panel">${toggle}</section>`;
   }
 
   const typeOptions = projection.creatableTypes
     .map((type) => `<option value="${escapeHtml(type)}"${type === view.createType ? ' selected' : ''}>${escapeHtml(type)}</option>`)
     .join('');
   const offersOptions = projection.optionTypes.includes(view.createType);
-  const createForm = `<div class="property-schema-create" data-property-schema-create><input type="text" data-property-schema-create-name value="${escapeHtml(view.createName)}" placeholder="Property name" aria-label="New property name" data-c1-key="property-schema-create-name"><select data-property-schema-create-type aria-label="New property type" data-c1-key="property-schema-create-type">${typeOptions}</select>${offersOptions ? `<input type="text" data-property-schema-create-options value="${escapeHtml(view.createOptions)}" placeholder="Options, comma separated" aria-label="New property options" data-c1-key="property-schema-create-options">` : ''}<button type="button" data-property-schema-action="create" data-c1-key="property-schema-create">Add property</button></div>`;
+  const createForm = `<div class="property-schema-create" data-property-schema-create><input type="text" data-property-schema-create-name value="${escapeHtml(view.createName)}" placeholder="Property name" aria-label="New property name" data-papers-visual-key="property-schema-create-name"><select data-property-schema-create-type aria-label="New property type" data-papers-visual-key="property-schema-create-type">${typeOptions}</select>${offersOptions ? `<input type="text" data-property-schema-create-options value="${escapeHtml(view.createOptions)}" placeholder="Options, comma separated" aria-label="New property options" data-papers-visual-key="property-schema-create-options">` : ''}<button type="button" data-property-schema-action="create" data-papers-visual-key="property-schema-create">Add property</button></div>`;
 
   const rows = projection.rows.length === 0
     ? '<p class="empty-state" data-property-schema-empty>No properties are declared yet.</p>'
@@ -127,7 +127,7 @@ export function renderPropertySchemaPanel(
   const refusal = view.refusal === null ? '' : `<p class="property-schema-refusal" data-property-schema-refusal="${escapeHtml(view.refusal)}">${escapeHtml(view.refusal)}</p>`;
   const feedback = view.feedback === null ? '' : `<p class="property-schema-feedback" data-property-schema-feedback="${escapeHtml(view.feedback)}">${escapeHtml(view.feedback)}</p>`;
 
-  return `<section class="property-schema-panel open" data-property-schema-panel="open" data-c1-key="property-schema-panel">${toggle}${refusal}${feedback}${createForm}${rows}</section>`;
+  return `<section class="property-schema-panel open" data-property-schema-panel="open" data-papers-visual-key="property-schema-panel">${toggle}${refusal}${feedback}${createForm}${rows}</section>`;
 }
 
 function isSchemaType(value: string, projection: PropertySchemaEditorProjection): boolean {

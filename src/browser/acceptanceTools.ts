@@ -42,10 +42,10 @@ function escapeHtml(value: unknown): string {
  * @returns the markup for the header's acceptance-tools region.
  */
 export function renderAcceptanceTools(view: AcceptanceToolsViewState = EMPTY_ACCEPTANCE_TOOLS_VIEW): string {
-  const toggle = `<button type="button" class="acceptance-tools-toggle" data-action="acceptance-tools" data-c1-key="acceptance-tools-toggle" aria-expanded="${view.open ? 'true' : 'false'}" aria-controls="acceptance-tools-panel">Acceptance tools</button>`;
+  const toggle = `<button type="button" class="acceptance-tools-toggle" data-action="acceptance-tools" data-papers-visual-key="acceptance-tools-toggle" aria-expanded="${view.open ? 'true' : 'false'}" aria-controls="acceptance-tools-panel">Acceptance tools</button>`;
   if (!view.open) return toggle;
 
-  return `${toggle}<div class="acceptance-tools-panel" id="acceptance-tools-panel" data-c1-key="acceptance-tools-panel"><p class="acceptance-tools-note" data-acceptance-tools-scope="disposable-root">These select a <strong>disposable</strong> folder for an acceptance run. They do not grant record write authority: browser folder access is read-only here, and no record is written through it.</p><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div>`;
+  return `${toggle}<div class="acceptance-tools-panel" id="acceptance-tools-panel" data-papers-visual-key="acceptance-tools-panel"><p class="acceptance-tools-note" data-acceptance-tools-scope="disposable-root">These select a <strong>disposable</strong> folder for an acceptance run. They do not grant record write authority: browser folder access is read-only here, and no record is written through it.</p><button type="button" data-action="fsa-probe" data-papers-visual-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-papers-visual-key="fsa-reread-button">Re-read selected folder</button></div>`;
 }
 
 /** Whether a click on `data-action="acceptance-tools"` opens or closes the disclosure. */

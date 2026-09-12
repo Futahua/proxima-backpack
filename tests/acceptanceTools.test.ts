@@ -31,23 +31,23 @@ describe('Stage 20 acceptance-probe chrome', () => {
   it('leads with one closed disclosure, and renders no probe control until it is opened', () => {
     const closed = renderAcceptanceTools(EMPTY_ACCEPTANCE_TOOLS_VIEW);
 
-    expect(closed).toContain('data-c1-key="acceptance-tools-toggle"');
+    expect(closed).toContain('data-papers-visual-key="acceptance-tools-toggle"');
     expect(closed).toContain('aria-expanded="false"');
     expect(closed).toContain('aria-controls="acceptance-tools-panel"');
     // No probe chrome at all while it is closed: not hidden with CSS, not present and inert.
     expect(closed).not.toContain('data-action="fsa-probe"');
     expect(closed).not.toContain('data-action="fsa-reread"');
     expect(closed).not.toContain('fsa-probe-button');
-    expect(closed).not.toContain('data-c1-key="acceptance-tools-panel"');
+    expect(closed).not.toContain('data-papers-visual-key="acceptance-tools-panel"');
 
     const open = renderAcceptanceTools(acceptanceToolsAfterToggle(EMPTY_ACCEPTANCE_TOOLS_VIEW));
     expect(open).toContain('aria-expanded="true"');
-    expect(open).toContain('data-c1-key="acceptance-tools-panel"');
+    expect(open).toContain('data-papers-visual-key="acceptance-tools-panel"');
     // The buttons keep the action names and machine keys the acceptance runs drive.
     expect(open).toContain('data-action="fsa-probe"');
-    expect(open).toContain('data-c1-key="fsa-probe-button"');
+    expect(open).toContain('data-papers-visual-key="fsa-probe-button"');
     expect(open).toContain('data-action="fsa-reread"');
-    expect(open).toContain('data-c1-key="fsa-reread-button"');
+    expect(open).toContain('data-papers-visual-key="fsa-reread-button"');
 
     // And the disclosure says what those buttons are, so a folder picker in the header cannot read as
     // an ordinary feature: disposable root, and no record write authority through it.

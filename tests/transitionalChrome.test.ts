@@ -40,9 +40,9 @@ describe('Stage 20 canvas availability', () => {
       scheduleMode: 'day',
       projectWorkspaceTab: 'notes',
     });
-    expect(canvas).toContain('data-c1-key="surface-tab-canvas"');
+    expect(canvas).toContain('data-papers-visual-key="surface-tab-canvas"');
     expect(canvas).toContain('data-surface="canvas"');
-    expect(canvas).toMatch(/class="surface-tab selected"[^>]*data-c1-key="surface-tab-canvas"|data-c1-key="surface-tab-canvas"[^>]*selected/);
+    expect(canvas).toMatch(/class="surface-tab selected"[^>]*data-papers-visual-key="surface-tab-canvas"|data-papers-visual-key="surface-tab-canvas"[^>]*selected/);
 
     const tasks = renderCockpitNavigation({
       surface: 'tasks',
@@ -50,8 +50,8 @@ describe('Stage 20 canvas availability', () => {
       scheduleMode: 'day',
       projectWorkspaceTab: 'notes',
     });
-    expect(tasks).toContain('data-c1-key="surface-tab-canvas"');
-    expect(tasks).not.toMatch(/class="surface-tab selected"[^>]*data-c1-key="surface-tab-canvas"/);
+    expect(tasks).toContain('data-papers-visual-key="surface-tab-canvas"');
+    expect(tasks).not.toMatch(/class="surface-tab selected"[^>]*data-papers-visual-key="surface-tab-canvas"/);
 
     // The shell routes the tab to the canvas renderer rather than to a placeholder, and the switcher's
     // own validation accepts the surface: canvas is the last branch of the chain, not a fallback that
@@ -89,7 +89,7 @@ describe('Stage 20 canvas availability', () => {
 describe('Stage 20 import and migration chrome', () => {
   it('renders no legacy import control in the ordinary surface, while the administrative path stays', () => {
     // No import button, panel or wizard in the shell's markup.
-    expect(MAIN).not.toContain('data-c1-key="import');
+    expect(MAIN).not.toContain('data-papers-visual-key="import');
     expect(MAIN).not.toContain('>Import<');
     expect(MAIN).not.toContain('Import legacy');
     // The machinery is still there for the paths that own it: the administrative action set and its
@@ -102,8 +102,8 @@ describe('Stage 20 import and migration chrome', () => {
 
   it('keeps activation a stored marker the write path reads, not a per-boot ceremony', () => {
     // The shell draws no migration step.
-    expect(MAIN).not.toContain('data-c1-key="migration');
-    expect(MAIN).not.toContain('data-c1-key="activation-marker');
+    expect(MAIN).not.toContain('data-papers-visual-key="migration');
+    expect(MAIN).not.toContain('data-papers-visual-key="activation-marker');
     // Activation is read where it belongs — resolving the write path — and the reader is a stored
     // marker, which is what makes "activated once" true rather than a flow repeated every boot.
     expect(source('src/adapters/browserTaskMutations.ts')).toContain('readRecordStoreActivation');

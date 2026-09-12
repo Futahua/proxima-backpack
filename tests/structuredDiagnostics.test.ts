@@ -120,7 +120,7 @@ describe('Stage 6 slice 6 structured diagnostic code catalog', () => {
     expect(isDiagnosticCode(result.failure?.code)).toBe(true);
     expect(result.failure?.detail.length).toBeLessThanOrEqual(180);
     expect(result.markup).toContain(
-      'data-c1-key="renderer-failure"',
+      'data-papers-visual-key="renderer-failure"',
     );
     expect(result.markup).not.toContain('<script>');
   });

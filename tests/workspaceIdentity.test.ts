@@ -41,7 +41,7 @@ describe('Stage 9 workspace identity', () => {
   it('is consumed by the shell rather than restated in it', () => {
     expect(MAIN_SOURCE).toContain('workspaceIdentityFor(sourceMode, writesAvailable)');
     expect(MAIN_SOURCE).toContain('sourceLabelFor(sourceMode)');
-    expect(MAIN_SOURCE).toContain('data-c1-key="workspace-identity"');
+    expect(MAIN_SOURCE).toContain('data-papers-visual-key="workspace-identity"');
     expect(MAIN_SOURCE).toContain('data-workspace-writes=');
     // The literal is gone from the shell: the only place it may appear is the derivation itself.
     expect(MAIN_SOURCE).not.toContain('<span>Read-only workspace</span>');

@@ -330,7 +330,7 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
     const harness = createInteractionHarness(host);
 
     const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
-    const key = card.dataset.c1Key!;
+    const key = card.dataset.papersVisualKey!;
     const dayKey = card.closest<HTMLElement>('[data-schedule-day]')!.dataset.scheduleDay!;
     const trackKey = `schedule-time-track-${dayKey}`;
     const startValue = card.dataset.scheduleStartValue!;
@@ -367,7 +367,7 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
     const harness = createInteractionHarness(host);
 
     const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
-    const key = card.dataset.c1Key!;
+    const key = card.dataset.papersVisualKey!;
     const dayKey = card.closest<HTMLElement>('[data-schedule-day]')!.dataset.scheduleDay!;
     const y = (minuteOfDay(card.dataset.scheduleStartValue!) / 1440) * TRACK_HEIGHT;
 
@@ -397,7 +397,7 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
     const edge = card.querySelector<HTMLElement>('[data-schedule-resize-edge="end"]')!;
     const y = (minuteOfDay(card.dataset.scheduleDeadlineValue!) / 1440) * TRACK_HEIGHT;
 
-    const gesture = harness.pointerDown(edge.dataset.c1Key!, { clientX: 40, clientY: y });
+    const gesture = harness.pointerDown(edge.dataset.papersVisualKey!, { clientX: 40, clientY: y });
     gesture.move(trackKey, { clientX: 40, clientY: y + SLOT_HEIGHT * 2 });
     gesture.release(trackKey, { clientX: 40, clientY: y + SLOT_HEIGHT * 2 });
     await Promise.all(pending);
@@ -419,7 +419,7 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
     const harness = createInteractionHarness(host);
 
     const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
-    const key = card.dataset.c1Key!;
+    const key = card.dataset.papersVisualKey!;
     const dayKey = card.closest<HTMLElement>('[data-schedule-day]')!.dataset.scheduleDay!;
     const trackKey = `schedule-time-track-${dayKey}`;
     const startValue = card.dataset.scheduleStartValue!;
@@ -460,7 +460,7 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
     const startValue = card.dataset.scheduleStartValue!;
     const y = (minuteOfDay(card.dataset.scheduleDeadlineValue!) / 1440) * TRACK_HEIGHT;
 
-    const gesture = harness.pointerDown(card.querySelector<HTMLElement>('[data-schedule-resize-edge="end"]')!.dataset.c1Key!, { clientX: 40, clientY: y });
+    const gesture = harness.pointerDown(card.querySelector<HTMLElement>('[data-schedule-resize-edge="end"]')!.dataset.papersVisualKey!, { clientX: 40, clientY: y });
     gesture.move(trackKey, { clientX: 40, clientY: y + SLOT_HEIGHT * 4 });
     gesture.release(trackKey, { clientX: 40, clientY: y + SLOT_HEIGHT * 4 });
     await Promise.all(pending);
@@ -524,7 +524,7 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
 
     // The editor opens on the record: the fields show what the store holds, not a rebuilt guess.
     const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
-    harness.click(card.dataset.c1Key!);
+    harness.click(card.dataset.papersVisualKey!);
     expect(host.querySelector<HTMLElement>('[data-schedule-editor-mode="edit"]')!.dataset.scheduleEventWrites).toBe('available');
     const name = host.querySelector<HTMLInputElement>('[data-schedule-event-field="name"]')!;
     expect(name.readOnly).toBe(false);
@@ -555,7 +555,7 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
     const harness = createInteractionHarness(host);
 
     const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"]')!;
-    harness.click(card.dataset.c1Key!);
+    harness.click(card.dataset.papersVisualKey!);
 
     // Somebody else moves the event while the form is open, from the revision the block was drawn
     // with, so the save is the loser of a race rather than a plain refusal.
@@ -600,7 +600,7 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
       const harness = createInteractionHarness(host);
 
       const card = host.querySelector<HTMLElement>('[data-schedule-timed-event="true"], [data-schedule-event-id]')!;
-      harness.click(card.dataset.c1Key!);
+      harness.click(card.dataset.papersVisualKey!);
       const modal = host.querySelector<HTMLElement>('[data-schedule-editor-mode="edit"]')!;
       expect(modal.dataset.scheduleEventWrites).toBe('available');
       const name = modal.querySelector<HTMLInputElement>('[data-schedule-event-field="name"]')!;
@@ -630,7 +630,7 @@ describe('Stage 12 schedule writes, driven through the grid', () => {
 
     const before = drawn.events.length;
     harness.click('schedule-slot-2026-09-06-38');
-    const name = host.querySelector<HTMLInputElement>('[data-c1-key="schedule-event-name"]')!;
+    const name = host.querySelector<HTMLInputElement>('[data-papers-visual-key="schedule-event-name"]')!;
     name.value = 'Seeded through the grid';
     harness.click('schedule-event-save');
     await Promise.all(pending);

@@ -118,7 +118,7 @@ function stageKeyOf(stageId: string | null): string {
 
 function card(task: Task, selected: string | null): string {
   const isSelected = task.id === selected;
-  return `<button type="button" class="project-board-task project-workflow-task${task.isCompleted ? ' completed' : ''}${isSelected ? ' selected' : ''}" draggable="true" data-project-workflow-action="open-task" data-project-workflow-task-id="${escapeHtml(task.id)}" data-project-workflow-stage="${escapeHtml(task.workflowStageId ?? '')}" data-project-workflow-execution-state="${escapeHtml(task.status)}" data-c1-key="project-workflow-task-${escapeHtml(task.id)}" aria-pressed="${isSelected}"><span class="project-board-task-top"><span class="task-status">${escapeHtml(task.status)}</span>${task.isCompleted ? '<span class="task-complete">Done</span>' : ''}</span><strong>${escapeHtml(task.name)}</strong><span class="project-board-task-description">${escapeHtml(task.description || 'No description')}</span><small>${escapeHtml(task.deadline ?? 'No deadline')}</small></button>`;
+  return `<button type="button" class="project-board-task project-workflow-task${task.isCompleted ? ' completed' : ''}${isSelected ? ' selected' : ''}" draggable="true" data-project-workflow-action="open-task" data-project-workflow-task-id="${escapeHtml(task.id)}" data-project-workflow-stage="${escapeHtml(task.workflowStageId ?? '')}" data-project-workflow-execution-state="${escapeHtml(task.status)}" data-papers-visual-key="project-workflow-task-${escapeHtml(task.id)}" aria-pressed="${isSelected}"><span class="project-board-task-top"><span class="task-status">${escapeHtml(task.status)}</span>${task.isCompleted ? '<span class="task-complete">Done</span>' : ''}</span><strong>${escapeHtml(task.name)}</strong><span class="project-board-task-description">${escapeHtml(task.description || 'No description')}</span><small>${escapeHtml(task.deadline ?? 'No deadline')}</small></button>`;
 }
 
 function column(input: {
@@ -132,10 +132,10 @@ function column(input: {
 }): string {
   const key = stageKeyOf(input.stageId);
   const dropStage = input.stageId ?? NO_WORKFLOW_STAGE;
-  const slots = (index: number): string => `<div class="project-board-drop-slot" data-project-workflow-drop-stage="${escapeHtml(dropStage)}" data-project-workflow-drop-index="${index}" data-c1-key="project-workflow-drop-${escapeHtml(input.project.id)}-${escapeHtml(key)}-${index}"><div class="project-board-insertion-placeholder"></div></div>`;
+  const slots = (index: number): string => `<div class="project-board-drop-slot" data-project-workflow-drop-stage="${escapeHtml(dropStage)}" data-project-workflow-drop-index="${index}" data-papers-visual-key="project-workflow-drop-${escapeHtml(input.project.id)}-${escapeHtml(key)}-${index}"><div class="project-board-insertion-placeholder"></div></div>`;
   const cards = input.tasks.map((task, index) => card(task, input.selected) + slots(index + 1)).join('');
 
-  return `<section class="project-board-column project-workflow-column" data-project-workflow-stage-column="${escapeHtml(key)}" data-project-workflow-drag-target="${input.previewTarget ? 'true' : 'false'}" data-c1-key="project-workflow-column-${escapeHtml(key)}"><header><strong>${escapeHtml(input.label)}</strong><span>${input.tasks.length}</span>${input.stageControls}</header><div class="project-board-column-cards">${input.tasks.length === 0 ? '<p class="empty-state">No tasks.</p>' : ''}${slots(0)}${cards}</div></section>`;
+  return `<section class="project-board-column project-workflow-column" data-project-workflow-stage-column="${escapeHtml(key)}" data-project-workflow-drag-target="${input.previewTarget ? 'true' : 'false'}" data-papers-visual-key="project-workflow-column-${escapeHtml(key)}"><header><strong>${escapeHtml(input.label)}</strong><span>${input.tasks.length}</span>${input.stageControls}</header><div class="project-board-column-cards">${input.tasks.length === 0 ? '<p class="empty-state">No tasks.</p>' : ''}${slots(0)}${cards}</div></section>`;
 }
 
 /**
@@ -152,10 +152,10 @@ function stageControls(input: {
 }): string {
   const stageId = escapeHtml(input.stage.id);
   if (input.form !== null && input.form !== undefined && input.form.kind === 'rename' && input.form.stageId === input.stage.id) {
-    return `<input type="text" class="project-workflow-stage-name" value="${escapeHtml(input.form.name)}" aria-label="Stage name" data-project-workflow-stage-name="${stageId}" data-c1-key="project-workflow-stage-name-${stageId}"><button type="button" data-project-workflow-action="save-stage" data-c1-key="project-workflow-stage-save-${stageId}">Save</button><button type="button" data-project-workflow-action="close-stage-form" data-c1-key="project-workflow-stage-cancel-${stageId}">Cancel</button>`;
+    return `<input type="text" class="project-workflow-stage-name" value="${escapeHtml(input.form.name)}" aria-label="Stage name" data-project-workflow-stage-name="${stageId}" data-papers-visual-key="project-workflow-stage-name-${stageId}"><button type="button" data-project-workflow-action="save-stage" data-papers-visual-key="project-workflow-stage-save-${stageId}">Save</button><button type="button" data-project-workflow-action="close-stage-form" data-papers-visual-key="project-workflow-stage-cancel-${stageId}">Cancel</button>`;
   }
   const disabled = input.unavailable === null ? '' : ` disabled data-project-workflow-stage-write-refusal="${escapeHtml(input.unavailable)}"`;
-  return `<button type="button" data-project-workflow-action="rename-stage" data-project-workflow-stage-id="${stageId}" data-c1-key="project-workflow-stage-rename-${stageId}"${disabled}>Rename</button><button type="button" data-project-workflow-action="delete-stage" data-project-workflow-stage-id="${stageId}" data-c1-key="project-workflow-stage-delete-${stageId}"${disabled}>Delete</button>`;
+  return `<button type="button" data-project-workflow-action="rename-stage" data-project-workflow-stage-id="${stageId}" data-papers-visual-key="project-workflow-stage-rename-${stageId}"${disabled}>Rename</button><button type="button" data-project-workflow-action="delete-stage" data-project-workflow-stage-id="${stageId}" data-papers-visual-key="project-workflow-stage-delete-${stageId}"${disabled}>Delete</button>`;
 }
 
 /** The board's own stage form: the new-stage button, or the form it opens. */
@@ -164,15 +164,15 @@ function stageFormMarkup(input: {
   unavailable: string | null;
 }): string {
   if (input.form !== null && input.form !== undefined && input.form.kind === 'create') {
-    return `<span class="project-workflow-stage-create"><input type="text" class="project-workflow-stage-name" value="${escapeHtml(input.form.name)}" aria-label="New stage name" data-project-workflow-stage-name="${NO_WORKFLOW_STAGE}" data-c1-key="project-workflow-stage-name"><button type="button" data-project-workflow-action="save-stage" data-c1-key="project-workflow-stage-save">Save</button><button type="button" data-project-workflow-action="close-stage-form" data-c1-key="project-workflow-stage-cancel">Cancel</button></span>`;
+    return `<span class="project-workflow-stage-create"><input type="text" class="project-workflow-stage-name" value="${escapeHtml(input.form.name)}" aria-label="New stage name" data-project-workflow-stage-name="${NO_WORKFLOW_STAGE}" data-papers-visual-key="project-workflow-stage-name"><button type="button" data-project-workflow-action="save-stage" data-papers-visual-key="project-workflow-stage-save">Save</button><button type="button" data-project-workflow-action="close-stage-form" data-papers-visual-key="project-workflow-stage-cancel">Cancel</button></span>`;
   }
   const disabled = input.unavailable === null ? '' : ` disabled data-project-workflow-stage-write-refusal="${escapeHtml(input.unavailable)}"`;
-  return `<button type="button" class="project-workflow-stage-new" data-project-workflow-action="new-stage" data-c1-key="project-workflow-stage-new"${disabled}>New stage</button>`;
+  return `<button type="button" class="project-workflow-stage-new" data-project-workflow-action="new-stage" data-papers-visual-key="project-workflow-stage-new"${disabled}>New stage</button>`;
 }
 
 function inspector(state: ProximaState, project: Project, task: Task): string {
   const stage = workflowStagesFor(state, project).find((candidate) => candidate.id === task.workflowStageId);
-  return `<section class="project-board-task-inspector" role="dialog" aria-label="Task details" data-project-workflow-inspector-task-id="${escapeHtml(task.id)}" data-c1-key="project-workflow-task-inspector"><header><div><small>Task details</small><h3>${escapeHtml(task.name)}</h3></div><button type="button" class="icon-button" data-project-workflow-action="close-task" data-c1-key="project-workflow-inspector-close" aria-label="Close task details">×</button></header><p>${escapeHtml(task.description || 'No description')}</p><dl class="project-board-task-properties"><div data-project-workflow-detail="stage"><dt>Workflow stage</dt><dd>${escapeHtml(stage?.name ?? 'No stage')}</dd></div><div data-project-workflow-detail="execution-state"><dt>Execution state</dt><dd>${escapeHtml(task.status)}</dd></div><div data-project-workflow-detail="deadline"><dt>Deadline</dt><dd>${escapeHtml(task.deadline ?? 'No deadline')}</dd></div></dl></section>`;
+  return `<section class="project-board-task-inspector" role="dialog" aria-label="Task details" data-project-workflow-inspector-task-id="${escapeHtml(task.id)}" data-papers-visual-key="project-workflow-task-inspector"><header><div><small>Task details</small><h3>${escapeHtml(task.name)}</h3></div><button type="button" class="icon-button" data-project-workflow-action="close-task" data-papers-visual-key="project-workflow-inspector-close" aria-label="Close task details">×</button></header><p>${escapeHtml(task.description || 'No description')}</p><dl class="project-board-task-properties"><div data-project-workflow-detail="stage"><dt>Workflow stage</dt><dd>${escapeHtml(stage?.name ?? 'No stage')}</dd></div><div data-project-workflow-detail="execution-state"><dt>Execution state</dt><dd>${escapeHtml(task.status)}</dd></div><div data-project-workflow-detail="deadline"><dt>Deadline</dt><dd>${escapeHtml(task.deadline ?? 'No deadline')}</dd></div></dl></section>`;
 }
 
 /**
@@ -232,7 +232,7 @@ export function renderProjectWorkflowBoard(
     ? `<div class="project-workflow-stage-toolbar" data-project-workflow-stage-write="${stageUnavailable === null ? 'available' : 'unavailable'}">${stageFormMarkup({ form: stageForm, unavailable: stageUnavailable })}${stageFeedback}${stageRefusal}</div>`
     : '';
 
-  return `<section class="project-workspace-panel project-workflow-board" data-project-workflow-project-id="${escapeHtml(project.id)}" data-project-workflow-stage-count="${stages.length}" data-c1-key="project-workflow-board"><header><h3>Task board</h3><small>${stages.length} workflow ${stages.length === 1 ? 'stage' : 'stages'} · ${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}</small>${stageToolbar}</header><div class="project-board-grid project-workflow-grid">${columns}</div>${refusal}${inspectorMarkup}</section>`;
+  return `<section class="project-workspace-panel project-workflow-board" data-project-workflow-project-id="${escapeHtml(project.id)}" data-project-workflow-stage-count="${stages.length}" data-papers-visual-key="project-workflow-board"><header><h3>Task board</h3><small>${stages.length} workflow ${stages.length === 1 ? 'stage' : 'stages'} · ${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}</small>${stageToolbar}</header><div class="project-board-grid project-workflow-grid">${columns}</div>${refusal}${inspectorMarkup}</section>`;
 }
 
 function markPreview(root: HTMLElement, stage: string | null, slot: HTMLElement): void {

@@ -188,11 +188,11 @@ function renderProperties(state: ProximaState, task: Task): string {
   const entries = Object.entries(task.properties);
   if (entries.length === 0) return '';
 
-  return `<div class="task-property-pills" data-c1-key="elastic-properties-${escapeHtml(task.id)}">${entries.map(([key, value]) => `<span class="task-property-pill" data-c1-key="elastic-property-${escapeHtml(task.id)}-${escapeHtml(key)}"><strong>${escapeHtml(labels.get(key) ?? key)}</strong><span>${escapeHtml(propertyText(value))}</span></span>`).join('')}</div>`;
+  return `<div class="task-property-pills" data-papers-visual-key="elastic-properties-${escapeHtml(task.id)}">${entries.map(([key, value]) => `<span class="task-property-pill" data-papers-visual-key="elastic-property-${escapeHtml(task.id)}-${escapeHtml(key)}"><strong>${escapeHtml(labels.get(key) ?? key)}</strong><span>${escapeHtml(propertyText(value))}</span></span>`).join('')}</div>`;
 }
 
 function renderDropSlot(column: ElasticColumn, index: number): string {
-  return `<div class="elastic-drop-slot" data-c1-key="elastic-drop-${column}-${index}" data-elastic-drop-column="${column}" data-elastic-drop-index="${index}"><div class="elastic-insertion-placeholder" data-c1-key="elastic-placeholder-${column}-${index}" style="height:0px;min-height:0;overflow:hidden;opacity:0;border:1px dashed currentColor;border-radius:8px"></div></div>`;
+  return `<div class="elastic-drop-slot" data-papers-visual-key="elastic-drop-${column}-${index}" data-elastic-drop-column="${column}" data-elastic-drop-index="${index}"><div class="elastic-insertion-placeholder" data-papers-visual-key="elastic-placeholder-${column}-${index}" style="height:0px;min-height:0;overflow:hidden;opacity:0;border:1px dashed currentColor;border-radius:8px"></div></div>`;
 }
 
 function renderTaskCard(
@@ -212,7 +212,7 @@ function renderTaskCard(
   const progress = presentation.progress[task.id] ?? 0;
   const allocation = presentation.allocationMinutes[task.id] ?? 0;
 
-  return `<article class="task-card" draggable="true" data-elastic-action="open-task" data-elastic-task-id="${escapeHtml(task.id)}" data-elastic-column="${column}" data-elastic-height="${height}" data-c1-key="elastic-task-${escapeHtml(task.id)}" style="min-height:${height}px"><div class="task-card-top"><span class="task-status">${escapeHtml(task.status)}</span>${task.isCompleted ? '<span class="task-complete">Done</span>' : ''}</div><h3>${escapeHtml(task.name)}</h3><p>${escapeHtml(task.description || 'No description')}</p>${renderProperties(state, task)}${column === 'running' ? `<div class="elastic-allocation" data-c1-key="elastic-allocation-${escapeHtml(task.id)}"><span>${Math.round(allocation)}m allocated</span><div class="elastic-progress-track"><div class="elastic-progress-fill" data-c1-key="elastic-progress-${escapeHtml(task.id)}" data-progress-ratio="${progress.toFixed(4)}" style="width:${(progress * 100).toFixed(2)}%"></div></div></div>` : ''}<footer><span>${escapeHtml(projectName(projectNames, task))}</span><span${overdue ? ' class="task-overdue"' : ''}>${overdue ? 'Overdue · ' : ''}${escapeHtml(deadlineText)}</span></footer></article>`;
+  return `<article class="task-card" draggable="true" data-elastic-action="open-task" data-elastic-task-id="${escapeHtml(task.id)}" data-elastic-column="${column}" data-elastic-height="${height}" data-papers-visual-key="elastic-task-${escapeHtml(task.id)}" style="min-height:${height}px"><div class="task-card-top"><span class="task-status">${escapeHtml(task.status)}</span>${task.isCompleted ? '<span class="task-complete">Done</span>' : ''}</div><h3>${escapeHtml(task.name)}</h3><p>${escapeHtml(task.description || 'No description')}</p>${renderProperties(state, task)}${column === 'running' ? `<div class="elastic-allocation" data-papers-visual-key="elastic-allocation-${escapeHtml(task.id)}"><span>${Math.round(allocation)}m allocated</span><div class="elastic-progress-track"><div class="elastic-progress-fill" data-papers-visual-key="elastic-progress-${escapeHtml(task.id)}" data-progress-ratio="${progress.toFixed(4)}" style="width:${(progress * 100).toFixed(2)}%"></div></div></div>` : ''}<footer><span>${escapeHtml(projectName(projectNames, task))}</span><span${overdue ? ' class="task-overdue"' : ''}>${overdue ? 'Overdue · ' : ''}${escapeHtml(deadlineText)}</span></footer></article>`;
 }
 
 function renderColumn(
@@ -231,7 +231,7 @@ function renderColumn(
     pieces.push(renderDropSlot(column, index + 1));
   });
 
-  return `<section class="board-column" data-c1-key="board-column-${column}" data-elastic-column-region="${column}" aria-label="${label} column"><header><h3>${label}</h3><span>${tasks.length}</span></header><div class="column-cards">${tasks.length === 0 ? `<p class="empty-state" data-c1-key="board-empty-${column}">No tasks here.</p>` : ''}${pieces.join('')}</div></section>`;
+  return `<section class="board-column" data-papers-visual-key="board-column-${column}" data-elastic-column-region="${column}" aria-label="${label} column"><header><h3>${label}</h3><span>${tasks.length}</span></header><div class="column-cards">${tasks.length === 0 ? `<p class="empty-state" data-papers-visual-key="board-empty-${column}">No tasks here.</p>` : ''}${pieces.join('')}</div></section>`;
 }
 
 /**
@@ -253,27 +253,27 @@ export function renderTaskModal(
   const editor = projectTaskEditor(state, taskId, draft);
   if (!editor) return '';
 
-  const sections = editor.sections.map((section) => `<fieldset class="task-editor-section" data-c1-key="task-editor-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map((field) => renderTaskEditorField(field, ELASTIC_EDITOR_HOOKS)).join('')}</fieldset>`).join('');
+  const sections = editor.sections.map((section) => `<fieldset class="task-editor-section" data-papers-visual-key="task-editor-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map((field) => renderTaskEditorField(field, ELASTIC_EDITOR_HOOKS)).join('')}</fieldset>`).join('');
   const note = write.refusal === null
     ? 'Save writes them to the record store.'
     : TASK_EDITOR_SAVE_NOTE;
   const status = editor.dirty
-    ? `<p class="task-editor-dirty" data-c1-key="task-editor-dirty" data-task-editor-dirty="true">Unsaved changes. ${escapeHtml(note)}</p>`
-    : `<p class="task-editor-clean" data-c1-key="task-editor-clean" data-task-editor-dirty="false">${escapeHtml(write.refusal === null ? 'Nothing has been edited yet.' : note)}</p>`;
+    ? `<p class="task-editor-dirty" data-papers-visual-key="task-editor-dirty" data-task-editor-dirty="true">Unsaved changes. ${escapeHtml(note)}</p>`
+    : `<p class="task-editor-clean" data-papers-visual-key="task-editor-clean" data-task-editor-dirty="false">${escapeHtml(write.refusal === null ? 'Nothing has been edited yet.' : note)}</p>`;
   const refusal = write.editorRefusal === null
     ? ''
-    : `<p class="diagnostics" data-c1-key="task-editor-refusal" data-task-editor-refusal="${escapeHtml(write.editorRefusal)}">Save refused: ${escapeHtml(write.editorRefusal)}. The record was not changed.</p>`;
+    : `<p class="diagnostics" data-papers-visual-key="task-editor-refusal" data-task-editor-refusal="${escapeHtml(write.editorRefusal)}">Save refused: ${escapeHtml(write.editorRefusal)}. The record was not changed.</p>`;
 
   const deleteControl = write.refusal === null
-    ? '<button type="button" data-elastic-action="delete-task" data-c1-key="elastic-task-delete">Delete</button>'
-    : `<button type="button" data-c1-key="elastic-task-delete" data-task-editor-delete-refusal="${escapeHtml(write.refusal)}" disabled>Delete unavailable</button>`;
+    ? '<button type="button" data-elastic-action="delete-task" data-papers-visual-key="elastic-task-delete">Delete</button>'
+    : `<button type="button" data-papers-visual-key="elastic-task-delete" data-task-editor-delete-refusal="${escapeHtml(write.refusal)}" disabled>Delete unavailable</button>`;
   // Save is offered only when there is something to write: a form that matches the record has no
   // save, and the button saying so is clearer than a click that comes back refused.
   const saveControl = write.refusal === null
-    ? `<button type="button" data-elastic-action="save-task" data-c1-key="elastic-task-save"${editor.dirty ? '' : ' disabled'}>Save</button>`
-    : `<button type="button" data-c1-key="elastic-task-save" data-task-editor-save-refusal="${escapeHtml(write.refusal)}" disabled>Save unavailable</button>`;
+    ? `<button type="button" data-elastic-action="save-task" data-papers-visual-key="elastic-task-save"${editor.dirty ? '' : ' disabled'}>Save</button>`
+    : `<button type="button" data-papers-visual-key="elastic-task-save" data-task-editor-save-refusal="${escapeHtml(write.refusal)}" disabled>Save unavailable</button>`;
 
-  return `<section class="task-modal" role="dialog" aria-modal="true" aria-label="Task editor" data-c1-key="elastic-task-modal" data-task-editor-task-id="${escapeHtml(editor.taskId)}" data-task-editor-field-count="${editor.fieldCount}" data-task-editor-writes="${write.refusal === null ? 'available' : 'unavailable'}"><header><h2>${escapeHtml(editor.title)}</h2><button type="button" data-elastic-action="close-task" data-c1-key="elastic-task-modal-close" aria-label="Close task editor">×</button></header>${status}${refusal}${sections}<footer><button type="button" data-elastic-action="cancel-task-edit" data-c1-key="task-editor-cancel">Cancel changes</button>${deleteControl}${saveControl}</footer></section>`;
+  return `<section class="task-modal" role="dialog" aria-modal="true" aria-label="Task editor" data-papers-visual-key="elastic-task-modal" data-task-editor-task-id="${escapeHtml(editor.taskId)}" data-task-editor-field-count="${editor.fieldCount}" data-task-editor-writes="${write.refusal === null ? 'available' : 'unavailable'}"><header><h2>${escapeHtml(editor.title)}</h2><button type="button" data-elastic-action="close-task" data-papers-visual-key="elastic-task-modal-close" aria-label="Close task editor">×</button></header>${status}${refusal}${sections}<footer><button type="button" data-elastic-action="cancel-task-edit" data-papers-visual-key="task-editor-cancel">Cancel changes</button>${deleteControl}${saveControl}</footer></section>`;
 }
 
 export function renderElasticCockpit(options: ElasticCockpitRenderOptions): string {
@@ -286,12 +286,12 @@ export function renderElasticCockpit(options: ElasticCockpitRenderOptions): stri
   );
   const locked = options.session.lockedAt !== null;
   const targetValue = localTargetValue(options.session.targetTime);
-  const newTaskControl = '<button type="button" data-elastic-action="open-new-task" data-c1-key="elastic-new-task">New task</button>';
+  const newTaskControl = '<button type="button" data-elastic-action="open-new-task" data-papers-visual-key="elastic-new-task">New task</button>';
   const newTaskModal = options.newTaskDraft === null
     ? ''
     : renderNewTaskModal(options.state, options.newTaskDraft, { refusal: options.taskWrites.refusal, editorRefusal: options.newTaskRefusal });
 
-  return `<section class="surface board-surface" data-c1-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Elastic Boards</h2><p class="surface-description">Backlog, live execution and finished work.</p></div><span class="surface-count">${options.tasks.length} tasks</span>${newTaskControl}</header><section class="elastic-session-controls" data-c1-key="elastic-session-controls"><label>Execution target<input type="datetime-local" value="${escapeHtml(targetValue)}" data-elastic-action="target" data-c1-key="elastic-target-input"${locked ? ' disabled' : ''}></label>${locked ? '<button type="button" data-elastic-action="unlock" data-c1-key="elastic-unlock">Unlock</button>' : `<button type="button" data-elastic-action="lock" data-c1-key="elastic-lock"${presentation.targetExpired ? ' disabled' : ''}>Lock</button>`}<div class="elastic-run-progress" data-c1-key="elastic-run-progress" data-progress-ratio="${presentation.overallProgress.toFixed(4)}"><div class="elastic-progress-fill" style="width:${(presentation.overallProgress * 100).toFixed(2)}%"></div></div>${presentation.targetExpired ? '<span class="task-overdue" data-c1-key="elastic-target-expired">Target has passed</span>' : ''}</section>${options.dropRefusal ? `<p class="diagnostics" data-c1-key="elastic-drop-refusal">Move unavailable: ${escapeHtml(options.dropRefusal)}. Task data was not changed.</p>` : ''}<div class="board-grid">${renderColumn(options.state, 'backlog', 'Backlog', board.backlog, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'running', 'Running', board.running, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'finished', 'Finished', board.finished, presentation, options.projectNames, options.now)}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft, options.taskWrites)}${newTaskModal}</section>`;
+  return `<section class="surface board-surface" data-papers-visual-key="board-region" aria-label="Elastic board"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Elastic Boards</h2><p class="surface-description">Backlog, live execution and finished work.</p></div><span class="surface-count">${options.tasks.length} tasks</span>${newTaskControl}</header><section class="elastic-session-controls" data-papers-visual-key="elastic-session-controls"><label>Execution target<input type="datetime-local" value="${escapeHtml(targetValue)}" data-elastic-action="target" data-papers-visual-key="elastic-target-input"${locked ? ' disabled' : ''}></label>${locked ? '<button type="button" data-elastic-action="unlock" data-papers-visual-key="elastic-unlock">Unlock</button>' : `<button type="button" data-elastic-action="lock" data-papers-visual-key="elastic-lock"${presentation.targetExpired ? ' disabled' : ''}>Lock</button>`}<div class="elastic-run-progress" data-papers-visual-key="elastic-run-progress" data-progress-ratio="${presentation.overallProgress.toFixed(4)}"><div class="elastic-progress-fill" style="width:${(presentation.overallProgress * 100).toFixed(2)}%"></div></div>${presentation.targetExpired ? '<span class="task-overdue" data-papers-visual-key="elastic-target-expired">Target has passed</span>' : ''}</section>${options.dropRefusal ? `<p class="diagnostics" data-papers-visual-key="elastic-drop-refusal">Move unavailable: ${escapeHtml(options.dropRefusal)}. Task data was not changed.</p>` : ''}<div class="board-grid">${renderColumn(options.state, 'backlog', 'Backlog', board.backlog, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'running', 'Running', board.running, presentation, options.projectNames, options.now)}${renderColumn(options.state, 'finished', 'Finished', board.finished, presentation, options.projectNames, options.now)}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft, options.taskWrites)}${newTaskModal}</section>`;
 }
 
 function clearDragFeedback(root: HTMLElement): void {
@@ -358,7 +358,7 @@ export function bindElasticCockpitInteractions(root: HTMLElement, handlers: Elas
       handlers.cancelTaskEdit();
       return;
     }
-    if (root.querySelector('[data-c1-key="new-task-modal"]')) handlers.cancelNewTask();
+    if (root.querySelector('[data-papers-visual-key="new-task-modal"]')) handlers.cancelNewTask();
   });
 
   /**

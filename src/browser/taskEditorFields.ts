@@ -95,28 +95,28 @@ export function renderTaskEditorField(
   const attributes = `${hooks.fieldAttribute}="${escapeHtml(field.id)}"`;
 
   if (field.control === 'derived') {
-    return `<p class="task-editor-derived" data-c1-key="${escapeHtml(key)}"><strong>${escapeHtml(field.label)}</strong><span>${escapeHtml(field.value || 'No value')}</span><small>${escapeHtml(field.note ?? 'Derived value.')}</small></p>`;
+    return `<p class="task-editor-derived" data-papers-visual-key="${escapeHtml(key)}"><strong>${escapeHtml(field.label)}</strong><span>${escapeHtml(field.value || 'No value')}</span><small>${escapeHtml(field.note ?? 'Derived value.')}</small></p>`;
   }
 
   if (field.control === 'checkbox') {
-    return `<label class="task-editor-check"><input type="checkbox" data-c1-key="${escapeHtml(key)}" ${attributes} ${hooks.editAttribute}="check"${field.checked ? ' checked' : ''}${field.editable ? '' : ' disabled'}> ${escapeHtml(field.label)}</label>`;
+    return `<label class="task-editor-check"><input type="checkbox" data-papers-visual-key="${escapeHtml(key)}" ${attributes} ${hooks.editAttribute}="check"${field.checked ? ' checked' : ''}${field.editable ? '' : ' disabled'}> ${escapeHtml(field.label)}</label>`;
   }
 
   if (field.control === 'select') {
     const options = field.options.map((option) => `<option value="${escapeHtml(option.id)}"${option.id === field.value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('');
 
-    return `<label class="task-editor-field">${escapeHtml(field.label)}<select data-c1-key="${escapeHtml(key)}" ${attributes} ${hooks.editAttribute}="value">${options}</select></label>`;
+    return `<label class="task-editor-field">${escapeHtml(field.label)}<select data-papers-visual-key="${escapeHtml(key)}" ${attributes} ${hooks.editAttribute}="value">${options}</select></label>`;
   }
 
   if (field.control === 'multi-select') {
-    const options = field.options.map((option) => `<label class="task-editor-option"><input type="checkbox" data-c1-key="${escapeHtml(key)}-${escapeHtml(option.id)}" ${attributes} ${hooks.optionAttribute}="${escapeHtml(option.id)}" ${hooks.editAttribute}="selection"${field.selected.includes(option.id) ? ' checked' : ''}> ${escapeHtml(option.label)}</label>`).join('');
+    const options = field.options.map((option) => `<label class="task-editor-option"><input type="checkbox" data-papers-visual-key="${escapeHtml(key)}-${escapeHtml(option.id)}" ${attributes} ${hooks.optionAttribute}="${escapeHtml(option.id)}" ${hooks.editAttribute}="selection"${field.selected.includes(option.id) ? ' checked' : ''}> ${escapeHtml(option.label)}</label>`).join('');
 
-    return `<fieldset class="task-editor-field task-editor-multi" data-c1-key="${escapeHtml(key)}"><legend>${escapeHtml(field.label)}</legend>${options}${field.note === null ? '' : `<small class="task-editor-note">${escapeHtml(field.note)}</small>`}</fieldset>`;
+    return `<fieldset class="task-editor-field task-editor-multi" data-papers-visual-key="${escapeHtml(key)}"><legend>${escapeHtml(field.label)}</legend>${options}${field.note === null ? '' : `<small class="task-editor-note">${escapeHtml(field.note)}</small>`}</fieldset>`;
   }
 
   const type = field.control === 'number' ? 'number' : 'text';
 
-  return `<label class="task-editor-field">${escapeHtml(field.label)}<input type="${type}" data-c1-key="${escapeHtml(key)}" ${attributes} ${hooks.editAttribute}="value" value="${escapeHtml(field.value)}"${field.editable ? '' : ' readonly'}></label>${field.note === null ? '' : `<small class="task-editor-note">${escapeHtml(field.note)}</small>`}`;
+  return `<label class="task-editor-field">${escapeHtml(field.label)}<input type="${type}" data-papers-visual-key="${escapeHtml(key)}" ${attributes} ${hooks.editAttribute}="value" value="${escapeHtml(field.value)}"${field.editable ? '' : ' readonly'}></label>${field.note === null ? '' : `<small class="task-editor-note">${escapeHtml(field.note)}</small>`}`;
 }
 
 /**

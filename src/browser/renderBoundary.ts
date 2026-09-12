@@ -24,7 +24,7 @@ export function renderWithBoundary(renderSurface: () => string): RenderBoundaryR
   } catch (error) {
     const detail = boundedDetail(error);
     return {
-      markup: `<section class="surface error-surface" data-c1-key="renderer-failure" role="alert"><h2>Surface unavailable</h2><p>Renderer failed safely: ${escapeHtml(detail)}</p></section>`,
+      markup: `<section class="surface error-surface" data-papers-visual-key="renderer-failure" role="alert"><h2>Surface unavailable</h2><p>Renderer failed safely: ${escapeHtml(detail)}</p></section>`,
       failure: { code: 'renderer-failure', detail },
     };
   }

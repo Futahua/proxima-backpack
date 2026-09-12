@@ -10,7 +10,7 @@ describe('Gate 19 renderer failure boundary', () => {
     const result = renderWithBoundary(() => { throw new Error('<script>alert(1)</script>\n' + 'x'.repeat(500)); });
     expect(result.failure?.code).toBe('renderer-failure');
     expect(result.failure?.detail.length).toBeLessThanOrEqual(180);
-    expect(result.markup).toContain('data-c1-key="renderer-failure"');
+    expect(result.markup).toContain('data-papers-visual-key="renderer-failure"');
     expect(result.markup).toContain('Renderer failed safely');
     expect(result.markup).toContain('&lt;script&gt;');
     expect(result.markup).not.toContain('<script>');

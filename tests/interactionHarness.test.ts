@@ -9,7 +9,7 @@ beforeEach(() => {
 
 describe('Stage 0 programmatic interaction harness', () => {
   it('targets stable machine keys rather than visible text and refuses ambiguous keys', () => {
-    document.body.innerHTML = '<button data-c1-key="primary-action">Original label</button>';
+    document.body.innerHTML = '<button data-papers-visual-key="primary-action">Original label</button>';
 
     const harness = createInteractionHarness(document);
     const button = harness.target('primary-action');
@@ -28,14 +28,14 @@ describe('Stage 0 programmatic interaction harness', () => {
 
     document.body.insertAdjacentHTML(
       'beforeend',
-      '<button data-c1-key="primary-action">Duplicate</button>',
+      '<button data-papers-visual-key="primary-action">Duplicate</button>',
     );
 
     expect(() => harness.target('primary-action')).toThrow('matched 2 elements');
   });
 
   it('dispatches hover and context-menu gestures to the keyed DOM node', () => {
-    document.body.innerHTML = '<div data-c1-key="card">Card</div>';
+    document.body.innerHTML = '<div data-papers-visual-key="card">Card</div>';
 
     const harness = createInteractionHarness(document);
     const card = harness.target('card');
@@ -66,8 +66,8 @@ describe('Stage 0 programmatic interaction harness', () => {
 
   it('separates pointer down, move and release so provisional state is assertable', () => {
     document.body.innerHTML = `
-      <div data-c1-key="source"></div>
-      <div data-c1-key="destination"></div>
+      <div data-papers-visual-key="source"></div>
+      <div data-papers-visual-key="destination"></div>
     `;
 
     const harness = createInteractionHarness(document);
@@ -105,7 +105,7 @@ describe('Stage 0 programmatic interaction harness', () => {
   });
 
   it('supports Shift-modified resize with provisional geometry before release', () => {
-    document.body.innerHTML = '<div data-c1-key="resize-handle"></div>';
+    document.body.innerHTML = '<div data-papers-visual-key="resize-handle"></div>';
 
     const harness = createInteractionHarness(document);
     const handle = harness.target('resize-handle');
@@ -153,8 +153,8 @@ describe('Stage 0 programmatic interaction harness', () => {
 
   it('dispatches drag and drop with shared data transfer and observable provisional state', () => {
     document.body.innerHTML = `
-      <div data-c1-key="drag-source"></div>
-      <div data-c1-key="drop-target"></div>
+      <div data-papers-visual-key="drag-source"></div>
+      <div data-papers-visual-key="drop-target"></div>
     `;
 
     const harness = createInteractionHarness(document);
@@ -191,7 +191,7 @@ describe('Stage 0 programmatic interaction harness', () => {
   });
 
   it('enters text through keyboard/input events and dispatches Escape', () => {
-    document.body.innerHTML = '<input data-c1-key="title-field" value="">';
+    document.body.innerHTML = '<input data-papers-visual-key="title-field" value="">';
 
     const harness = createInteractionHarness(document);
     const input = harness.target('title-field') as HTMLInputElement;

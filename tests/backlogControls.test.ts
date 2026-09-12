@@ -379,15 +379,15 @@ describe('Backlog control markup', () => {
     expect(html).toContain('<optgroup label="Deadline">');
 
     // No query yet, so there is nothing to clear and no sort to clear.
-    expect(html).toContain('data-project-backlog-action="clear-query" data-c1-key="project-backlog-clear-query" disabled');
+    expect(html).toContain('data-project-backlog-action="clear-query" data-papers-visual-key="project-backlog-clear-query" disabled');
     expect(html).not.toContain('data-project-backlog-action="clear-sort"');
   });
 
   it('shows the search text in the field that produced it', () => {
     const html = renderProjectBacklog(loaded, p1, view({ search: 'alp' }));
 
-    expect(html).toContain('data-project-backlog-search-input data-c1-key="project-backlog-search-input" value="alp"');
-    expect(html).toContain('data-project-backlog-action="clear-query" data-c1-key="project-backlog-clear-query">Clear query');
+    expect(html).toContain('data-project-backlog-search-input data-papers-visual-key="project-backlog-search-input" value="alp"');
+    expect(html).toContain('data-project-backlog-action="clear-query" data-papers-visual-key="project-backlog-clear-query">Clear query');
   });
 
   it('carries the id a chip removes and the field a column sorts by', () => {
@@ -395,7 +395,7 @@ describe('Backlog control markup', () => {
 
     expect(html).toContain('data-project-backlog-filter-remove="filter-1"');
     expect(html).toContain('aria-label="Remove filter Weight &gt; 2"');
-    expect(html).toContain('data-project-backlog-sort-by="weight" data-c1-key="project-backlog-sort-weight" data-project-backlog-sorted="descending" aria-pressed="true"');
+    expect(html).toContain('data-project-backlog-sort-by="weight" data-papers-visual-key="project-backlog-sort-weight" data-project-backlog-sorted="descending" aria-pressed="true"');
     expect(html).toContain('data-project-backlog-action="clear-sort"');
   });
 

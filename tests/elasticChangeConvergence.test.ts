@@ -148,9 +148,9 @@ function mountSurfaces(state: ProximaState, selectedTaskId: string | null = null
 }
 
 function inColumn(columnKey: string, taskKey: string): boolean {
-  const column = document.querySelector(`[data-c1-key="${columnKey}"]`);
+  const column = document.querySelector(`[data-papers-visual-key="${columnKey}"]`);
   if (column === null) throw new Error(`no column ${columnKey}`);
-  return column.querySelector(`[data-c1-key="${taskKey}"]`) !== null;
+  return column.querySelector(`[data-papers-visual-key="${taskKey}"]`) !== null;
 }
 
 function executionStateOf(state: ProximaState, taskId: string): string | undefined {
@@ -158,7 +158,7 @@ function executionStateOf(state: ProximaState, taskId: string): string | undefin
 }
 
 function backlogOrderOf(taskId: string): string | null {
-  return document.querySelector(`[data-c1-key="project-backlog-task-${taskId}"]`)?.getAttribute('data-project-backlog-order') ?? null;
+  return document.querySelector(`[data-papers-visual-key="project-backlog-task-${taskId}"]`)?.getAttribute('data-project-backlog-order') ?? null;
 }
 
 describe('Stage 19 a change made on Elastic reaches the other surfaces', () => {
@@ -202,7 +202,7 @@ describe('Stage 19 a change made on Elastic reaches the other surfaces', () => {
     const seed = taskEditorDraftFor(before.tasks.find((candidate) => candidate.id === id)!);
 
     mountSurfaces(before);
-    expect(document.querySelector(`[data-c1-key="project-backlog-task-${id}"]`)!.textContent).toContain('Editor name');
+    expect(document.querySelector(`[data-papers-visual-key="project-backlog-task-${id}"]`)!.textContent).toContain('Editor name');
 
     const saved = await saveTaskAction(app.editor(before), {
       taskId: id,
@@ -214,9 +214,9 @@ describe('Stage 19 a change made on Elastic reaches the other surfaces', () => {
     const after = await app.read();
     mountSurfaces(after, id);
 
-    expect(document.querySelector(`[data-c1-key="project-backlog-task-${id}"]`)!.textContent).toContain('Saved on Elastic');
-    expect(document.querySelector(`[data-c1-key="project-board-task-${id}"]`)!.textContent).toContain('Saved on Elastic');
-    expect(document.querySelector(`[data-c1-key="elastic-task-${id}"]`)!.textContent).toContain('Saved on Elastic');
+    expect(document.querySelector(`[data-papers-visual-key="project-backlog-task-${id}"]`)!.textContent).toContain('Saved on Elastic');
+    expect(document.querySelector(`[data-papers-visual-key="project-board-task-${id}"]`)!.textContent).toContain('Saved on Elastic');
+    expect(document.querySelector(`[data-papers-visual-key="elastic-task-${id}"]`)!.textContent).toContain('Saved on Elastic');
     expect(projectTaskEditor(after, id, null)!.title).toBe('Saved on Elastic');
   });
 });

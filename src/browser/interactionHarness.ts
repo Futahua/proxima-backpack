@@ -1,4 +1,4 @@
-export const MACHINE_KEY_ATTRIBUTE = 'data-c1-key' as const;
+export const MACHINE_KEY_ATTRIBUTE = 'data-papers-visual-key' as const;
 
 export interface InteractionPoint {
   clientX: number;

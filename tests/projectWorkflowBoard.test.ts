@@ -146,7 +146,7 @@ describe('Stage 10 project workflow board surface', () => {
     expect(workflowStagesFor(state, project).map((stage) => stage.name)).toEqual(['Design', 'Review']);
 
     const workflowMarkup = renderProjectWorkspace({ state, project, tab: 'task-board', now: new Date(CLOCK_ISO) });
-    expect(workflowMarkup).toContain('data-c1-key="project-workflow-board"');
+    expect(workflowMarkup).toContain('data-papers-visual-key="project-workflow-board"');
     expect(workflowMarkup).not.toContain('data-project-board-status-column');
 
     // A legacy vault declares no stages at all, so the status board is still the board it gets.
@@ -154,7 +154,7 @@ describe('Stage 10 project workflow board surface', () => {
     expect(projectHasWorkflow(legacy, project)).toBe(false);
     const statusMarkup = renderProjectWorkspace({ state: legacy, project, tab: 'task-board', now: new Date(CLOCK_ISO) });
     expect(statusMarkup).toContain('data-project-board-status-column');
-    expect(statusMarkup).not.toContain('data-c1-key="project-workflow-board"');
+    expect(statusMarkup).not.toContain('data-papers-visual-key="project-workflow-board"');
   });
 
   it('marks the column under the pointer and reports the stage a drop landed on', () => {

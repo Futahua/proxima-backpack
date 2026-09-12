@@ -123,7 +123,7 @@ function deadlineRow(state: ProximaState, taskId: string): string | null {
 
 function hubNextDeadline(state: ProximaState): string | null {
   const hub = mount(renderProjectsHub({ state, selection: 'all', filter: 'active', workspaceTab: 'notes', now: NOW }));
-  return hub.querySelector<HTMLElement>(`[data-c1-key="project-hub-card-${PROJECT_ID}"]`)?.dataset.projectNextDeadline ?? null;
+  return hub.querySelector<HTMLElement>(`[data-papers-visual-key="project-hub-card-${PROJECT_ID}"]`)?.dataset.projectNextDeadline ?? null;
 }
 
 function elasticColumn(state: ProximaState, taskId: string): string | null {
@@ -143,9 +143,9 @@ function elasticColumn(state: ProximaState, taskId: string): string | null {
     containerHeight: 800,
   }));
   return document
-    .querySelector<HTMLElement>(`[data-c1-key="elastic-task-${taskId}"]`)
-    ?.closest<HTMLElement>('[data-c1-key^="board-column-"]')
-    ?.dataset.c1Key ?? null;
+    .querySelector<HTMLElement>(`[data-papers-visual-key="elastic-task-${taskId}"]`)
+    ?.closest<HTMLElement>('[data-papers-visual-key^="board-column-"]')
+    ?.dataset.papersVisualKey ?? null;
 }
 
 function editorShows(state: ProximaState, taskId: string, value: string): boolean {

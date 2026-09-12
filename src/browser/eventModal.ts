@@ -93,11 +93,11 @@ function renderEventField(field: EventEditorField, writable: boolean): string {
   const editable = writable && EDITABLE_EVENT_FIELDS.has(field.id);
 
   if (field.control === 'derived') {
-    return `<p class="schedule-event-derived" data-c1-key="${escapeHtml(key)}" ${hooks}><strong>${escapeHtml(field.label)}</strong><span>${escapeHtml(field.value)}</span>${note}</p>`;
+    return `<p class="schedule-event-derived" data-papers-visual-key="${escapeHtml(key)}" ${hooks}><strong>${escapeHtml(field.label)}</strong><span>${escapeHtml(field.value)}</span>${note}</p>`;
   }
 
   if (field.control === 'checkbox') {
-    return `<label class="schedule-event-check"><input type="checkbox" data-c1-key="${escapeHtml(key)}" ${hooks}${field.checked ? ' checked' : ''}${editable ? '' : ' disabled'}> ${escapeHtml(field.label)}</label>${note}`;
+    return `<label class="schedule-event-check"><input type="checkbox" data-papers-visual-key="${escapeHtml(key)}" ${hooks}${field.checked ? ' checked' : ''}${editable ? '' : ' disabled'}> ${escapeHtml(field.label)}</label>${note}`;
   }
 
   if (field.control === 'select') {
@@ -105,16 +105,16 @@ function renderEventField(field: EventEditorField, writable: boolean): string {
       .map((option) => `<option value="${escapeHtml(option.id)}"${option.id === field.value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`)
       .join('');
 
-    return `<label>${escapeHtml(field.label)}<select data-c1-key="${escapeHtml(key)}" ${hooks}${editable ? '' : ' disabled'}>${options}</select></label>${note}`;
+    return `<label>${escapeHtml(field.label)}<select data-papers-visual-key="${escapeHtml(key)}" ${hooks}${editable ? '' : ' disabled'}>${options}</select></label>${note}`;
   }
 
   if (field.control === 'textarea') {
-    return `<label>${escapeHtml(field.label)}<textarea data-c1-key="${escapeHtml(key)}" ${hooks}${editable ? '' : ' readonly'}>${escapeHtml(field.value)}</textarea></label>${note}`;
+    return `<label>${escapeHtml(field.label)}<textarea data-papers-visual-key="${escapeHtml(key)}" ${hooks}${editable ? '' : ' readonly'}>${escapeHtml(field.value)}</textarea></label>${note}`;
   }
 
   const type = field.control === 'number' ? 'number' : 'text';
 
-  return `<label>${escapeHtml(field.label)}<input type="${type}" data-c1-key="${escapeHtml(key)}" ${hooks} value="${escapeHtml(field.value)}"${editable ? '' : ' readonly'}></label>${note}`;
+  return `<label>${escapeHtml(field.label)}<input type="${type}" data-papers-visual-key="${escapeHtml(key)}" ${hooks} value="${escapeHtml(field.value)}"${editable ? '' : ' readonly'}></label>${note}`;
 }
 
 export interface EventModalOptions {
@@ -227,12 +227,12 @@ export function renderEventModal(options: EventModalOptions): string {
   const writable = writes !== null && writes.refusal === null && options.mode === 'edit';
   const actionAttribute = options.closeAttribute;
   const sections = editor.sections
-    .map((section) => `<fieldset class="schedule-event-section" data-c1-key="schedule-event-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map((field) => renderEventField(field, writable)).join('')}</fieldset>`)
+    .map((section) => `<fieldset class="schedule-event-section" data-papers-visual-key="schedule-event-section-${escapeHtml(section.id)}"><legend>${escapeHtml(section.label)}</legend>${section.fields.map((field) => renderEventField(field, writable)).join('')}</fieldset>`)
     .join('');
   const refusal = writes?.feedback ?? null;
   const footer = writable
-    ? `<footer><button type="button" ${actionAttribute}="delete-event" data-c1-key="schedule-event-delete">Delete</button><button type="button" ${actionAttribute}="save-event" data-c1-key="schedule-event-save">Save</button>${refusal === null ? '' : `<small data-c1-key="schedule-event-refusal-note" data-schedule-event-refusal="${escapeHtml(writes?.feedbackRefusal ?? '')}">${escapeHtml(refusal)}</small>`}</footer>`
-    : `<footer><button type="button" data-c1-key="schedule-event-delete" data-schedule-event-delete-refusal="${escapeHtml(writes?.refusal ?? EVENT_EDITOR_SAVE_REFUSAL)}" disabled>Delete unavailable</button><button type="button" data-c1-key="schedule-event-save" data-schedule-event-save-refusal="${escapeHtml(writes?.refusal ?? EVENT_EDITOR_SAVE_REFUSAL)}" disabled>Save unavailable</button><small data-c1-key="schedule-event-save-note">${escapeHtml(EVENT_EDITOR_SAVE_NOTE)}</small></footer>`;
+    ? `<footer><button type="button" ${actionAttribute}="delete-event" data-papers-visual-key="schedule-event-delete">Delete</button><button type="button" ${actionAttribute}="save-event" data-papers-visual-key="schedule-event-save">Save</button>${refusal === null ? '' : `<small data-papers-visual-key="schedule-event-refusal-note" data-schedule-event-refusal="${escapeHtml(writes?.feedbackRefusal ?? '')}">${escapeHtml(refusal)}</small>`}</footer>`
+    : `<footer><button type="button" data-papers-visual-key="schedule-event-delete" data-schedule-event-delete-refusal="${escapeHtml(writes?.refusal ?? EVENT_EDITOR_SAVE_REFUSAL)}" disabled>Delete unavailable</button><button type="button" data-papers-visual-key="schedule-event-save" data-schedule-event-save-refusal="${escapeHtml(writes?.refusal ?? EVENT_EDITOR_SAVE_REFUSAL)}" disabled>Save unavailable</button><small data-papers-visual-key="schedule-event-save-note">${escapeHtml(EVENT_EDITOR_SAVE_NOTE)}</small></footer>`;
 
-  return `<div class="modal-backdrop" data-c1-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-schedule-editor-mode="${escapeHtml(options.mode)}" data-schedule-event-id="${escapeHtml(editor.eventId)}" data-schedule-event-field-count="${editor.fieldCount}" data-schedule-event-recurrence-kind="${escapeHtml(editor.recurrenceKind)}" data-schedule-event-writes="${writable ? 'available' : 'unavailable'}" data-c1-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>${escapeHtml(editor.title)}</h3></div><button type="button" class="icon-button" ${options.closeAttribute}="${escapeHtml(options.closeAction)}" data-c1-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><p class="schedule-event-colour" data-c1-key="schedule-event-colour-note">${escapeHtml(editor.colourNote)}</p>${sections}${footer}</section></div>`;
+  return `<div class="modal-backdrop" data-papers-visual-key="schedule-event-modal-backdrop"><section class="task-modal" role="dialog" aria-modal="true" aria-label="Event editor" data-schedule-editor-mode="${escapeHtml(options.mode)}" data-schedule-event-id="${escapeHtml(editor.eventId)}" data-schedule-event-field-count="${editor.fieldCount}" data-schedule-event-recurrence-kind="${escapeHtml(editor.recurrenceKind)}" data-schedule-event-writes="${writable ? 'available' : 'unavailable'}" data-papers-visual-key="schedule-event-modal"><header class="surface-header"><div><p class="eyebrow">Event editor</p><h3>${escapeHtml(editor.title)}</h3></div><button type="button" class="icon-button" ${options.closeAttribute}="${escapeHtml(options.closeAction)}" data-papers-visual-key="schedule-event-modal-close" aria-label="Close event editor">×</button></header><p class="schedule-event-colour" data-papers-visual-key="schedule-event-colour-note">${escapeHtml(editor.colourNote)}</p>${sections}${footer}</section></div>`;
 }

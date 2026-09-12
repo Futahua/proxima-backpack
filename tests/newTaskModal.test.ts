@@ -105,26 +105,26 @@ function mount(
     cancelled,
     created,
     edits,
-    control: (key: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-c1-key="${key}"]`),
+    control: (key: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-papers-visual-key="${key}"]`),
   };
 }
 
 describe('Stage 9 New Task form', () => {
   it('is closed until the board offers it, and then holds the defaults', () => {
     const mounted = mount();
-    expect(mounted.root.querySelector('[data-c1-key="new-task-modal"]')).toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="new-task-modal"]')).toBeNull();
 
     mounted.harness.click('elastic-new-task');
 
     expect(mounted.opened).toHaveLength(1);
-    const modal = mounted.root.querySelector('[data-c1-key="new-task-modal"]')!;
+    const modal = mounted.root.querySelector('[data-papers-visual-key="new-task-modal"]')!;
     expect(modal.getAttribute('data-new-task-writes')).toBe('available');
     expect(modal.getAttribute('data-new-task-field-count')).toBe('9');
     expect((mounted.control('new-task-editor-name') as HTMLInputElement).value).toBe('');
     expect((mounted.control('new-task-editor-project') as HTMLSelectElement).value).toBe('p1');
     expect((mounted.control('new-task-editor-executionState') as HTMLSelectElement).value).toBe('backlog');
     expect((mounted.control('new-task-editor-weight') as HTMLInputElement).value).toBe('1');
-    expect(mounted.root.querySelector('[data-c1-key="new-task-empty"]')).not.toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="new-task-empty"]')).not.toBeNull();
   });
 
   it('holds what is typed, through its own attributes, and offers Save only once there is a name', () => {
@@ -132,15 +132,15 @@ describe('Stage 9 New Task form', () => {
     mounted.harness.click('elastic-new-task');
 
     // An empty form has nothing to create, so Save is offered disabled rather than clicked-refused.
-    expect(mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="new-task-save"]')!.disabled).toBe(true);
+    expect(mounted.root.querySelector<HTMLButtonElement>('[data-papers-visual-key="new-task-save"]')!.disabled).toBe(true);
 
     mounted.harness.typeText('new-task-editor-name', 'Typed name');
     mounted.draw();
 
     expect(mounted.draft()!.values.name).toBe('Typed name');
-    expect(mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="new-task-save"]')!.disabled).toBe(false);
-    expect(mounted.root.querySelector<HTMLButtonElement>('[data-c1-key="new-task-save"]')!.textContent).toBe('Create task');
-    expect(mounted.root.querySelector('[data-c1-key="new-task-ready"]')).not.toBeNull();
+    expect(mounted.root.querySelector<HTMLButtonElement>('[data-papers-visual-key="new-task-save"]')!.disabled).toBe(false);
+    expect(mounted.root.querySelector<HTMLButtonElement>('[data-papers-visual-key="new-task-save"]')!.textContent).toBe('Create task');
+    expect(mounted.root.querySelector('[data-papers-visual-key="new-task-ready"]')).not.toBeNull();
 
     // The edit went through the New Task hooks, not the card editor's: every keystroke is this
     // form's field, and the last one is what the field holds.
@@ -150,7 +150,7 @@ describe('Stage 9 New Task form', () => {
     mounted.harness.click('new-task-save');
     expect(mounted.created).toHaveLength(1);
     expect(mounted.created[0]!.values.name).toBe('Typed name');
-    expect(mounted.root.querySelector('[data-c1-key="new-task-modal"]')).toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="new-task-modal"]')).toBeNull();
   });
 
   it('reports a checkbox and a column choice too, and Cancel closes without creating', () => {
@@ -170,18 +170,18 @@ describe('Stage 9 New Task form', () => {
     mounted.harness.click('new-task-cancel');
     expect(mounted.cancelled).toHaveLength(1);
     expect(mounted.created).toHaveLength(0);
-    expect(mounted.root.querySelector('[data-c1-key="new-task-modal"]')).toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="new-task-modal"]')).toBeNull();
   });
 
   it('says the form cannot create when this run has no write path, and draws a refusal beside it', () => {
     const unavailable = mount({ refusal: 'record-writes-need-an-activated-store' });
     unavailable.harness.click('elastic-new-task');
 
-    const save = unavailable.root.querySelector<HTMLButtonElement>('[data-c1-key="new-task-save"]')!;
+    const save = unavailable.root.querySelector<HTMLButtonElement>('[data-papers-visual-key="new-task-save"]')!;
     expect(save.disabled).toBe(true);
     expect(save.getAttribute('data-new-task-save-refusal')).toBe('record-writes-need-an-activated-store');
     expect(save.textContent).toBe('Create unavailable');
-    expect(unavailable.root.querySelector('[data-c1-key="new-task-modal"]')!.getAttribute('data-new-task-writes')).toBe('unavailable');
+    expect(unavailable.root.querySelector('[data-papers-visual-key="new-task-modal"]')!.getAttribute('data-new-task-writes')).toBe('unavailable');
 
     // And a create the write path refuses: the refusal is drawn beside the form, which stays open
     // with what was typed, and nothing claims a task was created.
@@ -191,7 +191,7 @@ describe('Stage 9 New Task form', () => {
     refused.draw();
     refused.harness.click('new-task-save');
 
-    const banner = refused.root.querySelector('[data-c1-key="new-task-refusal"]')!;
+    const banner = refused.root.querySelector('[data-papers-visual-key="new-task-refusal"]')!;
     expect(banner.getAttribute('data-new-task-refusal')).toBe('stale-revision');
     expect(banner.textContent).toContain('No task was created');
     expect(refused.control('new-task-editor-name')).not.toBeNull();
@@ -204,6 +204,6 @@ describe('Stage 9 New Task form', () => {
     mounted.harness.pressKey('new-task-modal', 'Escape');
 
     expect(mounted.cancelled).toHaveLength(1);
-    expect(mounted.root.querySelector('[data-c1-key="new-task-modal"]')).toBeNull();
+    expect(mounted.root.querySelector('[data-papers-visual-key="new-task-modal"]')).toBeNull();
   });
 });

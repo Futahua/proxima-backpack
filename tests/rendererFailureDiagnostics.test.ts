@@ -21,7 +21,7 @@ describe('Stage 6 slice 13 renderer-failure diagnostics', () => {
       .toBeLessThanOrEqual(DIAGNOSTIC_LIMITS.rendererDetail);
 
     expect(result.markup).toContain(
-      'data-c1-key="renderer-failure"',
+      'data-papers-visual-key="renderer-failure"',
     );
     expect(result.markup).toContain('role="alert"');
     expect(result.markup).toContain('Surface unavailable');
@@ -86,12 +86,12 @@ describe('Stage 6 slice 13 renderer-failure diagnostics', () => {
     });
 
     const recovered = renderWithBoundary(
-      () => '<section data-c1-key="recovered-surface">recovered</section>',
+      () => '<section data-papers-visual-key="recovered-surface">recovered</section>',
     );
 
     expect(recovered).toEqual({
       markup:
-        '<section data-c1-key="recovered-surface">recovered</section>',
+        '<section data-papers-visual-key="recovered-surface">recovered</section>',
       failure: null,
     });
     expect(recovered.markup).not.toContain(

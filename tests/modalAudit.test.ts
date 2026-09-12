@@ -113,7 +113,7 @@ const OPERATION_ROUTED = new Set(['project-create-save']);
  * policy is undecided is a refusal a reader can act on rather than a missing feature (D57).
  */
 function isOperationRouted(button: HTMLElement): boolean {
-  return OPERATION_ROUTED.has(button.getAttribute('data-c1-key') ?? '') || button.hasAttribute('data-project-lifecycle-action');
+  return OPERATION_ROUTED.has(button.getAttribute('data-papers-visual-key') ?? '') || button.hasAttribute('data-project-lifecycle-action');
 }
 
 /** A label that is nothing but a write verb, which no sort or filter control ever is. */
@@ -139,14 +139,14 @@ function violationsIn(root: ParentNode): string[] {
   // exactly "Save" or "Delete" is a write control whatever else it says. A routed control is
   // allowed to stay clickable here because a case below clicks it and checks the refusal.
   for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>('button'))) {
-    const key = button.getAttribute('data-c1-key') ?? '';
+    const key = button.getAttribute('data-papers-visual-key') ?? '';
     if (!button.disabled && BARE_WRITE_VERB.test((button.textContent ?? '').trim()) && refusalOf(button) === null && !isOperationRouted(button)) {
       violations.push(`${button.outerHTML.slice(0, 120)} is an enabled write control with no hook at all`);
     }
   }
 
   for (const button of writeControls(root)) {
-    const key = button.getAttribute('data-c1-key') ?? button.textContent ?? '';
+    const key = button.getAttribute('data-papers-visual-key') ?? button.textContent ?? '';
     const refusal = refusalOf(button);
 
     if (!button.disabled) {
@@ -337,7 +337,7 @@ describe('every editor opens from state alone', () => {
       newTaskRefusal: null,
     });
     document.body.innerHTML = elastic;
-    expect(document.querySelector('[data-c1-key="elastic-task-modal"]')).not.toBeNull();
+    expect(document.querySelector('[data-papers-visual-key="elastic-task-modal"]')).not.toBeNull();
   });
 
   it('opens the Event editor and the create-event modal', () => {
@@ -350,7 +350,7 @@ describe('every editor opens from state alone', () => {
       now: NOW,
       selectedEventId: 'e1',
     });
-    expect(document.querySelector('[data-c1-key="schedule-event-modal"]')).not.toBeNull();
+    expect(document.querySelector('[data-papers-visual-key="schedule-event-modal"]')).not.toBeNull();
 
     document.body.innerHTML = renderScheduleTimeGrid({
       mode: 'day',
@@ -367,7 +367,7 @@ describe('every editor opens from state alone', () => {
 
   it('opens the New Project modal', () => {
     document.body.innerHTML = renderProjectsHub({ state: state(), selection: 'all', filter: 'active', workspaceTab: 'notes', now: NOW, newProjectOpen: true });
-    expect(document.querySelector('[data-c1-key="project-create-modal"]')).not.toBeNull();
+    expect(document.querySelector('[data-papers-visual-key="project-create-modal"]')).not.toBeNull();
   });
 
   it('opens the recurrence scope modal from the occurrence selection', () => {
@@ -382,6 +382,6 @@ describe('every editor opens from state alone', () => {
       selectedRecurringOccurrence: { eventId: 'e1', startDate: '2026-09-06T09:00:00.000Z', deadline: '2026-09-06T10:00:00.000Z' },
       selectedRecurringScope: null,
     });
-    expect(document.querySelector('[data-c1-key="schedule-recurrence-scope-modal"]')).not.toBeNull();
+    expect(document.querySelector('[data-papers-visual-key="schedule-recurrence-scope-modal"]')).not.toBeNull();
   });
 });

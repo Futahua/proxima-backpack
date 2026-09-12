@@ -167,8 +167,8 @@ describe('Stage 10 Backlog bulk controls', () => {
     const marked: ProjectBacklogViewState = { ...EMPTY_PROJECT_BACKLOG_VIEW, projectId: PROJECT, selectedTaskIds: [state.tasks[0]!.id], bulkWriteRefusal: null };
 
     document.body.innerHTML = renderProjectBacklog(state, project, marked);
-    const complete = document.querySelector<HTMLButtonElement>('[data-c1-key="project-backlog-bulk-complete"]')!;
-    const remove = document.querySelector<HTMLButtonElement>('[data-c1-key="project-backlog-bulk-delete"]')!;
+    const complete = document.querySelector<HTMLButtonElement>('[data-papers-visual-key="project-backlog-bulk-complete"]')!;
+    const remove = document.querySelector<HTMLButtonElement>('[data-papers-visual-key="project-backlog-bulk-delete"]')!;
     expect(complete.disabled).toBe(false);
     expect(remove.disabled).toBe(false);
     expect(complete.getAttribute('data-project-backlog-write-refusal')).toBeNull();
@@ -176,14 +176,14 @@ describe('Stage 10 Backlog bulk controls', () => {
 
     // With no write path the controls go back to being typed-unavailable, and they say why.
     document.body.innerHTML = renderProjectBacklog(state, project, { ...marked, bulkWriteRefusal: PROJECT_BACKLOG_WRITE_REFUSAL });
-    const refused = document.querySelector<HTMLButtonElement>('[data-c1-key="project-backlog-bulk-complete"]')!;
+    const refused = document.querySelector<HTMLButtonElement>('[data-papers-visual-key="project-backlog-bulk-complete"]')!;
     expect(refused.disabled).toBe(true);
     expect(refused.getAttribute('data-project-backlog-write-refusal')).toBe(PROJECT_BACKLOG_WRITE_REFUSAL);
     expect(document.querySelector('[data-project-backlog-bulk]')!.textContent).toContain('No task was changed');
 
     // And with nothing marked there is nothing to act on, even when writing is possible.
     document.body.innerHTML = renderProjectBacklog(state, project, { ...marked, selectedTaskIds: [] });
-    expect(document.querySelector<HTMLButtonElement>('[data-c1-key="project-backlog-bulk-complete"]')!.disabled).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('[data-papers-visual-key="project-backlog-bulk-complete"]')!.disabled).toBe(true);
   });
 
   it('reports a click on either control through the real binder, and nothing from a disabled one', async () => {

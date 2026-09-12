@@ -108,7 +108,7 @@ describe('Stage 20 acceptance', () => {
     // visible half sits. Three facts, each checkable: health is drawn once, as one strip, outside the
     // header; the build/recovery evidence is a collapsed disclosure rather than a panel; and the
     // header's state region holds only the identity, the badges, Refresh and the tools disclosure.
-    const healthStrips = MAIN.match(/data-c1-key="refresh-health"/g) ?? [];
+    const healthStrips = MAIN.match(/data-papers-visual-key="refresh-health"/g) ?? [];
     expect(healthStrips).toHaveLength(1);
     expect(MAIN).toContain('<details class="build-details">');
     expect(MAIN).not.toContain('<details class="build-details" open');

@@ -60,7 +60,7 @@ describe('template.execute shell wiring', () => {
     host.innerHTML = html;
     const button = host.querySelector('[data-template-execute]');
     expect(button?.getAttribute('data-action')).toBe(TEMPLATE_EXECUTE_ACTION);
-    expect(button?.getAttribute('data-c1-key')).toBe(TEMPLATE_EXECUTE_ACTION);
+    expect(button?.getAttribute('data-papers-visual-key')).toBe(TEMPLATE_EXECUTE_ACTION);
     expect(button?.hasAttribute('disabled')).toBe(false);
   });
 

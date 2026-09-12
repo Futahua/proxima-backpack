@@ -364,7 +364,7 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
 
     const emptyCell = Array.from(
       document.querySelectorAll<HTMLElement>(
-        '[data-c1-key^="timekeeping-calendar-day-"]',
+        '[data-papers-visual-key^="timekeeping-calendar-day-"]',
       ),
     ).find((cell) => cell.dataset.deadlineCount === '0');
 

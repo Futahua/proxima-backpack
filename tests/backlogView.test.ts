@@ -221,9 +221,9 @@ describe('Backlog rendering', () => {
     // trailing slot at the row count.
     expect(html).toContain('data-project-backlog-row-index="0"');
     expect(html).toContain('data-project-backlog-row-index="1"');
-    expect(html).toContain('data-c1-key="project-backlog-drop-p1-0"');
+    expect(html).toContain('data-papers-visual-key="project-backlog-drop-p1-0"');
     expect(html).toContain('data-project-backlog-drop-index="2"');
-    expect(html).toContain('data-c1-key="project-backlog-task-alpha"');
+    expect(html).toContain('data-papers-visual-key="project-backlog-task-alpha"');
     expect(html).toContain('data-project-backlog-order="1"');
     expect(html).toContain('data-project-backlog-action="open-task"');
 
@@ -268,7 +268,7 @@ describe('Backlog rendering', () => {
 
     const bare = state([task({ id: 'a', projectId: 'p2' })]);
     const noTasks = renderProjectBacklog(bare, bare.projects[0]!, view());
-    expect(noTasks).toContain('data-c1-key="project-backlog-empty"');
+    expect(noTasks).toContain('data-papers-visual-key="project-backlog-empty"');
     expect(noTasks).toContain('No project tasks.');
     expect(noTasks).not.toContain('no-matches');
   });

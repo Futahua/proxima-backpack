@@ -68,7 +68,7 @@ describe('Stage 6 slice 3 Canvas remove intent and refusal', () => {
     });
 
     const remove = document.querySelector<HTMLButtonElement>(
-      `[data-c1-key="canvas-remove-${nodeId}"]`,
+      `[data-papers-visual-key="canvas-remove-${nodeId}"]`,
     );
     expect(remove?.disabled).toBe(false);
     expect(remove?.dataset.canvasWriteRefusal)

@@ -337,7 +337,7 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     const archiveControl = host.querySelector<HTMLElement>('[data-project-lifecycle-action="archive"]')!;
     expect(archiveControl.dataset.projectId).toBe(app.projectId);
     const memberRevisionBefore = (await app.store.list()).find((observation) => observation.record.id === member)?.observedRevision;
-    createInteractionHarness(host).click(archiveControl.getAttribute('data-c1-key')!);
+    createInteractionHarness(host).click(archiveControl.getAttribute('data-papers-visual-key')!);
     await Promise.all(pending);
 
     // The write happened, against the revision the surface was drawn from.
@@ -358,7 +358,7 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     redraw();
     const restoreControl = host.querySelector<HTMLElement>('[data-project-lifecycle-action="restore"]')!;
     expect(restoreControl.dataset.projectId).toBe(app.projectId);
-    createInteractionHarness(host).click(restoreControl.getAttribute('data-c1-key')!);
+    createInteractionHarness(host).click(restoreControl.getAttribute('data-papers-visual-key')!);
     await Promise.all(pending);
 
     const restored = (await app.read()).projects.find((project) => project.id === app.projectId)!;
@@ -368,7 +368,7 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     expect(restored.archivedAt ?? null).toBeNull();
     filter = 'active';
     redraw();
-    expect(host.querySelector<HTMLElement>(`[data-c1-key="project-lifecycle-controls-${app.projectId}"]`)).not.toBeNull();
+    expect(host.querySelector<HTMLElement>(`[data-papers-visual-key="project-lifecycle-controls-${app.projectId}"]`)).not.toBeNull();
   });
 
   it('answers Delete on a project with members without writing, and draws the question it is waiting on', async () => {
@@ -410,7 +410,7 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
 
     const remove = host.querySelector<HTMLElement>('[data-project-lifecycle-action="delete"]')!;
     expect(remove.hasAttribute('disabled')).toBe(false);
-    createInteractionHarness(host).click(remove.getAttribute('data-c1-key')!);
+    createInteractionHarness(host).click(remove.getAttribute('data-papers-visual-key')!);
     await Promise.all(pending);
 
     // Same request, same answer, and the counts it names are the members that exist.
@@ -460,7 +460,7 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     });
 
     const control = host.querySelector<HTMLElement>('[data-project-lifecycle-action="archive"]')!;
-    createInteractionHarness(host).click(control.getAttribute('data-c1-key')!);
+    createInteractionHarness(host).click(control.getAttribute('data-papers-visual-key')!);
     await Promise.all(pending);
 
     // The project moved and its members did not: the same two records, at the same revisions, still
@@ -481,7 +481,7 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     // read-only in the sense that it is not in the active list, not in the sense that it is gone.
     filter = 'archived';
     host.innerHTML = draw();
-    expect(host.querySelector(`[data-c1-key="project-hub-card-${app.projectId}"]`)).not.toBeNull();
+    expect(host.querySelector(`[data-papers-visual-key="project-hub-card-${app.projectId}"]`)).not.toBeNull();
     host.innerHTML = renderProjectsHub({
       state,
       selection: app.projectId,
@@ -568,7 +568,7 @@ describe('Stage 11 the project forms', () => {
     expect(created).toEqual(['Atlas', 'Second project']);
     // Accepted, so the form goes: the project it described exists and the hub is drawing it.
     expect(open).toBe(false);
-    expect(host.querySelector('[data-c1-key="project-create-modal"]')).toBeNull();
+    expect(host.querySelector('[data-papers-visual-key="project-create-modal"]')).toBeNull();
     expect(host.querySelector('[data-project-create-refusal]')).toBeNull();
     expect(host.querySelectorAll('[data-projects-hub-action="open-project"]').length).toBe(2);
   });
