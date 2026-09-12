@@ -133,8 +133,11 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     const create = await readFile(new URL('../src/app/taskCreate.ts', import.meta.url), 'utf8');
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(create).not.toContain(forbidden);
     expect(create).not.toContain('RecordStore');
-    // And the request it writes comes from the plan, not from the form's markup.
-    expect(create).toContain('planTaskCreate(deps.state, input.draft)');
+    // And the request it writes comes from the plan, not from the form's markup. The plan is now asked by
+    // the operation, which is handed the draft and no projection - the project question is answered by a
+    // predicate the board supplies - so the assertion follows the call to where it lives.
+    expect(create).toContain('const plan = planTaskCreate(undefined, draft,');
+    expect(create).toContain('isKnownProject: (projectId) => deps.state?.projects.some((candidate) => candidate.id === projectId) === true,');
 
     // The Projects Hub's forms and its three lifecycle controls are wired the same way, and they are
     // the last record-mutation UI to leave the dispatcher: the shell runs the sequence, holds the

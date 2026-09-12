@@ -76,6 +76,7 @@ import {
 } from '../src/app/projectMutations.js';
 import type { ProjectLifecycleOperations } from '../src/app/projectLifecycleActions.js';
 import { BULK_TASK_ACTION_SCHEMA_VERSION, type BulkTaskWriteOperations } from '../src/app/bulkTaskActions.js';
+import type { TaskCreateOperations } from '../src/app/taskCreate.js';
 import {
   createWorkflowStage,
   renameWorkflowStage,
@@ -264,6 +265,9 @@ async function world(seedOffset: number): Promise<World> {
     restoreProject: (input) => restoreProject(projectMutations, input),
     deleteProject: (input) => deleteProject(projectMutations, input),
   };
+  const createOperations: TaskCreateOperations = {
+    createTask: (request) => createTask(deps, request),
+  };
   const bulkOperations: BulkTaskWriteOperations = {
     updateTask: (input) => updateTask(deps, input),
     deleteTask: (input) => deleteTask(deps, input),
@@ -288,6 +292,8 @@ async function world(seedOffset: number): Promise<World> {
     projectWrites: async () => projectOperations,
     // …and the Backlog's, resolved the way a composition with a task list would.
     bulkWrites: async () => bulkOperations,
+    // …and the New Task modal's, resolved the way a composition with that form would.
+    createWrites: async () => createOperations,
     unavailableReason: () => null,
     refresh,
     ids,
@@ -462,7 +468,7 @@ describe('agent write path', () => {
     // module - a source read is the check that survives a well-meaning later edit. The two resolvers it does
     // take are write paths, and one of them is optional precisely because a composition need not have it.
     expect(AGENT_WRITE_SOURCE).not.toContain('ProximaState');
-    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'bulkWrites', 'eventWrites', 'ids', 'projectWrites', 'refresh', 'schemaWrites', 'stageWrites', 'unavailableReason', 'writes']);
+    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'bulkWrites', 'createWrites', 'eventWrites', 'ids', 'projectWrites', 'refresh', 'schemaWrites', 'stageWrites', 'unavailableReason', 'writes']);
   });
 
   it('returns the same result object as the UI gesture, for an accepted run and for a lost race', async () => {
@@ -1352,6 +1358,98 @@ describe('agent write path', () => {
       expectedRevision: first.source.revision,
     });
     expect(wrongWay).toMatchObject({ ok: false, status: 'refused', requested: 0 });
+  });
+
+  it('creates a task through the same plan the form uses, and refuses what the plan refuses in its own words', async () => {
+    const w = await world(2100);
+
+    // The whole point of this family's split: the wire builds a draft and hands it to the *same* planner the
+    // form's Save uses, so a weight that is not a number is refused with the sentence a person typing one sees.
+    const created = await submitAgentWrite(w.agent, {
+      type: 'task.create',
+      name: 'Made by an agent',
+      projectId: PROJECT,
+      executionState: 'running',
+      weight: 3,
+      startDate: '2026-11-01T09:00:00.000Z',
+      deadline: '2026-11-03T17:00:00.000Z',
+      isFixedDuration: true,
+      fixedDuration: 90,
+    });
+    // No `actionType` on this family's result: a create's verb is the constant the audit event carries, and the
+    // outcome says what happened rather than repeating what was asked for.
+    expect(created).toMatchObject({ ok: true });
+    if (!('ok' in created) || !created.ok || !('recordId' in created)) throw new Error('the agent create was refused');
+    expect(created.requestId).toMatch(/^semantic-request/);
+    expect(w.audit.events).toEqual([{
+      requestId: created.requestId,
+      actionType: 'task.create',
+      outcome: 'accepted',
+      entityIds: [created.recordId],
+    }]);
+    // Read back out of the projection rather than taken from the result: the fields the planner was handed.
+    const stored = (await w.state()).tasks.find((task) => task.id === created.recordId);
+    expect(stored).toMatchObject({
+      name: 'Made by an agent',
+      status: 'running',
+      weight: 3,
+      startDate: '2026-11-01T09:00:00.000Z',
+      deadline: '2026-11-03T17:00:00.000Z',
+    });
+    // A new card lands at the top of its column, which is the planner's rule rather than this wire's.
+    expect(stored?.orderIndex).toBe(0);
+
+    // A project the wire names is taken as named, and that is a decision rather than an omission: this caller
+    // has no projection to check it against, so a project nobody holds is answered by the **record layer** -
+    // whose reason for it is `not-found` - rather than by the planner, whose reason would be `unknown-project`.
+    // The reason is what tells the two apart, and a wire that checked the project itself would answer with the
+    // planner's word instead.
+    const unknownProject = await submitAgentWrite(w.agent, {
+      type: 'task.create',
+      name: 'Nobody holds this project',
+      projectId: 'pxr_000000000000000000000000000000ee',
+    });
+    expect(unknownProject).toMatchObject({ ok: false, reason: 'not-found' });
+    if (unknownProject.ok || !('detail' in unknownProject)) throw new Error('a create naming an unknown project was not refused');
+    expect(unknownProject.detail).toContain('pxr_000000000000000000000000000000ee');
+
+    const orphan = await submitAgentWrite(w.agent, {
+      type: 'task.create',
+      name: 'No project',
+      projectId: null,
+    });
+    expect(orphan).toMatchObject({ ok: true });
+    if (!('ok' in orphan) || !orphan.ok || !('recordId' in orphan)) throw new Error('the projectless create was refused');
+    expect((await w.state()).tasks.find((task) => task.id === orphan.recordId)?.projectId).toBeNull();
+
+    // The planner's refusals arrive through the wire in the planner's own words, with the field it named. Each
+    // of these is a value the wire deliberately does not check, because checking it here would be a second copy
+    // of a rule the planner owns - including the one about a project, which the record layer answers.
+    const battery: readonly { readonly input: unknown; readonly detail: string; readonly fieldId: string }[] = [
+      { input: { type: 'task.create', name: 'Bad weight', weight: -1 }, detail: 'weight is a number that is not negative', fieldId: 'weight' },
+      { input: { type: 'task.create', name: 'Bad column', executionState: 'parked' }, detail: 'a column is Backlog, Running or Finished', fieldId: 'executionState' },
+      { input: { type: 'task.create', name: 'Bad dates', startDate: '2026-11-03T09:00:00.000Z', deadline: '2026-11-01T09:00:00.000Z' }, detail: 'the deadline is before the start date', fieldId: 'deadline' },
+      { input: { type: 'task.create', name: 'Bad start', startDate: 'sometime' }, detail: 'the start date is not a readable instant', fieldId: 'startDate' },
+      { input: { type: 'task.create', name: 'No duration', isFixedDuration: true }, detail: 'a fixed-duration task needs a duration in whole minutes', fieldId: 'fixedDuration' },
+    ];
+    for (const entry of battery) {
+      const result = await submitAgentWrite(w.agent, entry.input);
+      expect(result.ok, `${JSON.stringify(entry.input)} must be refused`).toBe(false);
+      if (result.ok || !('detail' in result)) throw new Error(`${JSON.stringify(entry.input)} was not refused`);
+      expect(result).toMatchObject({ reason: 'validation-refused', fieldId: entry.fieldId });
+      expect(result.detail).toBe(entry.detail);
+      expect(result.requestId).toMatch(/^semantic-request/);
+    }
+
+    // A name is the one thing this wire checks for itself, and it does so before the planner is reached: the
+    // field is the request rather than a value in it.
+    const noName = await submitAgentWrite(w.agent, { type: 'task.create', name: '   ' });
+    expect(noName).toMatchObject({ ok: false, reason: 'malformed-submission', detail: 'a task needs a name' });
+
+    // A well-typed value the planner refuses is worth one more case, because it is the one that separates the
+    // two layers: `weight` as text never reaches the planner, and the refusal says so in the wire's words.
+    const textWeight = await submitAgentWrite(w.agent, { type: 'task.create', name: 'Text weight', weight: '3' });
+    expect(textWeight).toMatchObject({ ok: false, reason: 'malformed-submission', detail: 'weight must be a number or null' });
   });
 
   it('leaves the dispatcher containment rule exactly where it was', async () => {

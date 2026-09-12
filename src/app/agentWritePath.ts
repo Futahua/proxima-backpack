@@ -50,6 +50,13 @@ import {
 } from './projectLifecycleActions.js';
 import type { ProjectFieldMutation } from './projectMutations.js';
 import {
+  runTaskCreate,
+  TASK_CREATE_ACTION_TYPE,
+  type TaskCreateOperations,
+  type TaskCreateOutcome,
+} from './taskCreate.js';
+import type { TaskEditorDraft } from './taskEditor.js';
+import {
   BULK_TASK_ACTION_SCHEMA_VERSION,
   runBulk,
   type BulkTaskActionKind,
@@ -165,6 +172,7 @@ export const AGENT_WRITE_VERBS = [
   TIMELINE_CHANGE_ACTION_TYPE,
   workflowStageActionType('create'),
   workflowStageActionType('rename'),
+  TASK_CREATE_ACTION_TYPE,
   ...Object.keys(EVENT_WRITE_VERB_TYPES),
   ...Object.keys(PROJECT_VERB_TYPES),
   ...Object.keys(BULK_VERB_TYPES),
@@ -384,7 +392,32 @@ export interface AgentBulkWriteSubmission {
   readonly members: readonly { readonly taskId: string; readonly expectedRevision: string }[];
 }
 
-export interface AgentWriteDependencies {  /** Resolve the sanctioned record write path; null when this run may not write records. */
+/**
+ * The wire shape an agent submits for a new task.
+ *
+ * A create has no revision to carry, because there is no record yet. Its values are the fields the form would
+ * have submitted, and they are handed to the same planner the form's Save is handed - built into a draft here
+ * rather than validated a second time, so "what a New Task Save would ask for" stays one rule with one set of
+ * words, including the refusal that names the field at fault.
+ *
+ * A project the agent names is **taken as named**: this wire has no projection to check it against, and a
+ * project nobody holds is the record layer's answer rather than a guess about what exists.
+ */
+export interface AgentTaskCreateSubmission {
+  readonly type: AgentWriteVerb;
+  readonly name: string;
+  readonly projectId?: string | null;
+  readonly executionState?: string;
+  readonly weight?: number;
+  readonly startDate?: string | null;
+  readonly deadline?: string | null;
+  readonly isFixedDuration?: boolean;
+  readonly fixedDuration?: number | null;
+  readonly maxDuration?: number | null;
+}
+
+export interface AgentWriteDependencies {
+  /** Resolve the sanctioned record write path; null when this run may not write records. */
   readonly writes: () => Promise<AgentWriteOperations | null>;
   /**
    * Resolve the schema write path, when this composition has one.
@@ -413,7 +446,9 @@ export interface AgentWriteDependencies {  /** Resolve the sanctioned record wri
   readonly eventWrites?: () => Promise<EventWriteOperations | null>;
   /** Resolve the project lifecycle write path, when this composition has one: the fourth write path. */
   readonly projectWrites?: () => Promise<ProjectLifecycleOperations | null>;
-  /** Resolve the bulk task write path, when this composition has one: the fifth write path. */
+  /** Resolve the task create write path, when this composition has one: the sixth write path. */
+  readonly createWrites?: () => Promise<TaskCreateOperations | null>;
+  /** Resolve the bulk task write path, when this composition has one. */
   readonly bulkWrites?: () => Promise<BulkTaskWriteOperations | null>;
   /** Why there is no write path, in words a reader can act on. */
   readonly unavailableReason: () => string | null;
@@ -456,6 +491,7 @@ export type AgentWriteResult =
   | WorkflowStageWriteOutcome
   | EventWriteOutcome
   | ProjectLifecycleOutcome
+  | TaskCreateOutcome
   | PropertySchemaActionOutcome
   | AgentWriteRefusal;
 
@@ -494,6 +530,12 @@ export type ParsedAgentWrite =
       readonly actionType: string;
       readonly verb: EventWriteVerb;
       readonly submission: AgentEventWriteSubmission;
+    }
+  | {
+      readonly ok: true;
+      readonly kind: 'create';
+      readonly actionType: string;
+      readonly draft: TaskEditorDraft;
     }
   | {
       readonly ok: true;
@@ -613,6 +655,48 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
     actionType: rawType,
     entityIds: ids,
   });
+
+  // The create family: one verb, and the least this wire checks of any of them. A name is required because a
+  // task without one is not a task; everything else is a value the planner reads, so an unreadable weight or a
+  // deadline before its start is refused by the planner with the same words the form's Save produces, naming
+  // the field at fault. Checking those here would be a second copy of a rule this file does not own.
+  if (rawType === TASK_CREATE_ACTION_TYPE) {
+    if (typeof candidate.name !== 'string' || candidate.name.trim() === '') return fail('a task needs a name');
+    for (const field of ['projectId', 'startDate', 'deadline'] as const) {
+      const value = candidate[field];
+      if (value !== undefined && value !== null && typeof value !== 'string') return fail(`${field} must be text or null`);
+    }
+    for (const field of ['weight', 'fixedDuration', 'maxDuration'] as const) {
+      const value = candidate[field];
+      if (value !== undefined && value !== null && typeof value !== 'number') return fail(`${field} must be a number or null`);
+    }
+    if (candidate.executionState !== undefined && typeof candidate.executionState !== 'string') {
+      return fail('executionState must be a column');
+    }
+    if (candidate.isFixedDuration !== undefined && typeof candidate.isFixedDuration !== 'boolean') {
+      return fail('isFixedDuration must be true or false');
+    }
+
+    // The draft the planner reads. Numbers become the text a form would have typed, which is the shape the
+    // planner was written for; an absent one is absent, so the planner's own default applies.
+    const asText = (value: unknown): string => (value === undefined || value === null ? '' : String(value));
+    const draft: TaskEditorDraft = {
+      values: {
+        name: candidate.name,
+        project: asText(candidate.projectId),
+        ...(candidate.executionState === undefined ? {} : { executionState: candidate.executionState as string }),
+        ...(candidate.weight === undefined ? {} : { weight: asText(candidate.weight) }),
+        ...(candidate.fixedDuration === undefined ? {} : { fixedDuration: asText(candidate.fixedDuration) }),
+        ...(candidate.maxDuration === undefined ? {} : { maxDuration: asText(candidate.maxDuration) }),
+        ...(candidate.startDate === undefined ? {} : { startDate: asText(candidate.startDate) }),
+        ...(candidate.deadline === undefined ? {} : { deadline: asText(candidate.deadline) }),
+      },
+      checks: { fixedDurationOn: candidate.isFixedDuration === true },
+      selections: {},
+    };
+
+    return { ok: true, kind: 'create', actionType: rawType, draft };
+  }
 
   // The bulk family: a selection, and every member carries the revision it was read at, because the run writes
   // each member at the revision its caller read. An empty selection is refused here rather than reaching the
@@ -870,6 +954,24 @@ export async function submitAgentWrite(
       },
       input,
       { requestId },
+    );
+  }
+
+  // The create arm: the same operation and the same planner the form's Save runs, with the values built into a
+  // draft at the parse. The wire names a project without checking it against anything, so it says so here - a
+  // caller with no projection cannot answer that question, and the record layer answers it instead.
+  if (parsed.kind === 'create') {
+    const createWrites = deps.createWrites === undefined ? null : await deps.createWrites();
+    return await runTaskCreate(
+      {
+        writes: async () => createWrites,
+        unavailableReason: () => deps.unavailableReason() ?? 'writes-unavailable',
+        refresh: deps.refresh,
+        ids: deps.ids,
+        audit: deps.audit,
+        mayNameAnyProject: true,
+      },
+      parsed.draft,
     );
   }
 
