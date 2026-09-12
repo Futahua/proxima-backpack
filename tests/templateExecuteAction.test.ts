@@ -15,6 +15,7 @@ import {
 } from '../src/app/templateExecuteAction.js';
 import type { CreateTaskRequest, TaskMutationResult } from '../src/app/taskMutations.js';
 import type { OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const TEMPLATE = ['Write the brief', '  weight: 3', 'Draft the outline'].join('\n');
 
@@ -64,6 +65,8 @@ function harness({ available = true }: { available?: boolean } = {}) {
     render: () => {
       renders += 1;
     },
+    ids: semanticIds(),
+    audit: recordingAudit(),
   };
 
   return {

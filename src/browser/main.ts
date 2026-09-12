@@ -1,4 +1,5 @@
 import { createActionDispatcher, type ActionResult, type ProjectWorkspaceTab, type ProximaActionDispatcher, type ScheduleMode, type Surface, type TasksMode, type TimekeepingPanelVisibility } from '../app/actionProtocol.js';
+import type { SemanticAuditEvent } from '../app/semanticAudit.js';
 import { createInspectionProjection } from '../app/inspection.js';
 import type { ReadOnlyProjection } from '../app/readOnlyProjection.js';
 import { evaluateRealVaultAcceptance, isRealVaultAcceptanceReport, type RealVaultAcceptanceReport } from '../app/realVaultAcceptance.js';
@@ -767,6 +768,15 @@ function taskCreateDependencies() {
     refresh: refreshFromSource,
     setRefusal: (reason: string | null) => { newTaskRefusal = reason; },
     render,
+    // The semantic envelope and the audit sink every applicable write owes. The id is minted by the action
+    // from this generator, and the sink journals into the one ring the surfaces are inspected through, so a
+    // semantic event carries the dispatcher's real state revision rather than one the record layer invented.
+    ids: DETERMINISTIC_IDS,
+    audit: {
+      append: (event: SemanticAuditEvent) => {
+        actionDispatcher?.auditSemantic(event);
+      },
+    },
   };
 }
 

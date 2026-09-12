@@ -573,4 +573,29 @@ describe('Gate 3A semantic action protocol', () => {
     expect(dispatcher.events().map((event) => [event.sequence, event.kind, event.stateRevision])).toEqual([[1, 'action.accepted', 2], [2, 'state.settled', 2], [3, 'action.rejected', 2]]);
     expect(dispatcher.events(2)[0]).toMatchObject({ sequence: 3, errorCode: 'project-not-found', timestamp: '2026-09-06T12:00:00.000Z' });
   });
+
+  it('journals a semantic run into the same ring, carrying the revision the surfaces are on', async () => {
+    // `auditSemantic` is the sink a write action appends its terminal event through (D72 keeps a template run
+    // out of the action union, and this is how it still reaches the one ring a surface is inspected through).
+    // The revision comes from here rather than from the record layer, which must not invent one.
+    const loaded = await loadVaultState(fixtureVault('vault-basic'));
+    const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, clock: fixedClock('2026-09-06T12:00:00.000Z'), idGenerator: sequentialIdGenerator(), eventCapacity: 8 });
+    dispatcher.dispatch({ type: 'project.select', projectId: 'proj-backpack' });
+
+    dispatcher.auditSemantic({ requestId: 'semantic-request-0001', actionType: 'template.execute', outcome: 'accepted', entityIds: ['pxr_one', 'pxr_two'] });
+    dispatcher.auditSemantic({ requestId: 'semantic-request-0002', actionType: 'template.execute', outcome: 'rejected', entityIds: [], errorCode: 'plan-invalid' });
+    dispatcher.auditSemantic({ requestId: 'semantic-request-0003', actionType: 'template.execute', outcome: 'partial', entityIds: ['pxr_three'], errorCode: 'creation-refused' });
+
+    expect(dispatcher.events().map((event) => [event.kind, event.category, event.requestId, event.stateRevision]))
+      .toEqual([
+        ['action.accepted', 'domain', 'request-0001', 2],
+        ['state.settled', 'lifecycle', 'request-0001', 2],
+        ['action.accepted', 'domain', 'semantic-request-0001', 2],
+        ['action.rejected', 'diagnostic', 'semantic-request-0002', 2],
+        ['action.partial', 'domain', 'semantic-request-0003', 2],
+      ]);
+    expect(dispatcher.events(3)[0]).toMatchObject({ entityIds: [], errorCode: 'plan-invalid' });
+    expect(dispatcher.events(3)[1]).toMatchObject({ entityIds: ['pxr_three'], actionType: 'template.execute' });
+    expect(dispatcher.snapshot().latestEventSequence).toBe(5);
+  });
 });

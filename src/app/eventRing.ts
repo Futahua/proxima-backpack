@@ -3,7 +3,7 @@ import type { Clock, IdGenerator } from '../domain/clock.js';
 export const EVENT_SCHEMA_VERSION = 1 as const;
 export const DEFAULT_EVENT_CAPACITY = 128;
 
-export type ProximaEventKind = 'action.accepted' | 'action.rejected' | 'state.settled';
+export type ProximaEventKind = 'action.accepted' | 'action.rejected' | 'action.partial' | 'state.settled';
 export type ProximaEventCategory = 'domain' | 'diagnostic' | 'lifecycle';
 
 export interface ProximaEvent {

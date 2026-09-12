@@ -35,6 +35,7 @@ import {
 } from '../src/browser/templateComposerPanel.js';
 import { bindTemplateExecuteInteractions } from '../src/browser/templateExecuteBinding.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T03:00:00+07:00';
 const TEMPLATE = ['Write the brief', '  weight: 3', 'Draft the outline'].join('\n');
@@ -166,6 +167,8 @@ function mount(options: WorldOptions = {}): Mounted {
     refresh: async () => null,
     setRefusal: () => {},
     render: draw,
+    ids: semanticIds(),
+    audit: recordingAudit(),
   };
 
   bindTemplateExecuteInteractions(host, {

@@ -15,9 +15,11 @@
  * offer correction, which is the rule the AUTHOR gave for the panel.
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import type { IdGenerator } from '../domain/clock.js';
 import type { ProximaState } from '../domain/types.js';
 import { convergeAfterWrite } from './writeConvergence.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
+import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import { parseTemplatePlan } from './templateComposer.js';
 import { executeTemplatePlan, type TemplateExecutionRefusal } from './templateExecution.js';
 import type { CreateTaskRequest, TaskMutationResult } from './taskMutations.js';
@@ -39,12 +41,15 @@ export interface TemplateExecuteDependencies {
   /** The refusal the surface will draw, or null to clear it. */
   readonly setRefusal: (reason: string | null) => void;
   readonly render: () => void;
+  /** Mints this run's semantic request id. Injected, like every other identity in this repository. */
+  readonly ids: IdGenerator;
+  /** Where the run's one terminal audit event goes: the shell supplies the ring-backed sink. */
+  readonly audit: SemanticAuditSink;
 }
 
 export interface TemplateExecuteRequest {
   readonly template: string;
   readonly projectId?: OpaqueRecordId | null;
-  readonly requestId?: string;
 }
 
 export type TemplateExecuteFailureReason =
@@ -59,6 +64,8 @@ export type TemplateExecuteOutcome =
       readonly schemaVersion: typeof TEMPLATE_EXECUTE_ACTION_SCHEMA_VERSION;
       readonly verb: TemplateExecuteVerb;
       readonly outcome: 'created';
+      /** This run's semantic request id: minted at the boundary, returned on every result. */
+      readonly requestId: string;
       readonly created: readonly OpaqueRecordId[];
       readonly refreshed: boolean;
     }
@@ -68,6 +75,8 @@ export type TemplateExecuteOutcome =
       readonly verb: TemplateExecuteVerb;
       readonly reason: TemplateExecuteFailureReason;
       readonly detail: string;
+      /** This run's semantic request id: a refused run is correlatable too, which is the point of it. */
+      readonly requestId: string;
       /** Empty for a refusal decided before the first call; the ids that did land otherwise. */
       readonly created: readonly OpaqueRecordId[];
       readonly refreshed: boolean;
@@ -76,6 +85,7 @@ export type TemplateExecuteOutcome =
 function refused(
   reason: TemplateExecuteFailureReason,
   detail: string,
+  requestId: string,
   created: readonly OpaqueRecordId[] = [],
 ): TemplateExecuteOutcome {
   return {
@@ -84,6 +94,7 @@ function refused(
     verb: 'execute',
     reason,
     detail,
+    requestId,
     created: [...created],
     refreshed: false,
   };
@@ -104,18 +115,37 @@ function refusalReasonOf(refusal: TemplateExecutionRefusal): TemplateExecuteFail
  * Submit a template for execution. The template text is parsed here rather than by the caller, so an
  * invalid template is refused by the same path that would have run it - and a caller cannot execute a plan
  * it built by hand.
+ *
+ * Two things every run leaves behind, ruled by the AUTHOR on 2026-09-12: a **semantic request id**, minted
+ * here at the boundary before anything can refuse, so a refused run is correlatable as well as an accepted
+ * one; and **one terminal audit event**, appended after convergence so the shell can journal the state
+ * revision the surfaces have actually reached. The event distinguishes a partial run from both an acceptance
+ * and a rejection, because reporting "one task landed and the second was refused" as either would be the lie
+ * the panel rule exists to prevent.
  */
 export async function executeTemplateAction(
   deps: TemplateExecuteDependencies,
   request: TemplateExecuteRequest,
 ): Promise<TemplateExecuteOutcome> {
+  const requestId = mintSemanticRequestId(deps.ids);
+  const audit = (outcome: SemanticOutcome, entityIds: readonly string[], errorCode?: string): void => {
+    deps.audit.append({
+      requestId,
+      actionType: 'template.execute',
+      outcome,
+      entityIds: [...entityIds],
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  };
+
   deps.setRefusal(null);
   const operations = await deps.writes();
   if (operations === null) {
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
     deps.setRefusal(reason);
     deps.render();
-    return refused('writes-unavailable', reason);
+    audit('rejected', [], 'writes-unavailable');
+    return refused('writes-unavailable', reason, requestId);
   }
 
   const plan = parseTemplatePlan(request.template);
@@ -136,21 +166,25 @@ export async function executeTemplateAction(
   const refreshed = convergence.refreshed;
 
   if (executed.kind === 'complete') {
+    audit(semanticOutcomeOf({ wrote: created.length, refused: false }), executed.created);
     deps.render();
     return {
       ok: true,
       schemaVersion: TEMPLATE_EXECUTE_ACTION_SCHEMA_VERSION,
       verb: 'execute',
       outcome: 'created',
+      requestId,
       created: [...executed.created],
       refreshed,
     };
   }
 
+  const reason = refusalReasonOf(executed.refusal);
+  audit(semanticOutcomeOf({ wrote: created.length, refused: true }), created, reason);
   deps.setRefusal(executed.refusal.detail);
   deps.render();
   return {
-    ...refused(refusalReasonOf(executed.refusal), executed.refusal.detail, created),
+    ...refused(reason, executed.refusal.detail, requestId, created),
     refreshed,
   };
 }

@@ -33,6 +33,7 @@ import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import { renderTemplateComposerPanel, type TemplateComposerResult } from '../src/browser/templateComposerPanel.js';
 import { bindTemplateExecuteInteractions } from '../src/browser/templateExecuteBinding.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T03:00:00+07:00';
 const TEMPLATE = [
@@ -124,6 +125,8 @@ function buildWorld(options: WorldOptions = {}): World {
       refresh: async () => null,
       setRefusal: () => {},
       render,
+      ids: semanticIds(),
+      audit: recordingAudit(),
     }),
     taskIds: async () => (await store.list())
       .filter((observation) => observation.kind === 'task')

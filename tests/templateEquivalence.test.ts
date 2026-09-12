@@ -28,6 +28,7 @@ import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/
 import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
 import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T03:00:00+07:00';
 
@@ -86,6 +87,8 @@ function actionDeps(h: ReturnType<typeof harness>): TemplateExecuteDependencies 
     refresh: async () => null,
     setRefusal: () => {},
     render: () => {},
+    ids: semanticIds(),
+    audit: recordingAudit(),
   };
 }
 

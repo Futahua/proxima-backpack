@@ -280,9 +280,12 @@ interface ContractCell {
  * The AUTHOR fixed what each column means on 2026-09-12 and ruled the order of work: build the matrix first,
  * record every cell as satisfied, gap or not-applicable with its reason, and **do not fix anything while
  * building it** - the matrix exists to expose the common gaps, and a gap is asserted as an absence so it
- * cannot quietly become a claim later. The four gaps this row records are the ones the AUTHOR named, and the
- * two that repeat across rows (a semantic request id, a bounded semantic event) become one cross-cutting
- * slice once the matrix shows its whole coverage.
+ * cannot quietly become a claim later. The gaps this row records are the ones the AUTHOR named, and two of
+ * them - a semantic request id and a bounded semantic event - repeated across all thirty-six rows, which is
+ * what turned them into the cross-cutting slice. **Both are satisfied for this row now** (the envelope was
+ * wired to this family first, with `tests/templateSemanticAudit.test.ts` as the evidence), and because a gap
+ * is asserted as an absence, the cells failing the moment they were closed is what forced this edit rather
+ * than a memory of having done it.
  */
 const TEMPLATE_CONTRACT_CELLS: readonly ContractCell[] = [
   { column: 'typed request exists', status: 'satisfied', file: 'src/app/templateExecuteAction.ts', marker: 'export interface TemplateExecuteRequest', reason: 'the request is a closed exported type naming the template text and an optional project' },
@@ -291,10 +294,10 @@ const TEMPLATE_CONTRACT_CELLS: readonly ContractCell[] = [
   { column: 'typed stale/conflict where applicable', status: 'gap', file: 'src/app/templateExecuteAction.ts', marker: "'semantic-conflict'", absent: true, witness: "'creation-refused'", reason: 'stale is not applicable to a create-only run (the action reads the lost-race cause only to decide whether to re-read), but a semantic conflict from the port arrives as creation-refused with the port sentence, so nothing in the result distinguishes it' },
   { column: 'typed validation refusal exists', status: 'satisfied', file: 'src/app/templateExecuteAction.ts', marker: "'untranslatable-draft-field'", reason: 'invalid semantic input comes back as a machine-readable reason with a bounded sentence, not as prose or an exception' },
   { column: 'typed storage/recovery failure exists', status: 'gap', file: 'src/app/templateExecuteAction.ts', marker: "'storage-failure'", absent: true, witness: "'creation-refused'", reason: 'a storage failure is collapsed into creation-refused; recovery is not applicable on this path because a create goes through createIfAbsent and never uses the recovery coordinator' },
-  { column: 'request ID exists', status: 'gap', file: 'src/app/templateExecuteAction.ts', from: 'export type TemplateExecuteOutcome', marker: 'requestId', absent: true, witness: 'readonly created', reason: 'the request type accepts a caller-supplied requestId that nothing reads, and neither outcome branch carries a system-generated correlation id' },
+  { column: 'request ID exists', status: 'satisfied', file: 'src/app/templateExecuteAction.ts', from: 'export type TemplateExecuteOutcome', marker: 'readonly requestId: string;', reason: 'the run mints a semantic request id at the boundary before anything can refuse and returns it on both branches, so a refused run is correlatable as well as an accepted one; the request type accepts no caller-supplied id, which tests/templateSemanticAudit.test.ts asserts by smuggling one in' },
   { column: 'affected entity IDs returned', status: 'satisfied', file: 'src/app/templateExecuteAction.ts', marker: 'readonly created: readonly OpaqueRecordId[]', reason: 'both branches carry the ids: empty for a refusal decided before the first call, and the ids that landed for a partial run' },
   { column: 'state/revision observable afterward', status: 'satisfied', file: 'tests/templateExecuteClick.test.ts', marker: 'afterRuns', reason: 'behavioural rather than structural: the click test asserts the convergence step ran after a real run, and the caller-equivalence test decodes the stored records of both worlds afterwards' },
-  { column: 'event/audit record exists', status: 'gap', file: 'src/app/templateExecuteAction.ts', marker: 'eventRing', absent: true, witness: 'executeTemplatePlan', reason: 'nothing on this path emits a semantic event; the coordinator keeps a recovery journal, and its own contract says a recovery record is never exposed as an audit event' },
+  { column: 'event/audit record exists', status: 'satisfied', file: 'tests/templateSemanticAudit.test.ts', marker: 'audit:accepted', reason: "behavioural rather than structural: the run appends exactly one terminal event through the injected sink, after convergence and never before it, journalled as accepted, rejected or partial with every id that landed and the machine-readable code that stopped it; tests/actionProtocol.test.ts asserts the dispatcher sink maps those three to the ring's own kinds and categories and stamps the state revision the surfaces are actually on" },
 ];
 
 describe('Stage 17 template action coverage', () => {

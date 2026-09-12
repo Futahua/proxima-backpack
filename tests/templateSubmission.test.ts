@@ -17,6 +17,7 @@ import {
 import type { TemplateExecuteDependencies } from '../src/app/templateExecuteAction.js';
 import type { CreateTaskRequest, TaskMutationResult } from '../src/app/taskMutations.js';
 import type { OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const VALID = 'Write the brief\n  weight: 3\nDraft the outline';
 
@@ -50,6 +51,8 @@ function harness() {
     refresh: async () => null,
     setRefusal: () => {},
     render: () => {},
+    ids: semanticIds(),
+    audit: recordingAudit(),
   };
 
   return { deps, requests, created };

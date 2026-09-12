@@ -2,7 +2,8 @@ import { ALL_PROJECTS, UNCATEGORISED } from '../domain/selectors.js';
 import { randomIdGenerator, systemClock, type Clock, type IdGenerator } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
 import type { ElasticColumn, ProximaState } from '../domain/types.js';
-import { createEventRing, type EventRing, type ProximaEvent } from './eventRing.js';
+import { createEventRing, type EventRing, type ProximaEvent, type ProximaEventKind } from './eventRing.js';
+import type { SemanticAuditEvent, SemanticOutcome } from './semanticAudit.js';
 import {
   categoryOf,
   isActionErrorCode,
@@ -245,6 +246,13 @@ export interface ProximaActionDispatcher {
   }): { changed: boolean; stateRevision: number };
   snapshot(): Readonly<ActionDispatcherState>;
   events(afterSequence?: number): ProximaEvent[];
+  /**
+   * Journal one semantic run's terminal event.
+   *
+   * A sibling of `dispatch()` rather than part of it: a template run is not a `ProximaAction` (D72), and the
+   * event still has to reach the one ring the surface is inspected through.
+   */
+  auditSemantic(event: SemanticAuditEvent): ProximaEvent;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1688,7 +1696,43 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     events(afterSequence = 0): ProximaEvent[] {
       return ring.read(afterSequence);
     },
+
+    /**
+     * Journal one semantic run: the sink a write action appends its terminal event through.
+     *
+     * The dispatcher is where the real observable state revision lives, so this is the layer that can supply
+     * it - the record layer must not invent one, and an event with a made-up revision would be worse than an
+     * event with none. The kinds and categories are the ring's own: an acceptance is domain, a refusal that
+     * wrote nothing is diagnostic, and a partial run is domain because records did change.
+     */
+    auditSemantic(event: SemanticAuditEvent): ProximaEvent {
+      const appended = ring.append({
+        kind: semanticEventKind(event.outcome),
+        category: event.outcome === 'rejected' ? 'diagnostic' : 'domain',
+        entityIds: [...event.entityIds],
+        requestId: event.requestId,
+        actionType: event.actionType,
+        stateRevision: state.stateRevision,
+        ...(event.errorCode === undefined ? {} : { errorCode: event.errorCode }),
+      });
+      // The snapshot carries the sequence an inspector reads up to, so a journal that appends without moving
+      // it would leave inspection showing a stale watermark - the same bookkeeping replaceSource performs.
+      state.latestEventSequence = ring.latestSequence();
+      return appended;
+    },
   };
+}
+
+/** The ring kind a semantic outcome is journalled as. Kept beside the sink that uses it, not in the action. */
+function semanticEventKind(outcome: SemanticOutcome): ProximaEventKind {
+  switch (outcome) {
+    case 'accepted':
+      return 'action.accepted';
+    case 'rejected':
+      return 'action.rejected';
+    default:
+      return 'action.partial';
+  }
 }
 
 /** Keep invalid-result construction itself visible to tests and integrations. */
