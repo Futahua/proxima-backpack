@@ -9,6 +9,7 @@ import type { ProximaState, Task } from '../domain/types.js';
 import { calendarGridDates } from './calendarGrid.js';
 import { renderTaskModal } from './elasticCockpit.js';
 import { TASK_EDITOR_SAVE_REFUSAL, type TaskEditorDraft } from '../app/taskEditor.js';
+import { timekeepingPanelWidth } from '../app/panelSizing.js';
 
 export interface DeadlineCalendarEntry {
   taskId: string;
@@ -49,6 +50,12 @@ export interface TimekeepingCockpitRenderOptions {
   projectNames: Map<string, string>;
   selectionLabel: string;
   panels: TimekeepingPanelVisibility;
+  /**
+   * How wide the reader has dragged each panel, which is local state like the visibility beside it.
+   *
+   * Absent means nobody has resized anything, and every panel draws at the default the sizing module owns.
+   */
+  panelWidths?: Readonly<Record<string, number>>;
   calendarCursor: Date;
   now: Date;
   selectedTaskId: string | null;
@@ -71,6 +78,15 @@ export interface TimelineChangeIntent {
 export interface TimekeepingCockpitHandlers {
   openTask(taskId: string): void;
   setPanelVisible(panel: TimekeepingPanel, visible: boolean): void;
+  /**
+   * A panel edge was dragged. The width arrives unclamped, as a drag reports it, and the clamp is the app
+   * layer's - so a surface cannot hold a width the sizing module would not accept.
+   *
+   * Optional, and the interaction is bound only when a shell supplies it: a harness that drives the surface
+   * without caring how wide a panel is should not have to write a stub that does nothing, and an absent
+   * handler means there is no edge to drag rather than an edge that silently does nothing.
+   */
+  resizePanel?(panel: TimekeepingPanel, width: number): void;
   navigateMonth(direction: 'previous' | 'next'): void;
   today(): void;
   changeTask(intent: TimelineChangeIntent): void;
@@ -468,14 +484,17 @@ function renderCountdowns(
 export function renderTimekeepingCockpit(
   options: TimekeepingCockpitRenderOptions,
 ): string {
+  // Each panel carries the width the reader dragged it to, and the stack beside it is the only thing that
+  // reads them: a width is not a fact about a task, so nothing here is written anywhere else. The resize edge
+  // is a separator rather than a button, which is what it is - the same role the Backlog's column edges carry.
+  const widths = options.panelWidths ?? {};
+  const sized = (panel: string, body: string): string => body === ''
+    ? ''
+    : `<div class="timekeeping-panel" data-timekeeping-panel-slot="${panel}" data-timekeeping-panel-width="${timekeepingPanelWidth(widths, panel)}" style="width:${timekeepingPanelWidth(widths, panel)}px"><span class="timekeeping-panel-resize" role="separator" aria-orientation="vertical" data-timekeeping-panel-resize="${panel}" data-timekeeping-panel-width="${timekeepingPanelWidth(widths, panel)}" aria-label="Resize the ${panel} panel" data-c1-key="timekeeping-panel-resize-${panel}"></span>${body}</div>`;
   const panels = [
-    options.panels.calendar ? renderCalendar(options) : '',
-    options.panels.timeline
-      ? renderTimelineGantt(options)
-      : '',
-    options.panels.countdowns
-      ? renderCountdowns(options)
-      : '',
+    sized('calendar', options.panels.calendar ? renderCalendar(options) : ''),
+    sized('timeline', options.panels.timeline ? renderTimelineGantt(options) : ''),
+    sized('countdowns', options.panels.countdowns ? renderCountdowns(options) : ''),
   ].join('');
 
   return `<section class="surface" data-c1-key="tasks-timekeeping-region" aria-label="Timekeeping"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Timekeeping</h2><p class="surface-description">Calendar, timeline and countdown workspace.</p></div><span class="surface-count">${options.tasks.length} tasks</span></header><div class="surface-switcher secondary" data-c1-key="timekeeping-panel-controls" role="group" aria-label="Timekeeping panels">${panelToggle('calendar', 'Calendar', options.panels.calendar)}${panelToggle('timeline', 'Timeline/Gantt', options.panels.timeline)}${panelToggle('countdowns', 'Countdowns', options.panels.countdowns)}</div><div data-c1-key="timekeeping-panel-stack">${panels || '<p class="empty-state" data-c1-key="timekeeping-no-panels">No Timekeeping panels are visible.</p>'}</div>${renderTaskModal(options.state, options.selectedTaskId, options.editorDraft, { refusal: TASK_EDITOR_SAVE_REFUSAL, editorRefusal: null })}</section>`;
@@ -568,6 +587,12 @@ export function bindTimekeepingCockpitInteractions(
 ): void {
   let gesture: TimelineGestureState | null = null;
   let suppressNextClickTaskId: string | null = null;
+  /**
+   * The panel edge being dragged, if any. The same shape the Backlog's column resize holds: the width it
+   * started at, where the pointer started, and the proposal it has reached. Nothing here is written anywhere -
+   * the reported width is clamped by the pure helper and handed to the shell's view state.
+   */
+  let panelResize: { panel: TimekeepingPanel; startX: number; startWidth: number; width: number } | null = null;
 
   const restoreGestureGeometry = (state: TimelineGestureState): void => {
     state.bar.style.gridColumn = state.originalGridColumn;
@@ -760,6 +785,43 @@ export function bindTimekeepingCockpitInteractions(
       handlers.today();
     }
   });
+
+  // A panel edge is dragged, not clicked, so these three are bound only where a shell supplied the handler:
+  // a harness that does not care how wide a panel is has no edge to drag rather than an edge that does nothing.
+  if (handlers.resizePanel !== undefined) {
+    const resizePanel = handlers.resizePanel;
+    root.addEventListener('pointerdown', (event) => {
+      const edge = (event.target as HTMLElement).closest<HTMLElement>('[data-timekeeping-panel-resize]');
+      if (!edge || !root.contains(edge)) return;
+
+      const panel = edge.dataset.timekeepingPanelResize;
+      if (panel !== 'calendar' && panel !== 'timeline' && panel !== 'countdowns') return;
+
+      const startWidth = Number(edge.dataset.timekeepingPanelWidth);
+      panelResize = {
+        panel,
+        startX: event.clientX,
+        startWidth: Number.isFinite(startWidth) ? startWidth : 0,
+        width: Number.isFinite(startWidth) ? startWidth : 0,
+      };
+      event.preventDefault();
+    });
+
+    root.addEventListener('pointermove', (event) => {
+      if (panelResize === null) return;
+      panelResize.width = panelResize.startWidth + (event.clientX - panelResize.startX);
+      event.preventDefault();
+    });
+
+    // The width is reported on release rather than per move: a surface that redrew on every pixel would be
+    // doing twelve redraws a second to show the same drag, which is what the Backlog's resize also avoids.
+    root.addEventListener('pointerup', () => {
+      if (panelResize === null) return;
+      const finished = panelResize;
+      panelResize = null;
+      resizePanel(finished.panel, finished.width);
+    });
+  }
 
   root.addEventListener('pointerdown', (event) => {
     const target = event.target as HTMLElement;

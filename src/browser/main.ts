@@ -43,6 +43,7 @@ import { createCanvasTextPreviewRegistry, disposeCanvasTextPreviewsOnPageHide } 
 import { boardElasticPresentation, type DeadlineState } from './boardElasticPresentation.js';
 import { bindElasticCockpitInteractions, renderElasticCockpit, shouldTickElasticProgress } from './elasticCockpit.js';
 import { bindTimekeepingCockpitInteractions, renderTimekeepingCockpit, startTimekeepingCountdownTicker } from './timekeepingCockpit.js';
+import { resizeTimekeepingPanel } from '../app/panelSizing.js';
 import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid, startScheduleTimeTicker, type ScheduleEventChangeIntent, type ScheduleEventCreateIntent, type ScheduleEventDraft, type ScheduleTimeGridMode } from './scheduleTimeGrid.js';
 import { bindScheduleProjectionInteractions, renderScheduleProjection, type ScheduleProjectionMode } from './scheduleProjection.js';
 import { scheduleNavigationDateKey, type ScheduleNavigationDirection } from './scheduleNavigation.js';
@@ -90,6 +91,14 @@ let timekeepingPanels: TimekeepingPanelVisibility = {
   timeline: false,
   countdowns: false,
 };
+/**
+ * How wide the reader has dragged each Timekeeping panel, which is local state like the visibility above.
+ *
+ * It is deliberately **not** in the action snapshot beside `timekeepingPanels`: a width is disposable view
+ * state rather than a fact about the session, and the pattern it follows - the Backlog's column widths - lives
+ * here for the same reason. Nothing that holds a width can reach a store, so a resize cannot become a write.
+ */
+let timekeepingPanelWidths: Readonly<Record<string, number>> = {};
 let selectedScheduleEventId: string | null = null;
 let scheduleEventDraft: ScheduleEventDraft | null = null;
 let selectedScheduleRecurringOccurrence: ScheduleRecurringOccurrenceSelection | null = null;
@@ -358,6 +367,7 @@ function timekeepingSurface(state: ProximaState, lookup: Map<string, string>): s
     projectNames: lookup,
     selectionLabel: selectionLabel(state, selection, lookup),
     panels: timekeepingPanels,
+    panelWidths: timekeepingPanelWidths,
     calendarCursor,
     now,
     selectedTaskId: elasticSelectedTaskId,
@@ -1688,6 +1698,12 @@ function bindInteractions(): void {
         panel,
         visible,
       });
+    },
+    resizePanel: (panel, width) => {
+      // No dispatch: a width is not an action, and there is no record and no snapshot field for it to reach.
+      // The clamp lives in the app layer beside the Backlog's, so the value held here is always inside it.
+      timekeepingPanelWidths = resizeTimekeepingPanel(timekeepingPanelWidths, panel, width);
+      render();
     },
     navigateMonth: (direction) => {
       dispatchAction({
