@@ -1931,3 +1931,54 @@ first two mean something - a transport that refuses everyone would pass them.
 transport that runs in-process rather than over a socket), or a host-level capability makes loopback
 reachability an identity - neither of which is true today, and both of which would make an application
 token redundant rather than wrong.
+
+## D81 - A semantic key is the host's contract, not the record's identity
+
+**Decided** on 2026-09-12, closing Gate 2's C1 evidence boxes at `e08616d`. That gate had been open
+with the honest reason that no host-integrated C1 acceptance artifact existed, and the live run found
+two independent reasons the host could not see the surface at all.
+
+**The attribute is Papers' name, and this project was using a different one.** Papers observes exactly
+one attribute - `data-papers-visual-key`, read by `src/preload/projectVisualSemanticKeys.ts`, with the
+comment that the project cannot supply a selector, XPath, script or arbitrary style query. This
+project's own `AGENTS.md` already documented that name. The renderer emitted `data-c1-key` in 519
+places across 64 files, including the tracked shell `public/index.html`, so a surface that reached
+`layout-stable` with clean lifecycle diagnostics reported **zero** elements to
+`inspect.visual.elements`. The direction of the fix is not a judgement call: Gate 2's already-ticked
+box says the gate requires no Papers host change, so the project follows the host's name. The DOM's
+camelCase projection is part of the same contract - nine tests read `dataset.c1Key`, which a literal
+attribute rename cannot see - so the pin scans for every spelling of the retired name and probes two of
+them by injecting them back into real files.
+
+**A semantic key is an encoding of an identity, never the identity itself.** Papers validates a key as
+1-128 characters matching `^[A-Za-z0-9][A-Za-z0-9._~-]*$`, at most 256 per payload, with no duplicate,
+and `registerVisualSemanticKeysIpc` refuses a payload that breaks any of those rules **whole and in
+silence** - the parse error is caught and discarded. A vault file may legitimately be named
+`Untitled loose task`, and the bundled fixture vault contains exactly that task, so three keys carried a
+space and the entire payload was dropped: the app rendered, its record store opened, its pixels were a
+full cockpit, and the host stayed at zero elements with nothing anywhere saying why.
+`src/browser/semanticKeyValue.ts` encodes an identity into the host's alphabet - `~` plus two hex digits
+per UTF-8 byte, `~` itself as `~7E`, a `k~` prefix when the first character would not be a letter or
+digit, and a digest-suffixed bound at 128 characters. The encoding is deterministic, so a key is stable
+across runs, and injective, so `a b`, `a-b` and `a~20b` remain three different keys: a fix that mapped
+spaces to dashes would have made two records share one key, which the host refuses as a duplicate and
+which this project's own rule calls an aliased identity.
+
+**It runs at one boundary.** The app writes its whole document once, in `src/browser/main.ts`; the pass
+sits immediately after that assignment, so every surface - present and future - goes through it without
+each renderer remembering to. The encoding is deliberately **not** idempotent, because it escapes its own
+escapes; the pass therefore belongs on freshly rendered markup and nowhere else, and a case pins the
+single call site so a second one cannot silently re-escape keys the host already accepts.
+
+**The artifact is what gets tested.** The defect survived every source-level assertion in this repository,
+because every one of them read `src/` while a host reads `public/build/browser/main.js`.
+`tests/shippedBundleSemanticKeys.test.ts` loads the **built** bundle into happy-dom against the tracked
+shell and asserts the app boots to `ready` and publishes keys that satisfy the host's own bounds,
+including the over-bound case that is dropped whole. Measured at `e08616d`: 71 keys, 71 distinct, zero
+violations - and the live host, running a different code path in a different process, observed the same
+71 keys on the surface.
+
+**Reverses if:** Papers publishes the attribute it observes as a project-supplied registration rather
+than one fixed name, or accepts a key alphabet that includes identities verbatim - at which point the
+encoding becomes unnecessary rather than wrong, and the attribute stops being a contract this project
+has to restate. Until then, the host's validation is the contract and this project encodes to it.
