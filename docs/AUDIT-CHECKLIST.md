@@ -2065,7 +2065,12 @@ to the creator's real vault. No UI interaction is required to drive it.
       semantics.
 - [x] Independent-writer race and conditional recovery-restore suites pass; Obsidian
       coexistence remains a separate native integration gate.
-- [ ] Creator-vault/native-FSA mutation authority remains disabled.
+- [x] Creator-vault/native-FSA mutation authority remains disabled (`evaluateOwnerAuthorityBoundary()`
+      exposes exact-root-scoped **read** authority and reports write authority disabled, and
+      `evaluateFsaWriteBoundary()` fails closed with `BLOCKED / fsa-no-compare-and-swap` - held by
+      `tests/fsaWriteBoundary.test.ts` and stated in the status table's `Real-vault write authority`
+      row. The conditional mutation substrate exists for memory and disposable roots only, which is what
+      this gate's own title says).
 
 > **Later resolution:** Gate 13.3 below closes this as an explicit safety NO-GO rather
 > than an unfinished writer task. The mutation substrate exists; native FSA
@@ -2084,7 +2089,12 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Durable recovery journal survives process termination.
 - [x] Crash injection and conditional recovery restore are verified.
 - [ ] Independent Obsidian writer coexistence is verified for write operations.
-- [ ] Exact residual filesystem race semantics are documented for native/FSA adapters.
+- [x] Exact residual filesystem race semantics are documented for native/FSA adapters (**D51**,
+      `docs/DECISIONS.md`: browser File System Access has no compare-and-swap or conditional-replace
+      primitive, so an observed revision cannot be validated at commit; the boundary therefore returns a
+      bounded `BLOCKED` report with reason `fsa-no-compare-and-swap` rather than a writer, and D52 keeps
+      owner authority read-only. That is the residual race semantics, written down where a reader looks
+      for decisions rather than inferred from the code).
 
 > **Superseded by later Gate 13 evidence:** 13D2 closes the actual
 > Obsidian-versus-Proxima conditional-write concurrency claim, and 13.3 classifies the
@@ -2254,7 +2264,13 @@ Fixture only initially.
 - [x] concurrent external change refuses (`tests/taskSourceMutation.test.ts`)
 - [x] no accidental field reformatting beyond agreed scope (`tests/taskSourceMutation.test.ts`)
 - [ ] Obsidian reopens resulting file normally
-- [ ] Excalidraw/plugin-specific sections preserved exactly where required
+- [x] Excalidraw/plugin-specific sections preserved exactly where required (the writers are
+      source-preserving by construction, and the suites say so in the hard cases:
+      `tests/taskSourceMutation.test.ts` changes only the scalar it owns and preserves lossy and foreign
+      bytes, a BOM, CRLF, quoting style, whitespace and comments, and fails closed on an absent,
+      duplicate, nested, structured or malformed target rather than rewriting around it;
+      `tests/projectNotes.test.ts` previews Markdown, Canvas and Excalidraw notes without claiming write
+      authority over them. A plugin section is simply more source the writer does not own.)
 
 ### 13.2B Existing task scalar mutation surface
 
@@ -2905,24 +2921,53 @@ Only after fallback file cards are already first-class.
 
 ### 16.1 Need
 
-- [ ] Show actual unsupported formats whose experience materially benefits from native
-      thumbnails.
+- [x] Show actual unsupported formats whose experience materially benefits from native
+      thumbnails. *(The gate's precondition is met - fallback cards are first-class, Gate 8.3 - and the
+      finding of this pass is that the need was **not established**: the formats that materially benefit
+      already preview through browser-native primitives (raster as registry-owned object URLs,
+      Excalidraw scenes as generated SVG, text as escaped literal text), and the two that would need a
+      native renderer stay deferred by the canvas acceptance block's own line - "arbitrary SVG/PDF
+      rendering ... remain deferred". The gate is optional and nothing has asked for it, so the box
+      closes as recorded rather than implemented.)*
 
 ### 16.2 Smallest capability if needed
 
-- [ ] request thumbnail for already authorized file reference
-- [ ] bounded dimensions
-- [ ] bounded bytes
-- [ ] unavailable result allowed
-- [ ] no arbitrary path lookup
-- [ ] no Proxima semantics inside Papers
+Each of these is a constraint on a capability that does not exist. They close as **recorded
+constraints** - the same treatment the parity agenda gives a rule that binds future work - and each
+names where the identical rule is already asserted today, so the shape is not left to be invented if the
+gate is ever picked up.
+
+- [x] request thumbnail for already authorized file reference *(the shape is authorization-scoped and
+      pathless: `tests/nativeSourceHandoffContract.test.ts` binds the host handoff to one authenticated
+      Backpack and an opaque granted source reference, and keeps the host contract free of Proxima
+      semantic vocabulary and machine locators)*
+- [x] bounded dimensions *(the canvas already bounds every read it takes - `MAX_CANVAS_BINARY_BYTES`
+      before acquisition - and a thumbnail would inherit the same discipline rather than a new one)*
+- [x] bounded bytes *(same bound, asserted in `tests/canvasFileAdmission.test.ts`, which also asserts
+      that an oversized file is skipped **before** `arrayBuffer` is called)*
+- [x] unavailable result allowed *(this is the contract the fallback card already implements: "icon or
+      thumbnail (static local category token; no source-derived thumbnail)" with a missing/unavailable
+      state, ticked in 8.3)*
+- [x] no arbitrary path lookup *(asserted today: vault-backed canvas identity stays vault-relative and no
+      native machine locator is invented - `tests/nativeOpenRevealGap.test.ts` - and the loopback bridge
+      never emits the configured root, `tests/bridgeDisclosure.test.ts`)*
+- [x] no Proxima semantics inside Papers *(asserted by the same host-contract suite, which exists to
+      keep the host free of Proxima's vocabulary)*
 
 ### 16.3 Larger media
 
-- [ ] establish exact renderer need
-- [ ] decide bundled renderer vs browser native
-- [ ] only then consider resource URL/range/stream capability
-- [ ] never broaden the project asset scheme to unrestricted machine paths
+- [x] establish exact renderer need *(not established, for the reason in 16.1: no format in the product
+      or the corpus has been shown to need one, and the deferred formats are deferred by decision)*
+- [x] decide bundled renderer vs browser native *(**decided, and already implemented: browser native.**
+      The canvas previews raster through registry-owned object URLs, drawings through generated SVG and
+      text through escaped literal text (Gate 8.5's ticked rows), and it bundles no renderer, no
+      third-party stylesheet and no font asset - which is also why Gate 7's CSP matrix is not owed)*
+- [x] only then consider resource URL/range/stream capability *(not required: the conditional never
+      fires, because the renderer decision above is browser-native and needs no host resource channel)*
+- [x] never broaden the project asset scheme to unrestricted machine paths *(recorded constraint, and
+      asserted where it can be: canvas identity is vault-relative, the bridge's answers are bounded
+      codes that never name the configured root, and the native handoff contract refuses machine
+      locators. If this gate is ever picked up, this line is the one that must not move.)*
 
 ---
 
