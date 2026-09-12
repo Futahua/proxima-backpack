@@ -153,16 +153,38 @@ const WORKFLOW_STAGE_ROWS: readonly TaskActionRow[] = [
 ];
 
 /**
+ * The schema rows, which now have operations and no surface.
+ *
+ * The record layer writes a schema: create, update, delete, one option at a time, and a field edit
+ * that may not change what kind of value the property holds. Nothing in the shell reaches them yet —
+ * there is no schema editor — so these rows are declared **operation-only** and the test below asserts
+ * the absence of a caller, exactly as the task-recurrence row does. That is the honest state: the verb
+ * exists, its refusals are real, and a reader who wants to manage schemas in the app is told what is
+ * missing rather than shown a control that is not there.
+ */
+const SCHEMA_ROWS: readonly TaskActionRow[] = [
+  { action: 'property schema create/update/delete', module: 'src/app/propertySchemaMutations.ts', marker: 'export async function updatePropertySchema', testFile: 'tests/propertySchemaMutations.test.ts', testMarker: 'updatePropertySchema', equivalence: false },
+  { action: 'schema options', module: 'src/app/propertySchemaMutations.ts', marker: 'export async function updateSchemaOption', testFile: 'tests/propertySchemaMutations.test.ts', testMarker: 'updateSchemaOption', equivalence: false },
+  { action: 'formula/rollup/relation schema edits', module: 'src/app/propertySchemaMutations.ts', marker: 'export async function updateSchemaField', testFile: 'tests/propertySchemaMutations.test.ts', testMarker: 'updateSchemaField', equivalence: false },
+];
+
+/** Every operation the app layer must carry for this group's rows to be covered rather than gaps. */
+const WRITTEN_SCHEMA_EXPORTS = [
+  'export async function createPropertySchema',
+  'export async function updatePropertySchema',
+  'export async function deletePropertySchema',
+  'export async function updateSchemaOption',
+  'export async function updateSchemaField',
+] as const;
+
+/**
  * Rows whose operation does not exist yet, asserted as absent.
  *
- * Each entry names what would have to appear for the row to become tickable: an exported operation in
- * the app layer. Until then the audit proves the gap instead of the checklist remembering it.
+ * **This table is empty as of `9e27cad`**: every row in the project/workflow/schema group has an
+ * operation. It stays here, with the complement assertion below, because "nothing is missing" is a
+ * claim that has to be checkable too — the day a row is added back, the scan is what finds it.
  */
-const UNWRITTEN_PROJECT_ROWS = [
-  { action: 'property schema create/update/delete', absentExport: 'export async function updatePropertySchema' },
-  { action: 'schema options', absentExport: 'export async function updateSchemaOption' },
-  { action: 'formula/rollup/relation schema edits', absentExport: 'export async function updateSchemaField' },
-] as const;
+const UNWRITTEN_PROJECT_ROWS = [] as readonly { readonly action: string; readonly absentExport: string }[];
 
 /** The one task action the record layer accepts and no surface offers yet. */
 const OPERATION_ONLY_ROWS = [
@@ -269,23 +291,47 @@ describe('Stage 17 project, workflow and schema coverage', () => {
     }
   });
 
-  it('proves the rows that have no operation rather than remembering them', () => {
-    // A canonical record kind is not an operation: schema records exist in the model and their write
-    // does not exist here yet. The audit asserts the absence so that the day an operation appears,
-    // this table is what has to change.
+  it('proves the rows that have no operation rather than remembering them, and the ones that do', () => {
+    // A canonical record kind is not an operation, and an operation is not a surface: both halves of
+    // that sentence are asserted here rather than remembered.
     //
-    // The scan is the whole app layer rather than a hand-listed set of files: the stage rows above
-    // were once proved absent by a list that did not include the module they were about to appear in,
-    // which is exactly how an audit stops auditing.
+    // The scan is the whole app layer rather than a hand-listed set of files: the stage rows were once
+    // proved absent by a list that did not include the module they were about to appear in, which is
+    // exactly how an audit stops auditing.
     const appText = APP_FILES.map((file) => source(`src/app/${file}`)).join('\n');
     for (const row of UNWRITTEN_PROJECT_ROWS) {
       expect(appText, `${row.action}: an operation appeared, so the row must be revisited`).not.toContain(row.absentExport);
     }
-    // And the complement: the stage operations are in that same scan, so they cannot be "absent" and
-    // "present" at once.
-    for (const marker of ['export async function createWorkflowStage', 'export async function renameWorkflowStage', 'export async function deleteWorkflowStage']) {
+    // The complement, and the reason this test still means something with an empty table: every
+    // operation this group's rows claim must be findable in that same scan.
+    for (const marker of WRITTEN_SCHEMA_EXPORTS) {
       expect(appText, `${marker} must be in the app layer`).toContain(marker);
     }
+  });
+
+  it('declares the schema rows operation-only, and asserts that no surface reaches them', () => {
+    for (const row of SCHEMA_ROWS) {
+      expect(source(row.module), `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
+      expect(source(row.testFile), `${row.action}: ${row.testFile} must exercise it`).toContain(row.testMarker);
+      // The operation exists and the shell does not reach it. That is the gap this row records, and
+      // the assertion is what keeps it from being claimed as wired.
+      expect(MAIN, `${row.action}: a caller appeared, so the row is no longer operation-only`).not.toContain(row.testMarker);
+      expect(PARITY, `${row.action}: equivalence cannot be claimed without a UI caller`).not.toContain(row.testMarker);
+    }
+  });
+
+  it('carries the record layer contract the schema rows lean on', () => {
+    const mutations = source('src/app/propertySchemaMutations.ts');
+    for (const reason of ["'validation-refused'", "'not-found'", "'stale-revision'", "'semantic-conflict'", "'recovery-required'", "'storage-failure'"]) {
+      expect(mutations, `the schema refusal vocabulary must carry ${reason}`).toContain(reason);
+    }
+    expect(mutations).toContain('createIfAbsent(built.record)');
+    expect(mutations).toContain('expectedRevision: input.expectedRevision');
+    expect(mutations).toContain('actualRevision');
+    // A write that would orphan stored values refuses with the count, which is what makes the refusal
+    // an answer rather than a wall.
+    expect(mutations).toContain('affectedRecordCount');
+    expect(mutations).toContain('defineCanonicalPropertySchema');
   });
 
   it('carries the record layer contract the workflow-stage rows lean on', () => {
