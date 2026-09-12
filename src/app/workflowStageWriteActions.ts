@@ -17,6 +17,7 @@
  * Delete supplies nothing — so a stage with cards answers with the count and the question instead
  * of quietly emptying itself into the workflow.
  */
+import type { IdGenerator } from '../domain/clock.js';
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { ProximaState } from '../domain/types.js';
 import type {
@@ -26,6 +27,7 @@ import type {
   WorkflowStageRemapTarget,
 } from './workflowStageMutations.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
+import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import { convergeAfterWrite } from './writeConvergence.js';
 
 export const WORKFLOW_STAGE_WRITE_ACTION_SCHEMA_VERSION = 1 as const;
@@ -57,6 +59,10 @@ export interface WorkflowStageWriteDependencies {
   /** What an accepted write did, in one sentence, or null to clear it. */
   readonly setFeedback: (message: string | null) => void;
   readonly render: () => void;
+  /** Mints this run's semantic request id. Injected, like every other identity in this repository. */
+  readonly ids: IdGenerator;
+  /** Where the run's one terminal audit event goes. */
+  readonly audit: SemanticAuditSink;
 }
 
 export type WorkflowStageWriteFailureReason =
@@ -70,6 +76,8 @@ export type WorkflowStageWriteOutcome =
       readonly schemaVersion: typeof WORKFLOW_STAGE_WRITE_ACTION_SCHEMA_VERSION;
       readonly verb: WorkflowStageWriteVerb;
       readonly outcome: 'created' | 'renamed' | 'deleted';
+      /** This run's semantic request id: minted at the boundary, returned on every result. */
+      readonly requestId: string;
       readonly recordId: OpaqueRecordId;
       readonly revision: string;
       readonly refreshed: boolean;
@@ -81,6 +89,8 @@ export type WorkflowStageWriteOutcome =
       readonly verb: WorkflowStageWriteVerb;
       readonly reason: WorkflowStageWriteFailureReason;
       readonly detail: string;
+      /** Present on a refusal too, so a stage write that moved some cards and stopped is correlatable. */
+      readonly requestId: string;
       readonly refreshed: boolean;
       readonly remappedTaskIds: readonly OpaqueRecordId[];
     };
@@ -89,6 +99,7 @@ function refused(
   verb: WorkflowStageWriteVerb,
   reason: WorkflowStageWriteFailureReason,
   detail: string,
+  requestId: string,
   refreshed = false,
   remappedTaskIds: readonly OpaqueRecordId[] = [],
 ): WorkflowStageWriteOutcome {
@@ -98,6 +109,7 @@ function refused(
     verb,
     reason,
     detail,
+    requestId,
     refreshed,
     remappedTaskIds,
   };
@@ -121,7 +133,13 @@ function feedbackFor(
 }
 
 /**
- * Run one stage write and converge the surfaces.
+ * Run one stage write and converge the surfaces, under the semantic envelope.
+ *
+ * This is the first family whose write is a *sequence of sequences*: deleting a stage moves its cards through
+ * the task operation rather than by a rule of its own. So the run's event carries the stage **and every card
+ * that moved**, and a run where cards moved and the stage write then refused is `partial` rather than either an
+ * acceptance or a rejection - the surface holds records it did not have before, which is exactly what the
+ * shared outcome rule is for.
  *
  * @param deps - the shell's pieces.
  * @param verb - which operation this is, so the result says what was attempted.
@@ -137,10 +155,25 @@ async function runStageWrite(
   name: string | null,
   write: (operations: WorkflowStageWriteOperations, revision: string) => Promise<WorkflowStageMutationResult>,
 ): Promise<WorkflowStageWriteOutcome> {
+  const requestId = mintSemanticRequestId(deps.ids);
+  const target = stageId === null ? [] : [stageId];
+  const audit = (outcome: SemanticOutcome, entityIds: readonly string[], errorCode?: string): void => {
+    deps.audit.append({
+      requestId,
+      actionType: `workflow.stage.${verb}`,
+      outcome,
+      entityIds: [...entityIds],
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  };
+
   let revision = '';
   if (stageId !== null) {
     const stage = deps.state?.workflowStages?.find((candidate) => candidate.id === stageId);
-    if (stage === undefined) return refused(verb, 'unknown-stage', 'the board has no stage with that id');
+    if (stage === undefined) {
+      audit('rejected', target, 'unknown-stage');
+      return refused(verb, 'unknown-stage', 'the board has no stage with that id', requestId);
+    }
     revision = stage.revision;
   }
 
@@ -151,12 +184,17 @@ async function runStageWrite(
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
     deps.setRefusal(reason);
     deps.render();
-    return refused(verb, 'writes-unavailable', reason);
+    audit('rejected', target, 'writes-unavailable');
+    return refused(verb, 'writes-unavailable', reason, requestId);
   }
 
   const written = await write(operations, revision);
+  // The cards the operation moved, whatever it then answered. This is read before convergence on purpose: a
+  // refusal that already moved cards has changed the store, so the surfaces are stale and re-reading is owed -
+  // the same rule the template action states for a partial write, and the bug this family's own test caught.
+  const moved = written.remappedTaskIds ?? [];
   const convergence = await convergeAfterWrite(deps, {
-    accepted: written.ok,
+    accepted: written.ok || moved.length > 0,
     lostRace: !written.ok && written.reason === 'stale-revision',
   });
 
@@ -164,18 +202,23 @@ async function runStageWrite(
   if (written.ok) deps.setFeedback(feedbackFor(verb, written, name));
   deps.render();
 
-  return written.ok
-    ? {
-        ok: true,
-        schemaVersion: WORKFLOW_STAGE_WRITE_ACTION_SCHEMA_VERSION,
-        verb,
-        outcome: written.outcome,
-        recordId: written.recordId,
-        revision: written.revision,
-        refreshed: convergence.refreshed,
-        remappedTaskIds: written.remappedTaskIds,
-      }
-    : refused(verb, written.reason, written.detail, convergence.refreshed, written.remappedTaskIds ?? []);
+  if (!written.ok) {
+    audit(semanticOutcomeOf({ wrote: moved.length, refused: true }), [...target, ...moved], written.reason);
+    return refused(verb, written.reason, written.detail, requestId, convergence.refreshed, moved);
+  }
+
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId, ...moved]);
+  return {
+    ok: true,
+    schemaVersion: WORKFLOW_STAGE_WRITE_ACTION_SCHEMA_VERSION,
+    verb,
+    outcome: written.outcome,
+    requestId,
+    recordId: written.recordId,
+    revision: written.revision,
+    refreshed: convergence.refreshed,
+    remappedTaskIds: written.remappedTaskIds,
+  };
 }
 
 /** Create the stage the board's form describes, in the project the board is showing. */

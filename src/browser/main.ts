@@ -948,6 +948,13 @@ function workflowStageWriteDependencies() {
     setRefusal: (reason: string | null) => { projectWorkflowStageRefusal = reason; },
     setFeedback: (message: string | null) => { projectWorkflowStageFeedback = message; },
     render,
+    // One envelope for the three stage verbs: the run journals the stage and every card a delete moved.
+    ids: DETERMINISTIC_IDS,
+    audit: {
+      append: (event: SemanticAuditEvent) => {
+        actionDispatcher?.auditSemantic(event);
+      },
+    },
   };
 }
 

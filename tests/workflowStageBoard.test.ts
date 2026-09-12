@@ -42,6 +42,7 @@ import {
   type ProjectWorkflowBoardViewState,
 } from '../src/browser/projectWorkflowBoard.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T08:00:00+07:00';
 const STAGE_UNAVAILABLE = 'record-writes-need-an-activated-store';
@@ -181,6 +182,8 @@ async function world(): Promise<StageWorld> {
         setRefusal: (reason: string | null) => { sinks.refusal = reason; },
         setFeedback: (message: string | null) => { sinks.feedback = message; },
         render: () => undefined,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       };
       if (verb === 'create') {
         return await createWorkflowStageAction(depsForWrite, {
@@ -482,6 +485,8 @@ describe('the workflow board stage writes, driven through the rendered surface',
                   setRefusal: (reason) => { view = { ...view, stageRefusal: reason }; },
                   setFeedback: (message) => { view = { ...view, stageFeedback: message }; },
                   render: () => undefined,
+                  ids: semanticIds(),
+                  audit: recordingAudit(),
                 },
                 { projectId: PROJECT_ID, name: form.name },
               )
@@ -494,6 +499,8 @@ describe('the workflow board stage writes, driven through the rendered surface',
                   setRefusal: (reason) => { view = { ...view, stageRefusal: reason }; },
                   setFeedback: (message) => { view = { ...view, stageFeedback: message }; },
                   render: () => undefined,
+                  ids: semanticIds(),
+                  audit: recordingAudit(),
                 },
                 { stageId: form.stageId, name: form.name },
               );

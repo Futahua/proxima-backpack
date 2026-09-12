@@ -1349,6 +1349,28 @@ const PROJECT_CONTRACT_ROWS: readonly ContractRow[] = contractRows(PROJECT_CONTR
   },
 ]);
 
+/**
+ * The envelope cells for the three workflow-stage rows.
+ *
+ * This family's write is a sequence of sequences - a delete moves its cards through the task operation - so its
+ * event carries the stage **and every card that moved**, and a run that moved cards and then refused is
+ * `partial`, because the surface holds records it did not have before.
+ */
+const STAGE_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/workflowStageWriteActions.ts',
+    'readonly requestId: string;',
+    'the sequence mints one semantic request id before the stage lookup can refuse and returns it on every result, so a stage write refused because the stage is gone, because there is no write path or because the operation answered is correlatable exactly like an accepted one; a create has no id yet, so its refusals name no target',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/workflowSemanticAudit.test.ts',
+    'audit:partial',
+    'behavioural rather than structural: one terminal event per run, named workflow.stage.<verb>, carrying the stage and every card the run moved - and a run that moved cards and then refused journals partial rather than either end, which is also how the test found that this sequence was not re-reading after a partial write at all',
+  ),
+};
+
 /** The workflow-stage family. */
 const STAGE_CONTRACT_ROWS: readonly ContractRow[] = contractRows(STAGE_CONTRACT, [
   {
@@ -1358,6 +1380,7 @@ const STAGE_CONTRACT_ROWS: readonly ContractRow[] = contractRows(STAGE_CONTRACT,
     shape: 'create',
     refusal: { marker: "'a workflow stage needs a name'", reason: 'a create that names nothing is refused by name before the project is even read' },
     observable: { file: 'tests/workflowStageBoard.test.ts', marker: 'stage: async (id) => {', note: 'the board suite reads a stage back out of the store through its own helper before asserting what the create left in it' },
+    overrides: STAGE_ENVELOPE_OVERRIDES,
   },
   {
     action: 'workflow stage rename',
@@ -1366,6 +1389,7 @@ const STAGE_CONTRACT_ROWS: readonly ContractRow[] = contractRows(STAGE_CONTRACT,
     shape: 'write',
     refusal: { marker: 'a workflow stage name may be at most ${MAX_NAME_LENGTH} characters', reason: 'a name that is empty or too long is refused with its own bounded sentence before the record is read' },
     observable: { file: 'tests/workflowStageBoard.test.ts', marker: 'const observation = await store.read(id);', note: 'the rename case settles the stage by reading it out of the store, so the name that landed is the store own' },
+    overrides: STAGE_ENVELOPE_OVERRIDES,
   },
   {
     action: 'workflow stage delete/remap',
@@ -1375,6 +1399,7 @@ const STAGE_CONTRACT_ROWS: readonly ContractRow[] = contractRows(STAGE_CONTRACT,
     refusal: { marker: 'the stage still holds ${members.length} task(s); say where they go before deleting it', reason: 'a stage that still holds tasks is refused with the count and the question, and a target in another project is a semantic conflict' },
     ids: { marker: 'readonly remappedTaskIds: readonly OpaqueRecordId[]', reason: 'a delete that moves cards returns every id it moved in the order it moved them, and a delete that stopped part-way carries the ids that had already moved in the failure rather than a count' },
     observable: { file: 'tests/workflowStageBoard.test.ts', marker: 'const observation = await store.read(id);', note: 'the delete case reads the stage back out of the store and reads the moved cards out too, so both halves of the remap are observed' },
+    overrides: STAGE_ENVELOPE_OVERRIDES,
   },
 ]);
 
