@@ -9,10 +9,13 @@
  * outcome.
  *
  * What a caller needs to know about the result: `complete` means every draft became a record and `created`
- * names them; a refusal **after** a creation is `ok: false` with `reason: 'creation-refused'` and a
- * non-empty `created`, so a surface can keep its composer open and show what did land rather than closing as
- * though the run had finished. Nothing here retries or rolls back: the ids are returned so the caller can
- * offer correction, which is the rule the AUTHOR gave for the panel.
+ * names them; a refusal **after** a creation is `ok: false` with a non-empty `created`, so a surface can keep
+ * its composer open and show what did land rather than closing as though the run had finished. The reason it
+ * carries is the port's own cause rather than one word for every creation failure - `semantic-conflict` for a
+ * lost race or a contradiction, `storage-failure` for a write that could not happen, `creation-refused` for a
+ * request the port declined - which is what lets a surface say which of the three it is. Nothing here retries
+ * or rolls back: the ids are returned so the caller can offer correction, which is the rule the AUTHOR gave
+ * for the panel.
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { IdGenerator } from '../domain/clock.js';
@@ -56,6 +59,10 @@ export type TemplateExecuteFailureReason =
   | 'writes-unavailable'
   | 'plan-invalid'
   | 'untranslatable-draft-field'
+  /** The port lost a race or refused a conflict: the same kind of answer, told apart from a plain refusal. */
+  | 'semantic-conflict'
+  /** The port could not write: a storage failure rather than a decision about the content. */
+  | 'storage-failure'
   | 'creation-refused';
 
 export type TemplateExecuteOutcome =
@@ -100,12 +107,33 @@ function refused(
   };
 }
 
+/**
+ * The reason a refused creation comes back with, taken from the port's own cause rather than flattened.
+ *
+ * The execution layer already carries the port's reason through as `cause`, and the comment on it says why:
+ * a caller should be able to tell a lost race from a validation refusal without re-reading the store. That was
+ * true of the port and not of this boundary, which collapsed every creation refusal into one word - so a lost
+ * race and a failed write arrived at a surface identically, and the matrix recorded both cells as gaps with
+ * this function as the reason. A conflict is the port saying the record moved (`stale-revision`) or that the
+ * request contradicts what is stored (`semantic-conflict`); a storage failure is the port saying it could not
+ * write at all. The remaining causes - a validation refusal, an unknown project, a record that is gone - are
+ * ordinary refusals of the request, and stay `creation-refused`.
+ */
 function refusalReasonOf(refusal: TemplateExecutionRefusal): TemplateExecuteFailureReason {
   switch (refusal.reason) {
     case 'plan-invalid':
       return 'plan-invalid';
     case 'untranslatable-draft-field':
       return 'untranslatable-draft-field';
+    default:
+      break;
+  }
+  switch (refusal.cause) {
+    case 'stale-revision':
+    case 'semantic-conflict':
+      return 'semantic-conflict';
+    case 'storage-failure':
+      return 'storage-failure';
     default:
       return 'creation-refused';
   }

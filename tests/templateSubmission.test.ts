@@ -86,6 +86,10 @@ describe('template.execute submission', () => {
       { type: 'template.execute' },
       { type: 'template.execute', template: 42 },
       { type: 'template.execute', template: VALID, projectId: 7 },
+      // A string is the shape, not the identity: an id that is not a canonical opaque record id is refused
+      // here rather than cast and carried to the store as a reference to something nobody holds.
+      { type: 'template.execute', template: VALID, projectId: 'project-1' },
+      { type: 'template.execute', template: VALID, projectId: '' },
     ];
 
     for (const input of inputs) {

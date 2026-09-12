@@ -140,14 +140,41 @@ describe('template.execute', () => {
     expect(h.refreshes).toHaveLength(1);
   });
 
-  it('a lost race is still an unfinished run, and the caller can tell it apart by the cause', async () => {
+  it('a lost race comes back as a semantic conflict, told apart from an ordinary refusal', async () => {
     const h = harness();
     h.failAt(1, 'stale-revision');
     const outcome = await executeTemplateAction(h.deps, { template: TEMPLATE });
 
     expect(outcome.ok).toBe(false);
     expect(h.refreshes).toHaveLength(1);
-    if (!outcome.ok) expect(outcome.created).toEqual([]);
+    if (!outcome.ok) {
+      // The row's stale/conflict cell reads this: the port's cause was carried by the execution layer and
+      // flattened by this boundary, so a lost race and a declined request arrived at a surface identically.
+      expect(outcome.reason).toBe('semantic-conflict');
+      expect(outcome.created).toEqual([]);
+    }
+  });
+
+  it('a conflict the port names is the same reason, and a failed write is its own', async () => {
+    const conflict = harness();
+    conflict.failAt(1, 'semantic-conflict');
+    const conflicted = await executeTemplateAction(conflict.deps, { template: TEMPLATE });
+    if (!conflicted.ok) expect(conflicted.reason).toBe('semantic-conflict');
+
+    const storage = harness();
+    storage.failAt(1, 'storage-failure');
+    const failed = await executeTemplateAction(storage.deps, { template: TEMPLATE });
+    if (!failed.ok) {
+      // A storage failure is not a decision about the content, so it does not share the conflict's reason.
+      expect(failed.reason).toBe('storage-failure');
+      expect(failed.reason).not.toBe('semantic-conflict');
+    }
+
+    // And a request the port declined on its merits is still an ordinary creation refusal.
+    const declined = harness();
+    declined.failAt(1, 'validation-refused');
+    const refused = await executeTemplateAction(declined.deps, { template: TEMPLATE });
+    if (!refused.ok) expect(refused.reason).toBe('creation-refused');
   });
 
   it('refuses when the shell cannot offer writes, without touching the port', async () => {

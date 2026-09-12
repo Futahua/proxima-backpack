@@ -206,7 +206,10 @@ describe('the semantic request envelope and terminal event (template.execute)', 
       requestId: outcome.requestId,
       outcome: 'partial',
       entityIds: landed,
-      errorCode: 'creation-refused',
+      // The code is the port's own cause rather than one word for every creation failure: this fixture refuses
+      // the second write with `storage-failure`, and the boundary used to flatten that into `creation-refused`,
+      // which is the collapse the matrix recorded as two gaps. The event now says which of the three it was.
+      errorCode: 'storage-failure',
     });
     // A partial run wrote records, so it converged before the event was appended - and the event is neither
     // of the two outcomes a surface could mistake it for.

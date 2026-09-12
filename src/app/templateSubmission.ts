@@ -18,7 +18,7 @@
  * What this closes is the "agent without a modal" boundary: the first test submits through this entry with
  * no panel or modal object anywhere in the dependency set, and the records are created.
  */
-import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import { parseOpaqueRecordId, type OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import {
   executeTemplateAction,
   type TemplateExecuteDependencies,
@@ -29,7 +29,13 @@ import {
 export interface TemplateExecuteSubmission {
   readonly type: 'template.execute';
   readonly template: string;
-  readonly projectId?: string;
+  /**
+   * The project to create into, as a canonical opaque record id.
+   *
+   * The parsed shape carries the branded id rather than a string, because the parser is where it is validated:
+   * a caller that has one of these has already had the identity checked, so nothing downstream casts.
+   */
+  readonly projectId?: OpaqueRecordId;
 }
 
 export type TemplateSubmissionFailureReason = 'malformed-submission';
@@ -66,12 +72,25 @@ export function parseTemplateExecuteSubmission(
   if (candidate.projectId !== undefined && typeof candidate.projectId !== 'string') {
     return { ok: false, detail: 'a projectId, when given, is a string' };
   }
+  // The string check above is the shape; this is the identity. A project id is a **canonical opaque record
+  // id**, and validating it here is what stops a cast from turning an arbitrary string into a reference that
+  // reaches the store: the field used to be checked as a string and then cast, which the matrix recorded as
+  // this row's runtime-validation gap in the AUTHOR's own words. The sentence names what was given, because a
+  // caller that sent a folder name should be told that rather than that its id was malformed.
+  let projectId: OpaqueRecordId | undefined;
+  if (candidate.projectId !== undefined) {
+    try {
+      projectId = parseOpaqueRecordId(candidate.projectId as string);
+    } catch {
+      return { ok: false, detail: `a projectId is a canonical opaque record id, not ${String(candidate.projectId)}` };
+    }
+  }
   return {
     ok: true,
     submission: {
       type: 'template.execute',
       template: candidate.template,
-      ...(candidate.projectId === undefined ? {} : { projectId: candidate.projectId as string }),
+      ...(projectId === undefined ? {} : { projectId }),
     },
   };
 }
@@ -86,6 +105,6 @@ export async function submitTemplateExecution(
   const { template, projectId } = parsed.submission;
   return await executeTemplateAction(deps, {
     template,
-    projectId: (projectId ?? null) as OpaqueRecordId | null,
+    projectId: projectId ?? null,
   });
 }
