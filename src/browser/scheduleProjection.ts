@@ -1,7 +1,7 @@
 import type { LoadProblem } from '../domain/problems.js';
 import { eventFormValuesFrom, renderEventModal as renderEventEditorModal } from './eventModal.js';
 import { eventsByDay } from '../domain/selectors.js';
-import { localDateKey } from '../domain/time.js';
+import { formatClockTime, localDateKey } from '../domain/time.js';
 import type { EventEditorDraft } from '../app/eventEditor.js';
 import type { EventFormValues } from '../app/eventFormPlan.js';
 import type { CalendarEvent } from '../domain/types.js';
@@ -159,7 +159,7 @@ function sortedEventsByDay(
   const ordinaryEvents = recurrenceWindow
     ? events.filter((event) => !hasScheduleRecurrence(event))
     : [...events];
-  const ordinary = eventsByDay(ordinaryEvents, problems);
+  const ordinary = eventsByDay(ordinaryEvents, problems, activeZone);
 
   for (const [key, dayEvents] of ordinary) {
     result.set(key, dayEvents.map((event) => ({
@@ -178,7 +178,7 @@ function sortedEventsByDay(
         startDate: occurrence.startDate,
         deadline: occurrence.deadline,
       };
-      const covered = eventsByDay([temporalView], problems);
+      const covered = eventsByDay([temporalView], problems, activeZone);
       for (const key of covered.keys()) {
         const bucket = result.get(key) ?? [];
         bucket.push({

@@ -1,6 +1,10 @@
 import type { CanonicalRecurrenceException } from '../domain/canonicalRecurrence.js';
 import type { CalendarEvent } from '../domain/types.js';
+<<<<<<< Updated upstream
 import { localDateKey } from '../domain/time.js';
+=======
+import { formatClockTime, localDateKey } from '../domain/time.js';
+>>>>>>> Stashed changes
 import { hostZone } from './hostTimeZone.js';
 import type { TimeZone } from '../domain/timeZone.js';
 

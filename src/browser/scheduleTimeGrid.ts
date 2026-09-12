@@ -6,7 +6,7 @@ import { eventFormValuesFrom, renderEventModal as renderEventEditorModal } from 
 import type { EventEditorDraft } from '../app/eventEditor.js';
 import type { EventFormValues } from '../app/eventFormPlan.js';
 import type { CalendarEvent } from '../domain/types.js';
-import { localDateKey } from '../domain/time.js';
+import { formatClockTime, localDateKey } from '../domain/time.js';
 import { localCalendarDate } from './calendarGrid.js';
 import { renderScheduleNavigation } from './scheduleNavigation.js';
 import { hostZone } from './hostTimeZone.js';

@@ -4,6 +4,7 @@
  */
 import { columnOf } from './elastic.js';
 import { civilDateKey, localDateKey, nextCivilDate, parseCivilDate, type CivilDate } from './time.js';
+import { utcZone, type TimeZone } from './timeZone.js';
 import type { LoadProblem } from './problems.js';
 import type { CalendarEvent, ElasticColumn, Project, ProximaState, StatusDefinition, Task } from './types.js';
 
@@ -117,10 +118,10 @@ export function columnCounts(board: ElasticBoard): Record<ElasticColumn, number>
  * Events grouped by the local calendar day they start on. Multi-day events appear
  * on every day they cover, which is what a month grid needs.
  */
-export function eventsByDay(events: CalendarEvent[], problems: LoadProblem[] = []): Map<string, CalendarEvent[]> {
+export function eventsByDay(events: CalendarEvent[], problems: LoadProblem[] = [], zone: TimeZone = utcZone()): Map<string, CalendarEvent[]> {
   const byDay = new Map<string, CalendarEvent[]>();
   for (const event of events) {
-    for (const key of daysCovered(event, problems)) {
+    for (const key of daysCovered(event, problems, zone)) {
       const bucket = byDay.get(key);
       if (bucket) bucket.push(event);
       else byDay.set(key, [event]);
@@ -129,16 +130,16 @@ export function eventsByDay(events: CalendarEvent[], problems: LoadProblem[] = [
   return byDay;
 }
 
-function daysCovered(event: CalendarEvent, problems: LoadProblem[]): string[] {
+function daysCovered(event: CalendarEvent, problems: LoadProblem[], zone: TimeZone): string[] {
   const startCivil = parseCivilDate(event.startDate);
   const endValue = event.deadline || event.startDate;
   const endCivil = parseCivilDate(endValue);
   const startInstant = startCivil ? null : new Date(event.startDate);
   if (!startCivil && Number.isNaN(startInstant!.getTime())) return [];
-  const startKey = startCivil ? civilDateKey(startCivil) : localDateKey(startInstant!);
+  const startKey = startCivil ? civilDateKey(startCivil) : localDateKey(startInstant!, zone);
   const endInstant = endCivil ? null : new Date(endValue);
   if (!endCivil && Number.isNaN(endInstant!.getTime())) return [startKey];
-  const endKey = endCivil ? civilDateKey(endCivil) : localDateKey(endInstant!);
+  const endKey = endCivil ? civilDateKey(endCivil) : localDateKey(endInstant!, zone);
   if (endKey < startKey) return [startKey];
 
   const keys: string[] = [];

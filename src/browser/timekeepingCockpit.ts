@@ -4,7 +4,7 @@ import type {
   TimekeepingPanelVisibility,
   TimelineChangeOperation,
 } from '../app/actionProtocol.js';
-import { deadlineHue, localDateKey } from '../domain/time.js';
+import { deadlineHue, formatClockTime, localDateKey } from '../domain/time.js';
 import type { ProximaState, Task } from '../domain/types.js';
 import { calendarGridDates } from './calendarGrid.js';
 import { renderTaskModal } from './elasticCockpit.js';
