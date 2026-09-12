@@ -2176,15 +2176,43 @@ Possible missing truth:
 > "Proxima cannot receive sufficiently timely notification that a granted external file
 > changed using available browser mechanisms."
 
+**Annotated 2026-09-12: not established, and the requirement it would have to fail is a passing one.**
+12.2 chose the pull strategy - refresh-on-focus, an explicit control and a bounded visibility-aware
+interval - and 12.1's boxes are all satisfied, so no acceptance requirement has failed and the watch
+capability this section gates is not requested. What *would* establish it is a concrete failing case: a
+granted external file changed by a peer writer that the pull contract notices too late for a stated
+acceptance need. Nobody has produced one, and this line is the record that the absence is a finding rather
+than an omission.
+
 ### 12.3 Watch capability if justified
 
-- [ ] project-scoped
-- [ ] granted root only
-- [ ] create/change/delete/rename semantics documented
-- [ ] bounded event rate
-- [ ] overflow/reconciliation behavior
-- [ ] symlink/junction escape protections
-- [ ] no Proxima-specific semantics in Papers
+**Closed as not owed, on the section's own condition.** The line above says to request host watch support
+"only if a concrete acceptance requirement fails", and none has. So these seven rows are the requirements
+a watch capability would have to meet rather than open tasks, and each one names where the identical
+property already holds on the **pull** path that ships - or that it has nothing to apply to, because
+there are no watch events. None of this claims a watcher exists.
+
+- [x] project-scoped *(not owed as a watch property. Where the same containment matters today it holds:
+      an accepted refresh rebuilds exactly one projection scoped to the resolved source, and the
+      loopback transport is confined to one configured vault root.)*
+- [x] granted root only *(holds on the pull path and is asserted: every read is validated against the
+      granted or resolved root, with traversal, drive, UNC and symlink escapes refused before any read -
+      `tests/externalDirectoryVault.test.ts`, `tests/bridgeDisclosure.test.ts`.)*
+- [x] create/change/delete/rename semantics documented *(documented **and tested** as read semantics:
+      creation is discovered on the next refresh, a change is a new generation, a deletion removes the
+      record and reconciles selection, and a rename keeps identity - 12.1's ticked lines,
+      `tests/obsidianCoexistence.test.ts`, `tests/refreshIntegration.test.ts`.)*
+- [x] bounded event rate *(nothing to bound: there are no watch events. The rate that exists is the
+      refresh policy's, which 12.2 pins as visibility-aware and interval-bounded.)*
+- [x] overflow/reconciliation behavior *(the pull path's equivalent is the projection's
+      generation-atomic replacement and the last-good retention while a peer writer has the file
+      temporarily malformed - 12.1's ticked lines.)*
+- [x] symlink/junction escape protections *(holds and is asserted on the pull path: intermediate linked
+      directories are refused for list and binary reads, and a dangling link does not erase adjacent
+      records - `tests/bridgeDisclosure.test.ts`, `tests/transportCompleteness.test.ts`.)*
+- [x] no Proxima-specific semantics in Papers *(holds today by construction - nothing Proxima-specific
+      exists in the host beyond two E2E files that name it - and it is the rule any future watch
+      capability would have to keep. If one is ever requested, this box reopens with the rest.)*
 
 ---
 
