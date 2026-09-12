@@ -3485,10 +3485,7 @@ For every checked defined-scope read-only error above:
 
 Backpack page:
 
-- [ ] still sandboxed — OPEN: the host/embed containment primitive (Papers
-      `papers-backpack://` CSP/container policy) is outside this repository's
-      browser source and has no exact host configuration or acceptance evidence here;
-      the standalone loopback viewer is explicitly not a Papers sandbox claim.
+- [x] still sandboxed — `ad6ee56` @ `2026-09-12T20:41:07+07:00`. **Measured rather than cited.** The host's policy is       still not this repository's source, so reading it would only be a reading; instead a probe Backpack       (`tools/containment-probe/`) answers questions about its own containment and publishes each answer as a       semantic key, which means the **host's own** `inspect.visual.elements` carries the result. On a live       Papers 1.3.11 host at `d2a3c74` (`packaged false`), all six answers came back as containment: no Node       runtime is visible (`no-node`); a **same-origin** fetch is refused, which only a policy can do       (`fetch-blocked`, so `connect-src` is `'none'`); indirect eval is refused (`eval-blocked`, so `script-src`       carries no `'unsafe-eval'`); an embedded frame's document is never fetched (`frame-blocked`, so `frame-src`       is `'none'`); the origin enumerates no database but its own (`storage-isolated`); and the page runs on the       `papers-backpack` origin of its own Backpack id. An inline module script is refused as well, which the       probe established by failing first: its own code is an external file for that reason. Reproduce with       `npm run probe:containment`; the probe is registered into a disposable profile and is not part of the       shipped product. Five probes of the checker bite, including a mutation that expects `NODE-VISIBLE` and       fails the run. **Reopens if** any answer stops coming back as containment.
 - [x] no Node — the production source graph and emitted browser modules contain no
       Node builtin imports or Node runtime globals (`tests/browserBoundary.test.ts`).
 - [x] no arbitrary code execution bridge — production source and emitted browser
@@ -3537,10 +3534,7 @@ Filesystem:
       successfully, a denied handle makes the next refresh fail closed with an
       `unreadable` outcome and `stale` last-good state rather than silently
       reacquiring authority (`tests/externalDirectoryVault.test.ts`).
-- [ ] grant ownership is exact Backpack identity — OPEN: this repository tests
-      wrong-handle rejection in the bounded clean-profile evidence, but does not own
-      the native Papers/FSA origin registry or prove that a persisted grant cannot be
-      borrowed by another Backpack identity; the machine-local `project.json` binding
+- [ ] grant ownership is exact Backpack identity — STILL OPEN, with one half now measured at `ad6ee56` @ `2026-09-12T20:41:07+07:00`:       the **browser** half is evidence rather than assumption, because the containment probe runs from a second       Backpack id on its own `papers-backpack://` origin, enumerates no database but its own       (`storage-isolated`) and cannot reach the product's, so a page under one Backpack id does not inherit       another's origin storage. What stays open is the **native** half, and it is a different mechanism: the       Papers/FSA grant registry is the host's, and this repository still cannot prove that a persisted native       grant cannot be borrowed by another Backpack identity. The original reason follows.       OPEN: this repository tests       wrong-handle rejection in the bounded clean-profile evidence, but does not own       the native Papers/FSA origin registry or prove that a persisted grant cannot be       borrowed by another Backpack identity; the machine-local `project.json` binding
       is not substituted for that host acceptance (`tests/cleanProfileAcceptance.test.ts`).
 - [x] stale references fail closed — one-shot browser-file nodes retain their
       Proxima identity but become `unavailable` after restart/read failure rather
