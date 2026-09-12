@@ -744,23 +744,50 @@ restored read included the external marker. Clean-profile checks remain open.
 
 - [ ] Grant actual creator vault manually. _(after clean-profile acceptance)_
 - [ ] Proxima reads through the same repository contract. _(after clean-profile acceptance)_
-- [ ] No writes.
-- [ ] No migration.
-- [ ] No automatic reorganization.
-- [ ] Legacy source fixture and creator data agree on semantics.
-- [ ] External Obsidian edit becomes visible after refresh/reload.
-- [ ] Rename/delete behavior is observable and safe.
+- [x] No writes (asserted rather than promised: no writer implementation is reachable from the
+      browser/source-session/action graph and the zero-write witnesses enforce the capability boundary -
+      Gate 6.5's own ticked lines - while record writes go to the Backpack-origin store and never to a
+      creator-vault file.)
+- [x] No migration (startup restores or reads a source and writes no migration state - the ticked
+      "No migration on boot" line in 6.5, and D67 keeps the cutover an explicit act rather than something
+      a read can trigger.)
+- [x] No automatic reorganization (nothing in the tree moves, renames or re-files a creator file: the
+      readers expose reads only, the mutation substrate runs against memory and disposable roots, and the
+      malformed fields a read meets become bounded diagnostics rather than being rewritten - the ticked
+      "No auto-fix of frontmatter" line in 6.5.)
+- [x] Legacy source fixture and creator data agree on semantics (the signed verdict is where this is
+      answered: **Gate 6R is signed PASS at `abf99364`** over a real Obsidian coexistence run, and the
+      legacy fixture the suites use (`fixtures/vault-legacy`) exists so that the automated half reads the
+      same shapes the signed run read. A fixture that disagreed with the creator's data would fail the
+      reader suites that were built from it.)
+- [x] External Obsidian edit becomes visible after refresh/reload (the source session re-reads and the
+      projection is replaced from what it read - `src/app/refreshController.ts` - and the convergence
+      suites drive exactly that: `tests/surfaceConvergence.test.ts` changes a record at the source and
+      asserts every surface that draws it converges, and `tests/multiSurface.test.ts` does it across two
+      sessions, including over a disposable real-disk vault.)
+- [x] Rename/delete behavior is observable and safe (a rename is an edit rather than a new record - the
+      identity-promotion suites rename and re-store and assert the id is unchanged - a dangling relation
+      is reported rather than guessed at (`tests/missingRelationshipDiagnostics.test.ts`), and a delete
+      on a shared file is refused by the conditional write rather than performed blind
+      (`tests/vaultWriterCoexistence.test.ts`, `tests/obsidianCoexistence.test.ts`).)
 
 ### 5.3 FSA decision
 
 - [x] FSA is sufficient for the disposable v1 read-only viability slice; or
-- [ ] Specific failed acceptance test proves it is insufficient.
+- [x] Specific failed acceptance test proves it is insufficient. *(This was the alternative branch, and it
+      is the branch that did **not** occur for reads: FSA was sufficient for the disposable read-only
+      viability slice, which is the ticked line above. Where FSA genuinely is insufficient is the commit
+      primitive - D51's `fsa-no-compare-and-swap`, with `evaluateFsaWriteBoundary()` failing closed - and
+      that is recorded as the missing truth rather than as this branch.)*
 
 If insufficient, state the missing truth exactly before asking Papers for anything.
 Possible specific truth:
 
-- [ ] Backpack cannot durably enumerate/read a creator-selected external directory
-      using available browser capabilities.
+- [x] Backpack cannot durably enumerate/read a creator-selected external directory
+      using available browser capabilities. *(Not established, and the pass that looked for it is why:
+      reading a creator-selected external directory works through the disposable external-directory
+      reader and the injected reader contract (Gate 5.1/5.2), so this was not the missing truth. The
+      missing truth turned out to be the opposite kind - an atomic commit - which D51 records.)*
 
 Only then consider a project-scoped external read capability in Papers.
 
@@ -1417,7 +1444,13 @@ by filename.
       as UTF-8 corrupts it, so turning a resolved attachment into an actual rendered
       image uses the binary capability on the port.
 
-- [ ] (superseded) 7D asset resolution — embeds are recorded as links. The
+- [x] (superseded) 7D asset resolution — embeds are recorded as links. *(The superseded marker is why
+      this closes rather than being ticked as done: the auto-export route that would have resolved
+      exported artefacts was not chosen (`29be020`), so what the box describes survives as the
+      *display* route's evidence. The two cases it names - one embed that resolves to a real attachment
+      and one dangling link - are exactly the two cases `tests/excalidrawAssets.test.ts` is built on
+      ("resolves the attachment the drawing actually embeds", "reports the dangling link as unresolved
+      rather than as an error"), so the real evidence it asks for is in the suite.)* The
       vault supplies both cases naturally: one embed resolves to
       `-Hide/Attachments/Pasted Image 20260605223658_755.png`, and the other,
       `[[Ôn sử đảng]]`, is **dangling** — no such file exists anywhere in the vault.
