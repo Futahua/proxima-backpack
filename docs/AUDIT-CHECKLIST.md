@@ -318,7 +318,18 @@ Pin important behavior from old `calculateLiquidTimeline`.
       moved the count by nothing at all. The accepted branch is untouched by it and stays green.
       **This also qualifies the ticked "tests are deterministic across CI/developer timezone differences"
       box honestly:** the suites it names are, and these 25 assertions were not - they were deterministic in
-      UTC+07 specifically. They are the reason the wiring is worth doing rather than cosmetic.)*
+      UTC+07 specifically. They are the reason the wiring is worth doing rather than cosmetic.
+      **A second attempt is parked on the same branch at `c41fd3e` @ `2026-09-12T20:58:53+07:00`,** and it is
+      the behaviour-preserving half: the four browser modules that derive calendar dates now go through a
+      `bindZone(options.zone)` wrapper whose default is the host zone read in `src/browser/hostTimeZone.ts`, so
+      *where* the zone is read moves to one boundary while the zone itself does not change. That ordering is the
+      whole lesson of the two attempts: with every call site passing a zone explicitly, switching the default to
+      UTC changes nothing, and the suites never have to go red. The branch records five remaining mechanical
+      items (add the `formatClockTime` import to four files, apply this branch's own two-argument `time.ts`
+      signature, bind the entries by hand because the signature shape defeats a regex, migrate
+      `scheduleNavigation`'s four sites after finding where it gets `localDateKey`, and give
+      `daysCovered`/`inspection.ts` an explicit parameter rather than a default), and the script that produced
+      the state is kept at `.dsh/zone-pass1.mjs` with the previous attempt's ordering bug already fixed.)*
 - [x] Tests are deterministic across CI/developer timezone differences.
 - [x] Month boundaries covered.
 - [x] Year boundaries covered.
