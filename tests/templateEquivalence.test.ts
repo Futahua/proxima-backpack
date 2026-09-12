@@ -6,6 +6,12 @@
  * calling the ordinary create path directly, once by executing a template - in two isolated stores, and
  * compares the decoded canonical task records.
  *
+ * The template side goes through `executeTemplateAction`, which is the entry the panel Confirm and an
+ * agent submission both call, rather than through the executor underneath it. An equivalence asserted
+ * against a function a shipped path could bypass would be a comparison of two things nobody does; this
+ * one is between the manual path and the path that actually runs. The executor keeps its own coverage
+ * in `tests/templateExecution.test.ts`.
+ *
  * What is normalised away is exactly what the ruling names: `id`, `createdAt`, and the store/observation
  * revisions. Identity and timestamps are deliberately allowed to differ, which is why the acceptance does
  * not rest on the two runs coincidentally generating the same bytes. Every semantic field stays compared,
@@ -17,8 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { createCanonicalJsonRecordStore } from '../src/app/canonicalRecordCodec.js';
 import { createRecordMutationCoordinator } from '../src/app/recordMutation.js';
 import { createTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
-import { parseTemplatePlan } from '../src/app/templateComposer.js';
-import { executeTemplatePlan } from '../src/app/templateExecution.js';
+import { executeTemplateAction, type TemplateExecuteDependencies } from '../src/app/templateExecuteAction.js';
 import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/app/vaultRecovery.js';
 import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
 import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
@@ -65,6 +70,22 @@ function harness(): { deps: TaskMutationDependencies; store: ReturnType<typeof c
       clock: fixedClock(CLOCK_ISO),
       allocateRecordId: () => idFor((serial += 1)),
     },
+  };
+}
+
+/**
+ * The action's dependencies, in the shape the shell resolves them: the operations structurally, and the
+ * surface hooks recorded rather than drawn. The refresh declines, which is a state the action already
+ * answers (`refreshed: false`) and which keeps this test about records rather than about redraws.
+ */
+function actionDeps(h: ReturnType<typeof harness>): TemplateExecuteDependencies {
+  return {
+    state: null,
+    writes: async () => ({ createTask: (request) => createTask(h.deps, request) }),
+    unavailableReason: () => null,
+    refresh: async () => null,
+    setRefusal: () => {},
+    render: () => {},
   };
 }
 
@@ -130,14 +151,9 @@ describe('manual and template creation produce the same records (D69)', () => {
     }
 
     const viaTemplate = harness();
-    const plan = parseTemplatePlan(TEMPLATE);
-    expect(plan.errors).toEqual([]);
-    const outcome = await executeTemplatePlan({
-      plan,
-      projectId: null,
-      tasks: { createTask: (request) => createTask(viaTemplate.deps, request) },
-    });
-    expect(outcome.kind).toBe('complete');
+    const outcome = await executeTemplateAction(actionDeps(viaTemplate), { template: TEMPLATE });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.created).toHaveLength(3);
 
     const manualRecords = await taskRecords(manual.store);
     const templateRecords = await taskRecords(viaTemplate.store);

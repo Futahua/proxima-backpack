@@ -191,13 +191,30 @@ const OPERATION_ONLY_ROWS = [
   { action: 'task recurrence (retained)', module: 'src/app/taskMutations.ts', marker: "kind: 'recurrence'" },
 ] as const;
 
+/**
+ * The Templates row, split in two because the two questions it answers are evidenced in two files.
+ *
+ * `template.execute` is deliberately not a `ProximaAction`: the AUTHOR ruled on 2026-09-12 that it is a
+ * sibling entry, so its shell caller is the named function the click chain reaches rather than a
+ * `data-action` verb - and the row names that function, which is what keeps the claim checkable.
+ *
+ * The first row is the UI-invocation half, evidenced by the wiring test: `src/browser/main.ts` cannot be
+ * imported from a test (that is what `tests/acceptanceTools.test.ts` records), so that file renders the
+ * panel with the options the shell passes and reads the click chain as source. The second row is the
+ * equivalence half, which D69 judges on records through this same action.
+ */
+const TEMPLATE_ROWS: readonly TaskActionRow[] = [
+  { action: 'template.execute (UI invocation)', module: 'src/app/templateExecuteAction.ts', marker: 'export async function executeTemplateAction', caller: 'createTemplateTasksAction(', testFile: 'tests/templateExecuteWiring.test.ts', testMarker: "'template-execute'", equivalence: false },
+  { action: 'template.execute (equivalence)', module: 'src/app/templateExecuteAction.ts', marker: 'export async function executeTemplateAction', caller: 'createTemplateTasksAction(', testFile: 'tests/templateExecuteAction.test.ts', testMarker: 'executeTemplateAction', equivalence: true, equivalenceFile: 'tests/templateEquivalence.test.ts' },
+];
+
 describe('Stage 17 task action coverage', () => {
   it('names a module, a caller and a test for every task action the UI reaches', () => {
     for (const row of TASK_ROWS) {
       const text = source(row.module);
       expect(text, `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
       const callerText = row.callerFile === undefined ? MAIN : source(row.callerFile);
-      expect(callerText, `\: \ must reach it`).toContain(row.caller!);
+      expect(callerText, `${row.action}: ${row.module} must be reached by the shell`).toContain(row.caller!);
       const test = source(row.testFile);
       expect(test, `${row.action}: ${row.testFile} must exercise it`).toContain(row.testMarker);
       // The equivalence column is checked rather than trusted: a row that claims a UI/agent
@@ -230,6 +247,29 @@ describe('Stage 17 task action coverage', () => {
     }
     expect(TASK_MUTATIONS).toContain('expectedRevision: input.expectedRevision');
     expect(TASK_MUTATIONS).toContain('actualRevision');
+  });
+});
+
+describe('Stage 17 template action coverage', () => {
+  it('names the module, the shell caller and the tests for the template entry, in both halves', () => {
+    for (const row of TEMPLATE_ROWS) {
+      expect(source(row.module), `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
+      expect(MAIN, `${row.action}: the shell must reach it`).toContain(row.caller!);
+      expect(source(row.testFile), `${row.action}: ${row.testFile} must exercise it`).toContain(row.testMarker);
+      const compared = PARITY.includes(row.testMarker)
+        || (row.equivalenceFile !== undefined && source(row.equivalenceFile).includes(row.testMarker));
+      expect(compared, `${row.action}: equivalence claimed but not asserted`).toBe(row.equivalence);
+    }
+  });
+
+  it('keeps the entry out of the action union it was ruled not to join', () => {
+    // The row above asserts the wiring; this asserts the decision behind its shape, so a later refactor
+    // cannot quietly promote a sibling entry into the `ProximaAction` vocabulary and inherit a set of
+    // guarantees (a verb a surface dispatches, a request the agent protocol validates) that were never
+    // designed for a run of variable length.
+    expect(MAIN).toContain("action === 'template-execute'");
+    expect(MAIN).not.toContain("kind: 'template.execute'");
+    expect(source('src/app/templateSubmission.ts')).toContain("type: 'template.execute'");
   });
 });
 
