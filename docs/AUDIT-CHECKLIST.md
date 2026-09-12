@@ -44,7 +44,7 @@ back.”
 | Last audited SHA | `e08616d` - source/test typecheck 0, build 0, `git diff --check` 0 on this commit, `npm test` 0 under default parallelism: **251 test files / 1655 passed / 1 skipped**, run 2026-09-12 in this working tree, which is two suites more than the previous record (`tests/semanticKeyAttributeContract.test.ts`, `tests/semanticKeyValue.test.ts`, `tests/shippedBundleSemanticKeys.test.ts` replace the one that existed before). The two defects this slice fixes each carry a mutation-shaped pin rather than a reading: the attribute contract scans `src/` and `tests/` for every spelling of the retired name - including the DOM's camelCase projection, which is how nine tests caught what a literal rename missed - and probes both spellings by injecting them back into real files and requiring the scan to name the offender; the value encoder is pinned by alphabet, injectivity, the adversarial pairs (`a b` against `a-b`, and `a~20b` against `a b`), the 128-character bound, and the boundary pass itself. The **acceptance** is host-integrated rather than asserted: a disposable Papers profile, a freshly created window, and one project surface, with every claim above re-read from the control plane and every artifact re-hashed after `visual.artifact.read`. Two things are deliberately not claimed: `visual.assert`'s three `not-visible` answers are recorded as answers, and `BUILD_IDENTITY.createdAt`-style provenance for the running page is the recorded generated identity, not a claim about bytes served before this commit. |
 | Parity agenda | `D:\Letters\MatTroiSeConMoc\LongHorizon\proxima\proxima-full-parity-checklist.md` (branch `codex/reviewer-send-verification`) carries the full-parity agenda this work is driven by: **835 ticked / 5 open** counting every box the document carries, or **743 / 5** counting only top-level boxes, at the agenda commit `166012e`. Nine of the ten "for every row above" umbrellas are now closed, the last two at `a00a749` - `request ID exists` and `event/audit record exists`, each 35 satisfied / one not-applicable / no gaps of 36 cells, re-measured with the in-walker probe rather than adjusted by hand - and the one that stays open carries its own figure and reason on its box: runtime validation, 33 gaps of 36, which is the one column this agenda asks for that the architecture deliberately does not have. The project-archive box closed at `aee729d`, the workflow-stage box at `0a39c83` on D77, the import-policy box at `b5d65d0` on D65, and the four release-gate scope statements closed at `24944c7` on a mechanical audit (fourteen checks over the three trees, exit 0) rather than on a reading. The agenda's tick audit was re-run rather than carried: 840 boxes, no ticked box without a SHA, no false timestamp, 948 SHA references with the one known unresolvable. Every box still open is a top-level one, so the two counting conventions continue to differ by nothing but the boxes they are asked about; the Gantt row-placement branch remains the one tick that closed as **decided against rather than done**. |
 | Papers changed | No Papers change is recorded by this Proxima commit. Gate 2.8 records three host-side findings as requests - a refused semantic-keys payload is refused in silence, three `tools/*.mjs` CLIs are no-ops on Windows, and an unpresented surface answers a capture with an artifact-bound error - and none of the three was implemented: Papers is read-only for this work until the creator authorizes a host change. |
-| Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` - retained as the repository's recorded machine-local baseline, not a fresh current-Papers acceptance claim. |
+| Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` - retained as the repository's recorded machine-local baseline, not a fresh current-Papers acceptance claim. **A fresh current acceptance now exists next to it** (`00451d9`): Papers 1.3.11 at `d2a3c74`, `packaged false`, run against the Proxima build at `e08616d` in a disposable profile, with the artifact, stage list and reproduction command recorded in sections 2.7 and 2.9. The distinction the original cell drew is kept rather than collapsed: `0a0d89f` stays the baseline this repository was written against, and `d2a3c74` is what has actually been run against it most recently. |
 | Real-vault write authority | **Disabled.** Gate 13 contains the conditional mutation and recovery substrate for memory and disposable roots. Gate 13.3 closes native FSA writing as `BLOCKED / fsa-no-compare-and-swap`; Gate 14 closes owner authority as exact-root-scoped read-only with writes disabled. |
 | Canonical cutover | **Never automatic (D67).** The shipped default is the legacy Markdown reader; the record store becomes canonical only through an explicit, one-time, user-invoked activation, and once activated the legacy directories are legacy source only - present, never read as canonical while the store is the source, never deleted. HARD GATE C is closed on that trigger; what is not decided is whether the ordinary UI should *offer* activation. |
 
@@ -102,13 +102,7 @@ until it is decided.
       test list on the parity checklist's Stage 8 box.
       visible in it:** `isBlocking` is severity-only (`src/domain/problems.ts:65-66` - `severity ===
       'error'`), and the refresh failure predicate is `isBlocking(problem) ||
-- [ ] **Exact currently validated Papers host SHA.** No fresh running-Papers acceptance
-      artifact exists for the current tree, and source cannot make a newer Papers
-      baseline true.
-      *Question:* which exact Papers SHA, if any, has been run against the `071f8c3`
-      Proxima build with host-integrated acceptance evidence?
-      *Lands in:* the Current status table and a new evidence entry here. Historical gate
-      evidence is not edited to accommodate it.
+- [x] **Exact currently validated Papers host SHA.** - `00451d9` @ `2026-09-12T20:20:36+07:00`: **Papers 1.3.11 at       `d2a3c74`** (branch `gate10-relay`, `packaged false`) served host-integrated acceptance evidence for       the Proxima build at `e08616d` in a disposable profile, recorded in section 2.7 and reproduced by       `npm run agent:visual` (`tools/papers-visual-accept.mjs`, section 2.9). The question this box asked       was about `071f8c3`, and the answer is that `071f8c3` cannot have one: it predates the semantic-key       fixes, so a host acceptance against it fails by construction - the surface published no key the host       can read. The audit therefore names the SHA where the claim is true, and the Current status table's       `Papers baseline (exact)` row now records this run alongside the retained machine-local baseline.       *Reopens if* a later Papers SHA is run and this row is not updated with it.
 - [ ] **Fresh native creator-vault acceptance for `071f8c3`.** Bridge and disposable
       coexistence runs are not substitutes.
       *Question:* has the exact `071f8c3` build been accepted in the real Papers-hosted
@@ -507,6 +501,46 @@ host source and the third is a diagnosability gap that cost this session hours.
   the same command on a fresh window's single surface returned a verified 143 456-byte PNG.
   **Asked of Papers (not done, not authorized here):** a typed refusal that names the presentation
   state instead of an artifact-bound error.
+
+### 2.9 The visual acceptance harness
+
+`tools/papers-visual-accept.mjs` (added at `
+00451d9
+`, exposed as `npm run agent:visual`) is the
+reproducible form of the run sections 2.7 and 2.8 describe, so the C1 acceptance is a command
+rather than a session. It speaks the control protocol itself - newline-delimited JSON over the
+local pipe, one frame at a time, because a socket delivery is not a message - so it needs no host
+checkout, and it treats the descriptor the way the bridge treats its token: read, never printed,
+never written into evidence.
+
+```text
+npm run agent:visual -- --descriptor <descriptor> --window <n> --project <backpackId>
+```
+
+Eight stages, each of which can fail the run on its own: `target` (exactly one visible surface
+for the project; two matches is `surface-ambiguous` rather than a guess), `stability`
+(`visual.wait` at `layout-stable`), `keys` (every key checked against Papers' own alphabet,
+length bound and duplicate rule), `assertions` (`visible` per published key plus an `inside`
+relation, with `--expect-pass <key>` to demand a specific pass and `missing-element` treated as a
+defect), `surfaceCapture` and `elementCaptures` (every artifact re-read in bounded chunks and
+re-hashed against the host metadata), `diagnostics` (a surface with a `renderer-gone` or `console`
+record cannot pass), and `identity` (host version, commit, packaged flag, app instance). Exit code
+is the verdict: 0 PASS, 1 BLOCKED, 2 usage.
+
+Eight probes were run and every one bites: a passing baseline; a nonexistent surface and a window
+with no such surface (`surface-not-found`); a cold window with no keys yet (`layout-not-stable`,
+`no-semantic-keys`, `geometry-unavailable`); `--min-keys 200` (`no-semantic-keys`); `--expect-pass`
+on a key the host answers `not-visible` (`expected-assertion-failed`); a missing descriptor
+(`control-plane-unreachable`); and no `--window` while two windows hold a visible surface
+(`surface-ambiguous`).
+
+**One behaviour to know before using it.** The first project open in a **fresh profile** answers
+zero keys while the record store is being created, and the second open in the same profile answers
+all of them - reproduced twice on 2026-09-12, with the cold surface also answering
+`UnknownVizError` to `capture.surface` and never reaching `layout-stable`. The harness fails closed
+on that state instead of sleeping and retrying, because a retry would hide exactly the state a
+reader needs to see; an acceptance run opens the project once to warm the profile and then opens it
+again in a **new window** for the surface it accepts.
 
 ---
 
@@ -2171,15 +2205,9 @@ Each scenario:
 - [x] reads event sequence (the event ring's `events.read(afterSequence)` contract, Gate 3.4).
 - [x] asserts domain state (the suites assert stored records read back out of the store rather than
       the values an operation returned - the rule the matrix's observable column rests on).
-- [ ] asks Papers C1 for visual stability
-      *(needs the Papers developer-control plane against a live host; `tests/papersControlOptional.test.ts`
-      proves the bridge is optional rather than required, which is a different claim.)*
-- [ ] runs visual assertions
-      *(same dependency: the C1 visual assertions exist in the host's control vocabulary, and Proxima's
-      side of it is the semantic-key contract in §2.5, which is ticked.)*
-- [ ] captures relevant elements/surface
-      *(same dependency - capture is a host capability, and nothing in this tree substitutes a
-      screenshot for it.)*
+- [x] asks Papers C1 for visual stability. - `00451d9` @ `2026-09-12T20:20:36+07:00`: `npm run agent:visual` waits on       `visual.wait` with `until: layout-stable` against a live surface, and the stage fails the run when the       host answers anything else. It has been run both ways: `layout-stable` on a warm surface, and       `layout-not-stable` recorded as a blocker on a surface whose record store was still being created.
+- [x] runs visual assertions. - `00451d9` @ `2026-09-12T20:20:36+07:00`: the harness derives `visible` assertions from the       keys the surface actually published plus an `inside` relation against `app-root`, runs them through       `visual.assert`, and reports each answer rather than a folded verdict. Measured at `e08616d`: five       assertions evaluated with geometry available - `cockpit-navigation` and `surface-switcher` visible,       `inside` passing, `app-root` and `project-navigation` answering `not-visible`. A `not-visible` answer       is data; `--expect-pass <key>` is how a caller demands a specific pass, and a `missing-element`       answer fails the run because that is a defect rather than an observation.
+- [x] captures relevant elements/surface. - `00451d9` @ `2026-09-12T20:20:36+07:00`: the harness captures the surface and up       to eight named elements, then **verifies each one** by reading it back through `visual.artifact.read`       in bounded chunks and re-hashing the bytes against the host's metadata; a mismatch fails the stage.       Measured at `e08616d`: a 143 456-byte surface capture and four element captures       (`app-root` 143 456, `project-navigation` 12 025, `cockpit-navigation` 10 942, `surface-switcher`       2 856), all verified. A capture the host refuses is recorded as `capture-unavailable` and fails the       run rather than being retried into a pass.
 - [x] records diagnostics (the bounded diagnostic vocabulary, Gate 3.5).
 - [x] emits machine-readable evidence (`src/app/evidence.ts` with the scenario schema Gate 3.6
       describes; `tests/agentAccept.test.ts` and `tests/cleanProfileAcceptance.test.ts` produce it
@@ -3625,9 +3653,7 @@ Current truth stays in-repo.
 - [x] rejected architectures — `README.md`, `docs/DECISIONS.md`
 - [x] Excalidraw compatibility level _(Gate 7 — direct-source display contract PASS)_
 - [x] current read/write authority — `AGENTS.md`, status table above
-- [ ] exact currently validated Papers SHA — OPEN: the repository records a machine-
-      local Papers baseline, but this run has no fresh exact running-Papers acceptance
-      artifact to promote to PASS _(Gate 2)_.
+- [x] exact currently validated Papers SHA — `00451d9` @ `2026-09-12T20:20:36+07:00`: promoted on the Gate 2 artifact this       box named as its condition - **Papers 1.3.11 at `d2a3c74`**, `packaged false`, app instance       `0d98c8ce-b68f-461c-96da-c51fb687e155`, serving the Proxima build at `e08616d`. The claim is scoped to       what was run: a disposable profile on this machine, host-integrated and reproducible with       `npm run agent:visual`, not a statement about any other Papers build.
 - [x] exact test commands — `README.md`
 - [x] known deferred items — this document
 
