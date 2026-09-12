@@ -1544,3 +1544,27 @@ through a click and through `submitTemplateExecution`, in two isolated stores, a
 reports and the normalised resulting records, with a control that would notice a difference. As with D70, the
 checklist box stays unticked until the AUTHOR checks the evidence.
 
+## D72 — `template.execute` is a sibling entry, not a `ProximaAction`
+
+**Decided** by the browser AUTHOR on 2026-09-12, when Stage 16's agent path was registered. The protocol's
+`dispatch()` is deliberately synchronous and generates its own request id, and the action union's guarantees
+are written for single-record, single-effect verbs. A template run is neither: it is asynchronous, it can
+create several records, and it can stop part-way with some of them already durable - so forcing it through
+`dispatch()` would either change the execution model of every unrelated action or quietly make the union's
+promises untrue for one member.
+
+**What it is instead:** a sibling entry with its own wire shape. `src/app/templateSubmission.ts` validates the
+outer shape (`{ type: 'template.execute', template, projectId? }`), refuses a malformed submission with a
+sentence, and hands the work to `executeTemplateAction` - the same action the panel's Execute reaches through
+`src/browser/templateExecuteBinding.ts` (D70). No caller-supplied request id and no hand-built plan: the entry
+accepts text, and the text is parsed inside the action.
+
+**Consequence:** the dispatcher's union does not learn a template verb, and `tests/actionCoverageAudit.test.ts`
+asserts that it stays out - a row that named a sibling verb in the union would be claiming guarantees that
+were never designed for a run of variable length. The cost is that a template run is not correlatable through
+the protocol's own request id, which is one of the two gaps the Stage 17 matrix records for this row.
+
+**Reverses if:** the protocol grows an asynchronous, correlation-carrying dispatch whose contract covers
+multi-record runs. That is exactly the subject of the cross-cutting request-id slice the matrix's gaps point
+at, so this decision is expected to be revisited there rather than left standing on a technicality.
+
