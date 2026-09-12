@@ -43,7 +43,14 @@ export type ProximaAction =
   | { type: 'project.create'; name: string; description: string }
   | { type: 'project.archive'; projectId: string }
   | { type: 'project.restore'; projectId: string }
-  | { type: 'project.delete'; projectId: string }
+  | {
+      type: 'project.delete';
+      projectId: string;
+      members: {
+        tasks: string[];
+        events: string[];
+      };
+    }
   | { type: 'surface.select'; surface: Surface }
   | { type: 'source.refresh' }
   | { type: 'canvas.node.select'; nodeId: string | null }
