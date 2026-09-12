@@ -983,8 +983,30 @@ const MOVE_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
   ),
 };
 
-/** The envelope cells for the bulk rows, where one run covers many members and still leaves one event. */
-const BULK_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+/**
+ * The envelope cells for the three Gantt rows.
+ *
+ * They are one write - `changeTaskSpan` - with three operations over it, so they close together, exactly as the
+ * move and reorder pair did when the drop wrapper handed its id down. What is worth reading here is *why* the
+ * end cell is behavioural rather than structural: the row that has no cockpit in its dependency set is the row
+ * an agent can reach, and `tests/agentWritePath.test.ts` is where that is asserted by a real submission.
+ */
+const TIMELINE_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/timelineChangeAction.ts',
+    'readonly requestId?: string;',
+    "the operation is handed the record facts rather than reading a projection, so its boundary can mint the id before the range is planned and return it on every result - accepted, refused before storage, or refused by the record layer - and the two entries above it hand one down rather than minting a second: the cockpit wrapper hands the run's own id in, and so does the agent wire, which is what keeps one submission one id and one event",
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/agentWritePath.test.ts',
+    'semantic-request-0002',
+    'behavioural rather than structural: the operation appends exactly one terminal event per run through the injected sink, naming `task.timeline.change` with the record it moved, after convergence and never before it - and the wire case asserts one submission leaves one event carrying the id the result carried, so the two entries cannot journal the same drag twice',
+  ),
+};
+
+/** The envelope cells for the bulk rows, where one run covers many members and still leaves one event. */const BULK_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
   [COLUMN_REQUEST_ID]: carried(
     COLUMN_REQUEST_ID,
     'src/app/bulkTaskActions.ts',
@@ -1135,6 +1157,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { file: 'src/app/timelineChangeAction.ts', marker: "'a task must end after it starts'", reason: 'the Gantt plans its span before the operation is asked, so an inverted range is refused as invalid-range with a sentence rather than reaching the store' },
     observable: { file: 'tests/ganttWriteWiring.test.ts', marker: 'const after = spanOf(app, app.dragged);', note: 'the click test re-syncs from the store after the release and reads the moved span back out of it' },
+    overrides: TIMELINE_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task Gantt start resize',
@@ -1143,6 +1166,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { file: 'src/app/timelineChangeAction.ts', marker: "'the start is not a real instant'", reason: 'a proposed start that is not a real instant is refused as invalid-range before the write rather than written as a span nobody can read' },
     observable: { file: 'tests/timelineChangeAction.test.ts', marker: 'const observation = await store.read(task.recordId);', note: 'the case reads the record back out of the store through its own record helper before asserting which end moved' },
+    overrides: TIMELINE_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task Gantt end resize',
@@ -1151,6 +1175,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { file: 'src/app/timelineChangeAction.ts', marker: "'the end is not a real instant'", reason: 'a proposed end that is not a real instant is refused as invalid-range before the write, which is what keeps a refused resize from moving the bar' },
     observable: { file: 'tests/timelineChangeAction.test.ts', marker: 'const observation = await store.read(task.recordId);', note: 'the same record helper reads the stored span back after the end-edge resize' },
+    overrides: TIMELINE_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task property set/clear',

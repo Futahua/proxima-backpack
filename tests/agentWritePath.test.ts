@@ -58,6 +58,7 @@ import {
   type PropertySchemaMutationDependencies,
 } from '../src/app/propertySchemaMutations.js';
 import { createTask, updateTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
+import { TIMELINE_CHANGE_ACTION_TYPE } from '../src/app/timelineChangeAction.js';
 import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/app/vaultRecovery.js';
 import { EMPTY_PROJECT_BACKLOG_VIEW, renderProjectBacklog } from '../src/browser/projectBacklog.js';
 import { renderProjectTaskBoard } from '../src/browser/projectTaskBoard.js';
@@ -139,6 +140,10 @@ interface World {
   fileNames(): Promise<readonly string[]>;
   revisionMap(): Promise<Record<string, string>>;
   seed(name: string, order: number): Promise<Task>;
+  /** Give a seeded task a span, through the record layer, so a resize has an end to keep. */
+  setDates(taskId: string, startDate: string, deadline: string): Promise<void>;
+  /** Re-read the projection the cockpit draws from, without rendering: the writes above bypassed the refresh. */
+  syncCockpit(): Promise<ProximaState>;
   /** The UI's own gesture entry, over the cockpit's projection - what a drop by hand runs. */
   drop(input: { taskId: string; to: 'backlog' | 'running' | 'finished'; index: number; rendered?: ProximaState }): Promise<Record<string, unknown>>;
   inspection(): Promise<InspectionProjection>;
@@ -239,6 +244,21 @@ async function world(seedOffset: number): Promise<World> {
       const found = cockpit.state.tasks.find((task) => task.id === created.recordId);
       if (found === undefined) throw new Error('the seeded task is not in the projection');
       return found;
+    },
+    setDates: async (taskId, startDate, deadline) => {
+      const current = (await read()).tasks.find((candidate) => candidate.id === taskId);
+      if (current === undefined) throw new Error('the task to date is not in the projection');
+      const written = await updateTask(deps, {
+        taskId: oid(taskId),
+        expectedRevision: current.source.revision,
+        mutations: [{ kind: 'dates', startDate, deadline }],
+      });
+      if (!written.ok) throw new Error(`dating the task was refused: ${written.reason}`);
+      cockpit.state = await read();
+    },
+    syncCockpit: async () => {
+      cockpit.state = await read();
+      return cockpit.state;
     },
     drop: async (input) => await performElasticDrop(
       {
@@ -497,7 +517,9 @@ describe('agent write path', () => {
       // `task.create` is not in the protocol's registry at all: the create path is an operation with a
       // draft, never a dispatcher verb, so the wire can only answer that no type by that name is registered.
       { input: { ...wellFormed, type: 'task.create' }, reason: 'malformed-submission', actionType: 'task.create' },
-      { input: { ...wellFormed, type: 'task.timeline.change' }, reason: 'unsupported-verb', actionType: 'task.timeline.change' },
+      // The three verb names this wire runs are the ones it runs: the drop pair and the Gantt change each
+      // have their own case below, and a submission that merely *says* it is one of them is still parsed.
+      { input: { ...wellFormed, type: 'task.execution.park' }, reason: 'malformed-submission', actionType: 'task.execution.park' },
       { input: { ...wellFormed, type: 'project.create' }, reason: 'unsupported-verb', actionType: 'project.create' },
       { input: { ...wellFormed, type: 'project.delete' }, reason: 'unsupported-verb', actionType: 'project.delete' },
       { input: { ...wellFormed, type: 'event.schedule.create' }, reason: 'unsupported-verb', actionType: 'event.schedule.create' },
@@ -521,10 +543,11 @@ describe('agent write path', () => {
     expect(w.audit.events.map((event) => event.requestId)).toEqual(results.map((result) => result.requestId));
     expect(w.audit.events.every((event) => event.outcome === 'rejected')).toBe(true);
     expect(w.audit.events.filter((event) => event.errorCode === 'action-not-available').map((event) => event.actionType))
-      .toEqual(['task.timeline.change', 'project.create', 'project.delete', 'event.schedule.create', 'canvas.node.remove', 'surface.select']);
+      .toEqual(['project.create', 'project.delete', 'event.schedule.create', 'canvas.node.remove', 'surface.select']);
+    // A refusal names the ids the submission named, and the entries whose shape is not one name none.
     // A refusal names the ids the submission named, and the entries whose shape is not one name none.
     expect(w.audit.events[5]!.entityIds).toEqual([]);
-    expect(w.audit.events[13]!.entityIds).toEqual([task.id]);
+    expect(w.audit.events[12]!.entityIds).toEqual([task.id]);
 
     // Nothing was written: the same files, at the same revisions.
     expect(await w.fileNames()).toEqual(beforeFiles);
@@ -624,6 +647,198 @@ describe('agent write path', () => {
       expectedRevision: task.source.revision,
     });
     expect(moved).toMatchObject({ ok: true, actionType: 'task.execution.move' });
+  });
+
+  it('runs the Gantt family through the same wire, writing one span and reporting the row as local', async () => {
+    const w = await world(1400);
+    const task = await w.seed('Drawn by an agent', 0);
+    // The record has a span to keep an end of, because a resize keeps one: this is the fact the operation used
+    // to read from the projection and now takes as a parameter.
+    const seeded = await submitAgentWrite(w.agent, {
+      type: 'task.execution.reorder',
+      taskId: task.id,
+      from: 'backlog',
+      to: 'backlog',
+      targetIndex: 0,
+      expectedRevision: task.source.revision,
+    });
+    if (!seeded.ok) throw new Error('seeding the span was refused');
+    const spanStart = '2026-09-01T09:00:00.000Z';
+    const spanEnd = '2026-09-05T17:00:00.000Z';
+    await w.setDates(task.id, spanStart, spanEnd);
+    const before = await w.taskNamed('Drawn by an agent');
+
+    const moved = await submitAgentWrite(w.agent, {
+      type: TIMELINE_CHANGE_ACTION_TYPE,
+      taskId: task.id,
+      operation: 'move',
+      proposedStartDate: '2026-09-08T09:00:00.000Z',
+      proposedDeadline: '2026-09-11T17:00:00.000Z',
+      targetRowIndex: 4,
+      expectedRevision: before.source.revision,
+    });
+
+    expect(moved).toMatchObject({
+      ok: true,
+      outcome: 'changed',
+      actionType: 'task.timeline.change',
+      operation: 'move',
+      // The row is the surface's: an agent that named one is told it was not written, which is A3's rule
+      // reaching the wire rather than a second statement of it.
+      rowApplied: false,
+      startDate: '2026-09-08T09:00:00.000Z',
+      deadline: '2026-09-11T17:00:00.000Z',
+    });
+    if (!moved.ok) throw new Error('the agent timeline change was refused');
+    expect(moved.requestId).toBe('semantic-request-0002');
+    expect(moved.revision).toBe(await w.revisionOf(task.id));
+    expect(moved.revision).not.toBe(before.source.revision);
+
+    // One terminal event, naming the verb and the record, carrying the id the result carried.
+    expect(w.audit.events.at(-1)).toEqual({
+      requestId: moved.requestId,
+      actionType: TIMELINE_CHANGE_ACTION_TYPE,
+      outcome: 'accepted',
+      entityIds: [task.id],
+    });
+
+    const after = await w.taskNamed('Drawn by an agent');
+    expect(after.startDate).toBe('2026-09-08T09:00:00.000Z');
+    expect(after.deadline).toBe('2026-09-11T17:00:00.000Z');
+    // Nothing else moved: the row travelled as a report, and the execution order is exactly what the reorder
+    // above set - a scoped row movement that reordered the board would show up right here.
+    expect(after.orderIndex).toBe(before.orderIndex);
+    expect(after.status).toBe(before.status);
+  });
+
+  it('refuses a timeline submission the wire cannot read, and one the agent lost a race on', async () => {
+    const w = await world(1500);
+    const task = await w.seed('Raced span', 0);
+    await w.setDates(task.id, '2026-09-01T09:00:00.000Z', '2026-09-05T17:00:00.000Z');
+    const read = await w.taskNamed('Raced span');
+    const beforeFiles = await w.fileNames();
+    const beforeRevisions = await w.revisionMap();
+
+    const wellFormed = {
+      type: TIMELINE_CHANGE_ACTION_TYPE,
+      taskId: task.id,
+      operation: 'move',
+      proposedStartDate: '2026-09-08T09:00:00.000Z',
+      proposedDeadline: '2026-09-11T17:00:00.000Z',
+      targetRowIndex: 0,
+      expectedRevision: read.source.revision,
+    };
+
+    const battery: readonly { readonly input: unknown; readonly detail: string }[] = [
+      { input: { ...wellFormed, operation: 'stretch' }, detail: 'operation must be move, resize-start or resize-end' },
+      { input: { ...wellFormed, operation: undefined }, detail: 'operation must be move, resize-start or resize-end' },
+      { input: { ...wellFormed, proposedStartDate: 5 }, detail: 'proposedStartDate must be a date or null' },
+      { input: { ...wellFormed, proposedDeadline: 'sometime' }, detail: 'proposedDeadline must be a date or null' },
+      { input: { ...wellFormed, proposedStartDate: null, proposedDeadline: null }, detail: 'a timeline change names at least one end' },
+      { input: { ...wellFormed, targetRowIndex: '4' }, detail: 'targetRowIndex must be a number' },
+      { input: { ...wellFormed, taskId: undefined }, detail: 'the submission needs a taskId' },
+      { input: { ...wellFormed, expectedRevision: '' }, detail: 'the submission needs the revision it read the task at, so a lost race is refused rather than merged' },
+    ];
+
+    const results = [];
+    for (const entry of battery) {
+      const result = await submitAgentWrite(w.agent, entry.input);
+      expect(result.ok, `${JSON.stringify(entry.input)} must be refused`).toBe(false);
+      if (result.ok) continue;
+      expect(result).toMatchObject({ reason: 'malformed-submission', actionType: TIMELINE_CHANGE_ACTION_TYPE, detail: entry.detail, refreshed: false });
+      expect(result.requestId).toMatch(/^semantic-request/);
+      results.push(result);
+    }
+
+    // One event per refusal, each carrying the id its own result named: the shape is refused here, before any
+    // write is attempted, which is why the store below is untouched.
+    expect(w.audit.events).toHaveLength(battery.length);
+    expect(w.audit.events.map((event) => event.requestId)).toEqual(results.map((result) => result.requestId));
+    expect(w.audit.events.every((event) => event.outcome === 'rejected' && event.errorCode === 'validation-refused')).toBe(true);
+    // The seventh entry is the one whose shape is not trusted - its `taskId` is not a string at all - so it
+    // names no ids, which is the same rule the drop battery asserts. Every other refusal names the task.
+    expect(w.audit.events[6]!.entityIds).toEqual([]);
+    expect(w.audit.events[5]!.entityIds).toEqual([task.id]);
+
+    // A negative or non-integer row is well-typed, so it is the operation's own refusal rather than a second
+    // rule at the wire - the same division the drop arm has for its target index.
+    const badRow = await submitAgentWrite(w.agent, { ...wellFormed, targetRowIndex: -1 });
+    expect(badRow).toMatchObject({ ok: false, outcome: 'refused', reason: 'validation-refused', operation: 'move' });
+    // And an inverted range is the operation's too, in the words the cockpit shows, rather than the wire's.
+    const inverted = await submitAgentWrite(w.agent, {
+      ...wellFormed,
+      proposedStartDate: '2026-09-21T09:00:00.000Z',
+      proposedDeadline: '2026-09-20T09:00:00.000Z',
+    });
+    expect(inverted).toMatchObject({ ok: false, reason: 'invalid-range', detail: 'a task must end after it starts' });
+
+    expect(await w.fileNames()).toEqual(beforeFiles);
+    expect(await w.revisionMap()).toEqual(beforeRevisions);
+
+    // A lost race: the agent holds the revision it read, the store has moved on, and the refusal names the
+    // revision that beat it - so the agent can refetch rather than guess.
+    const winner = await submitAgentWrite(w.agent, {
+      ...wellFormed,
+      proposedStartDate: '2026-09-15T09:00:00.000Z',
+      proposedDeadline: '2026-09-18T17:00:00.000Z',
+      expectedRevision: read.source.revision,
+    });
+    if (!winner.ok) throw new Error('the winning timeline change was refused');
+    const staleAgent = await submitAgentWrite(w.agent, {
+      ...wellFormed,
+      expectedRevision: read.source.revision,
+    });
+    expect(staleAgent).toMatchObject({
+      ok: false,
+      outcome: 'refused',
+      reason: 'stale-revision',
+      actualRevision: winner.revision,
+      refreshed: true,
+    });
+    expect(w.audit.events.at(-1)).toMatchObject({ outcome: 'rejected', errorCode: 'stale-revision' });
+  });
+
+  it('writes the span the agent named, not the end it read, which is what keeps a resize an agent gesture', async () => {
+    const w = await world(1600);
+    const task = await w.seed('Narrowed by an agent', 0);
+    await w.setDates(task.id, '2026-09-01T09:00:00.000Z', '2026-09-05T17:00:00.000Z');
+    const read = await w.taskNamed('Narrowed by an agent');
+
+    // A start-edge resize: the agent moves the start *and* tells the wire where the end is, because the wire
+    // has no projection to take it from. Both ends travel, so this submission is complete on its own.
+    const resized = await submitAgentWrite(w.agent, {
+      type: TIMELINE_CHANGE_ACTION_TYPE,
+      taskId: task.id,
+      operation: 'resize-start',
+      proposedStartDate: '2026-08-30T09:00:00.000Z',
+      proposedDeadline: '2026-09-05T17:00:00.000Z',
+      targetRowIndex: 1,
+      expectedRevision: read.source.revision,
+    });
+    expect(resized).toMatchObject({ ok: true, operation: 'resize-start', startDate: '2026-08-30T09:00:00.000Z', deadline: '2026-09-05T17:00:00.000Z' });
+    await w.syncCockpit();
+    const narrowed = await w.taskNamed('Narrowed by an agent');
+    expect(narrowed.startDate).toBe('2026-08-30T09:00:00.000Z');
+    expect(narrowed.deadline).toBe('2026-09-05T17:00:00.000Z');
+
+    // And the case that tells the two possible readings apart, which the spans above cannot: an agent that
+    // supplies an end *different* from the record's must have its own end written. An operation that took the
+    // end from the record would answer ok here and leave the deadline at 09-05, so this assertion is the one
+    // that proves the span travels with the submission rather than being re-derived from a projection.
+    const widened = await submitAgentWrite(w.agent, {
+      type: TIMELINE_CHANGE_ACTION_TYPE,
+      taskId: task.id,
+      operation: 'resize-start',
+      proposedStartDate: '2026-08-28T09:00:00.000Z',
+      proposedDeadline: '2026-09-20T17:00:00.000Z',
+      targetRowIndex: 1,
+      expectedRevision: narrowed.source.revision,
+    });
+    expect(widened).toMatchObject({ ok: true, operation: 'resize-start', startDate: '2026-08-28T09:00:00.000Z', deadline: '2026-09-20T17:00:00.000Z' });
+    await w.syncCockpit();
+    const stored = await w.taskNamed('Narrowed by an agent');
+    expect(stored.startDate).toBe('2026-08-28T09:00:00.000Z');
+    expect(stored.deadline).toBe('2026-09-20T17:00:00.000Z');
   });
 
   it('leaves the dispatcher containment rule exactly where it was', async () => {

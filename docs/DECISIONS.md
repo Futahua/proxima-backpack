@@ -1688,3 +1688,40 @@ question rather than the action question.
 schema editor arrives in the shell — either would move this entry's role rather than its rules, and the
 editor would give the family the UI caller its rows still do not have.
 
+## D75 — When a read model blocks a write, the read moves to the entry rather than into the wire
+
+**Decided** on 2026-09-12, working the parity agenda's agent-reach group. Stage 14's Gantt write
+(`src/app/timelineChangeAction.ts`) took its two load-bearing facts — the revision the bar was drawn at, and
+the end a resize keeps — out of `deps.state`, the projection the cockpit renders. That made the write
+unreachable for an agent for a reason that had nothing to do with permissions: the dispatcher refuses the verb
+by design (D73's containment rule), and the only entry that could run it needed a cockpit to exist first. The
+family was therefore in the same position the drop family was in before D73, and the tempting answer is the
+wrong one: relax what the wire takes, or let it carry a projection of its own.
+
+**What it is:** one operation, `changeTaskSpan`, whose dependency set is the write callable, the refresh, the id
+source and the event sink — no `state`, no `setRefusal`, no `render`. The record facts it used to read are
+**parameters**: `expectedRevision`, and the span as the caller read it. `changeTaskDatesAction` stays and is now
+the cockpit's entry over that operation: it finds the task, hands the facts it just read, clears and draws the
+refusal, and re-renders. Two entries, one write.
+
+**Why the read moves rather than the wire widening:** a wire is a submission boundary, not a state holder. A
+read model on it would have to be either a projection the caller controls — in which case `expectedRevision` is
+the only honest part of it — or one the wire resolves, which is the cockpit this whole pattern exists to keep
+out of the agent path. The same rule already decided the drop family's shape; this is that rule applied to a
+verb that looked like an exception to it.
+
+**The malformation it removes, which is worth naming:** a resize used to name one end and take the other from
+the projection. A caller with no projection cannot express that, and a caller that supplies both ends cannot
+express a resize whose kept end disagrees with the record — there is no second source for it. So the wire's
+`task.timeline.change` submission carries the whole span for every gesture, `operation` declares which gesture
+it was, and `expectedRevision` is what refuses the pair if the record moved underneath.
+
+**Consequence:** `AGENT_WRITE_VERBS` carries three families rather than two. The matrix's three Gantt rows
+re-anchor their request-id and event cells on the operation and its wire case, and the shared-implementation
+box's list of *unshared* families loses `task.timeline.change` and keeps the ones whose operations genuinely
+need a rendered cockpit (`task.create`, the `project.*`, `event.*`, `workflow.stage.*` and bulk verbs).
+
+**Reverses if:** an agent-facing read model is ever built that can hand an operation its record facts with the
+same authority a cockpit read has — then the operation could take that model as a dependency instead of
+parameters. It would not change what is written or what is refused, only where the facts come from.
+

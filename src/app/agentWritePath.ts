@@ -12,10 +12,13 @@
  *
  * - **A verb enters this wire only when the operation it names runs with no cockpit in the dependency
  *   set.** `task.execution.move` and `task.execution.reorder` qualify: `moveTaskByGesture` takes the write,
- *   the refresh, the id source and the event sink, and nothing else. The verbs that need a rendered
- *   projection - `task.create` needs a draft and the state it projects from, `task.timeline.change` finds
- *   its task in the state, the `project.*` verbs likewise - are answered with `unsupported-verb` and a
- *   sentence naming where they belong, rather than being silently absent from the wire.
+ *   the refresh, the id source and the event sink, and nothing else. `task.timeline.change` joined them the
+ *   same way and for the same reason: `changeTaskSpan` was given the record facts as a parameter - the
+ *   revision, and the end a resize keeps - so the projection it used to read is now the caller's, and the
+ *   agent supplies what it read exactly as the drag does. The verbs that still need a rendered projection -
+ *   `task.create` needs a draft and the state it projects from, the `project.*` verbs likewise - are
+ *   answered with `unsupported-verb` and a sentence naming where they belong, rather than being silently
+ *   absent from the wire.
  * - **The wire carries what the agent read**: the column the card is in, and the revision. A write is
  *   refused against a revision its caller did not observe, which is the same protection the UI's gesture
  *   has, and `from`/`to` name the operation by `taskMoveActionType`'s existing rule rather than by a
@@ -41,6 +44,13 @@ import {
 import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import {
+  TIMELINE_CHANGE_ACTION_TYPE,
+  TIMELINE_CHANGE_OPERATIONS,
+  changeTaskSpan,
+  type TimelineChangeOperation,
+  type TimelineSpanWriteOutcome,
+} from './timelineChangeAction.js';
+import {
   moveTaskByGesture,
   taskMoveActionType,
   TASK_MOVE_GESTURE_SCHEMA_VERSION,
@@ -54,13 +64,16 @@ export const AGENT_WRITE_SCHEMA_VERSION = 1 as const;
 /**
  * The verbs this wire runs without a cockpit. Every other registered verb is answered, not ignored.
  *
- * Two families qualify today and they qualify by the same rule rather than by seniority: `moveTaskByGesture`
- * takes the update callable, the refresh, the id source and the sink, and `propertySchemaActions` takes the
- * five schema operations, the id source and the sink. Neither reads a projection, a draft or a modal.
+ * Three families qualify today and they qualify by the same rule rather than by seniority: `moveTaskByGesture`
+ * takes the update callable, the refresh, the id source and the sink; `propertySchemaActions` takes the five
+ * schema operations, the id source and the sink; and `changeTaskSpan` takes the same four the gesture does,
+ * having been given the record facts - the revision and the end a resize keeps - as a parameter. None of the
+ * three reads a projection, a draft or a modal.
  */
 export const AGENT_WRITE_VERBS = [
   'task.execution.move',
   'task.execution.reorder',
+  TIMELINE_CHANGE_ACTION_TYPE,
   ...Object.values(PROPERTY_SCHEMA_ACTION_TYPES),
 ] as const;
 
@@ -68,6 +81,9 @@ export type AgentWriteVerb = (typeof AGENT_WRITE_VERBS)[number];
 
 /** The five schema verbs, as a set the parse can test against. */
 const SCHEMA_VERB_TYPES: readonly string[] = Object.values(PROPERTY_SCHEMA_ACTION_TYPES);
+
+/** The three Gantt gestures, as a set the parse can test a value against. */
+const TIMELINE_OPERATIONS: readonly string[] = TIMELINE_CHANGE_OPERATIONS;
 
 /** The wire shape an agent submits for a drop. */
 export interface AgentTaskMoveSubmission {
@@ -93,6 +109,28 @@ export interface AgentWriteOperations {
     expectedRevision: string;
     mutations: readonly TaskFieldMutation[];
   }): Promise<TaskMutationResult>;
+}
+
+/**
+ * The wire shape an agent submits for a Gantt date change.
+ *
+ * It is the protocol's own `task.timeline.change` shape with one field replaced: the dispatcher finds the
+ * task in the state it was built over, and an agent has no such state, so it names **the revision it read**
+ * instead - the same trade the drop arm makes. The span travels complete for every gesture: a resize names
+ * one end and supplies the other from the record it read, because which end was *moved* is what `operation`
+ * says and there is no second source for the other end on this side of the wire.
+ */
+export interface AgentTimelineChangeSubmission {
+  readonly type: AgentWriteVerb;
+  readonly taskId: string;
+  readonly operation: TimelineChangeOperation;
+  /** Both ends as the agent read them: a move proposes both, a resize proposes the end it moved. */
+  readonly proposedStartDate: string | null;
+  readonly proposedDeadline: string | null;
+  /** Where the bar belongs. Local state: reported, never written (A3). */
+  readonly targetRowIndex: number;
+  /** The revision the agent read. Required, and the field that makes the gesture's rule reachable at all. */
+  readonly expectedRevision: string;
 }
 
 export interface AgentWriteDependencies {
@@ -142,14 +180,20 @@ export interface AgentWriteRefusal {
   readonly actualRevision?: string;
 }
 
-export type AgentWriteResult = TaskMoveGestureResult | PropertySchemaActionOutcome | AgentWriteRefusal;
+export type AgentWriteResult =
+  | TaskMoveGestureResult
+  | TimelineSpanWriteOutcome
+  | PropertySchemaActionOutcome
+  | AgentWriteRefusal;
 
 /**
  * A submission this wire recognises.
  *
- * Two shapes, because the two families own their own rules: a drop's facts are parsed here (the wire is what
- * knows `from`, `to` and the revision), while a schema submission is recognised and handed to the entry that
- * already parses it, so a name, a definition or an option change is validated in one place rather than two.
+ * Three shapes, because three families own their own rules: a drop's facts are parsed here (the wire is what
+ * knows `from`, `to` and the revision), a Gantt change's facts are parsed here too (the wire is what knows
+ * that a submission claiming to be a timeline write must at least be one), while a schema submission is
+ * recognised and handed to the entry that already parses it, so a name, a definition or an option change is
+ * validated in one place rather than two.
  */
 export type ParsedAgentWrite =
   | {
@@ -157,6 +201,12 @@ export type ParsedAgentWrite =
       readonly kind: 'move';
       readonly actionType: string;
       readonly submission: AgentTaskMoveSubmission;
+    }
+  | {
+      readonly ok: true;
+      readonly kind: 'timeline';
+      readonly actionType: string;
+      readonly submission: AgentTimelineChangeSubmission;
     }
   | {
       readonly ok: true;
@@ -251,6 +301,42 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
     entityIds: ids,
   });
 
+  // The Gantt family: the outer shape is the wire's business, and whether the two ends are a span is the
+  // operation's. So an inverted range is not refused here - `changeTaskSpan` already owns that rule, in the
+  // words the cockpit shows, and a second copy of it would be a second thing to keep true.
+  if (rawType === TIMELINE_CHANGE_ACTION_TYPE) {
+    if (typeof candidate.taskId !== 'string' || candidate.taskId === '') return fail('the submission needs a taskId');
+    if (typeof candidate.expectedRevision !== 'string' || candidate.expectedRevision === '') {
+      return fail('the submission needs the revision it read the task at, so a lost race is refused rather than merged');
+    }
+    if (typeof candidate.operation !== 'string' || !TIMELINE_OPERATIONS.includes(candidate.operation)) {
+      return fail('operation must be move, resize-start or resize-end');
+    }
+    for (const field of ['proposedStartDate', 'proposedDeadline'] as const) {
+      const value = candidate[field];
+      if (value !== null && typeof value !== 'string') return fail(`${field} must be a date or null`);
+      if (typeof value === 'string' && !Number.isFinite(Date.parse(value))) return fail(`${field} must be a date or null`);
+    }
+    // Both ends absent is not a change: it is how the protocol refuses the same submission, and an agent
+    // asking to clear both ends is asking for a task with no timeline at all, which is not this verb.
+    if (candidate.proposedStartDate === null && candidate.proposedDeadline === null) {
+      return fail('a timeline change names at least one end');
+    }
+    if (typeof candidate.targetRowIndex !== 'number') return fail('targetRowIndex must be a number');
+
+    const submission: AgentTimelineChangeSubmission = {
+      type: rawType as AgentWriteVerb,
+      taskId: candidate.taskId,
+      operation: candidate.operation as TimelineChangeOperation,
+      proposedStartDate: candidate.proposedStartDate as string | null,
+      proposedDeadline: candidate.proposedDeadline as string | null,
+      targetRowIndex: candidate.targetRowIndex,
+      expectedRevision: candidate.expectedRevision,
+    };
+
+    return { ok: true, kind: 'timeline', actionType: rawType, submission };
+  }
+
   if (typeof candidate.taskId !== 'string' || candidate.taskId === '') return fail('the submission needs a taskId');
   if (typeof candidate.expectedRevision !== 'string' || candidate.expectedRevision === '') {
     return fail('the submission needs the revision it read the task at, so a lost race is refused rather than merged');
@@ -334,7 +420,24 @@ export async function submitAgentWrite(
     );
   }
 
-  const { submission } = parsed;
+  // The Gantt arm: the same operation the drag runs, handed the id this boundary minted - so one submission
+  // is one id and one terminal event whichever entry reached it, and the row index the operation reports as
+  // local state is the one the agent named.
+  if (parsed.kind === 'timeline') {
+    return await changeTaskSpan(
+      {
+        writes: deps.writes,
+        unavailableReason: () => deps.unavailableReason() ?? 'writes-unavailable',
+        refresh: deps.refresh,
+        ids: deps.ids,
+        audit: deps.audit,
+      },
+      parsed.submission,
+      { requestId },
+    );
+  }
+
+  const submission = parsed.submission;
   const operations = await deps.writes();
   if (operations === null) {
     const reason = deps.unavailableReason() ?? 'writes-unavailable';

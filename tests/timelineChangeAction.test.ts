@@ -20,9 +20,9 @@ import { createProject } from '../src/app/projectMutations.js';
 import { startRecordMutationAuthority } from '../src/app/recordRecoveryStartup.js';
 import { recordStoreStateSource } from '../src/app/stateSource.js';
 import { createTask, updateTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
-import { changeTaskDatesAction, type TimelineChangeDependencies } from '../src/app/timelineChangeAction.js';
+import { changeTaskDatesAction, changeTaskSpan, type TimelineChangeDependencies, type TimelineSpanWriteDependencies } from '../src/app/timelineChangeAction.js';
+import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
 import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/app/vaultRecovery.js';
-import { fixedClock } from '../src/domain/clock.js';
 import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
 import type { ProximaState } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
@@ -80,9 +80,12 @@ async function world() {
 
   const refreshReasons: string[] = [];
   const refusals: Array<string | null> = [];
+  // The write path, spelled once: the cockpit's entry and the cockpit-free operation below are handed the
+  // same one, which is what makes "the same call" mean the same record write rather than the same sentence.
+  const writes = async () => ({ updateTask: async (input: Parameters<typeof updateTask>[1]) => await updateTask(deps, input) });
   const dependencies = (): TimelineChangeDependencies => ({
     state,
-    writes: async () => ({ updateTask: async (input) => await updateTask(deps, input) }),
+    writes,
     unavailableReason: () => null,
     refresh: async (reason) => { refreshReasons.push(reason); return null; },
     setRefusal: (reason) => { refusals.push(reason); },
@@ -93,6 +96,7 @@ async function world() {
     taskId: task.recordId,
     refreshReasons,
     refusals,
+    writes,
     current: () => state,
     sync: async () => { state = (await source.load()).state; return state; },
     dependencies,
@@ -127,6 +131,18 @@ describe('Stage 14 the Gantt date change', () => {
     expect(moved).toMatchObject({ ok: true, operation: 'move', rowApplied: false, startDate: '2026-09-15T09:00:00.000Z', deadline: '2026-09-17T17:00:00.000Z' });
     await app.sync();
     expect(app.task()).toMatchObject({ startDate: '2026-09-15T09:00:00.000Z', deadline: '2026-09-17T17:00:00.000Z' });
+
+    // A span of zero is not a span: the boundary is "after", so a deadline that equals its start is refused
+    // exactly like one that precedes it. Equality is the whole case - a deadline a millisecond later is
+    // simply a very short task, and is accepted - and it is asserted here, before the resizes below move the
+    // record on, so the refusal is the range rule's rather than a revision that has already moved.
+    expect(await changeTaskDatesAction(app.dependencies(), {
+      taskId: app.taskId,
+      operation: 'move',
+      proposedStartDate: '2026-09-25T09:00:00.000Z',
+      proposedDeadline: '2026-09-25T09:00:00.000Z',
+      targetRowIndex: 0,
+    })).toMatchObject({ ok: false, reason: 'invalid-range', detail: 'a task must end after it starts' });
 
     // A start-edge resize moves the start and keeps the record's deadline, which is what makes the
     // gesture mean what it looks like.
@@ -248,5 +264,82 @@ describe('Stage 14 the Gantt date change', () => {
       proposedDeadline: '2026-09-16T09:00:00.000Z',
       targetRowIndex: 0,
     })).toMatchObject({ ok: false, reason: 'unknown-task' });
+  });
+
+  it('runs the same write as a cockpit-free operation, from the record facts as parameters', async () => {
+    const app = await world();
+    const before = await app.task();
+
+    // The dependency set, spelled out rather than spread from the cockpit's: the four things the operation
+    // takes, and not one of them is a projection, a refusal sink or a render. This is the whole claim of the
+    // split - a caller with no cockpit can build this object and reach the same write.
+    const withoutCockpit = {
+      writes: app.writes,
+      unavailableReason: () => null,
+      refresh: async () => null,
+      ids: sequentialIdGenerator(),
+      audit: { append: () => undefined },
+    } satisfies TimelineSpanWriteDependencies;
+
+    const moved = await changeTaskSpan(withoutCockpit, {
+      taskId: app.taskId,
+      operation: 'move',
+      proposedStartDate: '2026-10-01T09:00:00.000Z',
+      proposedDeadline: '2026-10-03T17:00:00.000Z',
+      targetRowIndex: 3,
+      expectedRevision: before.source.revision,
+    });
+    expect(moved).toMatchObject({
+      ok: true,
+      outcome: 'changed',
+      actionType: 'task.timeline.change',
+      operation: 'move',
+      rowApplied: false,
+      startDate: '2026-10-01T09:00:00.000Z',
+      deadline: '2026-10-03T17:00:00.000Z',
+      refreshed: false,
+      // The write landed and this caller's refresh declined, which is the one combination where a result
+      // carries both: presentation catching up with a durable record is not the record.
+      refreshFailure: 'the source session declined to refresh',
+    });
+    expect(moved.requestId).toMatch(/^semantic-request/);
+    await app.sync();
+    expect(app.task()).toMatchObject({ startDate: '2026-10-01T09:00:00.000Z', deadline: '2026-10-03T17:00:00.000Z' });
+
+    // The three gestures over one record fact set: a start resize moves one end, an end resize moves the other,
+    // and neither is a shape the caller could get wrong by naming the wrong end - the span carries both. Each
+    // revision comes from a re-read, because the operation deliberately does not keep a projection for you.
+    const resizedStart = await changeTaskSpan(withoutCockpit, {
+      taskId: app.taskId,
+      operation: 'resize-start',
+      proposedStartDate: '2026-09-28T09:00:00.000Z',
+      proposedDeadline: '2026-10-03T17:00:00.000Z',
+      targetRowIndex: 0,
+      expectedRevision: app.task().source.revision,
+    });
+    expect(resizedStart).toMatchObject({ ok: true, operation: 'resize-start', startDate: '2026-09-28T09:00:00.000Z', deadline: '2026-10-03T17:00:00.000Z' });
+    await app.sync();
+
+    const resizedEnd = await changeTaskSpan(withoutCockpit, {
+      taskId: app.taskId,
+      operation: 'resize-end',
+      proposedStartDate: '2026-09-28T09:00:00.000Z',
+      proposedDeadline: '2026-10-09T17:00:00.000Z',
+      targetRowIndex: 0,
+      expectedRevision: app.task().source.revision,
+    });
+    expect(resizedEnd).toMatchObject({ ok: true, operation: 'resize-end', startDate: '2026-09-28T09:00:00.000Z', deadline: '2026-10-09T17:00:00.000Z' });
+
+    // ...and what actually landed, read back out of the store rather than taken from the result: each resize
+    // moved exactly one end and left the other at what it wrote. This is the assertion that tells the two
+    // ends apart - a probe that swapped them left both results `ok: true` and only this read-back noticed.
+    await app.sync();
+    const stored = await app.record() as { startDate: string; deadline: string };
+    expect(stored.startDate).toBe('2026-09-28T09:00:00.000Z');
+    expect(stored.deadline).toBe('2026-10-09T17:00:00.000Z');
+
+    // The operation draws nothing and has nothing to draw with: the only record of the run is the event its
+    // caller's sink chose to keep, which is why the sink is injected rather than reached for.
+    expect(Object.keys(withoutCockpit).sort()).toEqual(['audit', 'ids', 'refresh', 'unavailableReason', 'writes']);
   });
 });
