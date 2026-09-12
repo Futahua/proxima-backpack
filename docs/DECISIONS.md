@@ -1511,6 +1511,11 @@ requirement, because it compares the two callers of this chain.
 listener. The reasoning about *why* the two halves are insufficient is not reversed by either: source text is
 not runtime composition.
 
+**Applied at `a983b9a`** (2026-09-12): `src/browser/templateExecuteBinding.ts` holds the binding, `main.ts`
+composes it and keeps no branch of its own for the verb, and `tests/templateExecuteClick.test.ts` drives the
+real listener into a real store. The checklist box stays unticked until the AUTHOR checks that evidence,
+because the EXECUTOR does not accept its own work.
+
 ## D71 — A UI/agent equivalence is asserted through the shipped entry, and between the two callers
 
 **Decided** in two steps on 2026-09-12. The executor found the Templates equivalence case driving
@@ -1533,4 +1538,9 @@ declines - a state the action already answers with `refreshed: false`).
 **Reverses if:** the action stops being the single entry (a second caller with its own translation would
 reopen the boundary question), or an equivalence claim is genuinely about the executor's contract - in which
 case it belongs in the executor's suite **as well as**, never instead of, the record-level cases here.
+
+**Applied at `a983b9a`** (2026-09-12): `tests/templateCallerEquivalence.test.ts` runs the same template
+through a click and through `submitTemplateExecution`, in two isolated stores, and compares what each caller
+reports and the normalised resulting records, with a control that would notice a difference. As with D70, the
+checklist box stays unticked until the AUTHOR checks the evidence.
 
