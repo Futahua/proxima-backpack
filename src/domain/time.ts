@@ -2,7 +2,20 @@
  * Presentation of time. Pure, and always given "now" rather than reading a clock.
  * Ported from the plugin's utils.ts; the Obsidian theme token in the contrast
  * helper is replaced by a Proxima-owned token.
+ *
+ * The two functions that turn an *instant* into civil fields - `localDateKey` and
+ * `formatClockTime` - take the zone explicitly, because a `Date` getter reads whatever zone
+ * the machine is in. `src/domain/timeZone.ts` owns the type; `src/browser/hostTimeZone.ts` is
+ * the one place that reads the machine's zone.
+ *
+ * The default is UTC, and it is a **migration default rather than a policy**: it exists so the
+ * ambient read could be removed in one step instead of through a call-site refactor, and
+ * `tests/timeZoneDerivation.test.ts` pins the number of call sites still relying on it so the
+ * count can only fall. A defaulted call derives in UTC - explicitly, deterministically, and
+ * never in the machine's zone - which is why the ambient read is gone even before every caller
+ * passes a zone.
  */
+import { civilFieldsAt, utcZone, type TimeZone } from './timeZone.js';
 
 export function formatAge(createdAtIso: string, now: number): string {
   const diff = now - new Date(createdAtIso).getTime();
@@ -75,19 +88,22 @@ export function nextCivilDate(value: CivilDate): CivilDate {
   return { year: value.year + 1, month: 1, day: 1 };
 }
 
-/** Calendar date in the viewer's local zone, as YYYY-MM-DD. */
-export function localDateKey(value: string | number | Date): string {
+/** Calendar date in the given zone, as YYYY-MM-DD. */
+export function localDateKey(value: string | number | Date, zone: TimeZone = utcZone()): string {
+  // A bare civil date is already a date: it is not an instant, so no zone applies to it.
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const d = value instanceof Date ? value : new Date(value);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year.toString().padStart(4, '0')}-${month}-${day}`;
+  const instant = (value instanceof Date ? value : new Date(value)).getTime();
+  if (Number.isNaN(instant)) return 'invalid-date';
+  const fields = civilFieldsAt(instant, zone);
+  return `${String(fields.year).padStart(4, '0')}-${String(fields.month).padStart(2, '0')}-${String(fields.day).padStart(2, '0')}`;
 }
 
-export function formatClockTime(value: string | number | Date): string {
-  const d = value instanceof Date ? value : new Date(value);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+/** Wall-clock time in the given zone, as HH:MM. */
+export function formatClockTime(value: string | number | Date, zone: TimeZone = utcZone()): string {
+  const instant = (value instanceof Date ? value : new Date(value)).getTime();
+  if (Number.isNaN(instant)) return '--:--';
+  const fields = civilFieldsAt(instant, zone);
+  return `${String(fields.hour).padStart(2, '0')}:${String(fields.minute).padStart(2, '0')}`;
 }
 
 export function contrastText(hexColor: string): string {
