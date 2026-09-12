@@ -243,9 +243,9 @@ describe('Task editor projection', () => {
     const editor = projectTaskEditor(loaded, 't1', null)!;
 
     expect(editor.fieldCount).toBe(fieldsOf(editor.sections).length);
-    // The eleven are the task's own values: name, project, execution state, workflow stage, weight, the fixed
-    // duration and its flag, the maximum duration, both dates and completion.
-    expect(editor.fieldCount).toBe(11 + loaded.taskSchema.length);
+    // The sixteen are the task's own values: the eleven existing task fields plus the five recurrence
+    // controls added for retained task recurrence.
+    expect(editor.fieldCount).toBe(16 + loaded.taskSchema.length);
   });
 
   it('offers the workflow stages of the task\'s own project, and shows a stage it does not own', () => {

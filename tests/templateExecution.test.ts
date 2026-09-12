@@ -114,7 +114,7 @@ describe('template execution', () => {
     expect(outcome.kind).toBe('refused');
     if (outcome.kind === 'refused') {
       expect(outcome.refusal.reason).toBe('untranslatable-draft-field');
-      expect(outcome.refusal.detail).toMatch(/properties/);
+      expect(outcome.refusal.detail).toBe('property.area has no schema record this template can translate');
     }
     // A field it cannot translate stops the batch before the first call.\n    expect(sink.requests.length).toBe(0);
   });

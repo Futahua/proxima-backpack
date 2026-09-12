@@ -22,9 +22,11 @@
  * Refusal is always all-or-nothing and always before the first call; once one creation has succeeded, a
  * later refusal is reported as `partial` and never as `complete`.
  */
-import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import { parseOpaqueRecordId, type OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import type { PropertySchema } from '../domain/types.js';
+import { planPropertyMutation } from './propertyMutationPlan.js';
 import type { TaskCreateOperations } from './taskCreate.js';
-import type { CreateTaskRequest } from './taskMutations.js';
+import type { CreateTaskRequest, TaskFieldMutation, TaskMutationResult } from './taskMutations.js';
 import type { TemplateComposerError, TemplatePlan, TemplateTaskDraft } from './templateComposer.js';
 
 export const TEMPLATE_EXECUTION_SCHEMA_VERSION = 1 as const;
@@ -32,7 +34,8 @@ export const TEMPLATE_EXECUTION_SCHEMA_VERSION = 1 as const;
 export type TemplateExecutionRefusalReason =
   | 'plan-invalid'
   | 'untranslatable-draft-field'
-  | 'creation-refused';
+  | 'creation-refused'
+  | 'relation-update-refused';
 
 export interface TemplateExecutionRefusal {
   readonly reason: TemplateExecutionRefusalReason;
@@ -69,31 +72,47 @@ export type TemplateExecutionOutcome =
 
 export interface TemplateExecutionOptions {
   readonly plan: TemplatePlan;
-  /** The port. The only way out of this module. */
-  readonly tasks: TaskCreateOperations;
+  /**
+   * The ordinary task operations. Existing callers that execute templates with no local relations
+   * need only create; a plan that contains a relation is refused before creation unless updateTask
+   * is present.
+   */
+  readonly tasks: TaskCreateOperations & {
+    readonly updateTask?: (input: {
+      readonly taskId: OpaqueRecordId;
+      readonly expectedRevision: string;
+      readonly mutations: readonly TaskFieldMutation[];
+    }) => Promise<TaskMutationResult>;
+  };
+  /** The task-property schemas the caller read for this execution. */
+  readonly schemas?: readonly PropertySchema[];
   /** The project a created task belongs to, when the template is being run inside one. */
   readonly projectId?: OpaqueRecordId | null;
-
 }
 
 /**
- * The draft fields whose canonical meaning is not this module's to choose.
+ * The ordinary draft fields whose canonical meaning is still not this module's to choose.
  *
- * `status` is free text and `completed` is a boolean, while the request takes an `executionState` of
- * backlog/running/finished. `property.<key>` arrives as a plain string, while a stored property value is a
- * `CanonicalStoredPropertyValue` - a richer shape whose correspondence to a line of template text is a
- * decision nobody has made yet. Refusing is the only honest option: the alternative is running a template
- * with a field silently dropped.
+ * Template properties are handled separately: D86 gives one and only one property form an executable
+ * meaning here — a relation schema whose value consists entirely of template-local `@N` references.
  */
-const UNTRANSLATABLE_FIELDS = ['status', 'isCompleted', 'properties'] as const;
+const UNTRANSLATABLE_FIELDS = ['status', 'isCompleted'] as const;
 
+interface PlannedTemplateRelation {
+  readonly sourceIndex: number;
+  readonly schema: PropertySchema;
+  readonly targetIndexes: readonly number[];
+  readonly line: number;
+  readonly name: string;
+}
 
+type TemplateRelationPlan =
+  | { readonly ok: true; readonly relations: readonly PlannedTemplateRelation[] }
+  | { readonly ok: false; readonly refusal: TemplateExecutionRefusal };
 
 function refusalForField(draft: TemplateTaskDraft): TemplateExecutionRefusal | null {
   for (const field of UNTRANSLATABLE_FIELDS) {
-    const value = field === 'properties' ? Object.keys(draft.properties).length : draft[field];
-    const set = field === 'properties' ? (value as number) > 0 : value !== null;
-    if (set) {
+    if (draft[field] !== null) {
       return {
         reason: 'untranslatable-draft-field',
         detail: `"${field}" has no canonical equivalent yet, so this template is refused rather than run with the field dropped`,
@@ -103,6 +122,117 @@ function refusalForField(draft: TemplateTaskDraft): TemplateExecutionRefusal | n
     }
   }
   return null;
+}
+
+/** D86's `@N` vocabulary, resolved only after every create has returned its canonical id. */
+function templateRelationIndexes(
+  value: string,
+  taskCount: number,
+): { readonly ok: true; readonly indexes: readonly number[] } | { readonly ok: false; readonly detail: string } {
+  const tokens = value.split(',').map((token) => token.trim());
+  const indexes: number[] = [];
+  const seen = new Set<number>();
+
+  for (const token of tokens) {
+    const match = /^@([1-9]\d*)$/.exec(token);
+    if (match === null) {
+      return { ok: false, detail: `a template relation target is @N, not "${token}"` };
+    }
+
+    const ordinal = Number(match[1]);
+    if (!Number.isSafeInteger(ordinal) || ordinal < 1 || ordinal > taskCount) {
+      return { ok: false, detail: `${token} does not name one of this template's ${taskCount} task(s)` };
+    }
+
+    const index = ordinal - 1;
+    if (seen.has(index)) {
+      return { ok: false, detail: `${token} is named more than once in the same relation` };
+    }
+
+    seen.add(index);
+    indexes.push(index);
+  }
+
+  return { ok: true, indexes };
+}
+
+/**
+ * Decide every local relation before the first write.
+ *
+ * This is also where a property that is not a relation is refused: D86 does not turn template
+ * property text into a second general-purpose property form.
+ */
+function planTemplateRelations(
+  tasks: readonly TemplateTaskDraft[],
+  schemas: readonly PropertySchema[],
+): TemplateRelationPlan {
+  const relations: PlannedTemplateRelation[] = [];
+
+  for (const [sourceIndex, draft] of tasks.entries()) {
+    for (const [schemaId, value] of Object.entries(draft.properties)) {
+      const schema = schemas.find((candidate) => candidate.id === schemaId);
+      if (schema === undefined) {
+        return {
+          ok: false,
+          refusal: {
+            reason: 'untranslatable-draft-field',
+            detail: `property.${schemaId} has no schema record this template can translate`,
+            line: draft.line,
+            name: draft.name,
+          },
+        };
+      }
+
+      if (schema.type !== 'relation') {
+        return {
+          ok: false,
+          refusal: {
+            reason: 'untranslatable-draft-field',
+            detail: `property.${schemaId} is ${schema.type}; template property values are executable here only when the schema is relation`,
+            line: draft.line,
+            name: draft.name,
+          },
+        };
+      }
+
+      try {
+        parseOpaqueRecordId(schema.id);
+      } catch {
+        return {
+          ok: false,
+          refusal: {
+            reason: 'untranslatable-draft-field',
+            detail: `property.${schemaId} is not a canonical relation-schema id`,
+            line: draft.line,
+            name: draft.name,
+          },
+        };
+      }
+
+      const targets = templateRelationIndexes(value, tasks.length);
+      if (!targets.ok) {
+        return {
+          ok: false,
+          refusal: {
+            reason: 'plan-invalid',
+            detail: targets.detail,
+            line: draft.line,
+            name: draft.name,
+          },
+        };
+      }
+
+      relations.push({
+        sourceIndex,
+        schema,
+        targetIndexes: targets.indexes,
+        line: draft.line,
+        name: draft.name,
+      });
+    }
+  }
+
+  return { ok: true, relations };
 }
 
 /** The draft, as the create request the rest of the product uses. Only fields with a decided meaning. */
@@ -160,7 +290,29 @@ export async function executeTemplatePlan(
     }
   }
 
+  const relationPlan = planTemplateRelations(plan.tasks, options.schemas ?? []);
+  if (!relationPlan.ok) {
+    return {
+      kind: 'refused',
+      schemaVersion: TEMPLATE_EXECUTION_SCHEMA_VERSION,
+      refusal: relationPlan.refusal,
+    };
+  }
+
+  if (relationPlan.relations.length > 0 && tasks.updateTask === undefined) {
+    return {
+      kind: 'refused',
+      schemaVersion: TEMPLATE_EXECUTION_SCHEMA_VERSION,
+      refusal: {
+        reason: 'untranslatable-draft-field',
+        detail: 'this template contains local relations, but this caller has no task-update operation to resolve them',
+      },
+    };
+  }
+
   const created: OpaqueRecordId[] = [];
+  const createdRevisions: string[] = [];
+
   for (const draft of plan.tasks) {
     const request = toCreateTaskRequest(draft, projectId);
     const result = await tasks.createTask(request);
@@ -182,7 +334,68 @@ export async function executeTemplatePlan(
         refusal,
       };
     }
+
     created.push(result.recordId);
+    createdRevisions.push(result.revision);
+  }
+
+  const sourceIndexes = [...new Set(relationPlan.relations.map((relation) => relation.sourceIndex))].sort((left, right) => left - right);
+
+  for (const sourceIndex of sourceIndexes) {
+    const sourceRelations = relationPlan.relations.filter((relation) => relation.sourceIndex === sourceIndex);
+    const mutations: TaskFieldMutation[] = [];
+
+    for (const relation of sourceRelations) {
+      const targetIds = relation.targetIndexes.map((targetIndex) => created[targetIndex]!);
+      const planned = planPropertyMutation(relation.schema, {
+        value: targetIds.join(', '),
+        checked: false,
+        selected: [],
+      });
+
+      if (!planned.ok) {
+        return {
+          kind: 'partial',
+          schemaVersion: TEMPLATE_EXECUTION_SCHEMA_VERSION,
+          created: [...created],
+          refusal: {
+            reason: 'relation-update-refused',
+            detail: planned.detail,
+            line: relation.line,
+            name: relation.name,
+            cause: planned.reason,
+          },
+        };
+      }
+
+      mutations.push({
+        kind: 'property',
+        key: parseOpaqueRecordId(relation.schema.id),
+        value: planned.value,
+      });
+    }
+
+    const result = await tasks.updateTask!({
+      taskId: created[sourceIndex]!,
+      expectedRevision: createdRevisions[sourceIndex]!,
+      mutations,
+    });
+
+    if (!result.ok) {
+      const draft = plan.tasks[sourceIndex]!;
+      return {
+        kind: 'partial',
+        schemaVersion: TEMPLATE_EXECUTION_SCHEMA_VERSION,
+        created: [...created],
+        refusal: {
+          reason: 'relation-update-refused',
+          detail: result.detail,
+          line: draft.line,
+          name: draft.name,
+          cause: result.reason,
+        },
+      };
+    }
   }
 
   return { kind: 'complete', schemaVersion: TEMPLATE_EXECUTION_SCHEMA_VERSION, created };

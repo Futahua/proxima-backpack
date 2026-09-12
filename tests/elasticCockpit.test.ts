@@ -620,7 +620,7 @@ describe('Stage 6 Task editor in the Task modal', () => {
     expect(mounted.root.querySelector('[data-papers-visual-key="task-editor-property:progress"]')!.querySelector('input, select')).toBeNull();
 
     // The editor says how many fields it is showing, so a reader need not count markup.
-    expect(mounted.root.querySelector('[data-papers-visual-key="elastic-task-modal"]')!.getAttribute('data-task-editor-field-count')).toBe(String(11 + editorSchema.length));
+    expect(mounted.root.querySelector('[data-papers-visual-key="elastic-task-modal"]')!.getAttribute('data-task-editor-field-count')).toBe(String(16 + editorSchema.length));
   });
 
   it('reports a typed value, and draws the draft without pretending it is saved', () => {
