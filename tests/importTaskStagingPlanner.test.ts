@@ -577,6 +577,7 @@ describe(
             created: 1,
             reusedIdentical: 0,
             blocked: 0,
+            reported: 0,
           });
 
         expect(
@@ -662,6 +663,7 @@ describe(
             created: 0,
             reusedIdentical: 0,
             blocked: 2,
+            reported: 0,
           });
 
         expect(result.blockers)
@@ -723,6 +725,7 @@ describe(
             created: 0,
             reusedIdentical: 0,
             blocked: 1,
+            reported: 0,
           });
 
         expect(result.blockers)
@@ -793,38 +796,48 @@ describe(
         expect(result.counts)
           .toEqual({
             taskCandidates: 3,
-            eligibleTaskRecords: 1,
-            created: 1,
+            eligibleTaskRecords: 2,
+            created: 2,
             reusedIdentical: 0,
-            blocked: 2,
+            blocked: 1,
+            reported: 1,
           });
 
+        // The malformed record is unreadable, so there is nothing to convert; the one with an unsupported
+        // construct is readable, so D65's answer applies and it stages using the interpreted fields.
         expect(
           result.staged.map(
             (entry) =>
               entry.sourcePath,
           ),
         ).toEqual([
+          'Proxima/tasks/unsupported.md',
           'Proxima/tasks/valid.md',
         ]);
 
         expect(result.blockers)
-          .toEqual(
-            expect.arrayContaining([
-              expect.objectContaining({
-                reason:
-                  'malformed-task',
-                sourcePath:
-                  'Proxima/tasks/malformed.md',
-              }),
-              expect.objectContaining({
-                reason:
-                  'unsupported-frontmatter-policy-pending',
-                sourcePath:
-                  'Proxima/tasks/unsupported.md',
-              }),
-            ]),
-          );
+          .toEqual([
+            expect.objectContaining({
+              reason:
+                'malformed-task',
+              sourcePath:
+                'Proxima/tasks/malformed.md',
+            }),
+          ]);
+
+        // And the construct is reported rather than dropped: the record that landed carries what Proxima did
+        // not understand, which is the half of D65 that stops a report from being a silent omission.
+        expect(result.reported)
+          .toHaveLength(1);
+        expect(result.reported[0])
+          .toMatchObject({
+            sourcePath:
+              'Proxima/tasks/unsupported.md',
+          });
+        expect(result.reported[0]!
+          .diagnostics
+          .length)
+          .toBeGreaterThan(0);
       },
     );
 
@@ -969,6 +982,7 @@ describe(
             created: 1,
             reusedIdentical: 0,
             blocked: 0,
+            reported: 0,
           });
 
         expect(second.counts)
@@ -1018,6 +1032,7 @@ describe(
             created: 0,
             reusedIdentical: 0,
             blocked: 1,
+            reported: 0,
           });
 
         expect(conflict.blockers)

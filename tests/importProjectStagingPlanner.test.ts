@@ -458,6 +458,7 @@ describe(
             created: 2,
             reusedIdentical: 0,
             blocked: 0,
+            reported: 0,
           });
 
         expect(
@@ -504,7 +505,7 @@ describe(
     );
 
     it(
-      'stages independent valid projects while malformed and unsupported-frontmatter projects remain explicit blockers',
+      'stages a readable project with an unsupported construct, reports it, and still blocks the malformed one',
       async () => {
         const importPlan =
           await plan({
@@ -552,37 +553,28 @@ describe(
         expect(result.counts)
           .toEqual({
             projectCandidates: 3,
-            eligibleProjectRecords: 1,
-            created: 1,
+            eligibleProjectRecords: 2,
+            created: 2,
             reusedIdentical: 0,
-            blocked: 2,
+            blocked: 1,
+            reported: 1,
           });
 
+        // Only the unreadable record is blocked: D65 answered the unsupported-construct question with
+        // **preserve and report**, so the readable one is imported with the interpreted fields.
         expect(result.blockers)
-          .toEqual(
-            expect.arrayContaining([
-              {
-                reason:
-                  'malformed-project',
-                recordId:
-                  expect.any(
-                    String,
-                  ),
-                sourcePath:
-                  'Proxima/projects/malformed.md',
-              },
-              {
-                reason:
-                  'unsupported-frontmatter-policy-pending',
-                recordId:
-                  expect.any(
-                    String,
-                  ),
-                sourcePath:
-                  'Proxima/projects/unsupported.md',
-              },
-            ]),
-          );
+          .toEqual([
+            {
+              reason:
+                'malformed-project',
+              recordId:
+                expect.any(
+                  String,
+                ),
+              sourcePath:
+                'Proxima/projects/malformed.md',
+            },
+          ]);
 
         expect(
           result.staged.map(
@@ -590,8 +582,22 @@ describe(
               entry.sourcePath,
           ),
         ).toEqual([
+          'Proxima/projects/unsupported.md',
           'Proxima/projects/valid.md',
         ]);
+
+        // And what the importer did not understand is reported against the record that landed.
+        expect(result.reported)
+          .toHaveLength(1);
+        expect(result.reported[0])
+          .toMatchObject({
+            sourcePath:
+              'Proxima/projects/unsupported.md',
+          });
+        expect(result.reported[0]!
+          .diagnostics
+          .length)
+          .toBeGreaterThan(0);
       },
     );
 
@@ -635,6 +641,7 @@ describe(
             created: 0,
             reusedIdentical: 0,
             blocked: 1,
+            reported: 0,
           });
 
         expect(result.blockers)
@@ -696,6 +703,7 @@ describe(
             created: 1,
             reusedIdentical: 0,
             blocked: 0,
+            reported: 0,
           });
 
         expect(second.counts)
@@ -705,6 +713,7 @@ describe(
             created: 0,
             reusedIdentical: 1,
             blocked: 0,
+            reported: 0,
           });
 
         expect(second.writes)
@@ -791,6 +800,7 @@ describe(
             created: 0,
             reusedIdentical: 0,
             blocked: 1,
+            reported: 0,
           });
 
         expect(result.blockers)

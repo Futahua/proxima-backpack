@@ -430,6 +430,7 @@ describe(
             created: 1,
             reusedIdentical: 0,
             blocked: 0,
+            reported: 0,
           });
 
         expect(
@@ -504,6 +505,7 @@ describe(
             created: 0,
             reusedIdentical: 0,
             blocked: 2,
+            reported: 0,
           });
 
         expect(result.blockers)
@@ -591,6 +593,7 @@ describe(
           .toMatchObject({
             created: 1,
             blocked: 0,
+            reported: 0,
           });
       },
     );
@@ -659,18 +662,22 @@ describe(
         expect(result.counts)
           .toEqual({
             eventCandidates: 5,
-            eligibleEventRecords: 1,
-            created: 1,
+            eligibleEventRecords: 2,
+            created: 2,
             reusedIdentical: 0,
-            blocked: 4,
+            blocked: 3,
+            reported: 1,
           });
 
+        // Only the unreadable one is blocked by frontmatter: D65 makes the record with an unsupported construct
+        // importable using the interpreted fields, with the construct reported against it.
         expect(
           result.staged.map(
             (entry) =>
               entry.sourcePath,
           ),
         ).toEqual([
+          'Proxima/events/unsupported.md',
           'Proxima/events/valid.md',
         ]);
 
@@ -682,12 +689,6 @@ describe(
                   'malformed-event',
                 sourcePath:
                   'Proxima/events/malformed.md',
-              }),
-              expect.objectContaining({
-                reason:
-                  'unsupported-frontmatter-policy-pending',
-                sourcePath:
-                  'Proxima/events/unsupported.md',
               }),
               expect.objectContaining({
                 reason:
@@ -706,6 +707,21 @@ describe(
               }),
             ]),
           );
+        // Exactly three: the unsupported construct is no longer one of them.
+        expect(result.blockers)
+          .toHaveLength(3);
+
+        expect(result.reported)
+          .toHaveLength(1);
+        expect(result.reported[0])
+          .toMatchObject({
+            sourcePath:
+              'Proxima/events/unsupported.md',
+          });
+        expect(result.reported[0]!
+          .diagnostics
+          .length)
+          .toBeGreaterThan(0);
       },
     );
 
@@ -754,6 +770,7 @@ describe(
             created: 2,
             reusedIdentical: 0,
             blocked: 0,
+            reported: 0,
           });
 
         expect(
@@ -828,6 +845,7 @@ describe(
             created: 1,
             reusedIdentical: 0,
             blocked: 0,
+            reported: 0,
           });
 
         expect(second.counts)
@@ -835,6 +853,7 @@ describe(
             created: 0,
             reusedIdentical: 1,
             blocked: 0,
+            reported: 0,
           });
 
         expect(
@@ -876,6 +895,7 @@ describe(
             created: 0,
             reusedIdentical: 0,
             blocked: 1,
+            reported: 0,
           });
 
         expect(conflict.blockers)

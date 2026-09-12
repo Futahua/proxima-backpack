@@ -46,14 +46,6 @@ export type LegacyImportEventStagingBlocker =
     }
   | {
       readonly reason:
-        'unsupported-frontmatter-policy-pending';
-      readonly recordId:
-        OpaqueRecordId;
-      readonly sourcePath:
-        string;
-    }
-  | {
-      readonly reason:
         'project-reference-unresolved';
       readonly recordId:
         OpaqueRecordId;
@@ -142,6 +134,23 @@ export interface LegacyImportStagedEventRecord {
     CanonicalEventRecordV2;
 }
 
+/**
+ * A source construct the importer did not understand, on a record it staged anyway.
+ *
+ * D65 answered Stage 8's question with **preserve and report**: an otherwise readable record is importable
+ * using the interpreted fields, its legacy bytes are kept as provenance, and the construct is named against
+ * the record rather than blocking it. The plan's `problems` carry the field's diagnostic; this is the staging
+ * half, keyed by the record that landed.
+ */
+export interface LegacyImportEventStagingReport {
+  readonly recordId:
+    OpaqueRecordId;
+  readonly sourcePath:
+    string;
+  readonly diagnostics:
+    readonly string[];
+}
+
 export interface LegacyImportEventStagingResult {
   readonly schemaVersion:
     typeof LEGACY_IMPORT_EVENT_STAGING_RESULT_SCHEMA_VERSION;
@@ -160,6 +169,10 @@ export interface LegacyImportEventStagingResult {
   readonly blockers:
     readonly LegacyImportEventStagingBlocker[];
 
+  /** Records that were staged *and* carry something the importer did not understand (D65). */
+  readonly reported:
+    readonly LegacyImportEventStagingReport[];
+
   readonly counts: {
     readonly eventCandidates:
       number;
@@ -170,6 +183,8 @@ export interface LegacyImportEventStagingResult {
     readonly reusedIdentical:
       number;
     readonly blocked:
+      number;
+    readonly reported:
       number;
   };
 
@@ -218,6 +233,13 @@ function eventConversions(
     );
 }
 
+/**
+ * Why an event cannot be converted at all, or null when it can.
+ *
+ * A **frontmatter parse failure** means the fields cannot be read, so there is nothing to convert. An
+ * **unsupported construct** is the case D65 answered: the record is readable, so it is imported using the
+ * interpreted fields and the construct is reported against it.
+ */
 function eventProblemReason(
   plan:
     LegacyImportPlan,
@@ -225,7 +247,6 @@ function eventProblemReason(
     LegacyImportEventConversionPlan,
 ):
   | 'malformed-event'
-  | 'unsupported-frontmatter-policy-pending'
   | null {
   const problems =
     plan.problems.filter(
@@ -246,17 +267,44 @@ function eventProblemReason(
     return 'malformed-event';
   }
 
-  if (
-    problems.some(
-      (problem) =>
-        problem.code
-        === 'unsupported-frontmatter',
-    )
-  ) {
-    return 'unsupported-frontmatter-policy-pending';
-  }
-
   return null;
+}
+
+/** The constructs a staged event's source carried that the importer did not understand, in plan order. */
+function eventReportFor(
+  plan:
+    LegacyImportPlan,
+  conversion:
+    LegacyImportEventConversionPlan,
+):
+  LegacyImportEventStagingReport
+  | null {
+  const diagnostics =
+    plan.problems
+      .filter(
+        (problem) =>
+          problem.code
+            === 'unsupported-frontmatter'
+          && problem.kind
+            === 'event'
+          && problem.sourcePath
+            === conversion.sourcePath,
+      )
+      .map(
+        (problem) =>
+          problem.diagnostic,
+      );
+
+  return diagnostics.length
+    === 0
+    ? null
+    : {
+        recordId:
+          conversion.recordId,
+        sourcePath:
+          conversion.sourcePath,
+        diagnostics,
+      };
 }
 
 function propertyRecordFor(
@@ -905,6 +953,31 @@ export async function materializeLegacyImportEventStaging(
         ),
   );
 
+  // Read off the records that were staged, so a construct is never reported for a record that did not land -
+  // and a record never lands with its construct silently dropped.
+  const reported =
+    staged
+      .map(
+        (entry) =>
+          eventReportFor(
+            plan,
+            eventConversions(
+              plan,
+            ).find(
+              (conversion) =>
+                conversion.recordId
+                === entry.recordId,
+            )!,
+          ),
+      )
+      .filter(
+        (
+          report,
+        ): report is LegacyImportEventStagingReport =>
+          report
+          !== null,
+      );
+
   return {
     schemaVersion:
       LEGACY_IMPORT_EVENT_STAGING_RESULT_SCHEMA_VERSION,
@@ -919,6 +992,7 @@ export async function materializeLegacyImportEventStaging(
 
     staged,
     blockers,
+    reported,
 
     counts: {
       eventCandidates:
@@ -932,6 +1006,8 @@ export async function materializeLegacyImportEventStaging(
       reusedIdentical,
       blocked:
         blockers.length,
+      reported:
+        reported.length,
     },
 
     writes: {

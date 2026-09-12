@@ -29,14 +29,6 @@ export type LegacyImportProjectStagingBlocker =
     }
   | {
       readonly reason:
-        'unsupported-frontmatter-policy-pending';
-      readonly recordId:
-        OpaqueRecordId;
-      readonly sourcePath:
-        string;
-    }
-  | {
-      readonly reason:
         'external-artifact-plan-missing';
       readonly recordId:
         OpaqueRecordId;
@@ -72,6 +64,23 @@ export interface LegacyImportStagedProjectRecord {
     CanonicalProjectRecordV2;
 }
 
+/**
+ * A source construct the importer did not understand, on a record it staged anyway.
+ *
+ * D65 answered Stage 8's question with **preserve and report**: an otherwise readable record is importable
+ * using the interpreted fields, its legacy bytes are kept as provenance, and the construct is named against
+ * the record rather than blocking it — one odd field must not refuse a whole record. The plan's `problems`
+ * carry the field's diagnostic; this is the staging half, keyed by the record that landed.
+ */
+export interface LegacyImportProjectStagingReport {
+  readonly recordId:
+    OpaqueRecordId;
+  readonly sourcePath:
+    string;
+  readonly diagnostics:
+    readonly string[];
+}
+
 export interface LegacyImportProjectStagingResult {
   readonly schemaVersion:
     typeof LEGACY_IMPORT_PROJECT_STAGING_RESULT_SCHEMA_VERSION;
@@ -90,6 +99,10 @@ export interface LegacyImportProjectStagingResult {
   readonly blockers:
     readonly LegacyImportProjectStagingBlocker[];
 
+  /** Records that were staged *and* carry something the importer did not understand (D65). */
+  readonly reported:
+    readonly LegacyImportProjectStagingReport[];
+
   readonly counts: {
     readonly projectCandidates:
       number;
@@ -100,6 +113,8 @@ export interface LegacyImportProjectStagingResult {
     readonly reusedIdentical:
       number;
     readonly blocked:
+      number;
+    readonly reported:
       number;
   };
 
@@ -172,6 +187,13 @@ function sameCanonicalRecord(
   );
 }
 
+/**
+ * Why a project cannot be converted at all, or null when it can.
+ *
+ * A **frontmatter parse failure** means the fields cannot be read, so there is nothing to convert. An
+ * **unsupported construct** is the case D65 answered: the record is readable, so it is imported using the
+ * interpreted fields and the construct is reported against it.
+ */
 function projectProblemReason(
   plan:
     LegacyImportPlan,
@@ -179,7 +201,6 @@ function projectProblemReason(
     LegacyImportProjectConversionPlan,
 ):
   | 'malformed-project'
-  | 'unsupported-frontmatter-policy-pending'
   | null {
   const problems =
     plan.problems.filter(
@@ -200,17 +221,44 @@ function projectProblemReason(
     return 'malformed-project';
   }
 
-  if (
-    problems.some(
-      (problem) =>
-        problem.code
-        === 'unsupported-frontmatter',
-    )
-  ) {
-    return 'unsupported-frontmatter-policy-pending';
-  }
-
   return null;
+}
+
+/** The constructs a staged project's source carried that the importer did not understand, in plan order. */
+function projectReportFor(
+  plan:
+    LegacyImportPlan,
+  conversion:
+    LegacyImportProjectConversionPlan,
+):
+  LegacyImportProjectStagingReport
+  | null {
+  const diagnostics =
+    plan.problems
+      .filter(
+        (problem) =>
+          problem.code
+            === 'unsupported-frontmatter'
+          && problem.kind
+            === 'project'
+          && problem.sourcePath
+            === conversion.sourcePath,
+      )
+      .map(
+        (problem) =>
+          problem.diagnostic,
+      );
+
+  return diagnostics.length
+    === 0
+    ? null
+    : {
+        recordId:
+          conversion.recordId,
+        sourcePath:
+          conversion.sourcePath,
+        diagnostics,
+      };
 }
 
 function defineProjectRecord(
@@ -637,6 +685,31 @@ export async function materializeLegacyImportProjectStaging(
         ),
   );
 
+  // Read off the records that were staged, so a construct is never reported for a record that did not land -
+  // and a record never lands with its construct silently dropped.
+  const reported =
+    staged
+      .map(
+        (entry) =>
+          projectReportFor(
+            plan,
+            projectConversions(
+              plan,
+            ).find(
+              (conversion) =>
+                conversion.recordId
+                === entry.recordId,
+            )!,
+          ),
+      )
+      .filter(
+        (
+          report,
+        ): report is LegacyImportProjectStagingReport =>
+          report
+          !== null,
+      );
+
   return {
     schemaVersion:
       LEGACY_IMPORT_PROJECT_STAGING_RESULT_SCHEMA_VERSION,
@@ -651,6 +724,7 @@ export async function materializeLegacyImportProjectStaging(
 
     staged,
     blockers,
+    reported,
 
     counts: {
       projectCandidates:
@@ -664,6 +738,8 @@ export async function materializeLegacyImportProjectStaging(
       reusedIdentical,
       blocked:
         blockers.length,
+      reported:
+        reported.length,
     },
 
     writes: {
