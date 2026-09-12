@@ -329,7 +329,7 @@ Pin important behavior from old `calculateLiquidTimeline`.
       signature, bind the entries by hand because the signature shape defeats a regex, migrate
       `scheduleNavigation`'s four sites after finding where it gets `localDateKey`, and give
       `daysCovered`/`inspection.ts` an explicit parameter rather than a default), and the script that produced
-      the state is kept at `.dsh/zone-pass1.mjs` with the previous attempt's ordering bug already fixed.)*
+      the state is kept at `.dsh/zone-pass1.mjs` with the previous attempt's ordering bug already fixed.** A third pass is parked on the same branch at `c41fd3e`'s successor, and it is close: typecheck clean, `1668 of 1674` tests passing, five red, each one a named site - `src/app/inspection.ts` calling `eventsByDay` without a zone, `scheduleNavigationDateKey` still four-argument on one path, and `src/browser/calendarGrid.ts`, which has no imports and reads the ambient zone through its own date construction. The four browser modules now route every derivation through a `bindZone(options.zone)` wrapper defaulting to the host zone, `scheduleNavigation` takes an injected zone through three functions, and the domain selector does too. From 25 red to 5 in one pass, by hand rather than by script.)*
 - [x] Tests are deterministic across CI/developer timezone differences.
 - [x] Month boundaries covered.
 - [x] Year boundaries covered.
