@@ -53,7 +53,7 @@ export interface LegacyImportUnsupportedFrontmatterStagingEntry {
   readonly recordId:
     OpaqueRecordId | null;
   readonly disposition:
-    'unsupported-frontmatter-policy-pending';
+    'unsupported-frontmatter-reported';
   readonly problems:
     readonly LegacyImportStagedProblemEvidence[];
 }
@@ -72,7 +72,7 @@ export interface LegacyImportProblemStagingManifest {
       number;
     readonly malformedProblems:
       number;
-    readonly unsupportedFrontmatterPolicyPendingRecords:
+    readonly unsupportedFrontmatterReportedRecords:
       number;
     readonly unsupportedFrontmatterProblems:
       number;
@@ -397,10 +397,10 @@ function collectTargetProblems(
     ) {
       if (
         problem.disposition
-        !== 'unsupported-frontmatter-policy-pending'
+        !== 'unsupported-frontmatter-reported'
       ) {
         throw new Error(
-          `Import problem staging received unsupported-frontmatter without policy-pending disposition for ${problem.sourcePath}.`,
+          `Import problem staging received unsupported-frontmatter without its reported disposition for ${problem.sourcePath}.`,
         );
       }
 
@@ -463,7 +463,7 @@ function collectTargetProblems(
           recordId:
             group.recordId,
           disposition:
-            'unsupported-frontmatter-policy-pending',
+            'unsupported-frontmatter-reported',
           problems:
             [
               ...group.problems,
@@ -533,7 +533,7 @@ function cloneUnsupportedFrontmatter(
     recordId:
       entry.recordId,
     disposition:
-      'unsupported-frontmatter-policy-pending',
+      'unsupported-frontmatter-reported',
     problems:
       entry.problems
         .map(
@@ -612,7 +612,7 @@ function normalizeManifest(
             + record.problems.length,
           0,
         ),
-      unsupportedFrontmatterPolicyPendingRecords:
+      unsupportedFrontmatterReportedRecords:
         unsupportedFrontmatter.length,
       unsupportedFrontmatterProblems:
         unsupportedFrontmatter.reduce(
@@ -660,7 +660,7 @@ function plannedManifest(
     counts: {
       unresolvedRecordCount: 0,
       malformedProblems: 0,
-      unsupportedFrontmatterPolicyPendingRecords: 0,
+      unsupportedFrontmatterReportedRecords: 0,
       unsupportedFrontmatterProblems: 0,
     },
   });

@@ -392,9 +392,18 @@ export type LegacyImportConversionPlan =
   | LegacyImportProjectConversionPlan
   | LegacyImportEventConversionPlan;
 
+/**
+ * What the importer does about a problem it found in a source file.
+ *
+ * `reader-problem` is a problem the reader reported; `unsupported-frontmatter-reported` is the one this
+ * disposition exists for: D65 answered Stage 8's question with **preserve and report**, so an otherwise
+ * readable record carrying a construct Proxima does not understand is imported using the interpreted fields
+ * and the construct is named against it. The value used to read `-policy-pending`, which was true while the
+ * question was open and stopped being true when the answer landed.
+ */
 export type LegacyImportProblemDisposition =
   | 'reader-problem'
-  | 'unsupported-frontmatter-policy-pending';
+  | 'unsupported-frontmatter-reported';
 
 export interface LegacyImportProblemPlan {
   readonly code:
@@ -1788,7 +1797,7 @@ export async function planLegacyMarkdownImport(
           disposition:
             problem.code
               === 'unsupported-frontmatter'
-              ? 'unsupported-frontmatter-policy-pending'
+              ? 'unsupported-frontmatter-reported'
               : 'reader-problem',
         }),
       );

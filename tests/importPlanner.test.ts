@@ -421,7 +421,7 @@ describe(
     );
 
     it(
-      'reports unsupported frontmatter distinctly from ordinary parse failure without choosing import policy',
+      'reports unsupported frontmatter as reported rather than pending, distinctly from an ordinary parse failure',
       async () => {
         const vault =
           createMemoryVault({
@@ -472,7 +472,7 @@ describe(
             sourcePath:
               'Proxima/tasks/unsupported.md',
             disposition:
-              'unsupported-frontmatter-policy-pending',
+              'unsupported-frontmatter-reported',
           });
 
         expect(malformed)

@@ -209,7 +209,7 @@ describe(
   'Stage 8 slice 12 malformed-record staging evidence',
   () => {
     it(
-      'persists malformed parse evidence as an unresolved record, keeps unsupported frontmatter policy-pending, creates no canonical payload, and leaves source bytes unchanged',
+      'persists malformed parse evidence as an unresolved record, reports unsupported frontmatter without resolving it, creates no canonical payload, and leaves source bytes unchanged',
       async () => {
         const input =
           await malformedAndUnsupportedPlan();
@@ -257,7 +257,7 @@ describe(
               counts: {
                 unresolvedRecordCount: 1,
                 malformedProblems: 1,
-                unsupportedFrontmatterPolicyPendingRecords: 1,
+                unsupportedFrontmatterReportedRecords: 1,
                 unsupportedFrontmatterProblems: 1,
               },
             },
@@ -314,7 +314,7 @@ describe(
             legacyId:
               'unsupported-task',
             disposition:
-              'unsupported-frontmatter-policy-pending',
+              'unsupported-frontmatter-reported',
             problems: [
               expect.objectContaining({
                 code:
@@ -515,7 +515,7 @@ describe(
         ).toEqual({
           unresolvedRecordCount: 0,
           malformedProblems: 0,
-          unsupportedFrontmatterPolicyPendingRecords: 0,
+          unsupportedFrontmatterReportedRecords: 0,
           unsupportedFrontmatterProblems: 0,
         });
 
@@ -711,7 +711,7 @@ describe(
             .counts,
         ).toMatchObject({
           unresolvedRecordCount: 1,
-          unsupportedFrontmatterPolicyPendingRecords: 1,
+          unsupportedFrontmatterReportedRecords: 1,
         });
 
         expect(

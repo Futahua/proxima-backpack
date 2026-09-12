@@ -149,10 +149,10 @@ async function ambiguousProjectPlan(
 }
 
 /**
- * The ambiguous-project fixture plus records the importer cannot convert: one
- * ordinary frontmatter parse failure and one frontmatter shape awaiting the
- * unsupported-frontmatter policy decision. The two refusal reasons are
- * independent, which is what the status and commit assertions pin down.
+ * The ambiguous-project fixture plus records the importer cannot convert plus one it can: an ordinary
+ * frontmatter parse failure (which still blocks) and a record carrying an unsupported construct, which D65
+ * imports using the interpreted fields with the construct reported. The two refusal reasons are independent,
+ * which is what the status and commit assertions pin down.
  */
 async function ambiguousAndMalformedPlan(
   selection:
@@ -349,7 +349,6 @@ function verificationFor(
       total,
     },
     deferredChecks: [
-      'unsupported-frontmatter-importability',
       'recurrence-migration',
       'event-all-day-intent',
     ],
@@ -801,7 +800,6 @@ describe(
                 blockedPhysicalRecords:
                   0,
                 deferredChecks: [
-                  'unsupported-frontmatter-importability',
                   'recurrence-migration',
                   'event-all-day-intent',
                 ],
@@ -1024,7 +1022,6 @@ describe(
               code:
                 'invalid-evidence',
               deferredChecks: [
-                'unsupported-frontmatter-importability',
                 'recurrence-migration',
                 'event-all-day-intent',
               ],
@@ -1104,7 +1101,6 @@ describe(
               code:
                 'action-not-available',
               deferredChecks: [
-                'unsupported-frontmatter-importability',
                 'recurrence-migration',
                 'event-all-day-intent',
               ],
@@ -1886,8 +1882,9 @@ describe(
             1,
         });
 
-        // The fixture must really carry unconvertible records beyond the single
-        // policy-pending shape, or the independence this test proves is vacuous.
+        // The fixture must really carry a problem beyond the one D65 calls reported, or the independence this
+        // test proves is vacuous: the unsupported-construct record is imported, so the parse failure is what
+        // has to be there for the commit to be refused at all.
         expect(
           planned.counts
             .readerProblems,
@@ -2047,14 +2044,16 @@ describe(
             .outstandingProjectReferences,
         ).toBeUndefined();
 
-        // The surviving reason is named rather than collapsing into the generic
-        // policy sentence.
+        // The surviving reason is named rather than collapsing into the generic sentence: D65 settled the
+        // unsupported-frontmatter question, so what refuses the commit here is the record the importer cannot
+        // convert, and the record imported with a construct reported is named beside it rather than as a
+        // blocker.
         expect(
           afterResolve
             .error
             .message,
         ).toContain(
-          'reader problem(s)',
+          'reader problem(s) the importer cannot convert',
         );
 
         expect(
@@ -2062,8 +2061,132 @@ describe(
             .error
             .message,
         ).toContain(
-          'unsupported-frontmatter policy decision',
+          'imported with an unsupported construct reported',
         );
+      },
+    );
+
+    it(
+      'does not refuse a commit for the record D65 made importable, while still reporting the construct',
+      async () => {
+        const reportedOnly =
+          await planLegacyMarkdownImport(
+            createMemoryVault({
+              'Proxima/tasks/unsupported.md': [
+                '---',
+                'id: unsupported-task',
+                'description: |',
+                '  multiline value',
+                '---',
+                'Readable body',
+                '',
+              ].join(
+                '\n',
+              ),
+            }),
+            allocator(),
+            {},
+            null,
+            null,
+            null,
+            null,
+          );
+
+        expect(
+          reportedOnly.counts,
+        ).toMatchObject({
+          readerProblems:
+            1,
+          unsupportedFrontmatter:
+            1,
+        });
+
+        const actions =
+          createLegacyImportAdministrativeActions({
+            async plan() {
+              return reportedOnly;
+            },
+
+            async inspect(
+              plan,
+            ) {
+              return verificationFor(
+                plan,
+                'verified',
+              );
+            },
+          });
+
+        await actions.dispatch({
+          type:
+            'import.plan',
+        });
+
+        // The report is not a blocker: status carries the count for a surface to show.
+        const status =
+          await actions.dispatch({
+            type:
+              'import.status',
+          });
+
+        expect(
+          status,
+        ).toMatchObject({
+          data: {
+            kind:
+              'status',
+            status: {
+              readerProblems:
+                1,
+              unsupportedFrontmatter:
+                1,
+            },
+          },
+        });
+
+        // And the commit's refusal names the gates that are still open rather than an unconvertible record:
+        // no `outstandingRecords` is attached, because nothing here is outstanding.
+        const commit =
+          await actions.dispatch({
+            type:
+              'import.commit',
+          });
+
+        expect(
+          commit,
+        ).toMatchObject({
+          ok:
+            false,
+          actionType:
+            'import.commit',
+          outcome:
+            'unavailable',
+          durableChange:
+            false,
+          error: {
+            code:
+              'action-not-available',
+          },
+        });
+
+        if (
+          commit.ok
+        ) {
+          throw new Error(
+            'import.commit unexpectedly succeeded',
+          );
+        }
+
+        expect(
+          commit.error
+            .message,
+        ).toBe(
+          'import.commit remains unavailable while migration policy and activation gates remain open',
+        );
+        expect(
+          commit.error
+            .outstandingRecords,
+        ).toBeUndefined();
       },
     );
   },

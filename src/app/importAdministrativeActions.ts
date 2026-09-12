@@ -59,7 +59,6 @@ export type LegacyImportAdministrativeActionType =
   ];
 
 export type LegacyImportAdministrativeOpenCheck =
-  | 'unsupported-frontmatter-importability'
   | 'recurrence-migration'
   | 'event-all-day-intent';
 
@@ -105,10 +104,13 @@ export interface LegacyImportAdministrativeStatus {
     number;
 
   /**
-   * Outstanding reader problems on the plan currently in effect, and how many of
-   * them are records awaiting the unsupported-frontmatter policy decision. A
-   * nonzero count means records the importer could not convert, so nothing
-   * downstream can read the import as complete.
+   * Outstanding reader problems on the plan currently in effect.
+   *
+   * `readerProblems` counts what the reader reported; `unsupportedFrontmatter` is the subset that D65 decided
+   * is **reported rather than blocking** — those records are importable using the interpreted fields, so a
+   * nonzero figure there is a report a surface should show and no longer a reason to read the import as
+   * incomplete. What does block is `blockedPhysicalRecords` and the plan's own unresolved/ambiguous project
+   * references.
    */
   readonly readerProblems:
     number;
@@ -276,7 +278,6 @@ export interface LegacyImportAdministrativeActions {
 
 const OPEN_CHECKS:
   readonly LegacyImportAdministrativeOpenCheck[] = [
-    'unsupported-frontmatter-importability',
     'recurrence-migration',
     'event-all-day-intent',
   ];
@@ -1041,13 +1042,19 @@ export function createLegacyImportAdministrativeActions(
           > 0;
 
         /**
-         * A record the importer could not convert is an incomplete import, not a
-         * silent omission, so it refuses commit for its own reason beside the
-         * unacknowledged references.
+         * A record the importer could not convert is an incomplete import, not a silent omission, so it
+         * refuses commit for its own reason beside the unacknowledged references.
+         *
+         * **What blocks is the reader problems that are not the reported ones.** D65 settled the
+         * unsupported-frontmatter question by making such a record importable with its construct reported, so
+         * those problems are the report a surface shows rather than a reason to refuse — while an unreadable
+         * record still has nothing to convert and still stops the commit.
          */
         const unconverted =
           outstandingRecords
             .readerProblems
+          - outstandingRecords
+            .unsupportedFrontmatter
           > 0;
 
         const reasons:
@@ -1064,8 +1071,15 @@ export function createLegacyImportAdministrativeActions(
         if (
           unconverted
         ) {
+          const reported =
+            outstandingRecords
+              .unsupportedFrontmatter;
+
           reasons.push(
-            `${outstandingRecords.readerProblems} reader problem(s), ${outstandingRecords.unsupportedFrontmatter} of them awaiting the unsupported-frontmatter policy decision`,
+            `${outstandingRecords.readerProblems - reported} reader problem(s) the importer cannot convert`
+            + (reported === 0
+              ? ''
+              : `, beside ${reported} record(s) imported with an unsupported construct reported`),
           );
         }
 

@@ -546,8 +546,7 @@ describe(
               },
             },
             deferredChecks: [
-              'unsupported-frontmatter-importability',
-              'recurrence-migration',
+                      'recurrence-migration',
               'event-all-day-intent',
             ],
             verifierWrites: {

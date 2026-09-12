@@ -105,10 +105,13 @@ export interface LegacyImportVerificationResult {
    *
    * Verification of currently representable records must not be misreported
    * as a decision on migration semantics that are still creator-owned/open.
+   *
+   * `unsupported-frontmatter-importability` used to be one of them and is not any more: D65 answered it, and
+   * a check this layer reports as deferred has to be a question nobody has answered rather than one that has
+   * been implemented and left in the list.
    */
   readonly deferredChecks:
     readonly (
-      | 'unsupported-frontmatter-importability'
       | 'recurrence-migration'
       | 'event-all-day-intent'
     )[];
@@ -1658,8 +1661,10 @@ export async function verifyLegacyImportStaging(
       total,
     },
 
+    // The unsupported-frontmatter check is no longer deferred: D65 answered it (an otherwise readable record
+    // is imported using the interpreted fields, with the construct reported against it), so it is not a
+    // question this verification is waiting on. The two that remain are still questions, and stay named.
     deferredChecks: [
-      'unsupported-frontmatter-importability',
       'recurrence-migration',
       'event-all-day-intent',
     ],
