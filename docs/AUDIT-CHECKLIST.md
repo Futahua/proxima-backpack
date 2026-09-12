@@ -41,7 +41,7 @@ back.”
 | --- | --- |
 | Current slice | Stage 17 record writes and Stage 20 chrome, at `425a631`: workflow-stage and property-schema operations with their surfaces, the acceptance probes behind one disclosure, and Stage 20 closed with no open boxes. `docs/DECISIONS.md` D60-D66 record the creator's answers (two-step project delete, no tag model, task recurrence retained, artifacts read-only for now, Gantt rows as a durable order, preserve-and-report for unmappable frontmatter, and boxes closing on tested logic). |
 | Branch | `stage7-record-store-contract` |
-| Last audited SHA | `425a631` - fixture generation 0, source/test typecheck 0, build 0, `git diff --check` 0, vitest 0 under default parallelism: 217 test files / 1448 tests. HEAD `912e79e` is documentation-only since that run. |
+| Last audited SHA | `06619c2` - fixture generation 0, source/test typecheck 0, build 0, `git diff --check` 0, vitest 0 under default parallelism: 218 test files / 1451 tests. |
 | Parity agenda | `D:\Letters\MatTroiSeConMoc\LongHorizon\proxima\proxima-full-parity-checklist.md` (branch `codex/reviewer-send-verification`) carries the full-parity agenda this work is driven by: 763 ticked / 77 open at `9a090ec`. |
 | Papers changed | No Papers change is recorded by this Proxima commit. |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` - retained as the repository's recorded machine-local baseline, not a fresh current-Papers acceptance claim. |
@@ -79,34 +79,28 @@ These are recorded as questions, not answered in prose elsewhere. Nothing below 
 written into `README.md`, `AGENTS.md` or `docs/VAULT-FORMATS.md` as settled behaviour
 until it is decided.
 
-- [ ] **Unsupported frontmatter on load versus on refresh.** `vaultRepository.ts:236-243`
-      emits `unsupported-frontmatter` at severity `warning` and still loads the record;
-      `refreshController.ts:79-83` lists that same code beside the blocking codes, so a
-      refresh carrying it is classified `malformed` and the previously accepted
-      generation is retained as stale. A vault that is acceptable as an initial
-      generation is therefore not acceptable as a subsequent one.
-      *Question:* should an unrepresentable frontmatter construct be acceptable both on
-      initial load and on refresh, or should it block acceptance of a refreshed
-      generation - and if the latter, why is the identical vault acceptable at startup?
-      *Lands in:* `docs/VAULT-FORMATS.md`, since it fixes the meaning and severity of
-      `unsupported-frontmatter`. If the answer deliberately distinguishes startup from
-      refresh, record the rationale as a new decision in `docs/DECISIONS.md`.
-      *Answered by the creator on 2026-09-12, recorded as D65 in `docs/DECISIONS.md`:*
-      an otherwise readable record carrying `unsupported-frontmatter` **is importable**
-      using the interpreted fields, with the legacy source preserved as provenance and
-      the construct reported. That answer removes the asymmetry this question is about -
-      if the construct does not block an import, it cannot be what demotes a refreshed
-      generation either. **Checked against the code while recording that, and the asymmetry is not
+- [x] **Unsupported frontmatter on load versus on refresh — CLOSED by evidence at `06619c2`.**
+      The question was whether a refreshed generation carrying `unsupported-frontmatter` is
+      demoted while the identical vault is accepted at startup. Reading the code, the
+      asymmetry is not there: `isBlocking` is severity-only (`src/domain/problems.ts:65-66`)
+      and the refresh failure predicate adds exactly one code of its own,
+      `frontmatter-parse-failure` (`src/app/refreshController.ts:101-107`).
+      `tests/unsupportedFrontmatterRefresh.test.ts` is that reading as evidence: a vault with a
+      recognized unsupported construct loads with the warning; a refresh of it is accepted
+      (`ok`, outcome `changed`, not stale, no last-refresh problem code); a changed record that
+      keeps the construct is accepted with the record moved and the warning still reported; and
+      a document whose frontmatter cannot be parsed at all is still refused, so the test is not
+      vacuous. No code change was needed, and the creator's answer (D65: preserve and report)
+      agrees with what the code already does on this path. **`docs/VAULT-FORMATS.md` needed no edit
+      either: it already carries the contract** — "warning-bearing but generation-acceptable ... the
+      same bytes are accepted both on initial load and on a later refresh" at its § Not supported, and
+      the severity table marks `frontmatter-parse-failure` as the one that refuses a refreshed
+      generation. So the documentation was right and the test is what now proves the code matches it.
+      *The import side is a different matter and stays open:* the staging planners still treat
+      such records as explicit blockers, which is a real change carrying its own module and
+      test list on the parity checklist's Stage 8 box.
       visible in it:** `isBlocking` is severity-only (`src/domain/problems.ts:65-66` - `severity ===
       'error'`), and the refresh failure predicate is `isBlocking(problem) ||
-      isFrontmatterParseFailure(problem)` (`src/app/refreshController.ts:101-107`), while the reader
-      emits `unsupported-frontmatter` at `warning`. So the refresh half may need **no code change at
-      all** - what it needs is the test that proves a refresh carrying the warning is accepted rather
-      than demoted, and a fix only if that test fails. `docs/VAULT-FORMATS.md` still records the
-      severity as a warning with a named report. The related import-policy change - the staging
-      planners currently treat such records as explicit blockers - is the same answer seen from the
-      import side, and that half *is* a code change; the parity checklist's Stage 8 box carries its
-      module and test list.
 - [ ] **Exact currently validated Papers host SHA.** No fresh running-Papers acceptance
       artifact exists for the current tree, and source cannot make a newer Papers
       baseline true.
