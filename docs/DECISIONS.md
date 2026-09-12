@@ -2061,3 +2061,46 @@ being true and the gate's remaining two conditions become the whole question - a
 closed, still requiring the creator's explicit decision and still naming one record type at a time. A second
 reversal would be a product decision that live data need not be distinguished on the surface; the checklist
 box that asked for the distinction is the reason it is there.
+
+## D84 - The recovery story: reconciled on every boot, conditional on restore, and never silently
+
+**Decided** on 2026-09-12, at `0c80b85`, closing Gate 14's last in-repository box. The question the
+box asks is not whether recovery *code* exists - a journal, a classifier and a conditional restore have
+been built and tested for several slices - but whether there is a story a person could rely on. There was
+not, in the narrow sense that mattered: the story was real and invisible.
+
+**When it runs: on every boot, before mutation authority.** Reconciliation is automatic rather than
+gesture-driven, and that is the decision rather than an implementation detail. A journal that is only
+examined the first time somebody attempts a write is a journal nobody reads on the boot that needed it,
+which is exactly the boot after a crash. The gate reports its answer; it grants nothing on the strength of
+it, and a boot that could not reconcile says so instead of looking clean.
+
+**What restore does: classify first, then a conditional write.** `src/app/vaultRecovery.ts` holds the
+durable journal, `src/app/vaultRecoveryReconcile.ts` separates `not-applied` from `effect-present` from
+`conflict` from `already-committed`, and `src/app/vaultRecoveryRestore.ts` restores through the same
+compare-and-swap contract every other write uses. A recovery is therefore an ordinary conditional write
+with a recorded prior state attached, not a privileged path.
+
+**What it never does.** No blind rollback: a restore that cannot prove the record is still what the
+journal left behind refuses, because overwriting someone else's newer edit to tidy up a crash is how
+recovery becomes data loss. No last-writer-wins, no silent merge, and no reconciliation reported as
+successful while entries remain - `conflict` is a state a person decides about, not a state to resolve by
+guessing.
+
+**What a reader now sees.** `src/browser/recoveryNotice.ts` renders the boot's answer in the header, and
+the honest default is the point of the notice: `not-run` is never `clean`. A boot that never asked and a
+boot that asked and found nothing differ on every axis - machine value, tone and sentence - because that
+difference is the one that matters after a crash. A reconciliation counts as clean only when it resolved
+everything it found *and* left mutation authority available; entries left over, a closed authority, a
+blocked gate and a failure are all attention, and the last two say why and say that writes stay closed.
+
+**What this does not cover, stated rather than implied.** The byte-level conditional restore has no
+production caller: the vault coordinator is composed by tests, so what a live creator-vault crash would
+do end to end is part of the native acceptance in Gate 6 and Gate 13, not something this repository can
+claim. Nothing here grants write authority; the write gate (D83) still refuses live data before enrollment
+is consulted.
+
+**Reverses if:** Papers supplies an atomic commit primitive and a native recovery hook, at which point
+recovery becomes the host's to run and this journal becomes evidence rather than mechanism - or if the
+product decides recovery must be a deliberate act on every boot, which would make the automatic
+reconciliation the wrong default rather than the right one.
