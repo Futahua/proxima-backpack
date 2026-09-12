@@ -103,6 +103,31 @@ describe('Stage 20 acceptance', () => {
     expect(MAIN).toContain('diagnosticsSurface(problems)');
   });
 
+  it('keeps build, source and recovery health inspectable without letting it dominate the cockpit', () => {
+    // "Inspectable" is the projection the previous case builds; "without dominating" is about where the
+    // visible half sits. Three facts, each checkable: health is drawn once, as one strip, outside the
+    // header; the build/recovery evidence is a collapsed disclosure rather than a panel; and the
+    // header's state region holds only the identity, the badges, Refresh and the tools disclosure.
+    const healthStrips = MAIN.match(/data-c1-key="refresh-health"/g) ?? [];
+    expect(healthStrips).toHaveLength(1);
+    expect(MAIN).toContain('<details class="build-details">');
+    expect(MAIN).not.toContain('<details class="build-details" open');
+
+    const headerStart = MAIN.indexOf('class="header-state"');
+    expect(headerStart).toBeGreaterThan(0);
+    const header = MAIN.slice(headerStart, MAIN.indexOf('</header>', headerStart));
+    expect(header).toContain('source-refresh-button');
+    expect(header).toContain('renderAcceptanceTools(acceptanceToolsView)');
+    expect(header).not.toContain('fsa-probe');
+    expect(header).not.toContain('refresh-health');
+    expect(header).not.toContain('diagnostics');
+
+    // And the health model itself is bounded and covered, so "inspectable" is a projection rather than
+    // a paragraph: the strip is drawn from `createUiHealthModel`, whose suite is its own.
+    expect(MAIN).toContain('createUiHealthModel(');
+    expect(bytes('tests/uiHealth.test.ts')).toBeGreaterThan(500);
+  });
+
   it('keeps record data outside the app bundle, behind the Backpack origin guard', () => {
     // Records live in Proxima's Backpack-origin OPFS: a fixed origin, a record-store directory, and a
     // guard that every entry point passes through. Rebuilding or discarding the app cannot reach them,
