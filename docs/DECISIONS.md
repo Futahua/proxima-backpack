@@ -1452,3 +1452,37 @@ the one-time import and activates on success — and this decision is amended, n
 statements about the activated configuration stay true either way. It also reverses if a shipped build
 must activate because the legacy reader is being removed; that would be a different decision with the same
 consequence for the one-way door.
+
+## D68 — Templates carry no relative-date forms, so date interpretation is not clock-dependent
+
+**Decided** by the browser AUTHOR on 2026-09-12, while scoping Stage 16's executor, and asked for plainly
+rather than inferred: template `start` and `deadline` accept only the parser's existing absolute-date
+grammar. No `today`, `tomorrow`, `+3d`, `-1w`, `next-monday`, and no deadline computed from a relative
+start. Nothing in Stage 16 therefore depends on which day the clock says it is, which timezone decides
+"today", or what happens across a month or year boundary, because there is no such computation to get
+wrong.
+
+**Consequence in the code:** `executeTemplatePlan` takes no clock at all. The first version of it accepted
+one as an injected dependency of the stage, unused, on the theory that the seam should exist before the
+feature; the AUTHOR rejected that, and the parameter was removed rather than left as an intentionally dead
+argument. A template's dates are the text the author wrote, validated by the parser.
+
+**Reverses if:** a creator-facing template form for relative dates is asked for. It would arrive as a
+parser change first — a typed relative-date form in `TemplatePlan` — and only then as clock-dependent
+resolution in the executor, with the boundary cases that decision names.
+
+## D69 — The manual-versus-template equivalence is judged on records, not on requests
+
+**Decided** by the browser AUTHOR on 2026-09-12, answering whether the Stage 16 equivalence box closes at
+the request level or the store level: **store level**. Equal request lists prove compilation parity, while
+the claim in the checklist is about the records that result, so the acceptance compares decoded canonical
+task-record multisets from two isolated runs — one manual, one through template execution — after
+normalising away `id`, `createdAt` and store/observation revisions. Every semantic field stays compared:
+project, execution state and order, dates, durations, completion, properties and recurrence.
+
+**Consequence:** deterministic ids and a fixed clock may make a test convenient, but the acceptance must
+not depend on coincidentally identical generated identity or timestamps; the normalisation is what carries
+that weight. The test's seam is `MemoryRecordFiles` from `tests/test-record-store.ts` wrapped by
+`createCanonicalJsonRecordStore`, driving the real `createTask` path the way `tests/taskMutations.test.ts`
+does.
+

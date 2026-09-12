@@ -2,14 +2,13 @@
  * The template executor's acceptance conditions, as the AUTHOR scoped them on 2026-09-12.
  *
  * The tests below check the seven things that slice was accepted against: zero calls when preflight
- * refuses, the exact semantic requests emitted, deterministic output with an injected clock, a refusal
+ * refuses, the exact semantic requests emitted, deterministic output with no time source at all, a refusal
  * reported as partial rather than complete, no RecordStore anywhere in the module, refusing rather than
  * dropping a field whose canonical meaning is undecided, and no id allocation of the executor's own.
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { fixedClock } from '../src/domain/clock.js';
 import type { OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
 import { parseTemplatePlan } from '../src/app/templateComposer.js';
 import { executeTemplatePlan, TEMPLATE_EXECUTION_SCHEMA_VERSION } from '../src/app/templateExecution.js';
@@ -55,15 +54,13 @@ function recorder() {
   };
 }
 
-const clock = fixedClock('2026-09-12T09:00:00+07:00');
-
 describe('template execution', () => {
   it('refuses an invalid plan with zero calls', async () => {
     const sink = recorder();
     const plan = parseTemplatePlan('  weight: 3\nWrite the brief\n');
     expect(plan.errors.length).toBeGreaterThan(0);
 
-    const outcome = await executeTemplatePlan({ plan, tasks: sink.port, clock });
+    const outcome = await executeTemplatePlan({ plan, tasks: sink.port });
 
     expect(outcome.kind).toBe('refused');
     if (outcome.kind === 'refused') {
@@ -80,7 +77,7 @@ describe('template execution', () => {
     );
     expect(plan.errors).toEqual([]);
 
-    const outcome = await executeTemplatePlan({ plan, tasks: sink.port, clock, projectId: PROJECT });
+    const outcome = await executeTemplatePlan({ plan, tasks: sink.port, projectId: PROJECT });
 
     expect(outcome.kind).toBe('complete');
     expect(sink.requests).toEqual([
@@ -112,7 +109,7 @@ describe('template execution', () => {
     const plan = parseTemplatePlan('Write the brief\n  property.area: writing\n');
     expect(plan.errors).toEqual([]);
 
-    const outcome = await executeTemplatePlan({ plan, tasks: sink.port, clock });
+    const outcome = await executeTemplatePlan({ plan, tasks: sink.port });
 
     expect(outcome.kind).toBe('refused');
     if (outcome.kind === 'refused') {
@@ -127,7 +124,7 @@ describe('template execution', () => {
     const plan = parseTemplatePlan('Write the brief\n  status: doing\nDraft the outline\n');
     expect(plan.errors).toEqual([]);
 
-    const outcome = await executeTemplatePlan({ plan, tasks: sink.port, clock });
+    const outcome = await executeTemplatePlan({ plan, tasks: sink.port });
 
     expect(outcome.kind).toBe('refused');
     if (outcome.kind === 'refused') {
@@ -144,7 +141,7 @@ describe('template execution', () => {
     const plan = parseTemplatePlan('First\nSecond\nThird\n');
     sink.failAt(2, 'a task with that name already exists');
 
-    const outcome = await executeTemplatePlan({ plan, tasks: sink.port, clock });
+    const outcome = await executeTemplatePlan({ plan, tasks: sink.port });
 
     expect(outcome.kind).toBe('partial');
     if (outcome.kind === 'partial') {
@@ -161,7 +158,7 @@ describe('template execution', () => {
     const plan = parseTemplatePlan('First\nSecond\n');
     sink.failAt(1);
 
-    const outcome = await executeTemplatePlan({ plan, tasks: sink.port, clock });
+    const outcome = await executeTemplatePlan({ plan, tasks: sink.port });
 
     expect(outcome.kind).toBe('refused');
     expect(sink.requests.map((request) => request.name)).toEqual(['First']);
@@ -172,8 +169,8 @@ describe('template execution', () => {
     const first = recorder();
     const second = recorder();
 
-    const one = await executeTemplatePlan({ plan, tasks: first.port, clock, projectId: PROJECT });
-    const two = await executeTemplatePlan({ plan, tasks: second.port, clock, projectId: PROJECT });
+    const one = await executeTemplatePlan({ plan, tasks: first.port, projectId: PROJECT });
+    const two = await executeTemplatePlan({ plan, tasks: second.port, projectId: PROJECT });
 
     expect(one).toEqual(two);
     expect(first.requests).toEqual(second.requests);

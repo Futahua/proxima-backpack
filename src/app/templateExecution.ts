@@ -22,7 +22,6 @@
  * Refusal is always all-or-nothing and always before the first call; once one creation has succeeded, a
  * later refusal is reported as `partial` and never as `complete`.
  */
-import type { Clock } from '../domain/clock.js';
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { TaskCreateOperations } from './taskCreate.js';
 import type { CreateTaskRequest } from './taskMutations.js';
@@ -68,13 +67,7 @@ export interface TemplateExecutionOptions {
   readonly tasks: TaskCreateOperations;
   /** The project a created task belongs to, when the template is being run inside one. */
   readonly projectId?: OpaqueRecordId | null;
-  /**
-   * Injected time. The parser emits absolute dates today, so nothing here reads it yet; it is part of the
-   * seam because the relative-date rule belongs to this stage, and `resolveDraftDates` is where it will be
-   * consumed. Nothing in this module calls a clock of its own, which the determinism test asserts by
-   * running the same plan twice and comparing whole outcomes.
-   */
-  readonly clock: Clock;
+
 }
 
 /**
@@ -88,13 +81,7 @@ export interface TemplateExecutionOptions {
  */
 const UNTRANSLATABLE_FIELDS = ['status', 'isCompleted', 'properties'] as const;
 
-/** Where relative dates will be resolved. Absolute values pass through untouched. */
-export function resolveDraftDates(
-  draft: TemplateTaskDraft,
-  _clock: Clock,
-): { readonly startDate: string | null; readonly deadline: string | null } {
-  return { startDate: draft.startDate, deadline: draft.deadline };
-}
+
 
 function refusalForField(draft: TemplateTaskDraft): TemplateExecutionRefusal | null {
   for (const field of UNTRANSLATABLE_FIELDS) {
@@ -116,14 +103,13 @@ function refusalForField(draft: TemplateTaskDraft): TemplateExecutionRefusal | n
 export function toCreateTaskRequest(
   draft: TemplateTaskDraft,
   projectId: OpaqueRecordId | null,
-  dates: { readonly startDate: string | null; readonly deadline: string | null },
 ): CreateTaskRequest {
   return {
     name: draft.name,
     projectId,
     ...(draft.weight !== null ? { weight: draft.weight } : {}),
-    startDate: dates.startDate,
-    deadline: dates.deadline,
+    startDate: draft.startDate,
+    deadline: draft.deadline,
     ...(draft.fixedDuration !== null
       ? { isFixedDuration: true, fixedDuration: draft.fixedDuration }
       : {}),
@@ -150,7 +136,7 @@ function planInvalid(errors: readonly TemplateComposerError[]): TemplateExecutio
 export async function executeTemplatePlan(
   options: TemplateExecutionOptions,
 ): Promise<TemplateExecutionOutcome> {
-  const { plan, tasks, clock } = options;
+  const { plan, tasks } = options;
   const projectId = options.projectId ?? null;
 
   if (plan.errors.length > 0) {
@@ -170,7 +156,7 @@ export async function executeTemplatePlan(
 
   const created: OpaqueRecordId[] = [];
   for (const draft of plan.tasks) {
-    const request = toCreateTaskRequest(draft, projectId, resolveDraftDates(draft, clock));
+    const request = toCreateTaskRequest(draft, projectId);
     const result = await tasks.createTask(request);
     if (!result.ok) {
       const refusal: TemplateExecutionRefusal = {
