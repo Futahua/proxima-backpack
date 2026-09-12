@@ -420,8 +420,14 @@ Potential categories:
 - [x] board selection/filtering
 - [x] calendar navigation
 - [x] fixture reset/load
-- [ ] refresh/reload source
-- [ ] future canvas selection/open
+- [x] refresh/reload source (`source.refresh` is a registered, schema-validated action: `parseAction`
+      reads it and `src/app/sourceRefreshAction.ts` runs it, `839d1b7` @ `2026-09-10T22:27:22+07:00`).
+- [x] future canvas selection/open (selection and node edits are registered actions -
+      `canvas.node.select`, `canvas.node.remove`, `canvas.node.geometry.change`, each validated in
+      `parseAction`. Opening a file *into* the canvas landed as Gate 8's one-shot admission on the
+      surface rather than as a dispatcher verb, which is recorded here so the split is explicit: the
+      catalog carries the semantic node operations, and admission is a surface capability that no box
+      asks the catalog to own).
 - [x] mutation actions remain fixture-only while real vault is read-only
 - [x] first agent-facing record write entry — `src/app/agentWritePath.ts` submits the two drop
       verbs (`task.execution.move` / `task.execution.reorder`) to `moveTaskByGesture` over a
@@ -495,17 +501,47 @@ Potential categories:
 
 ### 3.5 Structured diagnostics
 
-- [ ] Machine-readable diagnostic codes.
-- [ ] Bound payload sizes.
-- [ ] Parse failures.
-- [ ] Unsupported frontmatter.
-- [ ] Duplicate IDs.
-- [ ] Missing relationships.
-- [ ] Invalid dates/numbers.
-- [ ] Renderer failures.
-- [ ] Filesystem/repository failures.
-- [ ] No credentials/tokens dumped.
-- [ ] Real machine paths are redacted where not necessary.
+- [x] Machine-readable diagnostic codes (the reader's vocabulary is `PROBLEM_CODES` in
+      `src/domain/problems.ts` - fourteen codes from `unreadable` to `event-span-too-large` - and
+      `src/app/diagnostics.ts` composes `DIAGNOSTIC_CODES` from it plus `refresh-failed` and
+      `renderer-failure`, with `isDiagnosticCode` as the guard, `7844264` @
+      `2026-09-10T22:43:46+07:00`. Across the reader, action, semantic and canvas layers the tree
+      carries thirty-six distinct `code:` literals, so a caller filters on a code and never on prose).
+- [x] Bound payload sizes (`MAX_INSPECTION_TEXT = 400` bounds every string the inspection projection
+      publishes, `src/app/inspection.ts`; record-layer failures are "one bounded sentence, safe to
+      show: never a path, a secret or a stack"; and the expansion contract has its own
+      `event-span-too-large` code rather than an unbounded answer).
+- [x] Parse failures (`frontmatter-parse-failure` for frontmatter the supported grammar cannot read,
+      with the affected value left unset rather than guessed - `tests/frontmatterParseDiagnostics.test.ts`;
+      `unreadable` for a file that cannot be read at all; `decode-failed` and `scene-shape-invalid` for
+      a drawing payload).
+- [x] Unsupported frontmatter (`unsupported-frontmatter`, and since D65 it is *reported* rather than
+      blocking: the readable record imports using the interpreted fields, the construct is reported
+      against the record that landed, and the count survives into `import.status` -
+      `8a14f3f` + `9bb26b3`, `docs/DECISIONS.md#d65`).
+- [x] Duplicate IDs (`duplicate-id`: two records of one kind resolving to the same logical id is a
+      reported error, never a tiebreak - `tests/canonicalIdentity.test.ts`, and the rule the whole
+      identity suite rests on).
+- [x] Missing relationships (`missing-project`: a record referencing a project no loaded project has is
+      reported with the id and the vault-relative path of the record that pointed at nothing -
+      `tests/missingRelationshipDiagnostics.test.ts`, `7a7018f` @ `2026-09-10T23:18:33+07:00`).
+- [x] Invalid dates/numbers (`bad-date`, `bad-number`, `bad-boolean`, `invalid-status`, `invalid-enum`
+      - one code per way a field can be wrong, so a surface can say which field and why rather than
+      "malformed").
+- [x] Renderer failures (`renderer-failure` is a stable machine-readable code with bounded visible
+      fallback markup, so a failed draw is reported rather than blank -
+      `tests/rendererFailureDiagnostics.test.ts`, `a888988` @ `2026-09-10T23:31:01+07:00`).
+- [x] Filesystem/repository failures (`unreadable`, `directory-unreadable` and `ignored-file` from the
+      reader, `refresh-failed` for a source session that could not re-read - distinct from a parse
+      failure, because "the file is gone" and "the file is unreadable" need different fixes).
+- [x] No credentials/tokens dumped (the loopback bridge answers only in bounded codes, grants read
+      permission to loopback pages only, refuses a rebound Host, and never emits the configured root -
+      `tests/bridgeDisclosure.test.ts`, `d95fb43` @ `2026-09-06T21:55:52+07:00`; no token or descriptor
+      crosses into any Proxima answer, because Proxima never holds one).
+- [x] Real machine paths are redacted where not necessary (every problem carries a **vault-relative**
+      path - `LoadProblem.path` in `src/domain/problems.ts` - so a diagnostic names the file inside the
+      vault rather than the machine's directory layout, and the bridge's bounded vocabulary is asserted
+      not to name the configured root at all).
 
 ### 3.6 Evidence format
 
@@ -530,11 +566,26 @@ Potential categories:
 
 ### 3.7 Gate 3 exit
 
-- [ ] Proxima can be driven headlessly without Papers.
-- [ ] Same semantic actions power UI and tests.
-- [ ] State can be inspected without touching renderer implementation details.
-- [ ] Deterministic events/evidence exist.
-- [ ] Live Papers control is still optional at this point.
+- [x] Proxima can be driven headlessly without Papers (the whole contract is exercised that way: this
+      revision runs 247 files / 1630 tests with no Papers process involved, `src/domain` imports
+      nothing outside itself (`tests/boundaries.test.ts`) and `src/` typechecks with `"types": []`, so
+      `node:fs` cannot even compile there. Papers is a read-only reference for this tree, not a
+      runtime dependency).
+- [x] Same semantic actions power UI and tests (Gate 3.1's own boxes: the human UI and the tests both
+      go through `src/app/actionProtocol.ts`, and the parity agenda's shared-implementation box closed
+      at `e75d76a` when the last UI caller arrived - the record-write families now have one
+      implementation reached from a surface and from the agent wire, compared as whole objects).
+- [x] State can be inspected without touching renderer implementation details
+      (`createInspectionProjection` with `INSPECTION_SCHEMA_VERSION`, independent of the store and the
+      renderer - `tests/inspection.test.ts`, `0eca068` @ `2026-09-06T14:01:24+07:00`, and
+      `tests/rendererIndependentInspection.test.ts`, `4801bad` @ `2026-09-11T00:03:01+07:00`).
+- [x] Deterministic events/evidence exist (the event ring carries an injected timestamp and a monotonic
+      sequence - Gate 3.4, all ticked - and Gate 3.6's scenario schema records the fixture hash, the
+      clock value and the id sequence beside the transcripts, which is what makes a run reproducible
+      from a clean fixture rather than from a remembered session).
+- [x] Live Papers control is still optional at this point (no suite loads Papers, and every host-facing
+      capability sits behind a port the tests fill with an implementation of their own - the same
+      reason the domain boundary test can pass with no host in the process).
 
 ---
 
