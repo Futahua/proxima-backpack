@@ -49,7 +49,7 @@ import { bindScheduleProjectionInteractions, renderScheduleProjection, type Sche
 import { scheduleNavigationDateKey, type ScheduleNavigationDirection } from './scheduleNavigation.js';
 import { scheduleEventsForSelection } from './scheduleSelection.js';
 import { bindScheduleRecurrenceInteractions, type ScheduleRecurrenceScope, type ScheduleRecurringOccurrenceSelection } from './scheduleRecurrence.js';
-import { projectPresentation } from './projectPresentation.js';
+import { renderProjectNavigation } from './projectNavigation.js';
 import { eventRecurrenceFor } from './eventModal.js';
 import { bindProjectsHubInteractions, renderProjectsHub, type ProjectCreateIntent, type ProjectEditView, type ProjectFormRefusal, type ProjectsHubFilter } from './projectsHub.js';
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
@@ -248,35 +248,6 @@ function visibleProblems(problems: LoadProblem[]): LoadProblem[] {
     seen.add(key);
     return true;
   });
-}
-
-function projectNavigation(state: ProximaState): string {
-  const projects = state.projects.slice().sort((a, b) => a.id.localeCompare(b.id));
-  const active = projects.filter((project) => project.status === 'active');
-  const items = [
-    { id: ALL_PROJECTS, label: 'All projects', detail: 'All Proxima work', project: undefined },
-    { id: UNCATEGORISED, label: 'Uncategorised', detail: 'Records without a project', project: undefined },
-    ...projects.map((project) => ({
-      id: project.id,
-      label: project.name,
-      detail: `${project.status === 'archived' ? 'Archived · ' : ''}Project`,
-      project,
-    })),
-  ];
-  const selectedProject = state.projects.find((project) => project.id === selection);
-  const detail = selectedProject ? projectPresentation(selectedProject) : null;
-  return `<nav class="project-navigation" data-c1-key="project-navigation" aria-label="Projects">
-    <div class="region-heading"><span>Projects</span><span class="count">${active.length}</span></div><div class="project-list">
-    ${items.map((item) => {
-      const activeItem = selection === item.id;
-      const disabled = item.project?.status === 'archived';
-      const body = `<span class="project-dot ${item.project?.projectType ?? 'all'}"></span><span class="project-item-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span>`;
-      return disabled
-        ? `<div class="project-item archived" data-c1-key="project-item-${escapeHtml(item.id)}" title="${escapeHtml(item.detail)}" aria-label="${escapeHtml(item.label)}">${body}</div>`
-        : `<button type="button" class="project-item${activeItem ? ' selected' : ''}" data-action="select-project" data-project-id="${escapeHtml(item.id)}" data-c1-key="project-item-${escapeHtml(item.id || 'uncategorised')}" aria-current="${activeItem ? 'page' : 'false'}" title="${escapeHtml(item.detail)}">${body}</button>`;
-    }).join('')}</div>
-    ${detail ? `<section class="project-details" data-c1-key="project-details" aria-label="Project details"><header><strong>${escapeHtml(detail.name)}</strong><small>${escapeHtml(detail.statusLabel)}</small></header><p>${escapeHtml(detail.description || 'No description')}</p>${detail.linkedFolders.length > 0 ? `<div><small>Linked folders</small><ul>${detail.linkedFolders.map((folder) => `<li><strong>${escapeHtml(folder.name)}</strong><span>${escapeHtml(folder.path)}</span></li>`).join('')}</ul></div>` : '<small>No linked folders</small>'}<footer><small>Source</small><code>${escapeHtml(detail.sourcePath)}</code><small>ID from ${escapeHtml(detail.sourceIdOrigin)}</small></footer></section>` : '<section class="project-details empty" data-c1-key="project-details"><small>Select a project to inspect its read-only details.</small></section>'}
-  </nav>`;
 }
 
 function surfaceSwitcher(): string {
@@ -630,7 +601,7 @@ function render(): void {
   });
   if (surfaceMarkup.failure) root.dataset.proximaRendererFailure = surfaceMarkup.failure.code;
   else delete root.dataset.proximaRendererFailure;
-  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span data-c1-key="workspace-identity" data-workspace-writes="${workspaceWritesFor(sourceMode, writesAvailable)}">${escapeHtml(workspaceIdentity)}</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button>${renderAcceptanceTools(acceptanceToolsView)}</div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
+  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span data-c1-key="workspace-identity" data-workspace-writes="${workspaceWritesFor(sourceMode, writesAvailable)}">${escapeHtml(workspaceIdentity)}</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button>${renderAcceptanceTools(acceptanceToolsView)}</div></header>${healthSurface(health)}<div class="app-layout">${renderProjectNavigation(appState, selection)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
   syncElasticProgressTimer();
   updateHydrationSummary(appState, problems);
   exposeInspection();
