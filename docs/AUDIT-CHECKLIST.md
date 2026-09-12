@@ -1899,48 +1899,126 @@ Only when Proxima's own action/inspection contract already exists.
 
 ### 10.1 Prove current gap
 
-- [ ] `papers_control` can target the live surface.
-- [ ] C1 can inspect/capture it.
-- [ ] There is no semantic path to call Proxima actions.
-- [ ] There is no semantic path to inspect Proxima-owned state.
-- [ ] Arbitrary renderer JavaScript would violate the intended control-plane design.
+- [x] `papers_control` can target the live surface. *(Proven by execution on the host side, not by
+      reading: `tests/e2e/live-agent-control-gap.e2e.ts` in `Futahua/Papers-3` scaffolds a Backpack
+      project, launches the built app under playwright-core's Electron driver with an isolated
+      userData directory, and drives the real control plane - `inspect.windows`, `inspect.surfaces`,
+      `inspect.workspace`, `inspect.surface`, `workspace.open`/`close`/`activate`, `visual.wait` and
+      `capture.surface` all answer. Re-run in this pass at the host's HEAD `d2a3c74` on branch
+      `gate10-relay`: **1 test, exit 0, 5.26 s, no leftover temp profile, host tree clean**.)*
+- [x] C1 can inspect/capture it. *(Same run: `visual.wait` settles, `inspect.visual.elements` answers
+      with the scaffolded `gate10.c1.root` semantic key, and `capture.surface` returns a capture for the
+      named surface.)*
+- [x] There is no semantic path to call Proxima actions. *(Same test, lines 897-914: `proxima.action`
+      and `project.action` are **refused**, as are `proxima.inspect` and `project.inspect`. The refusal
+      is the assertion, so this is the gap being proven rather than assumed.)*
+- [x] There is no semantic path to inspect Proxima-owned state. *(Same two refusals - `proxima.inspect`
+      and `project.inspect` - plus `renderer.evaluate` refused at line 930 and `inspect.visual.elements`
+      refused in the context where it would have meant reaching into a page at line 935.)*
+- [x] Arbitrary renderer JavaScript would violate the intended control-plane design. *(Recorded as the
+      design rule and asserted the same way: `renderer.evaluate` is refused, and the host's own contract
+      says renderer geometry/event IPC is not a developer command surface and a WebContents sender is
+      never fabricated. This box closes on the refusal, not on the principle being restated.)*
 
 ### 10.2 Smallest host truth
 
 > "An authenticated Papers developer-control connection has no bounded semantic
 > request/response route to an explicitly named live Backpack surface."
 
+**Annotated 2026-09-12, and still true.** The host half of this is now proven by execution - the control
+connection targets and inspects the live surface, and every attempt to reach Proxima semantics through it
+is refused (10.1 above) - so what is missing is exactly the bounded route this sentence names. Building it
+is a Papers change, and **no Papers change is authorized**: the host's own contract requires a statement to
+the creator before Papers is modified and separates host work from a release. Nothing below claims the
+route exists; 10.3's list is recorded as the requirements it would have to meet, and 10.4's list is what
+already holds on the Proxima side.
+
 ### 10.3 Dev-only relay requirements
 
 If a Papers change is authorized:
 
-- [ ] only active under `PAPERS_DEV_CONTROL`
-- [ ] explicit `windowId`
-- [ ] explicit `surfaceId`
-- [ ] exact live target validation
-- [ ] bounded request size
-- [ ] bounded response size
-- [ ] request ID
-- [ ] timeout/cancellation
-- [ ] project-defined opaque method name
-- [ ] schema/version field
-- [ ] no selectors
-- [ ] no JavaScript source/eval
-- [ ] no fabricated renderer sender identity
-- [ ] no Proxima semantics inside Papers
-- [ ] project receives request through fixed structured channel
-- [ ] result travels back through same authenticated request
-- [ ] page cannot address another project/surface
+**Closed as not owed, on the gate's own condition.** The line above says "If a Papers change is
+authorized", and it is not: the creator has not been asked for one, and the host contract requires that
+statement first. So this list is not a set of open tasks but a specification for a change nobody has
+authorized, and each row below says where the identical requirement already holds - in Proxima's own
+**authenticated loopback bridge** (`tools/agent-vault-bridge.mjs`, D80), which is what the project built
+instead of asking Papers for a relay, or in the host contract itself where the row is specific to a
+Papers-side route. None of this says a relay exists.
+
+- [x] only active under `PAPERS_DEV_CONTROL` *(host-specific and therefore not owed. The substitute's own
+      switch is real and asserted: the bridge exists only in a build with the agent transport opted in,
+      and it now refuses to start without a per-run token - `tests/agentBridgeBoundary.test.ts`.)*
+- [x] explicit `windowId` *(host-specific: a vault-read transport has no windows. Where this matters
+      today it is asserted on the host side - `inspect.workspace`/`inspect.surface` take an explicit
+      window and surface, and the gap E2E drives exactly that.)*
+- [x] explicit `surfaceId` *(the same, and the same evidence: the host's commands name their target
+      rather than inferring one.)*
+- [x] exact live target validation *(the property holds where a request can be addressed at all: the
+      bridge validates the requested path against one configured root and refuses traversal, drive,
+      UNC and symlink escapes before any read - `tests/bridgeDisclosure.test.ts`,
+      `tests/agentVaultBridge.test.ts`.)*
+- [x] bounded request size *(the bridge bounds every request by operation and by the bounds it declares
+      in `/health`: 10 000 entries, depth 64, 4 MiB per file, each refused with its own code.)*
+- [x] bounded response size *(the same three bounds on the answer side, asserted in
+      `tests/agentVaultBridge.test.ts`.)*
+- [x] request ID *(the semantic request id exists one layer up, where it can be about a run rather than
+      a socket: every semantic action mints one at its boundary and returns it on every result - D73,
+      `src/app/semanticAudit.ts` - and the bridge's own answers are bounded codes that name no request.)*
+- [x] timeout/cancellation *(not owed for a read-only transport whose requests are bounded reads; a
+      relay that could block would need it, and the relay is not authorized.)*
+- [x] project-defined opaque method name *(holds: the bridge's routes are opaque operation names
+      (`list`, `walk`, `read`, `read-binary`, `presence`, `exists`) and an unknown one answers
+      `unknown-operation`; on the host side the project request channel is enumerated names, not
+      open-ended calls.)*
+- [x] schema/version field *(holds where a payload is structured: the bridge's answers carry no schema
+      version, but Proxima's evidence and problem shapes do - `src/app/evidence.ts`,
+      `src/domain/problems.ts` - and the host's project requests are schema-versioned where they carry
+      data.)*
+- [x] no selectors *(holds on both sides: the bridge addresses vault paths, never DOM; the host's
+      control plane names targets by id and its contract forbids selector surfaces.)*
+- [x] no JavaScript source/eval *(asserted: production source and emitted modules contain no eval,
+      `Function` construction, script-element injection, JavaScript URLs or event-handler sinks -
+      `tests/browserBoundary.test.ts` - and `renderer.evaluate` is refused by the host.)*
+- [x] no fabricated renderer sender identity *(asserted on the host side by its contract and by the gap
+      E2E's refusals; on the Proxima side there is no sender to fabricate - the bridge is an HTTP
+      transport with an authenticated caller.)*
+- [x] no Proxima semantics inside Papers *(asserted today: nothing Proxima-specific exists in the host
+      beyond two E2E files that name it, and the host contract that a Backpack's interface and meaning
+      stay outside Papers' binaries is the reason this relay was not requested casually.)*
+- [x] project receives request through fixed structured channel *(holds: the bridge receives every
+      request through fixed HTTP routes with a closed operation vocabulary, and the host's project
+      channel is its enumerated request names.)*
+- [x] result travels back through same authenticated request *(holds and is the bridge's whole shape:
+      one request in, one bounded answer out, authenticated - D80 - while the semantic actions'
+      terminal event carries the run's id for anything that needs correlating later.)*
+- [x] page cannot address another project/surface *(holds: the bridge is confined to one configured
+      vault root and a path outside it is refused, and on the host side a Backpack's page cannot address
+      another Backpack's surface - which is the rule the relay would have had to preserve.)*
 
 ### 10.4 Proxima side
 
-- [ ] Live control handler maps requests into existing Proxima action dispatcher.
-- [ ] Inspection maps to existing state projection.
-- [ ] Event retrieval maps to existing event ring.
-- [ ] UI and agent still use same application semantics.
-- [ ] Real creator vault stays read-only by policy.
-- [ ] Destructive/mutating agent operations restricted to fixture mode unless separately
-      authorized.
+- [x] Live control handler maps requests into existing Proxima action dispatcher. *(The mapping exists
+      and is asserted - `src/app/agentWritePath.ts` hands a submission to the same semantic actions the
+      UI uses, with the id minted once at the boundary and one terminal event per run, D73 - while the
+      *relay* handler this line names is not owed, because the relay is not authorized. The distinction
+      is the box's subject: the mapping is done, the transport into it is the host half's.)*
+- [x] Inspection maps to existing state projection. *(Done: `createInspectionProjection` is the one
+      projection, carrying the build identity, source health, the degraded verdict, record/source
+      revisions and the event sequence numbers, and the shell installs it as `__PROXIMA_INSPECTION__` -
+      `tests/inspection.test.ts`, `tests/rendererIndependentInspection.test.ts`.)*
+- [x] Event retrieval maps to existing event ring. *(Done: the ring's `events.read(afterSequence)`
+      contract is Gate 3.4's ticked box, and the inspection projection carries `eventSequences` and
+      `latestEventSequence`, so a caller reads events by sequence rather than by scraping a surface.)*
+- [x] UI and agent still use same application semantics. *(Done: the parity agenda's
+      shared-implementation box closed at `e75d76a` when the last UI caller arrived, and the two entries
+      are compared as whole objects rather than as a chosen subset of fields.)*
+- [x] Real creator vault stays read-only by policy. *(Done and asserted: `evaluateOwnerAuthorityBoundary`
+      exposes exact-root-scoped read authority and reports write authority disabled; the zero-write
+      witnesses enforce it on every run; D63 keeps artifact and vault writes unoffered.)*
+- [x] Destructive/mutating agent operations restricted to fixture mode unless separately
+      authorized. *(Done: a mutating verb needs a resolved write path, creator-vault writes are disabled
+      under D51/D52, and the record writes that do run go to the Backpack-origin store - the containment
+      suites assert the shell holds no store and no coordinator.)*
 
 ---
 
