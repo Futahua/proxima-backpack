@@ -23,6 +23,7 @@
 import { createCanonicalJsonRecordStore } from '../app/canonicalRecordCodec.js';
 import { createDurableRecoveryStore } from '../app/vaultRecovery.js';
 import { startRecordMutationAuthority } from '../app/recordRecoveryStartup.js';
+import type { StartupRecoveryCandidate } from '../app/startupSession.js';
 import { readRecordStoreActivation } from '../app/recordStoreActivation.js';
 import {
   archiveProject,
@@ -174,6 +175,59 @@ function freshSchemaOptionId(): OpaqueSchemaOptionId {
   return opaqueSchemaOptionIdFromRandomBytes(bytes);
 }
 
+/**
+ * The startup half of the same gate: reconcile the durable journal on the boot itself.
+ *
+ * `resolveBrowserTaskMutations` already runs the gate, but it runs it when a write is first
+ * attempted, and a store that is never written to is a store whose journal is never read -
+ * including the boot after a crash, which is the one boot that needs it. This composes the
+ * same backend, journal and gate and returns the answer; it grants nothing, creates no
+ * coordinator and holds no storage the caller can reach.
+ */
+export async function resolveBrowserRecoveryStartup(
+  options: { readonly clock?: Clock } = {},
+): Promise<StartupRecoveryCandidate & { readonly detail: string }> {
+  let backend;
+  let journal;
+  let activation;
+  try {
+    backend = await createBrowserOpfsRecordStoreFileBackend();
+    journal = await createBrowserOpfsRecordRecoveryJournalBackend();
+    activation = await createBrowserOpfsRecordStoreActivationStorage();
+  } catch {
+    return { mutationAuthority: 'blocked', outcomes: 0, unresolved: 0, reason: 'store-unreadable', detail: 'record store unavailable' };
+  }
+
+  let marker;
+  try {
+    marker = await readRecordStoreActivation(activation);
+  } catch {
+    marker = { status: 'invalid' as const, marker: null, detail: 'activation storage could not be read' };
+  }
+  if (marker.status !== 'present' || marker.marker === null) {
+    // No activation means no canonical records and no journal to reconcile: reported as the
+    // reason rather than as a clean reconciliation, because "nothing was pending" and "nothing
+    // was examined" are different answers.
+    return {
+      mutationAuthority: 'blocked',
+      outcomes: 0,
+      unresolved: 0,
+      reason: 'not-activated',
+      detail: marker.status === 'absent' ? 'the record store has never been activated' : marker.detail,
+    };
+  }
+
+  const recovery = createDurableRecoveryStore(journal);
+  const authority = await startRecordMutationAuthority({ backend, recovery, clock: options.clock ?? systemClock });
+  return {
+    mutationAuthority: authority.mutationAuthority,
+    outcomes: authority.outcomes.length,
+    unresolved: authority.unresolved,
+    reason: authority.mutationAuthority === 'available' ? null : authority.reason.slice(0, 200),
+    detail: `reconciled ${authority.outcomes.length} record(s), ${authority.unresolved} unresolved`,
+  };
+}
+
 function freshRecordId(): OpaqueRecordId {
   const bytes = new Uint8Array(16);
   // crypto.getRandomValues is the only source here, and it is a browser one: a record id that
@@ -184,8 +238,7 @@ function freshRecordId(): OpaqueRecordId {
 
 export async function resolveBrowserTaskMutations(
   options: { readonly clock?: Clock } = {},
-): Promise<BrowserTaskMutationResolution> {
-  let backend;
+): Promise<BrowserTaskMutationResolution> {  let backend;
   let journal;
   let activation;
   try {

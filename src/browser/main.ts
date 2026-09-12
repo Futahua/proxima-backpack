@@ -8,7 +8,7 @@ import { coexistenceReadiness, declareCoexistenceReadiness } from './coexistence
 import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
 import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
 import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupSource.js';
-import { resolveBrowserTaskMutations, type BrowserRecordMutations } from '../adapters/browserTaskMutations.js';
+import { resolveBrowserTaskMutations, resolveBrowserRecoveryStartup, type BrowserRecordMutations } from '../adapters/browserTaskMutations.js';
 import { performElasticDrop } from '../app/elasticDropAction.js';
 import { normalizeSemanticKeyValues } from './semanticKeyValue.js';
 import { performWorkflowDrop } from '../app/workflowBoardDrop.js';
@@ -2032,6 +2032,10 @@ async function boot(): Promise<void> {
     restored: { store: { restore: async () => automationDirectory }, permissions: { queryPermission: async () => automationDirectory ? 'granted' : 'denied' } },
     intervalMs: 60_000,
     onProjection: (projection, mode, result) => applyProjection(projection, mode, result),
+    // The journal is reconciled on the boot, not on the first write gesture. The clock rule is
+    // the one the write path follows: a deterministic run stays deterministic, and only a live
+    // external source gets wall time.
+    runRecovery: ({ sourceMode }) => resolveBrowserRecoveryStartup({ clock: sourceMode === 'external' ? systemClock : FIXED_CLOCK }),
   });
   const started = await startup.start();
   sourceSession = started.session;

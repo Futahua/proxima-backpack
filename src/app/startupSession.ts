@@ -18,6 +18,29 @@ export interface StartupSessionOptions extends Omit<SourceSessionOptions, 'initi
   recordStore?: StateSource | null;
   /** Why the store was or was not chosen, for the startup inspection. */
   sourceDecision?: { kind: 'record-store' | 'legacy'; reason: string; detail: string } | null;
+  /**
+   * Durable recovery reconciliation, run once per boot by whoever owns the storage.
+   *
+   * Automatic rather than gesture-driven: the recovery journal is reconciled when the
+   * session starts, not the first time somebody attempts a write, because a journal that
+   * is only examined on a write is a journal nobody reads on the boot that needed it.
+   * This layer never grants anything on the result - it reports it, so a boot that could
+   * not reconcile says so in the inspection instead of looking like a clean one.
+   */
+  runRecovery?: (context: { readonly sourceMode: SourceMode }) => Promise<StartupRecoveryCandidate>;
+}
+
+/** What the recovery gate answered, as the session is allowed to know it. */
+export interface StartupRecoveryCandidate {
+  readonly mutationAuthority: 'available' | 'blocked';
+  readonly outcomes: number;
+  readonly unresolved: number;
+  readonly reason: string | null;
+}
+
+/** The same answer, plus how it arrived, so `not-run` and `failed` are never implied. */
+export interface StartupRecoveryInspection extends StartupRecoveryCandidate {
+  readonly status: 'reconciled' | 'blocked' | 'failed' | 'not-run';
 }
 
 export interface StartupInspection {
@@ -31,6 +54,7 @@ export interface StartupInspection {
   sourceDecisionKind: 'record-store' | 'legacy';
   sourceDecisionReason: string;
   sourceDecisionDetail: string;
+  recovery: StartupRecoveryInspection;
 }
 
 export interface StartupSessionResult {
@@ -48,6 +72,7 @@ function inspection(
   session: SourceSession,
   extraCodes: string[] = [],
   decision: StartupSessionOptions['sourceDecision'] = null,
+  recovery: StartupRecoveryInspection = NOT_RUN,
 ): StartupInspection {
   const state = session.snapshot();
   return {
@@ -62,7 +87,48 @@ function inspection(
     sourceDecisionKind: decision?.kind ?? (state.sourceMode === 'record-store' ? 'record-store' : 'legacy'),
     sourceDecisionReason: decision?.reason ?? (state.sourceMode === 'record-store' ? 'activated' : 'not-decided'),
     sourceDecisionDetail: decision?.detail ?? '',
+    recovery,
   };
+}
+
+/** The honest default: a boot that ran no recovery says so rather than implying a clean one. */
+const NOT_RUN: StartupRecoveryInspection = Object.freeze({
+  status: 'not-run',
+  mutationAuthority: 'blocked',
+  outcomes: 0,
+  unresolved: 0,
+  reason: null,
+});
+
+/**
+ * Run the reconciliation once and describe it. A hook that throws leaves the boot intact
+ * and the failure visible: recovery is a gate on mutation authority, not on reading, so a
+ * broken journal must not make the product unusable - but it must not look reconciled either.
+ */
+async function reconcileAtStartup(
+  run: StartupSessionOptions['runRecovery'],
+  sourceMode: SourceMode,
+): Promise<StartupRecoveryInspection> {
+  if (!run) return NOT_RUN;
+  try {
+    const candidate = await run({ sourceMode });
+    return {
+      status: candidate.mutationAuthority === 'available' ? 'reconciled' : 'blocked',
+      mutationAuthority: candidate.mutationAuthority,
+      outcomes: Number.isSafeInteger(candidate.outcomes) && candidate.outcomes > 0 ? candidate.outcomes : 0,
+      unresolved: Number.isSafeInteger(candidate.unresolved) && candidate.unresolved > 0 ? candidate.unresolved : 0,
+      reason: candidate.reason === null ? null : candidate.reason.slice(0, 200),
+    };
+  } catch (error) {
+    return {
+      status: 'failed',
+      mutationAuthority: 'blocked',
+      outcomes: 0,
+      unresolved: 0,
+      // Bounded and named, never the raw message: a journal error can carry storage detail.
+      reason: `recovery-failed: ${error instanceof Error ? error.name.slice(0, 60) : 'unknown'}`,
+    };
+  }
 }
 
 function activationFailed(load: Awaited<ReturnType<typeof loadVaultState>>): boolean {
@@ -124,7 +190,12 @@ export function createStartupSessionOrchestrator(options: StartupSessionOptions)
           }
         }
         const session = createSourceSession({ ...options, initial });
-        result = { session, inspection: inspection(bootstrap, session, extraCodes, options.sourceDecision ?? null) };
+        // Reconciliation completes before the session is handed to anybody: a caller that can
+        // observe a half-reconciled boot is a caller that can act on one.
+        const recovery = await reconcileAtStartup(options.runRecovery, session.snapshot().sourceMode);
+        if (recovery.status === 'failed') extraCodes = [...extraCodes, 'recovery-failed'];
+        if (recovery.status === 'blocked') extraCodes = [...extraCodes, 'recovery-blocked'];
+        result = { session, inspection: inspection(bootstrap, session, extraCodes, options.sourceDecision ?? null, recovery) };
         return result;
       })();
       return starting;
