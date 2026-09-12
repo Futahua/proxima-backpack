@@ -10,6 +10,25 @@ import {
   localCalendarDate,
 } from './calendarGrid.js';
 import { renderScheduleNavigation } from './scheduleNavigation.js';
+import { hostZone } from './hostTimeZone.js';
+import type { TimeZone } from '../domain/timeZone.js';
+
+/**
+ * The zone this module derives civil dates in.
+ *
+ * Bound once per render call from the options the caller passed, defaulting to the host zone
+ * read in exactly one place (`src/browser/hostTimeZone.ts`). Nothing here reads the ambient
+ * zone itself, which is what makes the derivation testable by passing a zone.
+ */
+let activeZone: TimeZone = hostZone();
+
+function bindZone(zone: TimeZone | undefined): void {
+  activeZone = zone ?? hostZone();
+}
+
+const dateKeyOf = (value: string | number | Date): string => localDateKey(value, activeZone);
+const clockTimeOf = (value: string | number | Date): string => formatClockTime(value, activeZone);
+
 import {
   expandScheduleRecurringOccurrences,
   hasScheduleRecurrence,
@@ -35,6 +54,10 @@ export interface ScheduleProjectionRenderOptions {
   selectionLabel: string;
   calendarCursor: Date;
   now: Date;
+
+  /** The zone dates are derived in. Absent means the host zone. */
+
+  zone?: TimeZone;
   selectedEventId: string | null;
   selectedRecurringOccurrence?: ScheduleRecurringOccurrenceSelection | null;
   selectedRecurringScope?: ScheduleRecurrenceScope | null;
@@ -242,10 +265,10 @@ function renderMonth(
   byDay: Map<string, ScheduleProjectedDateOccurrence[]>,
 ): string {
   const days = calendarGridDates(options.calendarCursor);
-  const todayKey = localDateKey(options.now);
+  const todayKey = dateKeyOf(options.now);
 
   const cells = days.map((day) => {
-    const key = localDateKey(day);
+    const key = dateKeyOf(day);
     const outside = day.getMonth() !== options.calendarCursor.getMonth();
     const dayEvents = byDay.get(key) ?? [];
     const events = dayEvents.map((occurrence) => (
@@ -268,7 +291,7 @@ function renderYear(
   byDay: Map<string, ScheduleProjectedDateOccurrence[]>,
 ): string {
   const year = options.calendarCursor.getFullYear();
-  const todayKey = localDateKey(options.now);
+  const todayKey = dateKeyOf(options.now);
 
   const months = Array.from(
     { length: 12 },
@@ -283,7 +306,7 @@ function renderYear(
           return '<span class="schedule-year-day outside" aria-hidden="true"></span>';
         }
 
-        const key = localDateKey(day);
+        const key = dateKeyOf(day);
         const count = byDay.get(key)?.length ?? 0;
         const indicator = count > 0
           ? `<span class="schedule-year-event-indicator" data-schedule-year-event-indicator="${escapeHtml(key)}" data-schedule-occurrence-count="${count}" aria-label="${count} event occurrence${count === 1 ? '' : 's'}">${count}</span>`

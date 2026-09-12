@@ -9,6 +9,25 @@ import type { CalendarEvent } from '../domain/types.js';
 import { localDateKey } from '../domain/time.js';
 import { localCalendarDate } from './calendarGrid.js';
 import { renderScheduleNavigation } from './scheduleNavigation.js';
+import { hostZone } from './hostTimeZone.js';
+import type { TimeZone } from '../domain/timeZone.js';
+
+/**
+ * The zone this module derives civil dates in.
+ *
+ * Bound once per render call from the options the caller passed, defaulting to the host zone
+ * read in exactly one place (`src/browser/hostTimeZone.ts`). Nothing here reads the ambient
+ * zone itself, which is what makes the derivation testable by passing a zone.
+ */
+let activeZone: TimeZone = hostZone();
+
+function bindZone(zone: TimeZone | undefined): void {
+  activeZone = zone ?? hostZone();
+}
+
+const dateKeyOf = (value: string | number | Date): string => localDateKey(value, activeZone);
+const clockTimeOf = (value: string | number | Date): string => formatClockTime(value, activeZone);
+
 import {
   expandScheduleRecurringOccurrences,
   hasScheduleRecurrence,
@@ -55,6 +74,10 @@ export interface ScheduleTimeGridRenderOptions {
   selectionLabel: string;
   calendarCursor: Date;
   now: Date;
+
+  /** The zone dates are derived in. Absent means the host zone. */
+
+  zone?: TimeZone;
   selectedEventId: string | null;
   seededEvent?: ScheduleEventDraft | null;
   selectedRecurringOccurrence?: ScheduleRecurringOccurrenceSelection | null;
@@ -153,7 +176,7 @@ function scheduleDayFromKey(value: string): Date | null {
   const day = Number(match[3]);
   const date = localCalendarDate(year, month - 1, day);
 
-  return localDateKey(date) === value ? date : null;
+  return dateKeyOf(date) === value ? date : null;
 }
 
 function civilDayOrdinal(date: Date): number {
@@ -277,7 +300,7 @@ export function scheduleTimedProjection(
 
       segments.push({
         eventId: event.id,
-        dayKey: localDateKey(day),
+        dayKey: dateKeyOf(day),
         startMinute,
         endMinute,
       });
@@ -406,9 +429,9 @@ function renderTimedDay(
   now: Date,
   writeRefusal: { eventId: string; code: string } | null,
 ): string {
-  const dayKey = localDateKey(day);
+  const dayKey = dateKeyOf(day);
   const daySegments = segments.filter((segment) => segment.dayKey === dayKey);
-  const nowKey = localDateKey(now);
+  const nowKey = dateKeyOf(now);
   const currentMinute = minuteOfDay(now);
   const currentTime = nowKey === dayKey
     ? `<div class="schedule-current-time-indicator" data-current-minute="${currentMinute}" data-papers-visual-key="schedule-current-time-${escapeHtml(dayKey)}" style="position:absolute;left:0;right:0;top:${(currentMinute / MINUTES_PER_DAY) * 100}%;border-top:2px solid currentColor;z-index:3;"></div>`
@@ -440,7 +463,7 @@ function renderTimedDay(
 
     const deadline = new Date(event.deadline);
     const finalSegmentDayKey = Number.isFinite(deadline.getTime())
-      ? localDateKey(new Date(deadline.getTime() - 1))
+      ? dateKeyOf(new Date(deadline.getTime() - 1))
       : '';
     const resizeHandle = finalSegmentDayKey === dayKey
       ? `<span data-schedule-resize-edge="end" data-papers-visual-key="schedule-event-${escapeHtml(event.id)}-${escapeHtml(dayKey)}-resize-end" aria-label="Resize event end" style="position:absolute;left:0;right:0;bottom:0;height:8px;border-bottom:2px solid currentColor;cursor:ns-resize;z-index:4;"></span>`
@@ -498,8 +521,8 @@ export function renderScheduleTimeGrid(
   const title = modeTitle(options.mode);
 
   const headers = visibleDays.map((day) => {
-    const key = localDateKey(day);
-    const isToday = key === localDateKey(options.now);
+    const key = dateKeyOf(day);
+    const isToday = key === dateKeyOf(options.now);
 
     return `<div class="schedule-day-header${isToday ? ' today' : ''}" data-papers-visual-key="schedule-day-header-${escapeHtml(key)}"${isToday ? ' aria-current="date"' : ''}><strong>${escapeHtml(day.toLocaleDateString(undefined, { weekday: 'short' }))}</strong><small>${escapeHtml(key)}</small></div>`;
   }).join('');

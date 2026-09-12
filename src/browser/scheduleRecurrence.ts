@@ -1,5 +1,25 @@
 import type { CanonicalRecurrenceException } from '../domain/canonicalRecurrence.js';
 import type { CalendarEvent } from '../domain/types.js';
+import { localDateKey } from '../domain/time.js';
+import { hostZone } from './hostTimeZone.js';
+import type { TimeZone } from '../domain/timeZone.js';
+
+/**
+ * The zone this module derives civil dates in.
+ *
+ * Bound once per render call from the options the caller passed, defaulting to the host zone
+ * read in exactly one place (`src/browser/hostTimeZone.ts`). Nothing here reads the ambient
+ * zone itself, which is what makes the derivation testable by passing a zone.
+ */
+let activeZone: TimeZone = hostZone();
+
+function bindZone(zone: TimeZone | undefined): void {
+  activeZone = zone ?? hostZone();
+}
+
+const dateKeyOf = (value: string | number | Date): string => localDateKey(value, activeZone);
+const clockTimeOf = (value: string | number | Date): string => formatClockTime(value, activeZone);
+
 
 export type ScheduleRecurrenceFrequency =
   | 'daily'
