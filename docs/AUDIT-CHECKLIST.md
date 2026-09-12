@@ -2405,7 +2405,7 @@ to the creator's real vault. No UI interaction is required to drive it.
       rollback; ambiguous peer changes become blocked.
 - [x] Reconciliation is idempotent and emits machine-readable outcomes.
 - [x] Actual process-kill injection at each filesystem mutation phase is verified.
-- [ ] Automatic startup reconciliation is wired into the Papers runtime.
+- [x] Automatic startup reconciliation is wired into the Papers runtime. - `9670c15` @ `2026-09-12T20:29:22+07:00`.       The runtime reconciles **on the boot** rather than on the first write gesture: `startupSession.ts`       takes a `runRecovery` seam, runs it inside `start()` before the session is handed to anybody, and       reports the answer in `inspection.recovery` without granting anything on it. `reconciled`, `blocked`,       `failed` and `not-run` are four different answers on purpose - a boot that reconciled nothing must not       look like one that reconciled cleanly - and `blocked`/`failed` also appear as bounded problem codes.       The browser boot supplies the hook through `resolveBrowserRecoveryStartup`, which composes the same       backend, journal and gate the write path uses rather than a second copy of them. Five mutations of this       wiring were written and all five fail the suite: the call removed, a throwing hook swallowed as clean,       a blocked answer reported as reconciled, the failed code dropped, and a missing hook claiming a clean       boot (`tests/startupRecoveryWiring.test.ts`).
 
 ### 13.C2 prepared-record classification
 
@@ -2419,7 +2419,16 @@ to the creator's real vault. No UI interaction is required to drive it.
 - [x] Classification compares bounded exact bytes; fingerprints are advisory only.
 - [x] Durable reload preserves prior/intended byte evidence needed for classification.
 - [x] Host-neutral automatic startup reconciliation and conditional status transitions
-      are implemented and tested; runtime wiring remains open.
+      are implemented and tested; runtime wiring remains open. - **Closed at `
+9670c15
+` @ `
+2026-09-12T20:29:22+07:00
+`:** the wiring
+      is no longer open. The reconciliation runs at startup, its outcome is inspected, and the integration
+      case drives the real gate over a durable journal seeded before a restart with the intended bytes already
+      on disk, so the classification (`effect-present`) and the journal transition to `committed` come back
+      through the wiring rather than from a stub. What remains open is not this box: no semantic action is
+      wired to the returned coordinator while the product stays read-only, which the status table records.
 
 ### 13.C2B Real process-death mutation phases
 
