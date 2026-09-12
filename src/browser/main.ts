@@ -83,7 +83,7 @@ import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
 import { bridgeUrlForLaunch } from './agentBridge.js';
 import { cockpitSubmode, renderCockpitNavigation } from './cockpitNavigation.js';
-import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor } from './workspaceIdentity.js';
+import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor, writeAdmissionViewFor } from './workspaceIdentity.js';
 import { archiveProjectAction, createProjectAction, deleteProjectAction, restoreProjectAction, updateProjectAction, type ProjectLifecycleOutcome } from '../app/projectLifecycleActions.js';
 import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
 import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, saveEventFormAction, type EventFormSaveOutcome, type EventWriteOutcome } from '../app/eventWriteActions.js';
@@ -562,6 +562,11 @@ function render(): void {
   root.dataset.proximaHealthGeneration = String(health.sourceRevision);
   const sourceMode = sourceSession?.snapshot().sourceMode ?? 'fixture';
   const sourceLabel = sourceLabelFor(sourceMode);
+  // Gate 14's enrollment gate, asked at render time for the source actually in front of the reader.
+  // The badge and this verdict come from one call, so the surface cannot claim a capability the
+  // gate did not grant; the verdict is rendered even when it is a refusal, because a rule that
+  // works silently is indistinguishable from a gap.
+  const admissionView = writeAdmissionViewFor(sourceMode, taskMutations !== null);
   // HARD GATE C item 6: the product stops calling itself read-only exactly when it can write, and
   // the claim is derived from the same resolution the writes use so the two cannot drift apart.
   const writesAvailable = taskMutations !== null;
@@ -604,7 +609,7 @@ function render(): void {
   });
   if (surfaceMarkup.failure) root.dataset.proximaRendererFailure = surfaceMarkup.failure.code;
   else delete root.dataset.proximaRendererFailure;
-  root.innerHTML = `<div class="app-shell" data-papers-visual-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span data-papers-visual-key="workspace-identity" data-workspace-writes="${workspaceWritesFor(sourceMode, writesAvailable)}">${escapeHtml(workspaceIdentity)}</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-papers-visual-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-papers-visual-key="source-refresh-button">Refresh source</button>${renderAcceptanceTools(acceptanceToolsView)}</div></header>${healthSurface(health)}<div class="app-layout">${renderProjectNavigation(appState, selection)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-papers-visual-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-papers-visual-key="creator-vault-preflight-status">Not run</pre></details></div>`;
+  root.innerHTML = `<div class="app-shell" data-papers-visual-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span data-papers-visual-key="workspace-identity" data-workspace-writes="${workspaceWritesFor(sourceMode, writesAvailable)}">${escapeHtml(workspaceIdentity)}</span></div></div><div class="header-state"><span class="read-only-badge" data-papers-visual-key="source-mode-badge" data-proxima-source-mode="${sourceMode}" data-proxima-live-data="${admissionView.liveData}">${escapeHtml(sourceLabel)}</span><span class="admission-badge" data-papers-visual-key="write-admission" data-write-admission="${admissionView.machineValue}" data-write-admission-reason="${admissionView.reason}">${escapeHtml(admissionView.sentence)}</span><span class="hydrated-badge" data-papers-visual-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-papers-visual-key="source-refresh-button">Refresh source</button>${renderAcceptanceTools(acceptanceToolsView)}</div></header>${healthSurface(health)}<div class="app-layout">${renderProjectNavigation(appState, selection)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-papers-visual-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-papers-visual-key="creator-vault-preflight-status">Not run</pre></details></div>`;
   normalizeSemanticKeyValues(root);
   syncElasticProgressTimer();
   updateHydrationSummary(appState, problems);
