@@ -1486,41 +1486,51 @@ that weight. The test's seam is `MemoryRecordFiles` from `tests/test-record-stor
 `createCanonicalJsonRecordStore`, driving the real `createTask` path the way `tests/taskMutations.test.ts`
 does.
 
-## D70 — Stage 17's "UI invocation test exists" is evidenced in the two halves the shell allows
+## D70 — Stage 17's "UI invocation test exists" needs a runtime click, not a source reading
 
-**Decided** on 2026-09-12, while closing the Templates row of Stage 17's matrix. The box names a test that
-clicks the UI and observes the action; this repository cannot produce one. The shell is a single
-`src/browser/main.ts` whose top-level composition runs on import, which is why `tests/acceptanceTools.test.ts`
-records that it is not importable from a test, and the backlog harness binds its own interactions rather than
-the shell's chain. So the box is evidenced in the two halves that do exist: the pure part rendered while
-bound to **the options the shell itself passes** (not convenient ones), and the shell composition read as
-source - the branch that dispatches, the named function it reaches, and the state it sets. The box is ticked
-at that strength and says so in the checklist rather than being left open forever or claimed as a click test.
+**Decided** by the browser AUTHOR on 2026-09-12, **rejecting the executor's earlier tick** of that box. The
+executor had produced the two halves this repository can produce today - `tests/templateExecuteWiring.test.ts`
+renders the panel while bound to exactly the options the shell passes, and reads the shell composition as
+source - on the reasoning that `src/browser/main.ts` runs its composition on import and so cannot be
+imported by a test (`tests/acceptanceTools.test.ts` records that). The AUTHOR's ruling: *"reading main.ts as
+text cannot prove the listener actually invokes the action under runtime composition."* The two halves are
+wiring evidence; they are not the box.
 
-**Consequence:** `tests/templateExecuteWiring.test.ts` holds the two halves and `tests/actionCoverageAudit.test.ts`
-holds the claim, so a later rename of the verb or of `createTemplateTasksAction()` breaks a test instead of
-silently orphaning the evidence. The same shape is the precedent for every later surface whose claim would
-otherwise need the chain to be executable.
+**What closes it instead** — named by the AUTHOR, and explicitly not a second general harness: extract the
+template execution binding from `main.ts` into an importable `src/browser/templateExecuteBinding.ts`, have
+`main.ts` use it, then render the real panel, bind that module, click the stable key the renderer already
+supplies (`data-c1-key="template-execute"`) through the **existing** `InteractionHarness`, and observe
+`executeTemplateAction` together with the running/result state. The box stays open until that exists.
 
-**Reverses if:** the shell gains an injectable composition seam, or a harness appears that runs the real
-chain headlessly. Then the box should be re-evidenced by an actual click, and this decision amended rather
-than deleted - the two halves stay true, they simply stop being the strongest available evidence.
+**Consequence:** the unimportable shell is not an excuse for source-shape evidence on a box that asks for a
+click; it is a reason to move the binding into a module a test can import. `tests/actionCoverageAudit.test.ts`
+keeps the row honest while the box is open, and the equivalence column below (D71) inherits the same
+requirement, because it compares the two callers of this chain.
 
-## D71 — A UI/agent equivalence is asserted through the shipped entry, not the executor beneath it
+**Reverses if:** the click test lands, or the AUTHOR accepts a different mechanism that exercises the real
+listener. The reasoning about *why* the two halves are insufficient is not reversed by either: source text is
+not runtime composition.
 
-**Decided** on 2026-09-12, after the Templates equivalence case was found to drive `executeTemplatePlan`
-directly. Both shipped callers - the composer panel's Confirm and the agent submission - go through
-`executeTemplateAction`, which parses the template text itself so that no caller can execute a hand-built
-plan. An equivalence asserted one layer below the path that runs compares two things nobody does: it would
-stay green if the action grew a divergence of its own. The case now drives the action, keeping D69's
-record-level judgement unchanged.
+## D71 — A UI/agent equivalence is asserted through the shipped entry, and between the two callers
 
-**Consequence:** `tests/templateEquivalence.test.ts` supplies the action's dependencies structurally (the
-operations, plus surface hooks that record rather than draw, and a refresh that declines - a state the action
-already answers with `refreshed: false`). The executor keeps its own coverage in `tests/templateExecution.test.ts`;
-the record-level comparison is not duplicated there.
+**Decided** in two steps on 2026-09-12. The executor found the Templates equivalence case driving
+`executeTemplatePlan` - one layer below both shipped callers, which go through `executeTemplateAction`, the
+entry that parses the template text itself so no caller can execute a hand-built plan - and moved the
+comparison up to the action, keeping D69's record-level judgement unchanged. **The browser AUTHOR ratified
+that boundary**: comparing through the action is what proves equivalence through the shipped layer, and the
+executor keeps its own coverage in `tests/templateExecution.test.ts`. It then **narrowed the claim**: the
+Stage 17 matrix box sits beside *agent invocation* and *UI invocation*, so its natural claim is equivalence
+**between those two callers**, not between the manual path and the template path. That case answers Stage
+16's box - where it stays, ticked - and the matrix box was reopened.
+
+**Consequence:** the matrix box closes on two isolated worlds - a UI click and a `submitTemplateExecution`
+submission, same template and project - compared on outcome and partial semantics plus the normalised
+resulting records. It cannot be closed before the UI chain is clickable, so it depends on D70's extraction
+rather than merely following it. `tests/templateEquivalence.test.ts` keeps supplying the action's
+dependencies structurally (the operations, surface hooks that record rather than draw, and a refresh that
+declines - a state the action already answers with `refreshed: false`).
 
 **Reverses if:** the action stops being the single entry (a second caller with its own translation would
-reopen the question), or an equivalence claim is genuinely about the executor's contract - in which case it
-belongs in the executor's suite **as well as**, never instead of, the record-level case here.
+reopen the boundary question), or an equivalence claim is genuinely about the executor's contract - in which
+case it belongs in the executor's suite **as well as**, never instead of, the record-level cases here.
 
