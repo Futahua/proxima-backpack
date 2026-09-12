@@ -71,6 +71,8 @@ function values(overrides: Partial<EventFormValues> = {}): EventFormValues {
     startDate: EVENT.startDate,
     deadline: EVENT.deadline,
     isCompleted: EVENT.isCompleted,
+    // The rule the record carries, which for this fixture is none.
+    recurrence: { kind: 'none' },
     ...overrides,
   };
 }
@@ -113,6 +115,7 @@ describe('Stage 12 the event form, as values', () => {
       startDate: '2026-09-10T13:00:00.000Z',
       deadline: '2026-09-10T14:00:00.000Z',
       isCompleted: false,
+      recurrence: { kind: 'none' },
     });
     // A seed is not a record: it becomes one only when somebody saves it.
     expect(eventSpanIsValid(seeded.startDate, seeded.deadline)).toBe(true);
@@ -246,6 +249,7 @@ describe('Stage 12 the Schedule write sequences', () => {
       startDate: current.startDate,
       deadline: current.deadline,
       isCompleted: current.isCompleted,
+      recurrence: { kind: 'none' },
     };
     const deps = { ...dependenciesFor(app, refusals, renders, true), state: await app.read() };
 

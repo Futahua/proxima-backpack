@@ -1794,3 +1794,44 @@ project declares)" when no record declares it — and is not writable, because t
 **Reverses if:** the board stops being the only place that owns position, in which case the modal would need
 an order control and the append rule would go with it; or the workflow dimension is decided to be board-only
 after all, in which case the field comes off the form and the agenda box is struck rather than reopened.
+## D78 — The Event editor's rule controls write through the series verbs, and one Save may be two writes
+
+**Decided** on 2026-09-12, working the parity agenda's `recurrence set/clear` row. That row said the two verbs
+existed, that the projection carried a rule into the readable world, that the Event editor's recurrence controls
+were deliberately inert, and that "the row is ticked when a UI caller exists". The controls were drawn and not
+wired because setting a rule and editing one occurrence are different acts and only the second had somewhere to go.
+
+**The decision: the controls are live, and a changed rule goes to the verbs that own it.**
+`saveEventFormAction` in `src/app/eventWriteActions.ts` composes the editor's Save out of `saveEventAction` (the
+fields) and `setRecurrenceAction` / `clearRecurrenceAction` (the rule) instead of folding a `recurrence` mutation
+into the field update. Folding it would be a second implementation of what setting a rule means — the series
+verbs are the boundary that validates a rule, allocates a series identity, keeps an existing series' id and its
+exceptions, and leaves the terminal event. A UI caller for those verbs is what the row was asking for; a second
+writer of the same mutation is what it was guarding against.
+
+**One Save is one write or two, and the halves are honest about it.** Only the halves that changed run, the fields
+go first because the rule is anchored on the span the reader is looking at, and a refusal in either half stops
+there and says which. A save that wrote the fields and was then refused the rule leaves the fields saved — the
+same half-way state the schema panel's create-then-options sequence states rather than hides.
+
+**The second write reads the revision the first one left.** `eventWriteDependencies()` now hands the actions a
+**live** `state` getter rather than the snapshot the sequence started with, because the session reports each
+re-read projection back to the shell as a write converges. A page that never re-projects refuses the second write
+as a lost race, which is the safe direction for this to fail in. The requirement is asserted where a test can see
+it: with a snapshot in place of the getter, the "fields and rule in one Save" case fails.
+
+**The rule's unasked parts are derived from the record's own start.** The form offers frequency, interval and the
+end condition; a weekly rule's weekday, a monthly rule's day and a yearly rule's month and day come from the
+event's start, because the domain states that the series owner's start **is** the anchor — sequence zero is the
+event exactly as it was written. Asking a reader to retype what the record already says would be offering a chance
+to disagree with it.
+
+**A rule the vocabulary cannot read is refused, not cleared.** A weekly series on two weekdays is stored, and the
+projection reports it as a gap; the readable record carried nothing, which a form would read as "does not recur"
+and clear on its next save. The projection now marks the record itself (`recurrenceUnreadable: true`) beside the
+gap, and the plan refuses to rewrite such a rule while the reader is told why. Silence and "does not recur" must
+not be the same fact to something that can write.
+
+**Reverses if:** the editor's rule control is removed (the row reopens, and the audit's operation-only list gets
+its entry back), or a future surface legitimately sets rules as part of one record update, in which case the
+composition was unnecessary and the mutation belongs in the update.

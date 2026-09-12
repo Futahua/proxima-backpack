@@ -20,6 +20,7 @@ import {
   type EventWriteOperations,
 } from '../src/app/eventWriteActions.js';
 import { createRecordMutationCoordinator } from '../src/app/recordMutation.js';
+import type { EventFormValues } from '../src/app/eventFormPlan.js';
 import { SEMANTIC_REQUEST_PREFIX } from '../src/app/semanticAudit.js';
 import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/app/vaultRecovery.js';
 import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
@@ -110,7 +111,7 @@ async function world(options: WorldOptions = {}) {
     },
   };
 
-  const values = { name: 'Kickoff', description: '', projectId: null, startDate: START, deadline: END, isCompleted: false };
+  const values: EventFormValues = { name: 'Kickoff', description: '', projectId: null, startDate: START, deadline: END, isCompleted: false, recurrence: { kind: 'none' } };
 
   return {
     deps,

@@ -22,7 +22,9 @@ import type {
   EventMutationResult,
   EventResizeTarget,
 } from './eventMutations.js';
-import { planEventFormMutations, type EventFormValues } from './eventFormPlan.js';
+import { planEventFormMutations, planEventRecurrenceWrite, type EventFormValues } from './eventFormPlan.js';
+import { clearRecurrenceAction, setRecurrenceAction, type RecurrenceWriteOutcome } from './eventRecurrenceActions.js';
+import type { OpaqueRecurrenceSeriesId } from '../domain/canonicalRecurrence.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import { convergeAfterWrite } from './writeConvergence.js';
@@ -279,12 +281,122 @@ export async function createEventAction(
 }
 
 /**
- * Save the Event editor's form.
+ * What the Event editor's Save answers.
  *
- * The mutations are the diff between the record and the form, so a save that changed nothing submits
- * nothing and is answered by the operation ("an update with no field to change is not an update")
- * rather than written as a record that says the same thing.
+ * A success names what happened to the rule as well as to the fields, because a reader who changed both is
+ * owed both: `unchanged`, `set` or `cleared`. A refusal is whichever half refused, unchanged — the two
+ * vocabularies are carried rather than translated, so a series failure keeps its own reason.
  */
+export type EventFormSaveOutcome =
+  | {
+      readonly ok: true;
+      readonly outcome: 'updated';
+      readonly requestId: string;
+      readonly recordId: OpaqueRecordId;
+      readonly revision: string;
+      readonly refreshed: boolean;
+      readonly recurrence: 'unchanged' | 'set' | 'cleared';
+    }
+  | Extract<EventWriteOutcome, { ok: false }>
+  | Extract<RecurrenceWriteOutcome, { ok: false }>;
+
+/**
+ * The Event editor's Save, which is one write or two.
+ *
+ * A form can change its fields, its rule, or both, and the two halves are different verbs: the fields are
+ * `event.update` through `saveEventAction`, and the rule is `event.recurrence.set` or
+ * `event.recurrence.clear`, which are their own boundary — they mint their own request id, carry the series
+ * and leave their own terminal event. So this composes rather than merges: only the halves that changed run,
+ * in the order the reader described them (the span first, because the rule is anchored on it), and a refusal
+ * in either half stops there rather than writing the other.
+ *
+ * Two writes for one Save is the honest shape here rather than a compromise. A merged mutation list would be a
+ * second implementation of what setting a rule means — the thing `setRecurrenceAction` exists to be — and the
+ * record layer's own revision rule makes the second write safe: it re-reads the record the first write left.
+ * The half-way state is stated rather than hidden: a save that set the fields and was then refused the rule
+ * leaves the fields saved and says so, which is the same rule the schema panel's create-then-options sequence
+ * follows.
+ */
+export async function saveEventFormAction(
+  deps: EventWriteDependencies,
+  input: {
+    readonly eventId: string;
+    readonly values: EventFormValues;
+    readonly allocateSeriesId: () => OpaqueRecurrenceSeriesId;
+  },
+): Promise<EventFormSaveOutcome> {
+  const event = deps.state?.events.find((candidate) => candidate.id === input.eventId) ?? null;
+  const recurrence = event === null
+    ? { kind: 'none' } as const
+    : planEventRecurrenceWrite(event, input.values);
+
+  if (recurrence.kind === 'refused') {
+    return {
+      ok: false,
+      schemaVersion: EVENT_WRITE_ACTION_SCHEMA_VERSION,
+      verb: 'update',
+      reason: 'validation-refused',
+      detail: recurrence.detail,
+      requestId: mintSemanticRequestId(deps.ids),
+      refreshed: false,
+    };
+  }
+
+  const fieldsChanged = event !== null && planEventFormMutations(event, input.values).length > 0;
+  if (!fieldsChanged && recurrence.kind === 'none') {
+    // Nothing in either half: let the operation answer it, so a Save that changed nothing keeps answering with
+    // the record layer's own sentence rather than a second one written here.
+    const unchanged = await saveEventAction(deps, input);
+    if (!unchanged.ok) return unchanged;
+    return {
+      ok: true,
+      outcome: 'updated',
+      requestId: unchanged.requestId,
+      recordId: unchanged.recordId,
+      revision: unchanged.revision,
+      refreshed: unchanged.refreshed,
+      recurrence: 'unchanged',
+    };
+  }
+
+  let fields: Extract<EventWriteOutcome, { ok: true }> | null = null;
+  if (fieldsChanged) {
+    const written = await saveEventAction(deps, input);
+    if (!written.ok) return written;
+    fields = written;
+  }
+
+  if (recurrence.kind === 'set') {
+    const set = await setRecurrenceAction(deps, {
+      eventId: input.eventId,
+      rule: recurrence.rule,
+      allocateSeriesId: input.allocateSeriesId,
+    });
+    return set.ok
+      ? { ok: true, outcome: 'updated', requestId: set.requestId, recordId: set.recordId, revision: set.revision, refreshed: set.refreshed, recurrence: 'set' }
+      : set;
+  }
+
+  if (recurrence.kind === 'clear') {
+    const cleared = await clearRecurrenceAction(deps, { eventId: input.eventId });
+    return cleared.ok
+      ? { ok: true, outcome: 'updated', requestId: cleared.requestId, recordId: cleared.recordId, revision: cleared.revision, refreshed: cleared.refreshed, recurrence: 'cleared' }
+      : cleared;
+  }
+
+  // The fields were written and the rule was already what the form said.
+  return {
+    ok: true,
+    outcome: 'updated',
+    requestId: fields!.requestId,
+    recordId: fields!.recordId,
+    revision: fields!.revision,
+    refreshed: fields!.refreshed,
+    recurrence: 'unchanged',
+  };
+}
+
+/** Save the Event editor's form. */
 export async function saveEventAction(
   deps: EventWriteDependencies,
   input: { readonly eventId: string; readonly values: EventFormValues },

@@ -12,7 +12,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { eventEditorInputFor, eventRecurrenceFor, renderEventModal } from '../src/browser/eventModal.js';
+import { eventEditorInputFor, eventFormValuesFrom, eventRecurrenceFor, renderEventModal } from '../src/browser/eventModal.js';
 import { renderScheduleProjection } from '../src/browser/scheduleProjection.js';
 import { renderScheduleTimeGrid } from '../src/browser/scheduleTimeGrid.js';
 import { EMPTY_STATE, type CalendarEvent, type ProximaState } from '../src/domain/types.js';
@@ -50,8 +50,8 @@ function state(events: CalendarEvent[]): ProximaState {
 const projectNames = new Map([['p1', 'Alpha project']]);
 const now = new Date('2026-02-01T08:00:00.000Z');
 
-function modal(events: CalendarEvent[], eventId: string | null, mode: 'edit' | 'read-only' = 'edit'): HTMLElement {
-  document.body.innerHTML = renderEventModal({ events, projectNames, eventId, closeAction: 'close-event', closeAttribute: 'data-schedule-action', mode });
+function modal(events: CalendarEvent[], eventId: string | null, mode: 'edit' | 'read-only' = 'edit', writes: { refusal: string | null; feedback: string | null } | null = null): HTMLElement {
+  document.body.innerHTML = renderEventModal({ events, projectNames, eventId, closeAction: 'close-event', closeAttribute: 'data-schedule-action', mode, writes });
   return document.body;
 }
 
@@ -116,6 +116,39 @@ describe('Event modal fields', () => {
     expect((root.querySelector('[data-c1-key="schedule-event-delete"]') as HTMLButtonElement).disabled).toBe(true);
     expect(root.querySelector('[data-c1-key="schedule-event-save-note"]')!.textContent).toContain('until the record store can write');
     expect(root.querySelector('[data-c1-key="schedule-event-modal"]')!.getAttribute('data-schedule-event-field-count')).toBe('12');
+  });
+
+  it('makes the recurrence controls real when the run can write, and leaves them inert when it cannot', () => {
+    const weekly = event({ id: 'e1', properties: { recurrence: { frequency: 'weekly', interval: 2, until: '2026-06-30' } } });
+
+    // No resolved write path: every control is inert, which is what the box about an inert form records. A
+    // select says so with `disabled` and a text field with `readonly`, which is the shape this modal uses.
+    modal([weekly], 'e1');
+    expect((field('recurrenceFrequency') as HTMLSelectElement).disabled).toBe(true);
+    expect((field('recurrenceInterval') as HTMLInputElement).readOnly).toBe(true);
+
+    // A resolved one: the rule is a control the reader can change, because a changed rule has somewhere to go -
+    // `saveEventFormAction` routes it to the series verbs rather than folding it into the field update.
+    modal([weekly], 'e1', 'edit', { refusal: null, feedback: null });
+    expect((field('recurrenceFrequency') as HTMLSelectElement).disabled).toBe(false);
+    expect((field('recurrenceInterval') as HTMLInputElement).readOnly).toBe(false);
+    expect((field('recurrenceEndKind') as HTMLSelectElement).disabled).toBe(false);
+    expect((field('recurrenceUntil') as HTMLInputElement).readOnly).toBe(false);
+    // The six field controls stay what they were, and Save is a control.
+    expect((field('name') as HTMLInputElement).readOnly).toBe(false);
+    expect((document.querySelector('[data-c1-key="schedule-event-save"]') as HTMLButtonElement).disabled).toBe(false);
+
+    // And the form reads the rule back out of those controls, which is what a save submits. The values are set
+    // the way a browser records a reader's choice - in the control itself - rather than by parsing the markup's
+    // `selected` attribute, which is what the display cases above assert.
+    (field('recurrenceEndKind') as HTMLSelectElement).value = 'until';
+    (field('recurrenceUntil') as HTMLInputElement).value = '2026-06-30';
+    const collected = eventFormValuesFrom(document.body);
+    expect(collected?.recurrence).toEqual({ kind: 'series', frequency: 'weekly', interval: 2, end: { kind: 'until', until: '2026-06-30' } });
+
+    // Choosing "none" is how a reader turns recurrence off, and the form says exactly that.
+    (field('recurrenceEndKind') as HTMLSelectElement).value = 'none';
+    expect(eventFormValuesFrom(document.body)?.recurrence).toEqual({ kind: 'none' });
   });
 
   it('says why there is no colour control rather than leaving the question open', () => {

@@ -27,6 +27,7 @@ import { loadVaultState } from '../app/vaultRepository.js';
 import { fixedClock, sequentialIdGenerator, systemClock } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import { opaqueRecurrenceSeriesIdFromRandomBytes } from '../domain/canonicalRecurrence.js';
 import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
 import type { ProximaState, ElasticColumn, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
@@ -83,7 +84,7 @@ import { cockpitSubmode, renderCockpitNavigation } from './cockpitNavigation.js'
 import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor } from './workspaceIdentity.js';
 import { archiveProjectAction, createProjectAction, deleteProjectAction, restoreProjectAction, updateProjectAction, type ProjectLifecycleOutcome } from '../app/projectLifecycleActions.js';
 import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
-import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, type EventWriteOutcome } from '../app/eventWriteActions.js';
+import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, saveEventFormAction, type EventFormSaveOutcome, type EventWriteOutcome } from '../app/eventWriteActions.js';
 import { changeTaskDatesAction } from '../app/timelineChangeAction.js';
 import { acceptanceToolsAfterToggle, EMPTY_ACCEPTANCE_TOOLS_VIEW, renderAcceptanceTools, type AcceptanceToolsViewState } from './acceptanceTools.js';
 import { createWorkflowStageAction, deleteWorkflowStageAction, renameWorkflowStageAction, type WorkflowStageWriteOutcome } from '../app/workflowStageWriteActions.js';
@@ -1206,7 +1207,13 @@ async function saveProjectEditAction(projectId: string, draft: ProjectEditorDraf
  */
 function eventWriteDependencies() {
   return {
-    state: appState,
+    // A **live** state rather than the snapshot this call started with. One Save can be two writes - the fields
+    // through `event.update` and the rule through its own series verb - and the second one has to read the
+    // revision the first one left. The session hands this shell the re-read projection through `onProjection` as
+    // each write converges, so this getter answers with what the store now holds rather than with what it held
+    // when the sequence began. A page that never re-projects refuses the second write as a lost race, which is
+    // the safe direction for this to fail in.
+    get state() { return appState; },
     writes: resolveTaskWritePath,
     unavailableReason: () => taskMutationUnavailable,
     refresh: refreshFromSource,
@@ -1227,6 +1234,40 @@ function eventWriteSentence(outcome: EventWriteOutcome): string {
   return outcome.ok ? `${outcome.outcome} at revision ${outcome.revision}` : `${outcome.reason}: ${outcome.detail}`;
 }
 
+/**
+ * What a Save says, including what happened to the rule.
+ *
+ * A reader who changed both halves is owed both sentences, and a rule that was set or cleared is a fact about
+ * the record rather than a detail of the field write.
+ */
+function eventFormSaveSentence(outcome: EventFormSaveOutcome): string {
+  if (!outcome.ok) return `${outcome.reason}: ${outcome.detail}`;
+  const rule = outcome.recurrence === 'unchanged' ? '' : `, recurrence ${outcome.recurrence}`;
+  return `${outcome.outcome}${rule} at revision ${outcome.revision}`;
+}
+
+/**
+ * Recurrence-series ids, from the same counter the record ids come from.
+ *
+ * The domain mints a series id from sixteen bytes, so this hands it sixteen bytes: the sequence number in the
+ * first four and nothing in the rest. Deterministic on purpose — an acceptance run compares evidence bundles,
+ * and a random id in every bundle would make them differ for no reason — and unique because the counter is.
+ */
+const SERIES_IDS = (() => {
+  let serial = 0;
+  return {
+    next: () => {
+      serial += 1;
+      const bytes = new Uint8Array(16);
+      bytes[0] = (serial >>> 24) & 0xff;
+      bytes[1] = (serial >>> 16) & 0xff;
+      bytes[2] = (serial >>> 8) & 0xff;
+      bytes[3] = serial & 0xff;
+      return opaqueRecurrenceSeriesIdFromRandomBytes(bytes);
+    },
+  };
+})();
+
 async function createEventFromSeed(intent: ScheduleEventCreateIntent): Promise<void> {
   const outcome = await createEventAction(eventWriteDependencies(), {
     values: {
@@ -1236,6 +1277,8 @@ async function createEventFromSeed(intent: ScheduleEventCreateIntent): Promise<v
       startDate: intent.startDate,
       deadline: intent.deadline,
       isCompleted: false,
+      // A seeded form creates a plain event: recurrence is something the editor offers once the record exists.
+      recurrence: { kind: 'none' },
     },
   });
   scheduleSeedRefusal = outcome.ok ? null : outcome.reason;
@@ -1270,8 +1313,15 @@ async function changeEventFromGesture(intent: ScheduleEventChangeIntent): Promis
  * delete closes the editor, because the record now says what the form said.
  */
 async function saveEventFromEditor(intent: { eventId: string; values: EventFormValues }): Promise<void> {
-  const outcome = await saveEventAction(eventWriteDependencies(), intent);
-  scheduleWriteFeedback = eventWriteSentence(outcome);
+  const outcome = await saveEventFormAction(eventWriteDependencies(), {
+    eventId: intent.eventId,
+    values: intent.values,
+    // A series id is minted only when the event had no series, and it is minted here because identity is
+    // injected like every other id in this tree: sixteen bytes with this run's own sequence number in the
+    // first four, so a deterministic run stays deterministic and two series cannot collide.
+    allocateSeriesId: () => SERIES_IDS.next(),
+  });
+  scheduleWriteFeedback = eventFormSaveSentence(outcome);
   scheduleWriteRefusalCode = outcome.ok ? null : outcome.reason;
   if (outcome.ok) {
     selectedScheduleEventId = null;

@@ -19,8 +19,38 @@
  * reach the same validated write.
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import {
+  defineCanonicalRecurrenceRule,
+  type CanonicalRecurrenceRule,
+  type CanonicalRecurrenceWeekday,
+} from '../domain/canonicalRecurrence.js';
 import type { CalendarEvent } from '../domain/types.js';
+import type { EventRecurrenceFrequency } from './eventEditor.js';
 import type { EventFieldMutation } from './eventMutations.js';
+
+/**
+ * The recurrence a form holds, in the editor's own terms.
+ *
+ * `none` is an event that does not recur, `series` is a rule the reader can see and change, and
+ * `unsupported` is a recurrence the record carries that this vocabulary cannot express — a weekly rule on
+ * several weekdays, which the projection reports as a gap rather than dropping. **The third case is why this
+ * is a union rather than a nullable rule**: a form that read an unexpressible recurrence as "does not recur"
+ * would clear it on the next save, which is the silent loss the projection's gap exists to prevent.
+ */
+export type EventFormRecurrenceEnd =
+  | { readonly kind: 'never' }
+  | { readonly kind: 'until'; readonly until: string }
+  | { readonly kind: 'count'; readonly count: number };
+
+export type EventFormRecurrence =
+  | { readonly kind: 'none' }
+  | {
+      readonly kind: 'series';
+      readonly frequency: EventRecurrenceFrequency;
+      readonly interval: number;
+      readonly end: EventFormRecurrenceEnd;
+    }
+  | { readonly kind: 'unsupported' };
 
 /** The values a form holds, as the record's own fields rather than as text. */
 export interface EventFormValues {
@@ -30,12 +60,99 @@ export interface EventFormValues {
   readonly startDate: string;
   readonly deadline: string;
   readonly isCompleted: boolean;
+  readonly recurrence: EventFormRecurrence;
 }
 
 function instant(value: string): number | null {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+/**
+ * The recurrence a record carries, as the form reads it.
+ *
+ * The canonical rule the projection carries is the authority; a record that has recurrence state but no
+ * readable rule is `unsupported`, because that is a fact about the record rather than the absence of one.
+ */
+function recurrenceValuesOf(event: Pick<CalendarEvent, 'properties'>): EventFormRecurrence {
+  // The projection's own marker for "this record recurs in a way the readable rule cannot carry" comes first:
+  // it is the only answer that distinguishes that from "does not recur", and the difference decides whether a
+  // save may clear the rule.
+  if (event.properties.recurrenceUnreadable === true) return { kind: 'unsupported' };
+  const rule = event.properties.recurrenceRule as CanonicalRecurrenceRule | undefined;
+  if (rule !== undefined) {
+    return {
+      kind: 'series',
+      frequency: rule.frequency,
+      interval: rule.interval,
+      end: { ...rule.end },
+    };
+  }
+  return event.properties.recurrence === undefined && event.properties.recurrenceSeries === undefined
+    ? { kind: 'none' }
+    : { kind: 'unsupported' };
+}
+
+/** The weekday an instant falls on, in the rule's own vocabulary, computed in UTC like the anchor math. */
+function weekdayOf(iso: string): CanonicalRecurrenceWeekday {
+  const days: readonly CanonicalRecurrenceWeekday[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  return days[new Date(iso).getUTCDay()] ?? 'mon';
+}
+
+/**
+ * The rule a form's recurrence amounts to, or the sentence saying why it amounts to none.
+ *
+ * Three of the rule's parts are **not asked for, and derived from the record's own start** instead: a weekly
+ * rule's weekday, a monthly rule's day, and a yearly rule's month and day. That is not a default — the
+ * domain states that the series owner's start *is* the anchor, sequence zero is the event exactly as it was
+ * written, and the expansion applies the rule to it; so a weekly rule that repeats "on the day this event is
+ * already on" says the same instants the anchor implies, and asking a reader to retype their own start date
+ * would be asking for a chance to disagree with it.
+ */
+export function eventRecurrenceRuleFor(
+  recurrence: EventFormRecurrence,
+  anchor: string,
+): { readonly ok: true; readonly rule: CanonicalRecurrenceRule } | { readonly ok: false; readonly detail: string } {
+  if (recurrence.kind !== 'series') {
+    return { ok: false, detail: 'this event does not recur, so there is no rule to write' };
+  }
+  if (!Number.isFinite(Date.parse(anchor))) {
+    return { ok: false, detail: 'a recurrence needs the event to start at a readable instant' };
+  }
+  const shape = {
+    daily: () => ({ frequency: 'daily' as const, interval: recurrence.interval, end: recurrence.end }),
+    weekly: () => ({ frequency: 'weekly' as const, interval: recurrence.interval, weekdays: [weekdayOf(anchor)], end: recurrence.end }),
+    monthly: () => ({ frequency: 'monthly' as const, interval: recurrence.interval, dayOfMonth: new Date(anchor).getUTCDate(), end: recurrence.end }),
+    yearly: () => ({
+      frequency: 'yearly' as const,
+      interval: recurrence.interval,
+      month: new Date(anchor).getUTCMonth() + 1,
+      dayOfMonth: new Date(anchor).getUTCDate(),
+      end: recurrence.end,
+    }),
+  };
+  try {
+    return { ok: true, rule: defineCanonicalRecurrenceRule(shape[recurrence.frequency]()) };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Whether the form's recurrence differs from the record's, which is what decides if there is a second write. */
+export function eventRecurrenceChanged(
+  event: Pick<CalendarEvent, 'properties'>,
+  values: EventFormValues,
+): boolean {
+  const current = recurrenceValuesOf(event);
+  if (current.kind !== values.recurrence.kind) return true;
+  if (current.kind !== 'series' || values.recurrence.kind !== 'series') return false;
+  return current.frequency !== values.recurrence.frequency
+    || current.interval !== values.recurrence.interval
+    || current.end.kind !== values.recurrence.end.kind
+    || (current.end.kind === 'until' && values.recurrence.end.kind === 'until' && current.end.until !== values.recurrence.end.until)
+    || (current.end.kind === 'count' && values.recurrence.end.kind === 'count' && current.end.count !== values.recurrence.end.count);
+}
+
 
 /**
  * The values an editor opens on: the record, read.
@@ -53,6 +170,7 @@ export function eventFormValuesFor(state: { readonly events: readonly CalendarEv
     startDate: event.startDate,
     deadline: event.deadline,
     isCompleted: event.isCompleted,
+    recurrence: recurrenceValuesOf(event),
   };
 }
 
@@ -78,12 +196,50 @@ export function planEventFormMutations(
   return mutations;
 }
 
+/**
+ * What a save does about the rule, if anything.
+ *
+ * Four answers, and the third is the one worth having: a record whose recurrence this vocabulary cannot read
+ * is **refused rather than cleared**, because the form cannot express what is stored, so a save that treated
+ * it as "does not recur" would delete a rule nobody could see. The reader is told instead.
+ */
+export type EventRecurrenceWritePlan =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'set'; readonly rule: CanonicalRecurrenceRule }
+  | { readonly kind: 'clear' }
+  | { readonly kind: 'refused'; readonly detail: string };
+
+/**
+ * Decide whether a save changes the rule, and to what.
+ *
+ * @param event - the record the surface was rendering.
+ * @param values - the form's values, the span included: a rule is anchored on the record's own start, so a save
+ *   that moves the start and changes the rule together derives the rule's weekday or day from the **new**
+ *   start - which is the span the reader is looking at, and the one the record will carry.
+ */
+export function planEventRecurrenceWrite(
+  event: Pick<CalendarEvent, 'properties'>,
+  values: EventFormValues,
+): EventRecurrenceWritePlan {
+  const current = recurrenceValuesOf(event);
+  if (current.kind === 'unsupported') {
+    return {
+      kind: 'refused',
+      detail: 'the stored recurrence cannot be read here, so this form will not rewrite it',
+    };
+  }
+  if (!eventRecurrenceChanged(event, values)) return { kind: 'none' };
+  if (values.recurrence.kind === 'none') return { kind: 'clear' };
+  const built = eventRecurrenceRuleFor(values.recurrence, values.startDate);
+  return built.ok ? { kind: 'set', rule: built.rule } : { kind: 'refused', detail: built.detail };
+}
+
 /** True when the form would write something, which is what makes a Save worth offering. */
 export function eventFormIsDirty(
-  event: Pick<CalendarEvent, 'name' | 'description' | 'projectId' | 'startDate' | 'deadline' | 'isCompleted'>,
+  event: Pick<CalendarEvent, 'name' | 'description' | 'projectId' | 'startDate' | 'deadline' | 'isCompleted' | 'properties'>,
   values: EventFormValues,
 ): boolean {
-  return planEventFormMutations(event, values).length > 0;
+  return planEventFormMutations(event, values).length > 0 || eventRecurrenceChanged(event, values);
 }
 
 /**
@@ -93,7 +249,7 @@ export function eventFormIsDirty(
  * nobody asked for — and the reader can change both ends before saving.
  */
 export function seededEventValues(startDate: string, deadline: string, name = 'New event'): EventFormValues {
-  return { name, description: '', projectId: null, startDate, deadline, isCompleted: false };
+  return { name, description: '', projectId: null, startDate, deadline, isCompleted: false, recurrence: { kind: 'none' } };
 }
 
 /** True when the two ends are a span at all, so a form can say so before it submits. */

@@ -219,7 +219,7 @@ function mount(
     createEvent: (intent) => {
       pending.push((async () => {
         const outcome = await createEventAction(dependencies(state), {
-          values: { name: intent.name, description: intent.description, projectId: intent.projectId, startDate: intent.startDate, deadline: intent.deadline, isCompleted: false },
+          values: { name: intent.name, description: intent.description, projectId: intent.projectId, startDate: intent.startDate, deadline: intent.deadline, isCompleted: false, recurrence: { kind: 'none' } },
         });
         view.seedRefusal = outcome.ok ? null : outcome.reason;
         // An accepted create closes the form: the event exists and the grid is about to draw it.

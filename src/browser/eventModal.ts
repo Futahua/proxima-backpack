@@ -9,7 +9,7 @@ import {
   type EventEditorOption,
   type EventEditorRecurrence,
 } from '../app/eventEditor.js';
-import type { EventFormValues } from '../app/eventFormPlan.js';
+import type { EventFormRecurrence, EventFormRecurrenceEnd, EventFormValues } from '../app/eventFormPlan.js';
 import { scheduleRecurrenceRule } from './scheduleRecurrence.js';
 
 function escapeHtml(value: unknown): string {
@@ -61,18 +61,30 @@ export function eventEditorInputFor(events: readonly CalendarEvent[], projectNam
 /**
  * The fields this form writes.
  *
- * The recurrence controls are drawn but not editable here: what "this occurrence" and "the whole
- * series" mean is Stage 13's question, and a form that submitted a half-answered rule would be
- * inventing the answer. The scope statement above them already says so.
+ * The recurrence controls are editable now that the rule has somewhere to go: `saveEventFormAction` routes a
+ * changed rule to `event.recurrence.set` or `event.recurrence.clear`, which are the verbs that write a series,
+ * rather than folding it into the field update. The scope statement above them still says that one occurrence
+ * is not the series, because editing a rule and editing one occurrence remain different acts.
  */
-const EDITABLE_EVENT_FIELDS = new Set(['name', 'description', 'project', 'start', 'end', 'completion']);
+const EDITABLE_EVENT_FIELDS = new Set([
+  'name',
+  'description',
+  'project',
+  'start',
+  'end',
+  'completion',
+  'recurrenceFrequency',
+  'recurrenceInterval',
+  'recurrenceEndKind',
+  'recurrenceUntil',
+  'recurrenceCount',
+]);
 
 /**
  * One field, as the control that carries it.
  *
- * With a resolved write path the six fields this form owns are real controls; without one every
- * control is inert and the typed refusal sits where Save would be. The recurrence controls stay
- * inert either way, for the reason above.
+ * With a resolved write path the fields this form owns are real controls; without one every control is inert
+ * and the typed refusal sits where Save would be.
  */
 function renderEventField(field: EventEditorField, writable: boolean): string {
   const key = `schedule-event-${field.id}`;
@@ -150,6 +162,38 @@ export function eventFormValuesFrom(root: ParentNode): EventFormValues | null {
     startDate: (start as HTMLInputElement).value,
     deadline: (end as HTMLInputElement).value,
     isCompleted: root.querySelector<HTMLInputElement>('[data-schedule-event-field="completion"]')?.checked ?? false,
+    recurrence: recurrenceFromControls(control),
+  };
+}
+
+/**
+ * The recurrence the controls describe.
+ *
+ * The end-condition select is the first answer, because "does not recur" is one of its values: with `none` the
+ * rest of the controls are not read at all, which is what makes turning recurrence off a clear rather than an
+ * edit to a rule nobody is looking at any more. What the form does not ask for — a weekly rule's weekday, a
+ * monthly rule's day, a yearly rule's month and day — is derived from the event's start by the plan, so this
+ * function reports only what a reader can actually see.
+ */
+function recurrenceFromControls(control: (id: string) => HTMLElement | null): EventFormRecurrence {
+  const endKind = (control('recurrenceEndKind') as HTMLSelectElement | null)?.value ?? 'none';
+  if (endKind === 'none') return { kind: 'none' };
+
+  const frequency = (control('recurrenceFrequency') as HTMLSelectElement | null)?.value;
+  const interval = Number((control('recurrenceInterval') as HTMLInputElement | null)?.value ?? '1');
+  const end: EventFormRecurrenceEnd = endKind === 'until'
+    ? { kind: 'until', until: (control('recurrenceUntil') as HTMLInputElement | null)?.value ?? '' }
+    : endKind === 'count'
+      ? { kind: 'count', count: Number((control('recurrenceCount') as HTMLInputElement | null)?.value ?? '1') }
+      : { kind: 'never' };
+
+  return {
+    kind: 'series',
+    frequency: (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly' || frequency === 'yearly')
+      ? frequency
+      : 'daily',
+    interval: Number.isSafeInteger(interval) && interval > 0 ? interval : 1,
+    end,
   };
 }
 

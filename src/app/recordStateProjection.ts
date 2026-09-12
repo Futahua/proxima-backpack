@@ -278,7 +278,10 @@ function recurrenceProperties(
       reason: 'recurrence-rule-not-representable',
       detail: `series ${series.seriesId} recurs on ${rule.weekdays.length} weekdays, which the readable rule cannot carry`,
     });
-    return {};
+    // The record says so as well as the gap list, because a surface has to be able to tell "does not recur" from
+    // "recurs in a way this vocabulary cannot show": an editor that read the silence as the first would clear the
+    // rule on its next save. The gap is for the diagnostics; this is for the surface.
+    return { recurrenceUnreadable: true };
   }
 
   return {

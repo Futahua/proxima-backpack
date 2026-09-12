@@ -117,12 +117,16 @@ const EVENT_ROWS: readonly TaskActionRow[] = [
   // the case names: the module declares the scope type, and the comment above the branch says which write
   // each one means.
   { action: 'event series change', module: 'src/app/eventRecurrenceActions.ts', marker: 'scope: OccurrenceScope', caller: 'updateOccurrenceFromScope(', testFile: 'tests/eventRecurrence.test.ts', testMarker: 'series', equivalence: false },
+  // The rule itself. This row was operation-only for as long as the editor's recurrence controls were inert -
+  // the verbs existed, the projection carried a rule, and no surface reached them - and it left that list when
+  // the controls became real: `saveEventFormAction` in `src/app/eventWriteActions.ts` routes a changed rule to
+  // `setRecurrenceAction`/`clearRecurrenceAction` rather than folding it into the field update, and the test
+  // named here runs that path over a real store.
+  { action: 'event.recurrence.set/clear', module: 'src/app/eventRecurrenceActions.ts', marker: 'export async function setRecurrenceAction', caller: 'saveEventFormAction(', testFile: 'tests/eventRecurrenceForm.test.ts', testMarker: "recurrence: 'set'", equivalence: false },
 ];
 
-/** The event rule itself: accepted by the record layer, not offered by a surface yet. */
-const EVENT_OPERATION_ONLY_ROWS = [
-  { action: 'event.recurrence.set/clear (retained)', module: 'src/app/eventRecurrenceActions.ts', marker: 'export async function setRecurrenceAction', absentCaller: 'setRecurrenceAction(' },
-] as const;
+/** The event verbs with no UI caller, which is now an empty list rather than a claim. */
+const EVENT_OPERATION_ONLY_ROWS: readonly { readonly action: string }[] = [];
 
 /**
  * Stage 17's project rows.
@@ -399,13 +403,17 @@ describe('Stage 17 event action coverage', () => {
     expect(onWire.includes('event.update'), 'event.update must not be on the agent wire').toBe(false);
   });
 
-  it('leaves no event action silently agent-only, and says which one is', () => {
-    for (const row of EVENT_OPERATION_ONLY_ROWS) {
-      expect(source(row.module)).toContain(row.marker);
-      // The rule can be written and no surface offers it: that is the gap this row records, and the
-      // assertion is what keeps it from being claimed as wired.
-      expect(MAIN).not.toContain(row.absentCaller);
-    }
+  it('leaves no event action silently agent-only, and proves the rule an editor writes goes through its own verb', () => {
+    // The list is empty, and that emptiness is the claim: the one event verb that had no UI caller - the rule -
+    // got one when the editor's recurrence controls became live. An entry here is a debt, so the assertion is on
+    // the list rather than a loop over nothing.
+    expect(EVENT_OPERATION_ONLY_ROWS).toHaveLength(0);
+
+    // And the composed Save reaches the series verbs rather than writing a rule itself, which is the difference
+    // between a UI caller and a second implementation of what setting a rule means.
+    const writes = source('src/app/eventWriteActions.ts');
+    expect(writes, 'the form save must set a rule through the verb that owns it').toContain('setRecurrenceAction(');
+    expect(writes, 'and clear one through the verb that owns it').toContain('clearRecurrenceAction(');
   });
 
   it('carries the record layer contract the event rows lean on', () => {
@@ -1362,15 +1370,15 @@ const EVENT_CONTRACT_ROWS: readonly ContractRow[] = [
       overrides: RECURRENCE_ENVELOPE_OVERRIDES,
     },
     {
-      action: 'event.recurrence.set/clear (retained)',
+      action: 'event.recurrence.set/clear',
       request: { marker: 'readonly rule: CanonicalRecurrenceRule', reason: 'the set half names the rule it writes and the clear half names only the event; neither accepts a series id from the caller, because the series identity is allocated rather than supplied' },
       effect: "'updated'",
       shape: 'write',
       refusal: { marker: 'refused(verb, scope, step.reason, step.detail, requestId)', reason: 'the rule is validated by the planner step and its machine-readable reason travels back through the sequence, so a rule that cannot be written is refused rather than thrown' },
       observable: { file: 'tests/eventRecurrence.test.ts', marker: 'expect(await app.series()).toBeNull();', note: 'the case reads the series back out of the store record through its own helper and asserts it is gone, and the schedule expansion is asserted empty beside it' },
-      // The row is still operation-only - no surface reaches the rule verbs, which its own sibling assertion
-      // keeps honest - but the sequence behind them carries the envelope like every other write. A gap cell is
-      // about what the action does, not about who calls it.
+      // The row is no longer operation-only - the editor's recurrence controls call these verbs through
+      // `saveEventFormAction` - so the envelope overrides are the whole story here: the sequence behind the two
+      // halves carries the request id and the terminal event like every other write.
       overrides: RECURRENCE_ENVELOPE_OVERRIDES,
     },
   ]),
