@@ -12,7 +12,8 @@
     "agent:bridge": "node tools/agent-vault-bridge.mjs",
     "agent:accept": "node tools/agent-accept.mjs",
     "agent:coexist": "node tools/coexistence-run.mjs",
-    "agent:visual": "node tools/papers-visual-accept.mjs"
+    "agent:visual": "node tools/papers-visual-accept.mjs",
+    "probe:containment": "node tools/containment-probe.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

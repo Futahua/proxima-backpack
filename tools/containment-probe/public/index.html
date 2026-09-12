@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Backpack containment probe</title>
+    <style>
+      body { margin: 0; padding: 24px; background: #101820; color: #e8eef5; font: 14px/1.5 system-ui, sans-serif; }
+      h1 { font-size: 18px; margin: 0 0 8px; }
+      pre { white-space: pre-wrap; background: #182430; padding: 12px; border-radius: 6px; }
+      .probe-answers { margin-top: 12px; font-family: ui-monospace, monospace; font-size: 12px; color: #9fb4c8; }
+    </style>
+  </head>
+  <body>
+    <!--
+      A Backpack page whose only job is to answer containment questions about itself, in the one
+      vocabulary a Papers host can read back: semantic keys. `tools/containment-probe.mjs` opens
+      this project and asserts the answers, and it is registered into a disposable profile - it
+      is never part of the shipped product.
+
+      The answers live in ./probe.js rather than inline, because Papers serves Backpack pages
+      under `script-src <origin>` with no 'unsafe-inline': an inline module is refused before it
+      runs, which is the first containment result this probe records.
+    -->
+    <main id="probe">
+      <h1>Backpack containment probe</h1>
+      <pre id="report" data-papers-visual-key="probe-report">running</pre>
+      <p class="probe-answers" id="answers" data-papers-visual-key="probe-answers"></p>
+    </main>
+    <script type="module" src="./probe.js"></script>
+  </body>
+</html>
