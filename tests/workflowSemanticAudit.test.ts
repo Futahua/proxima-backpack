@@ -54,6 +54,8 @@ function world(options: WorldOptions = {}) {
 
   const audit = recordingAudit();
   const order: string[] = [];
+  /** The revisions the operations were handed, so "wrote against what it read" is asserted rather than assumed. */
+  const revisions: string[] = [];
   let calls = 0;
 
   const succeeded = (outcome: 'created' | 'renamed' | 'deleted', recordId: string): WorkflowStageMutationResult => ({
@@ -72,14 +74,16 @@ function world(options: WorldOptions = {}) {
       calls += 1;
       return succeeded('created', 'stage-created');
     },
-    async renameWorkflowStage() {
+    async renameWorkflowStage(input) {
       calls += 1;
+      revisions.push(input.expectedRevision);
       return answer === 'refusing-stage'
         ? refused('validation-refused')
         : succeeded('renamed', STAGE);
     },
-    async deleteWorkflowStage() {
+    async deleteWorkflowStage(input) {
       calls += 1;
+      revisions.push(input.expectedRevision);
       if (answer === 'refusing-after-moving') return refused('semantic-conflict', [...MOVED]);
       if (answer === 'refusing-stage') return refused('validation-refused');
       return succeeded('deleted', STAGE);
@@ -116,7 +120,7 @@ function world(options: WorldOptions = {}) {
     },
   };
 
-  return { deps, audit, order, calls: () => calls, stale: () => refused('stale-revision') };
+  return { deps, audit, order, revisions, calls: () => calls, stale: () => refused('stale-revision') };
 }
 
 describe('the semantic envelope on the workflow-stage writes', () => {
@@ -147,6 +151,10 @@ describe('the semantic envelope on the workflow-stage writes', () => {
       outcome: 'accepted',
       entityIds: [STAGE],
     });
+    // The operation was handed the revision the board was showing, not an empty one: the whole point of this
+    // family's revision rule is that a stale board is refused rather than overwriting, and a sequence that
+    // passed nothing would be refused by the store for the wrong reason on every write.
+    expect(w.revisions).toEqual([STAGE_REVISION]);
   });
 
   it('carries the stage and every card a delete moved, because the run is about both', async () => {

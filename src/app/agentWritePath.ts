@@ -58,22 +58,43 @@ import {
   type TaskMoveGestureResult,
 } from './taskMoveGesture.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
+import {
+  WORKFLOW_STAGE_WRITE_VERBS,
+  runStageWrite,
+  workflowStageActionType,
+  type WorkflowStageWriteOperations,
+  type WorkflowStageWriteOutcome,
+  type WorkflowStageWriteVerb,
+} from './workflowStageWriteActions.js';
 
 export const AGENT_WRITE_SCHEMA_VERSION = 1 as const;
+
+/** The three stage verbs this wire runs, by the names a submission carries. */
+const STAGE_VERB_TYPES: readonly string[] = WORKFLOW_STAGE_WRITE_VERBS.map(workflowStageActionType);
+
+/** A submission's type back to the verb it names, for the family whose three verbs are one operation. */
+function stageVerbOf(type: string): WorkflowStageWriteVerb | null {
+  const verb = WORKFLOW_STAGE_WRITE_VERBS.find((candidate) => workflowStageActionType(candidate) === type);
+  return verb ?? null;
+}
 
 /**
  * The verbs this wire runs without a cockpit. Every other registered verb is answered, not ignored.
  *
- * Three families qualify today and they qualify by the same rule rather than by seniority: `moveTaskByGesture`
+ * Four families qualify today and they qualify by the same rule rather than by seniority: `moveTaskByGesture`
  * takes the update callable, the refresh, the id source and the sink; `propertySchemaActions` takes the five
- * schema operations, the id source and the sink; and `changeTaskSpan` takes the same four the gesture does,
- * having been given the record facts - the revision and the end a resize keeps - as a parameter. None of the
- * three reads a projection, a draft or a modal.
+ * schema operations, the id source and the sink; `changeTaskSpan` takes the same four the gesture does, having
+ * been given the record facts - the revision and the end a resize keeps - as a parameter; and `runStageWrite`
+ * takes those same four, with the one fact it used to read from a board supplied as a lookup the caller owns.
+ * None of the four reads a projection, a draft or a modal. Not every family's verbs are on it yet: a stage
+ * delete carries the caller's remap decision and is deliberately not run here.
  */
 export const AGENT_WRITE_VERBS = [
   'task.execution.move',
   'task.execution.reorder',
   TIMELINE_CHANGE_ACTION_TYPE,
+  workflowStageActionType('create'),
+  workflowStageActionType('rename'),
   ...Object.values(PROPERTY_SCHEMA_ACTION_TYPES),
 ] as const;
 
@@ -133,8 +154,30 @@ export interface AgentTimelineChangeSubmission {
   readonly expectedRevision: string;
 }
 
-export interface AgentWriteDependencies {
-  /** Resolve the sanctioned record write path; null when this run may not write records. */
+/**
+ * The wire shape an agent submits for a workflow-stage create or rename.
+ *
+ * One shape rather than two because the two verbs differ in which fields they carry, not in what they mean: a
+ * create needs the project and the name and has no revision to name, and a rename needs the stage and the name
+ * and **must** name the revision it read. Which fields a given verb requires is decided where the verb is,
+ * beside the operation, so the wire carries the submission rather than a second copy of the rule.
+ *
+ * A stage **delete** is deliberately not on this wire. The operation takes a `remapTo` decision about the cards
+ * the stage still holds, and that is a creator's decision rather than a submission's - the board's own Delete
+ * passes none, and a wire that carried one would be a second way to decide where someone's cards go.
+ */
+export interface AgentStageWriteSubmission {
+  readonly type: AgentWriteVerb;
+  /** The stage a rename names. Absent on a create, which has no id yet. */
+  readonly stageId?: string;
+  /** The project a create names. */
+  readonly projectId?: string;
+  readonly name: string;
+  /** The revision the agent read the stage at. Required on a rename, meaningless on a create. */
+  readonly expectedRevision?: string;
+}
+
+export interface AgentWriteDependencies {  /** Resolve the sanctioned record write path; null when this run may not write records. */
   readonly writes: () => Promise<AgentWriteOperations | null>;
   /**
    * Resolve the schema write path, when this composition has one.
@@ -145,6 +188,15 @@ export interface AgentWriteDependencies {
    * `writes-unavailable` with this run's own reason rather than pretended away.
    */
   readonly schemaWrites?: () => Promise<PropertySchemaWriteOperations | null>;
+  /**
+   * Resolve the workflow-stage write path, when this composition has one.
+   *
+   * Separate from `writes` for the same reason `schemaWrites` is, and not because a composition is unlikely to
+   * have it: `writes` is the task update callable - the drop and the Gantt change both write tasks through it -
+   * and a stage is a different record with different operations. A run that resolves one and not the other
+   * refuses the family it cannot reach with `writes-unavailable` rather than pretending the verb is unknown.
+   */
+  readonly stageWrites?: () => Promise<WorkflowStageWriteOperations | null>;
   /** Why there is no write path, in words a reader can act on. */
   readonly unavailableReason: () => string | null;
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
@@ -183,6 +235,7 @@ export interface AgentWriteRefusal {
 export type AgentWriteResult =
   | TaskMoveGestureResult
   | TimelineSpanWriteOutcome
+  | WorkflowStageWriteOutcome
   | PropertySchemaActionOutcome
   | AgentWriteRefusal;
 
@@ -207,6 +260,13 @@ export type ParsedAgentWrite =
       readonly kind: 'timeline';
       readonly actionType: string;
       readonly submission: AgentTimelineChangeSubmission;
+    }
+  | {
+      readonly ok: true;
+      readonly kind: 'stage';
+      readonly actionType: string;
+      readonly verb: WorkflowStageWriteVerb;
+      readonly submission: AgentStageWriteSubmission;
     }
   | {
       readonly ok: true;
@@ -300,6 +360,32 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
     actionType: rawType,
     entityIds: ids,
   });
+
+  // The stage family: two of its three verbs, and which fields each requires is a rule this wire states once
+  // rather than one it lets the operation discover. A create has no revision to carry and a rename has no
+  // project; a submission that carries the fields of the other verb is answered rather than corrected.
+  const stageVerb = stageVerbOf(rawType);
+  if (stageVerb !== null) {
+    if (typeof candidate.name !== 'string' || candidate.name.trim() === '') return fail('the submission needs a name');
+    if (stageVerb === 'create') {
+      if (typeof candidate.projectId !== 'string' || candidate.projectId === '') return fail('a stage create needs the project it belongs to');
+    } else {
+      if (typeof candidate.stageId !== 'string' || candidate.stageId === '') return fail('a stage rename needs the stage it renames');
+      if (typeof candidate.expectedRevision !== 'string' || candidate.expectedRevision === '') {
+        return fail('the submission needs the revision it read the stage at, so a lost race is refused rather than merged');
+      }
+    }
+
+    const stage: AgentStageWriteSubmission = {
+      type: rawType as AgentWriteVerb,
+      ...(typeof candidate.stageId === 'string' ? { stageId: candidate.stageId } : {}),
+      ...(typeof candidate.projectId === 'string' ? { projectId: candidate.projectId } : {}),
+      name: candidate.name,
+      ...(typeof candidate.expectedRevision === 'string' ? { expectedRevision: candidate.expectedRevision } : {}),
+    };
+
+    return { ok: true, kind: 'stage', actionType: rawType, verb: stageVerb, submission: stage };
+  }
 
   // The Gantt family: the outer shape is the wire's business, and whether the two ends are a span is the
   // operation's. So an inverted range is not refused here - `changeTaskSpan` already owns that rule, in the
@@ -417,6 +503,71 @@ export async function submitAgentWrite(
       },
       input,
       { requestId },
+    );
+  }
+
+  // The stage arm: the same operation the board runs, resolved through its own optional path because a stage
+  // is a different record from a task. The wire supplies the revision it read and no lookup, so a rename that
+  // carries none is refused here for naming none - and the operation's own `unknown-stage` is a sentence only a
+  // board can say, because only a board has a board to consult.
+  if (parsed.kind === 'stage') {
+    const stageOperations = deps.stageWrites === undefined ? null : await deps.stageWrites();
+    const stageDeps = {
+      writes: async () => stageOperations,
+      unavailableReason: () => deps.unavailableReason() ?? 'writes-unavailable',
+      refresh: deps.refresh,
+      ids: deps.ids,
+      audit: deps.audit,
+    };
+    const { submission, verb } = parsed;
+
+    if (verb === 'create') {
+      return await runStageWrite(
+        stageDeps,
+        'create',
+        null,
+        null,
+        null,
+        submission.name,
+        async (operations) => await operations.createWorkflowStage({
+          projectId: submission.projectId as OpaqueRecordId,
+          name: submission.name,
+        }),
+      );
+    }
+
+    if (verb === 'rename') {
+      return await runStageWrite(
+        stageDeps,
+        'rename',
+        submission.stageId ?? null,
+        submission.expectedRevision ?? null,
+        null,
+        submission.name,
+        async (operations, revision) => await operations.renameWorkflowStage({
+          stageId: (submission.stageId ?? '') as OpaqueRecordId,
+          expectedRevision: revision,
+          name: submission.name,
+        }),
+      );
+    }
+
+    // Unreachable through this wire, and structured so rather than asserted away: a delete is not one of
+    // `AGENT_WRITE_VERBS`, so the parse never answers `kind: 'stage'` for it and there is no submission that can
+    // arrive here. The branch exists because the verb is a member of the family's union, and the body it runs
+    // is the honest one if it ever becomes reachable - the cards' destination is the creator's answer, so this
+    // passes no remap and lets the operation ask rather than deciding it.
+    return await runStageWrite(
+      stageDeps,
+      'delete',
+      submission.stageId ?? null,
+      submission.expectedRevision ?? null,
+      null,
+      null,
+      async (operations, revision) => await operations.deleteWorkflowStage({
+        stageId: (submission.stageId ?? '') as OpaqueRecordId,
+        expectedRevision: revision,
+      }),
     );
   }
 

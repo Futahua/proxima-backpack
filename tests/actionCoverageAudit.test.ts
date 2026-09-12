@@ -22,6 +22,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AGENT_WRITE_VERBS } from '../src/app/agentWritePath.js';
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -58,6 +59,13 @@ interface TaskActionRow {
   readonly equivalence: boolean;
   /** Where that case lives, when it is not the file the parity audit uses by default. */
   readonly equivalenceFile?: string;
+  /**
+   * The action type this row's verbs carry on the agent wire, when a family's operation was made reachable.
+   *
+   * Absent means the row claims no agent reach, which the audit then asserts by absence rather than leaving it
+   * unsaid: a family that could be reached and is not is a gap, and one that deliberately is not is a decision.
+   */
+  readonly agentVerb?: string;
 }
 
 const TASK_ROWS: readonly TaskActionRow[] = [
@@ -147,8 +155,14 @@ const PROJECT_ROWS: readonly TaskActionRow[] = [
  * shell that reaches the sequence, so all three links are asserted rather than assumed.
  */
 const WORKFLOW_STAGE_ROWS: readonly TaskActionRow[] = [
-  { action: 'workflow stage create', module: 'src/app/workflowStageMutations.ts', marker: 'export async function createWorkflowStage', callerFile: 'src/app/workflowStageWriteActions.ts', caller: 'export async function createWorkflowStageAction', shellCaller: 'createWorkflowStageAction(', testFile: 'tests/workflowStageBoard.test.ts', testMarker: 'createWorkflowStageAction', equivalence: false },
-  { action: 'workflow stage rename', module: 'src/app/workflowStageMutations.ts', marker: 'export async function renameWorkflowStage', callerFile: 'src/app/workflowStageWriteActions.ts', caller: 'export async function renameWorkflowStageAction', shellCaller: 'renameWorkflowStageAction(', testFile: 'tests/workflowStageBoard.test.ts', testMarker: 'renameWorkflowStageAction', equivalence: false },
+  // The two verbs an agent can also submit. `agentVerb` is asserted by the test below rather than remembered:
+  // these rows were board-only until the sequence was made read-model-free, and a claim like that is exactly
+  // what goes stale without a check.
+  { action: 'workflow stage create', module: 'src/app/workflowStageMutations.ts', marker: 'export async function createWorkflowStage', callerFile: 'src/app/workflowStageWriteActions.ts', caller: 'export async function createWorkflowStageAction', shellCaller: 'createWorkflowStageAction(', testFile: 'tests/workflowStageBoard.test.ts', testMarker: 'createWorkflowStageAction', equivalence: false, agentVerb: 'workflow.stage.create' },
+  { action: 'workflow stage rename', module: 'src/app/workflowStageMutations.ts', marker: 'export async function renameWorkflowStage', callerFile: 'src/app/workflowStageWriteActions.ts', caller: 'export async function renameWorkflowStageAction', shellCaller: 'renameWorkflowStageAction(', testFile: 'tests/workflowStageBoard.test.ts', testMarker: 'renameWorkflowStageAction', equivalence: false, agentVerb: 'workflow.stage.rename' },
+  // Deliberately board-only: where a deleted stage's cards go is the creator's decision, and a wire that
+  // carried a remap target would be a second way to decide it. The test below asserts its absence so the
+  // omission cannot be mistaken for an oversight in either direction.
   { action: 'workflow stage delete/remap', module: 'src/app/workflowStageMutations.ts', marker: 'export async function deleteWorkflowStage', callerFile: 'src/app/workflowStageWriteActions.ts', caller: 'export async function deleteWorkflowStageAction', shellCaller: 'deleteWorkflowStageAction(', testFile: 'tests/workflowStageBoard.test.ts', testMarker: 'deleteWorkflowStageAction', equivalence: false },
 ];
 
@@ -403,6 +417,9 @@ describe('Stage 17 project, workflow and schema coverage', () => {
   });
 
   it('names the operation, the sequence and the shell call for every workflow-stage action', () => {
+    // The wire's own list, imported rather than read as text: a family is on it or it is not, and the table's
+    // claim is checked against that fact instead of restating it.
+    const onWire: readonly string[] = AGENT_WRITE_VERBS;
     for (const row of WORKFLOW_STAGE_ROWS) {
       expect(source(row.module), `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
       // The sequence that carries it…
@@ -413,6 +430,18 @@ describe('Stage 17 project, workflow and schema coverage', () => {
       const compared = PARITY.includes(row.testMarker)
         || (row.equivalenceFile !== undefined && source(row.equivalenceFile).includes(row.testMarker));
       expect(compared, `${row.action}: equivalence claimed but not asserted`).toBe(row.equivalence);
+      // The agent-reach claim, checked one way: a row that names a verb must have that verb on the wire.
+      //
+      // This is a presence guard and not a two-way one, and that is worth stating because the two-way form is a
+      // tautology: `includes(row.agentVerb)` returns false for a row that named no verb, which is exactly what
+      // `row.agentVerb === undefined` says, so "a row that names none must have none" cannot fail. A mutation
+      // proved it - `workflow.stage.delete` added to the wire survived the two-way form - and the delete's
+      // deliberate absence is asserted behaviourally instead, in `tests/agentWritePath.test.ts`, where a delete
+      // submitted through the wire must come back refused. That case is the check; this line only keeps a
+      // declared verb honest.
+      if (row.agentVerb !== undefined) {
+        expect(onWire.includes(row.agentVerb), `${row.action}: ${row.agentVerb} must be on the agent wire`).toBe(true);
+      }
     }
   });
 

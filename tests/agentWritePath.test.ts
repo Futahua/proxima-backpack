@@ -59,6 +59,16 @@ import {
 } from '../src/app/propertySchemaMutations.js';
 import { createTask, updateTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
 import { TIMELINE_CHANGE_ACTION_TYPE } from '../src/app/timelineChangeAction.js';
+import {
+  WORKFLOW_STAGE_WRITE_VERBS,
+  workflowStageActionType,
+  type WorkflowStageWriteOperations,
+} from '../src/app/workflowStageWriteActions.js';
+import {
+  createWorkflowStage,
+  renameWorkflowStage,
+  type WorkflowStageMutationDependencies,
+} from '../src/app/workflowStageMutations.js';
 import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/app/vaultRecovery.js';
 import { EMPTY_PROJECT_BACKLOG_VIEW, renderProjectBacklog } from '../src/browser/projectBacklog.js';
 import { renderProjectTaskBoard } from '../src/browser/projectTaskBoard.js';
@@ -144,6 +154,8 @@ interface World {
   setDates(taskId: string, startDate: string, deadline: string): Promise<void>;
   /** Re-read the projection the cockpit draws from, without rendering: the writes above bypassed the refresh. */
   syncCockpit(): Promise<ProximaState>;
+  /** The stored stage record, read out of the store rather than out of the projection that drew it. */
+  storedStage(id: string): Promise<{ readonly name: string; readonly revision: string } | undefined>;
   /** The UI's own gesture entry, over the cockpit's projection - what a drop by hand runs. */
   drop(input: { taskId: string; to: 'backlog' | 'running' | 'finished'; index: number; rendered?: ProximaState }): Promise<Record<string, unknown>>;
   inspection(): Promise<InspectionProjection>;
@@ -196,6 +208,17 @@ async function world(seedOffset: number): Promise<World> {
     allocateRecordId: () => idFromLastByte(nextId++),
     allocateOptionId: () => opaqueSchemaOptionIdFromRandomBytes((() => { const bytes = new Uint8Array(16); bytes[15] = nextOption++; return bytes; })()),
   };
+  const stageMutations: WorkflowStageMutationDependencies = {
+    store,
+    coordinator: authority.coordinator,
+    allocateRecordId: () => idFromLastByte(nextId++),
+    taskDependencies: deps,
+  };
+  const stageOperations: WorkflowStageWriteOperations = {
+    createWorkflowStage: (request) => createWorkflowStage(stageMutations, request),
+    renameWorkflowStage: (input) => renameWorkflowStage(stageMutations, input),
+    deleteWorkflowStage: async () => { throw new Error('this world resolves no stage delete'); },
+  };
 
   const agent: AgentWriteDependencies = {
     writes: async () => operations,
@@ -208,6 +231,8 @@ async function world(seedOffset: number): Promise<World> {
       updateSchemaOption: (input) => updateSchemaOption(schemaMutations, input),
       deletePropertySchema: (input) => deletePropertySchema(schemaMutations, input),
     }),
+    // The stage family, resolved the way a composition with a workflow board would resolve it.
+    stageWrites: async () => stageOperations,
     unavailableReason: () => null,
     refresh,
     ids,
@@ -259,6 +284,10 @@ async function world(seedOffset: number): Promise<World> {
     syncCockpit: async () => {
       cockpit.state = await read();
       return cockpit.state;
+    },
+    storedStage: async (id) => {
+      const stage = (await read()).workflowStages?.find((candidate) => candidate.id === id);
+      return stage === undefined ? undefined : { name: stage.name, revision: stage.revision };
     },
     drop: async (input) => await performElasticDrop(
       {
@@ -378,7 +407,7 @@ describe('agent write path', () => {
     // module - a source read is the check that survives a well-meaning later edit. The two resolvers it does
     // take are write paths, and one of them is optional precisely because a composition need not have it.
     expect(AGENT_WRITE_SOURCE).not.toContain('ProximaState');
-    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'ids', 'refresh', 'schemaWrites', 'unavailableReason', 'writes']);
+    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'ids', 'refresh', 'schemaWrites', 'stageWrites', 'unavailableReason', 'writes']);
   });
 
   it('returns the same result object as the UI gesture, for an accepted run and for a lost race', async () => {
@@ -839,6 +868,114 @@ describe('agent write path', () => {
     const stored = await w.taskNamed('Narrowed by an agent');
     expect(stored.startDate).toBe('2026-08-28T09:00:00.000Z');
     expect(stored.deadline).toBe('2026-09-20T17:00:00.000Z');
+  });
+
+  it('runs the stage family through the same wire, and answers its third verb rather than pretending it is unknown', async () => {
+    const w = await world(1700);
+
+    // A create carries no revision, because there is no record to have read yet, and the project it lands in.
+    const created = await submitAgentWrite(w.agent, {
+      type: workflowStageActionType('create'),
+      projectId: PROJECT,
+      name: 'Review',
+    });
+    expect(created).toMatchObject({ ok: true, verb: 'create', outcome: 'created' });
+    if (!created.ok || !('verb' in created)) throw new Error('the stage create was refused');
+    expect(created.requestId).toMatch(/^semantic-request/);
+    expect(w.audit.events).toEqual([{
+      requestId: created.requestId,
+      actionType: 'workflow.stage.create',
+      outcome: 'accepted',
+      entityIds: [created.recordId],
+    }]);
+
+    // A rename writes against the revision the agent read, and one that read a stale revision is refused with
+    // the revision that beat it - the same protection the board's own rename has.
+    const renamed = await submitAgentWrite(w.agent, {
+      type: workflowStageActionType('rename'),
+      stageId: created.recordId,
+      name: 'In review',
+      expectedRevision: created.revision,
+    });
+    expect(renamed).toMatchObject({ ok: true, verb: 'rename', outcome: 'renamed' });
+    if (!renamed.ok) throw new Error('the stage rename was refused');
+    expect(w.audit.events.at(-1)).toMatchObject({
+      requestId: renamed.requestId,
+      actionType: 'workflow.stage.rename',
+      outcome: 'accepted',
+      entityIds: [created.recordId],
+    });
+
+    // The rename landed against the revision the agent named, read back out of the store rather than taken
+    // from the result: a wire that dropped the revision would have answered `validation-refused` here, and one
+    // that wrote against an empty one would have been refused by the store as stale.
+    const storedStage = await w.storedStage(created.recordId);
+    expect(storedStage?.name).toBe('In review');
+    expect(storedStage?.revision).toBe(renamed.revision);
+
+    const stale = await submitAgentWrite(w.agent, {
+      type: workflowStageActionType('rename'),
+      stageId: created.recordId,
+      name: 'Raced',
+      expectedRevision: created.revision,
+    });
+    expect(stale).toMatchObject({ ok: false, reason: 'stale-revision' });
+    expect(w.audit.events.at(-1)).toMatchObject({ outcome: 'rejected', errorCode: 'stale-revision' });
+
+    // A rename that names no revision is refused at the wire, with the id it minted: a caller does not get to
+    // have the revision guessed for it.
+    const noRevision = await submitAgentWrite(w.agent, {
+      type: workflowStageActionType('rename'),
+      stageId: created.recordId,
+      name: 'Guessed',
+    });
+    expect(noRevision).toMatchObject({ ok: false, reason: 'malformed-submission', actionType: 'workflow.stage.rename' });
+    expect(noRevision.requestId).toMatch(/^semantic-request/);
+    if (noRevision.ok || !('detail' in noRevision)) throw new Error('the rename without a revision was not refused by the wire');
+    expect(noRevision.detail)
+      .toBe('the submission needs the revision it read the stage at, so a lost race is refused rather than merged');
+
+    // A create that names no project, or a name that is only whitespace, is refused before the store.
+    const noProject = await submitAgentWrite(w.agent, { type: workflowStageActionType('create'), name: 'Orphan' });
+    expect(noProject).toMatchObject({ ok: false, reason: 'malformed-submission', detail: 'a stage create needs the project it belongs to' });
+    const blank = await submitAgentWrite(w.agent, { type: workflowStageActionType('create'), projectId: PROJECT, name: '   ' });
+    expect(blank).toMatchObject({ ok: false, reason: 'malformed-submission', detail: 'the submission needs a name' });
+
+    // The third verb is answered rather than unknown, with the sentence saying where it belongs - and that
+    // answer is what makes the omission deliberate instead of an oversight. This goes through the wire rather
+    // than through the parse alone, because the parse alone cannot tell "this wire does not run the verb" from
+    // "this wire runs it and the parse never reaches that branch": a wire that quietly accepted the verb would
+    // fail right here, and that is the reading this case exists to make checkable.
+    expect(WORKFLOW_STAGE_WRITE_VERBS).toContain('delete');
+    const deleteVerb = await submitAgentWrite(w.agent, {
+      type: workflowStageActionType('delete'),
+      stageId: created.recordId,
+      expectedRevision: renamed.revision,
+    });
+    expect(deleteVerb).toMatchObject({ ok: false, reason: 'malformed-submission', actionType: 'workflow.stage.delete' });
+    if (deleteVerb.ok || !('detail' in deleteVerb)) throw new Error('a stage delete is not on this wire');
+    expect(deleteVerb.detail).toBe('no action type is registered as workflow.stage.delete');
+    expect(w.audit.events.at(-1)).toMatchObject({ outcome: 'rejected', errorCode: 'validation-refused' });
+
+    // A composition that resolves no stage path refuses that family by name, while the drop family it does
+    // resolve still moves a task - one optional dependency cannot disable the wire for another family.
+    const withoutStages = await submitAgentWrite({ ...w.agent, stageWrites: undefined }, {
+      type: workflowStageActionType('create'),
+      projectId: PROJECT,
+      name: 'Nowhere',
+    });
+    expect(withoutStages).toMatchObject({ ok: false, reason: 'writes-unavailable' });
+
+    const task = await w.seed('Still moves after stages', 0);
+    const moved = await submitAgentWrite(w.agent, {
+      type: 'task.execution.move',
+      taskId: task.id,
+      from: 'backlog',
+      to: 'running',
+      targetIndex: 0,
+      expectedRevision: task.source.revision,
+    });
+    expect(moved).toMatchObject({ ok: true, actionType: 'task.execution.move' });
   });
 
   it('leaves the dispatcher containment rule exactly where it was', async () => {
