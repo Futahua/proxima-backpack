@@ -396,17 +396,19 @@ describe('Stage 6 template composer',()=>{
   expect(errors[1]!.querySelector('code')!.textContent).toBe('nope: x');
   run.stop();
  });
- it('refuses execution with a typed result rather than hiding the control',()=>{
+ it('offers execution with a typed result rather than hiding the control',()=>{
   const s=state();const before=JSON.stringify(s);const run=session(s);
   run.harness.click('project-backlog-open-template');
   const execute=run.root().querySelector<HTMLButtonElement>('[data-c1-key="template-execute"]')!;
-  expect(execute.disabled).toBe(true);
-  expect(execute.getAttribute('data-template-execute-refusal')).toBe('action-not-available');
-  expect(run.root().querySelector('[data-c1-key="template-execute-note"]')!.textContent).toContain('until task records can be written');
+  // This used to read disabled===true with an action-not-available refusal: that was the truth while
+  // execution was Stage 16 unbuilt job. The button is now the shell action, so what this holds is that it
+  // is offered and wired - an enabled control carrying the shell own click convention.
+  expect(execute.disabled).toBe(false);
+  expect(execute.getAttribute('data-action')).toBe('template-execute');
+  expect(execute.getAttribute('data-template-execute-refusal')).toBe(null);
   expect(JSON.stringify(s)).toBe(before);
   run.stop();
- });
- it('closes on Cancel, and forgets nothing about the project',()=>{
+  });it('closes on Cancel, and forgets nothing about the project',()=>{
   const s=state();const before=JSON.stringify(s);const run=session(s);
   run.harness.click('project-backlog-open-template');
   run.harness.typeText('template-text','S');

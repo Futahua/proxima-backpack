@@ -3,7 +3,7 @@ import type { Project, ProximaState, Task } from '../domain/types.js';
 import type { BacklogViewState } from '../app/backlogView.js';
 import { projectBacklog } from '../app/backlogView.js';
 import { EMPTY_BACKLOG_QUERY, isBacklogField, type BacklogField, type BacklogQuery } from '../domain/backlogQuery.js';
-import { renderTemplateComposerPanel } from './templateComposerPanel.js';
+import { renderTemplateComposerPanel, type TemplateComposerResult } from './templateComposerPanel.js';
 import type { BulkTaskActionReport } from '../app/bulkTaskActions.js';
 import { backlogColumnWidth, resizeBacklogColumn } from '../app/backlogControls.js';
 import { projectTaskEditor, TASK_EDITOR_SAVE_NOTE, type TaskEditorDraft, type TaskEditorEdit } from '../app/taskEditor.js';
@@ -19,8 +19,8 @@ export interface ProjectBacklogMoveIntent{taskId:string;targetIndex:number;}
  * filter request that cannot become a filter is told, so a mistyped value says so
  * instead of looking like a filter that matched nothing.
  */
-export interface ProjectBacklogViewState extends BacklogViewState{templateOpen:boolean;templateText:string;editorDraft:TaskEditorDraft|null;columnWidths:Readonly<Record<string,number>>;dragTaskId:string|null;dragTargetIndex:number|null;writeRefusal:ProjectBacklogWriteRefusal|null;lastRefusedMove:ProjectBacklogMoveIntent|null;queryRefusal:string|null;bulkWriteRefusal:string|null;bulkReport:BulkTaskActionReport|null;}
-export const EMPTY_PROJECT_BACKLOG_VIEW:ProjectBacklogViewState={projectId:null,selectedTaskId:null,selectedTaskIds:[],templateOpen:false,templateText:'',editorDraft:null,columnWidths:{},query:EMPTY_BACKLOG_QUERY,dragTaskId:null,dragTargetIndex:null,writeRefusal:null,lastRefusedMove:null,queryRefusal:null,bulkWriteRefusal:'action-not-available',bulkReport:null};
+export interface ProjectBacklogViewState extends BacklogViewState{templateOpen:boolean;templateText:string;editorDraft:TaskEditorDraft|null;columnWidths:Readonly<Record<string,number>>;dragTaskId:string|null;dragTargetIndex:number|null;writeRefusal:ProjectBacklogWriteRefusal|null;lastRefusedMove:ProjectBacklogMoveIntent|null;queryRefusal:string|null;bulkWriteRefusal:string|null;bulkReport:BulkTaskActionReport|null;templateExecuting:boolean;templateResult:TemplateComposerResult|null;}
+export const EMPTY_PROJECT_BACKLOG_VIEW:ProjectBacklogViewState={projectId:null,selectedTaskId:null,selectedTaskIds:[],templateOpen:false,templateText:'',editorDraft:null,columnWidths:{},query:EMPTY_BACKLOG_QUERY,dragTaskId:null,dragTargetIndex:null,writeRefusal:null,lastRefusedMove:null,queryRefusal:null,bulkWriteRefusal:'action-not-available',bulkReport:null,templateExecuting:false,templateResult:null};
 /**
  * The query controls the Backlog offers. `addFilter` receives the menu's own
  * `field|operator` expression and the typed value rather than a filter, because the id
@@ -80,7 +80,7 @@ export function renderProjectBacklog(state:ProximaState,project:Project,view:Pro
   const off=active?'':' disabled';
   const sortButtons=projection.columns.filter(c=>c.field!==null).map(c=>{const on=projection.sortIndicator!==null&&projection.sortIndicator.field===c.field;return '<button type="button" data-project-backlog-action="sort-by" data-project-backlog-sort-by="'+esc(c.field!)+'" data-c1-key="project-backlog-sort-'+esc(c.field!)+'"'+(on?' data-project-backlog-sorted="'+esc(projection.sortIndicator!.direction)+'" aria-pressed="true"':'')+off+'>'+esc(c.label)+'</button>';}).join('');
   const controls='<div class="project-backlog-controls" data-project-backlog-controls><div class="project-backlog-search-control"><input type="search" data-project-backlog-search-input data-c1-key="project-backlog-search-input" value="'+esc(active?view.query.search:'')+'" placeholder="Search project tasks" aria-label="Search project tasks"'+off+'></div><div class="project-backlog-filter-builder" data-project-backlog-filter-builder><select data-project-backlog-filter-expression data-c1-key="project-backlog-filter-expression" aria-label="Filter field and comparison"'+off+'>'+menu+'</select><input type="text" data-project-backlog-filter-value data-c1-key="project-backlog-filter-value" value="" placeholder="Value" aria-label="Filter value"'+off+'><button type="button" data-project-backlog-action="add-filter" data-c1-key="project-backlog-add-filter"'+off+'>Add filter</button></div><div class="project-backlog-sort-controls" data-project-backlog-sort-controls>'+sortButtons+(projection.sortIndicator===null?'':'<button type="button" data-project-backlog-action="clear-sort" data-c1-key="project-backlog-clear-sort"'+off+'>Clear sort</button>')+'<button type="button" data-project-backlog-action="clear-query" data-c1-key="project-backlog-clear-query"'+(queried&&active?'':' disabled')+'>Clear query</button></div></div>';
-  const template=renderTemplateComposerPanel({text:view.templateText,open:view.templateOpen,active});
+  const template=renderTemplateComposerPanel({text:view.templateText,open:view.templateOpen,active,executable:true,executing:view.templateExecuting,result:view.templateResult});
   const queryRefusal=active&&view.queryRefusal?'<p class="project-backlog-query-refusal" data-project-backlog-query-refusal="'+esc(view.queryRefusal)+'">'+esc(view.queryRefusal)+'</p>':'';
   /**
    * The bulk controls, visible where a selection would act and unavailable for the same

@@ -13,6 +13,7 @@ import { performWorkflowDrop } from '../app/workflowBoardDrop.js';
 import { bulkCompleteTasks, bulkDeleteTasks, type BulkTaskActionReport } from '../app/bulkTaskActions.js';
 import { deleteTaskAction, saveTaskAction } from '../app/taskEditorWrite.js';
 import { createTaskAction, newTaskDraft as newTaskDraftFor } from '../app/taskCreate.js';
+import { executeTemplateAction } from '../app/templateExecuteAction.js';
 import { TASK_EDITOR_SAVE_REFUSAL } from '../app/taskEditor.js';
 import type { SourceMode, SourceSession } from '../app/sourceSession.js';
 import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
@@ -809,6 +810,28 @@ async function runBacklogBulk(action: 'task.bulk.complete' | 'task.bulk.delete')
   render();
 }
 
+/**
+ * Create the tasks a composed template plans, through the action the agent path also uses.
+ *
+ * The composer stays open with its result rather than closing over it: a run that stopped part-way has
+ * already created records, so the panel has to say which ones and leave the template where it is for a
+ * correction. That is the AUTHOR's rule for this surface, and it is why the result is view state rather
+ * than a message that disappears with the next render.
+ */
+async function createTemplateTasksAction(): Promise<void> {
+  const text = projectBacklogView.templateText;
+  projectBacklogView = { ...projectBacklogView, templateExecuting: true, templateResult: null };
+  render();
+  const result = await executeTemplateAction(taskCreateDependencies(), { template: text });
+  projectBacklogView = {
+    ...projectBacklogView,
+    templateExecuting: false,
+    templateResult: result.ok
+      ? { created: [...result.created], failure: null }
+      : { created: [...result.created], failure: result.detail },
+  };
+  render();
+}
 async function createTaskFromFormAction(): Promise<void> {
   const effect = await createTaskAction(taskCreateDependencies(), { draft: newTaskFormDraft });
   if (effect.closeEditor) {
@@ -1694,6 +1717,8 @@ function bindInteractions(): void {
     } else if (action === 'calendar-today') {
       dispatchAction({ type: 'calendar.today' });
     } else if (action === 'source-refresh') {
+    } else if (action === 'template-execute') {
+      void createTemplateTasksAction();
       void executeSourceRefreshAction({
         dispatch: (input) => dispatchAction(input),
         refresh: refreshFromSource,
