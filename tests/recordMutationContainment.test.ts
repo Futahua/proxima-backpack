@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import { createActionDispatcher, type ProximaAction } from '../src/app/actionProtocol.js';
@@ -6,6 +6,7 @@ import { categoryOf, registeredActionTypes } from '../src/app/actionTaxonomy.js'
 import { fixedClock } from '../src/domain/clock.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
 import { fixtureVault } from './fixtures.js';
+import { normalizedSource, sourceText } from './test-source.js';
 
 /**
  * Record-mutation action types the UI reaches through the typed dispatcher. Each is refused
@@ -73,7 +74,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
   });
 
   it('keeps RecordStore mutation authority out of dispatcher options and dispatcher execution', async () => {
-    const source = await readFile(new URL('../src/app/actionProtocol.ts', import.meta.url), 'utf8');
+    const source = await sourceText(new URL('../src/app/actionProtocol.ts', import.meta.url));
     const optionsStart = source.indexOf('export interface ActionDispatcherOptions {'); const optionsEnd = source.indexOf('export interface ProximaActionDispatcher {');
     expect(optionsStart).toBeGreaterThanOrEqual(0); expect(optionsEnd).toBeGreaterThan(optionsStart);
     const options = source.slice(optionsStart, optionsEnd);
@@ -84,7 +85,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
   });
 
   it('routes the Elastic drop through the semantic write path instead of the dispatcher', async () => {
-    const source = await readFile(new URL('../src/browser/main.ts', import.meta.url), 'utf8');
+    const source = await sourceText(new URL('../src/browser/main.ts', import.meta.url));
     expect(source).toContain('const result = actionDispatcher.dispatch(input);');
     const dispatcherLine = source.split('\n').find((line) => line.includes('actionDispatcher = createActionDispatcher({'));
     expect(dispatcherLine).toBeDefined();
@@ -103,7 +104,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     expect(source).toContain('setRefusal: (reason) => { elasticDropRefusal = reason; },');
     expect(source).not.toContain("type: 'task.execution.move'");
 
-    const dropAction = await readFile(new URL('../src/app/elasticDropAction.ts', import.meta.url), 'utf8');
+    const dropAction = await sourceText(new URL('../src/app/elasticDropAction.ts', import.meta.url));
     expect(dropAction).toContain('expectedRevision: task.source.revision');
     expect(dropAction).toContain('moveTaskByGesture(');
     // And the app layer holds no storage either: it takes operations, not a store.
@@ -116,7 +117,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     expect(source).toContain('deleteTaskAction(');
     expect(source).toMatch(/saveTask:\s*\(\)\s*=>\s*\{[\s\S]{0,120}?saveTaskFromEditorAction\(\)/);
     expect(source).toMatch(/deleteTask:\s*\(\)\s*=>\s*\{[\s\S]{0,120}?deleteTaskFromEditorAction\(\)/);
-    const editorWrite = await readFile(new URL('../src/app/taskEditorWrite.ts', import.meta.url), 'utf8');
+    const editorWrite = await sourceText(new URL('../src/app/taskEditorWrite.ts', import.meta.url));
     expect(editorWrite).toContain('expectedRevision: task.source.revision');
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(editorWrite).not.toContain(forbidden);
     expect(editorWrite).not.toContain('RecordStore');
@@ -130,7 +131,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     expect(source).toContain('createTaskAction(');
     expect(source).toContain('newTaskDraftFor(');
     expect(source).toMatch(/createTask:\s*\(\)\s*=>\s*\{[\s\S]{0,120}?createTaskFromFormAction\(\)/);
-    const create = await readFile(new URL('../src/app/taskCreate.ts', import.meta.url), 'utf8');
+    const create = await sourceText(new URL('../src/app/taskCreate.ts', import.meta.url));
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(create).not.toContain(forbidden);
     expect(create).not.toContain('RecordStore');
     // And the request it writes comes from the plan, not from the form's markup. The plan is now asked by
@@ -152,7 +153,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     expect(source).toMatch(/createProject:\s*\(\{ name, description \}\)\s*=>\s*\{[\s\S]{0,120}?createProjectFromFormAction\(/);
     expect(source).toMatch(/saveProjectEdit:\s*\(\{ projectId, name, description \}\)\s*=>\s*\{[\s\S]{0,120}?saveProjectEditAction\(/);
     expect(source).toMatch(/archiveProject:\s*\(projectId\)\s*=>\s*\{[\s\S]{0,120}?runProjectLifecycle\('archive'/);
-    const lifecycleActions = await readFile(new URL('../src/app/projectLifecycleActions.ts', import.meta.url), 'utf8');
+    const lifecycleActions = await sourceText(new URL('../src/app/projectLifecycleActions.ts', import.meta.url));
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(lifecycleActions).not.toContain(forbidden);
     expect(lifecycleActions).not.toContain('RecordStore');
     // The revision a lifecycle write carries is the one the surface was rendering, and the re-read
@@ -161,7 +162,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     expect(lifecycleActions).toContain("    : deps.state?.projects.find((candidate) => candidate.id === projectId)?.source.revision ?? null;");
     expect(lifecycleActions).toContain('convergeAfterWrite(');
     // The editor's mutations are planned from the record and the draft, not read out of the markup.
-    const editor = await readFile(new URL('../src/app/projectEditor.ts', import.meta.url), 'utf8');
+    const editor = await sourceText(new URL('../src/app/projectEditor.ts', import.meta.url));
     expect(editor).toContain('planProjectFieldMutations');
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(editor).not.toContain(forbidden);
 
@@ -172,7 +173,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     expect(source).toContain('resizeEventAction(');
     expect(source).toMatch(/createEvent:\s*\(\{ name, projectId, description, startDate, deadline \}\)\s*=>\s*\{[\s\S]{0,120}?createEventFromSeed\(/);
     expect(source).toMatch(/changeEvent:\s*\(\{ eventId, operation, proposedStartDate, proposedDeadline \}\)\s*=>\s*\{[\s\S]{0,120}?changeEventFromGesture\(/);
-    const eventActions = await readFile(new URL('../src/app/eventWriteActions.ts', import.meta.url), 'utf8');
+    const eventActions = await sourceText(new URL('../src/app/eventWriteActions.ts', import.meta.url));
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(eventActions).not.toContain(forbidden);
     expect(eventActions).not.toContain('RecordStore');
     // The revision is the one the surface was rendering, and a lost race re-reads. It reaches the sequence
@@ -187,7 +188,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     // Gantt row placement local instead of making it a third durable task order.
     expect(source).toContain('changeTaskDatesAction(');
     expect(source).toMatch(/changeTask:\s*\(\{ taskId, operation, proposedStartDate, proposedDeadline, targetRowIndex \}\)\s*=>\s*\{[\s\S]{0,140}?changeTaskDatesFromGantt\(/);
-    const timeline = await readFile(new URL('../src/app/timelineChangeAction.ts', import.meta.url), 'utf8');
+    const timeline = await sourceText(new URL('../src/app/timelineChangeAction.ts', import.meta.url));
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(timeline).not.toContain(forbidden);
     expect(timeline).not.toContain('RecordStore');
     expect(timeline).toContain('expectedRevision: task.source.revision');
@@ -203,7 +204,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     const directory = new URL('../src/browser/', import.meta.url);
     const names = (await readdir(directory)).filter((name) => name.endsWith('.ts'));
     expect(names.length).toBeGreaterThan(10);
-    const sources = await Promise.all(names.map(async (name) => ({ name, text: await readFile(new URL(name, directory), 'utf8') })));
+    const sources = await Promise.all(names.map(async (name) => ({ name, text: await sourceText(new URL(name, directory)) })));
 
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) {
       expect(sources.filter((source) => source.text.includes(forbidden)).map((source) => source.name)).toEqual([]);
@@ -211,9 +212,25 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
 
     // The sanctioned composition exists, and it is in the adapter that hands the shell
     // operations: backend, journal, activation marker and Stage 7's recovery gate.
-    const adapter = await readFile(new URL('../src/adapters/browserTaskMutations.ts', import.meta.url), 'utf8');
+    const adapter = await sourceText(new URL('../src/adapters/browserTaskMutations.ts', import.meta.url));
     for (const required of ['createCanonicalJsonRecordStore(', 'createBrowserOpfsRecordStoreFileBackend(', 'createBrowserOpfsRecordRecoveryJournalBackend(', 'startRecordMutationAuthority(', 'readRecordStoreActivation(']) expect(adapter).toContain(required);
     // And it refuses to hand anything back without all three conditions, each named.
     for (const reason of ["'not-activated'", "'recovery-blocked'", "'store-unreadable'"]) expect(adapter).toContain(reason);
+  });
+
+  it('does not depend on the line endings the checkout hands the reader', async () => {
+    // The import assertion above is about three lines of real source. It is written with `\n`, and
+    // this machine has `core.autocrlf=true` with no `.gitattributes` in the repository, so a fresh
+    // Windows clone hands the reader CRLF and the literal stops matching. The check is therefore made
+    // newline-independent rather than left to the checkout: read the real file, then assert the same
+    // literal against a CRLF copy of it through the same normalization.
+    const literal = "import type {\n  RecordMutationOutcome,\n} from './recordMutation.js';";
+    const real = await sourceText(new URL('../src/app/actionProtocol.ts', import.meta.url));
+    expect(real).toContain(literal);
+    expect(real.includes('\r')).toBe(false);
+
+    const crlf = real.replace(/\n/g, '\r\n');
+    expect(crlf).not.toContain(literal);
+    expect(normalizedSource(crlf)).toContain(literal);
   });
 });
