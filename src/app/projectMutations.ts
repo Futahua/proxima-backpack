@@ -55,7 +55,9 @@ export type ProjectMutationFailureReason =
 export interface ProjectMutationSuccess {
   readonly ok: true;
   readonly schemaVersion: typeof PROJECT_MUTATION_SCHEMA_VERSION;
-  readonly outcome: 'created' | 'updated' | 'archived' | 'restored';
+  readonly outcome: 'created' | 'updated' | 'archived' | 'restored' | 'deleted';
+  /** Every entity the operation affected: the project alone, or the project with its confirmed members. */
+  readonly affectedEntityIds: readonly OpaqueRecordId[];
   readonly recordId: OpaqueRecordId;
   readonly revision: string;
   /** The project as written. */
@@ -165,6 +167,7 @@ async function write(
       recordId: input.record.id,
       revision: result.revision,
       record: input.record,
+      affectedEntityIds: [input.record.id],
     };
   }
 
@@ -221,6 +224,7 @@ export async function createProject(
     recordId: record.id,
     revision: result.revision,
     record,
+    affectedEntityIds: [record.id],
   };
 }
 
@@ -380,8 +384,99 @@ export async function deleteProject(
   // Declared executor placeholder, not part of the packet: the block replaced above carried this
   // function's only terminal return, and the AUTHOR's instruction is not to implement deletion yet.
   // This keeps the function total and performs nothing; packet B2 replaces it with the cascade.
-  return failed(
-    'policy-not-decided',
-    'the submitted project members match the current membership, and the cascade that removes the project with them is added by the next packet, so nothing was changed',
-  );
+  const affectedEntityIds: OpaqueRecordId[] = [
+    input.projectId,
+    ...input.members.tasks,
+    ...input.members.events,
+  ];
+
+  const memberIds = [
+    ...input.members.tasks,
+    ...input.members.events,
+  ];
+
+  for (const memberId of memberIds) {
+    let member;
+    try {
+      member = await deps.store.read(memberId);
+    } catch {
+      return failed('storage-failure', 'the record store could not be read.');
+    }
+
+    if (
+      member === undefined
+      || (member.kind !== 'task' && member.kind !== 'event')
+      || (member.record.kind === 'task'
+        && (member.record as CanonicalTaskRecordV2).projectId !== input.projectId)
+      || (member.record.kind === 'event'
+        && (member.record as CanonicalEventRecordV2).projectId !== input.projectId)
+    ) {
+      return failed(
+        'membership-mismatch',
+        'the submitted project members no longer match the current membership.',
+      );
+    }
+
+    let deleted;
+    try {
+      deleted = await deps.coordinator.execute({
+        kind: 'delete',
+        fileName: recordFileNameFor(memberId),
+        expectedRevision: member.observedRevision,
+      });
+    } catch {
+      return failed('storage-failure', 'the member delete could not be attempted');
+    }
+
+    if (!deleted.ok) {
+      switch (deleted.reason) {
+        case 'stale':
+          return failed('stale-revision', 'another writer changed a confirmed project member first', deleted.actualRevision);
+        case 'missing':
+          return failed('membership-mismatch', 'a confirmed project member disappeared before deletion');
+        case 'recovery-required':
+          return failed('recovery-required', 'the store needs recovery before it accepts deletes');
+        case 'invalid-record-file-name':
+          return refused('the confirmed member id cannot name a record file');
+        default:
+          return failed('storage-failure', 'the member delete was rejected');
+      }
+    }
+  }
+
+  let projectDelete;
+  try {
+    projectDelete = await deps.coordinator.execute({
+      kind: 'delete',
+      fileName: recordFileNameFor(input.projectId),
+      expectedRevision: found.revision,
+    });
+  } catch {
+    return failed('storage-failure', 'the project delete could not be attempted');
+  }
+
+  if (!projectDelete.ok) {
+    switch (projectDelete.reason) {
+      case 'stale':
+        return failed('stale-revision', 'another writer changed this project first', projectDelete.actualRevision);
+      case 'missing':
+        return failed('not-found', 'the project record is not in the store');
+      case 'recovery-required':
+        return failed('recovery-required', 'the store needs recovery before it accepts deletes');
+      case 'invalid-record-file-name':
+        return refused('the project id cannot name a record file');
+      default:
+        return failed('storage-failure', 'the project delete was rejected');
+    }
+  }
+
+  return {
+    ok: true,
+    schemaVersion: PROJECT_MUTATION_SCHEMA_VERSION,
+    outcome: 'deleted',
+    recordId: input.projectId,
+    revision: projectDelete.revision,
+    record: found.record,
+    affectedEntityIds,
+  };
 }

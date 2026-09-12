@@ -36,7 +36,14 @@ export interface ProjectLifecycleOperations {
   }): Promise<ProjectMutationResult>;
   archiveProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
   restoreProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
-  deleteProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
+  deleteProject(input: {
+    projectId: OpaqueRecordId;
+    expectedRevision: string;
+    members: {
+      tasks: readonly OpaqueRecordId[];
+      events: readonly OpaqueRecordId[];
+    };
+  }): Promise<ProjectMutationResult>;
 }
 
 export interface ProjectLifecycleDependencies extends ProjectLifecycleOperationDependencies {
@@ -75,7 +82,9 @@ export type ProjectLifecycleOutcome =
       readonly ok: true;
       readonly schemaVersion: typeof PROJECT_LIFECYCLE_ACTION_SCHEMA_VERSION;
       readonly verb: ProjectLifecycleVerb;
-      readonly outcome: 'created' | 'updated' | 'archived' | 'restored';
+      readonly outcome: 'created' | 'updated' | 'archived' | 'restored' | 'deleted';
+  /** Every entity the run affected, so a cascade reports its members as well as the project. */
+  readonly affectedEntityIds: readonly OpaqueRecordId[];
       /** This run's semantic request id: minted at the boundary, returned on every result. */
       readonly requestId: string;
       readonly recordId: OpaqueRecordId;
@@ -181,9 +190,10 @@ export async function runLifecycle(
     recordId: written.recordId,
     revision: written.revision,
     refreshed: convergence.refreshed,
+    affectedEntityIds: written.affectedEntityIds,
   };
   deps.settle?.(accepted);
-  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId]);
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), written.affectedEntityIds);
   return accepted;
 }
 
@@ -276,10 +286,20 @@ export async function restoreProjectAction(
  */
 export async function deleteProjectAction(
   deps: ProjectLifecycleDependencies,
-  input: { readonly projectId: string },
+  input: {
+    readonly projectId: string;
+    readonly members: {
+      readonly tasks: readonly string[];
+      readonly events: readonly string[];
+    };
+  },
 ): Promise<ProjectLifecycleOutcome> {
   return await runLifecycleFromHub(deps, 'delete', input.projectId, async (operations, revision) => await operations.deleteProject({
     projectId: input.projectId as OpaqueRecordId,
     expectedRevision: revision,
+    members: {
+      tasks: input.members.tasks as readonly OpaqueRecordId[],
+      events: input.members.events as readonly OpaqueRecordId[],
+    },
   }));
 }
