@@ -46,6 +46,7 @@ export type ProjectMutationFailureReason =
   | 'validation-refused'
   | 'not-found'
   | 'stale-revision'
+  | 'membership-mismatch'
   | 'semantic-conflict'
   | 'recovery-required'
   | 'storage-failure'
@@ -315,7 +316,14 @@ export async function restoreProject(
  */
 export async function deleteProject(
   deps: ProjectMutationDependencies,
-  input: { readonly projectId: OpaqueRecordId; readonly expectedRevision: string },
+  input: {
+    readonly projectId: OpaqueRecordId;
+    readonly expectedRevision: string;
+    readonly members: {
+      readonly tasks: readonly OpaqueRecordId[];
+      readonly events: readonly OpaqueRecordId[];
+    };
+  },
 ): Promise<ProjectMutationResult> {
   const found = await readProject(deps, input.projectId);
   if (!found.ok) return found.failure;
@@ -323,19 +331,57 @@ export async function deleteProject(
     return failed('stale-revision', 'another writer changed this project first', found.revision);
   }
 
-  let members = { tasks: 0, events: 0 };
+  let currentTasks: OpaqueRecordId[] = [];
+  let currentEvents: OpaqueRecordId[] = [];
+
   try {
     const observations = await deps.store.list();
+
     for (const observation of observations) {
-      if (observation.record.kind === 'task' && (observation.record as CanonicalTaskRecordV2).projectId === input.projectId) members = { ...members, tasks: members.tasks + 1 };
-      if (observation.record.kind === 'event' && (observation.record as CanonicalEventRecordV2).projectId === input.projectId) members = { ...members, events: members.events + 1 };
+      if (
+        observation.record.kind === 'task'
+        && (observation.record as CanonicalTaskRecordV2).projectId === input.projectId
+      ) {
+        currentTasks.push(observation.id);
+      }
+
+      if (
+        observation.record.kind === 'event'
+        && (observation.record as CanonicalEventRecordV2).projectId === input.projectId
+      ) {
+        currentEvents.push(observation.id);
+      }
     }
   } catch {
-    return failed('storage-failure', 'the record store could not be read');
+    return failed(
+      'storage-failure',
+      'the record store could not be read.',
+    );
   }
 
+  const submittedTasks = [...input.members.tasks].sort();
+  const submittedEvents = [...input.members.events].sort();
+
+  currentTasks.sort();
+  currentEvents.sort();
+
+  if (
+    submittedTasks.length !== currentTasks.length
+    || submittedTasks.some((id, index) => id !== currentTasks[index])
+    || submittedEvents.length !== currentEvents.length
+    || submittedEvents.some((id, index) => id !== currentEvents[index])
+  ) {
+    return failed(
+      'membership-mismatch',
+      'the submitted project members no longer match the current membership.',
+    );
+  }
+
+  // Declared executor placeholder, not part of the packet: the block replaced above carried this
+  // function's only terminal return, and the AUTHOR's instruction is not to implement deletion yet.
+  // This keeps the function total and performs nothing; packet B2 replaces it with the cascade.
   return failed(
     'policy-not-decided',
-    `deleting ${found.record.name} would affect ${members.tasks} task(s) and ${members.events} event(s); whether those are left uncategorised, cascaded explicitly, or whether the delete is refused while they exist is the creator's decision, so nothing was changed`,
+    'the submitted project members match the current membership, and the cascade that removes the project with them is added by the next packet, so nothing was changed',
   );
 }
