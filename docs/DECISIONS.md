@@ -2022,3 +2022,42 @@ ambient read of an instant's zone.
 crosses a zone - at which point the parameter becomes ceremony. That is a product decision rather than an
 engineering one, and it is the alternative this box offered; the engineering answer is the one recorded here
 because it keeps the option open without costing anything at the call sites.
+
+## D83 - The write boundary is a gate, and enrollment is permission rather than capability
+
+**Decided** on 2026-09-12, at `871a8a1`. Gate 14 closed creator-vault writes with two evaluations -
+`evaluateFsaWriteBoundary()` returning `writerEnabled: false` and `evaluateOwnerAuthorityBoundary()`
+returning `writeAuthority: 'disabled'` - and no runtime code called either one. Both were correct and
+unread, which made "writes are disabled" a statement the product made about itself rather than a rule it
+enforced. That is the "capability present, not exercised" pattern this checklist refuses elsewhere, and it
+is worse here than elsewhere, because the capability in question is writing the creator's own notes.
+
+**The decision: the gate is a pure function, and it is consulted.** `src/app/writeAdmission.ts` decides from
+five facts, each a caller's argument rather than a lookup: which source is in front of the product, which
+record type is being written, whether a write path resolved at all, what the creator has enrolled, and
+whether the host has an atomic commit primitive. `src/browser/workspaceIdentity.ts` supplies the last of
+those from `evaluateFsaWriteBoundary()` - the first runtime caller that report has had - and the header
+renders the verdict it was handed rather than a parallel guess about it.
+
+**The ordering is the decision, not an implementation detail.** A live source is refused *before* enrollment
+is consulted, so an enrollment naming every record type still cannot write the creator's bytes. Enrollment is
+permission; the missing atomic commit is capability; a caller cannot buy the second with the first. The three
+refusals are reported in that order - capability, then permission, then scope - so whoever reads one learns
+the first thing that would actually have to change rather than the last.
+
+**Live data means exactly one mode.** `external` is the creator's vault behind a reader this process did not
+create. `fixture` and `record-store` are this product's own bytes - bundled fixture files, and canonical
+records behind the record store's own boundary - and the gate deliberately does not protect them, because a
+protection invented for disposable bytes makes the surface's claims harder to keep true. That boundary is
+asserted: `isLiveSource` is total over the three modes and the suite pins each answer.
+
+**The default is asserted by a scan, not by a comment.** `DEFAULT_WRITE_ENROLLMENT` is frozen and empty, and
+`tests/writeAdmission.test.ts` reads every file under `src/` to assert that none says `enrolled: true`. A
+repository that can enroll itself is one where "disabled by default" is decoration; the scan makes flipping
+it a visible act - deleting a case - rather than a quiet one-line change.
+
+**Reverses if:** Papers supplies an atomic compare-and-swap commit, at which point the first refusal stops
+being true and the gate's remaining two conditions become the whole question - and they still default to
+closed, still requiring the creator's explicit decision and still naming one record type at a time. A second
+reversal would be a product decision that live data need not be distinguished on the surface; the checklist
+box that asked for the distinction is the reason it is there.

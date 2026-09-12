@@ -39,9 +39,9 @@ back.”
 
 | Field | Value |
 | --- | --- |
-| Current slice | **The zone became explicit and injected, closing Gate 1's last open box at `58f7291`.** `src/domain/timeZone.ts` took the type, the platform-backed zone and the two conversions; `src/browser/hostTimeZone.ts` is the only ambient reader; `time.ts` stopped reading the ambient zone; and every browser module, the navigation helper, the domain day selector and the inspection projection now take a zone, with the shell passing `hostZone()` once. The migration is where the value is: 25 assertions had been passing because their fixtures inherited this machine's zone, so the suites now state theirs and answer the same anywhere. Four red assertions ended the slice and each was resolved as a decision about what its fixture means. `src/browser/calendarGrid.ts` keeps *floating* civil dates - local midnight, read back with local getters - which is consistent by construction and documented as the next thing to anchor if cross-zone grids ever matter. Decisions: D82. Agenda: **50 open of 1177**, from 51. |
+| Current slice | **The write boundary became a gate, at `871a8a1`.** `evaluateFsaWriteBoundary()` and `evaluateOwnerAuthorityBoundary()` were correct reports with no runtime caller, so "writes are disabled" was a statement the product made about itself; `src/app/writeAdmission.ts` is now the rule, a pure function of the source, the record type, whether a write path resolved, the enrollment, and whether the host has an atomic commit primitive. Live data - `external`, the reader this process did not create - is refused **before** enrollment is consulted, so an enrollment naming every record type still cannot write the creator's bytes. The header renders the verdict it was given: the source badge distinguishes live data from fixture bytes, and the admission badge carries the machine-readable refusal reason. `DEFAULT_WRITE_ENROLLMENT` is frozen and empty, and a test scans `src/` to keep it that way. Ordinary runs are untouched. Eight mutations bite. Agenda: **48 open of 1177**, from 50. |
 | Branch | `stage7-record-store-contract` |
-| Last audited SHA | `58f7291` - source/test typecheck 0, build 0, `git diff --check` 0, `npm test` 0 under default parallelism: **253 test files / 1673 passed / 1 skipped**, run 2026-09-12 in this working tree. This slice changed twelve source files and four suites to make one parameter explicit, and the suites it changed are the evidence that it worked: they had been relying on the ambient zone, and now name theirs. Five mutations of the zone module bite with the source restored byte for byte. The attempt that carried the dead ends is parked on `wip/explicit-zone-derivation`, and every failure it recorded (25 red at `0c0d593`, 5 at `c41fd3e`, 4 at `a131ec7`) is resolved here. |
+| Last audited SHA | `871a8a1` - source/test typecheck 0, build 0, `git diff --check` 0, `npm test` 0 under default parallelism: **254 test files / 1687 passed / 1 skipped**, run 2026-09-12 in this working tree. This slice added one pure module and one suite, and changed the header's two claims about its source. Eight mutations of the gate and its view bite with the source restored byte for byte, including the one that matters most: shipping the default enrollment enabled, which turns both "the default enrolls nothing" and the source scan red. |
 | Parity agenda | `D:\Letters\MatTroiSeConMoc\LongHorizon\proxima\proxima-full-parity-checklist.md` (branch `codex/reviewer-send-verification`) carries the full-parity agenda this work is driven by: **835 ticked / 5 open** counting every box the document carries, or **743 / 5** counting only top-level boxes, at the agenda commit `166012e`. Nine of the ten "for every row above" umbrellas are now closed, the last two at `a00a749` - `request ID exists` and `event/audit record exists`, each 35 satisfied / one not-applicable / no gaps of 36 cells, re-measured with the in-walker probe rather than adjusted by hand - and the one that stays open carries its own figure and reason on its box: runtime validation, 33 gaps of 36, which is the one column this agenda asks for that the architecture deliberately does not have. The project-archive box closed at `aee729d`, the workflow-stage box at `0a39c83` on D77, the import-policy box at `b5d65d0` on D65, and the four release-gate scope statements closed at `24944c7` on a mechanical audit (fourteen checks over the three trees, exit 0) rather than on a reading. The agenda's tick audit was re-run rather than carried: 840 boxes, no ticked box without a SHA, no false timestamp, 948 SHA references with the one known unresolvable. Every box still open is a top-level one, so the two counting conventions continue to differ by nothing but the boxes they are asked about; the Gantt row-placement branch remains the one tick that closed as **decided against rather than done**. |
 | Papers changed | No Papers change is recorded by this Proxima commit. Gate 2.8 records three host-side findings as requests - a refused semantic-keys payload is refused in silence, three `tools/*.mjs` CLIs are no-ops on Windows, and an unpresented surface answers a capture with an artifact-bound error - and none of the three was implemented: Papers is read-only for this work until the creator authorizes a host change. |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` - retained as the repository's recorded machine-local baseline, not a fresh current-Papers acceptance claim. **A fresh current acceptance now exists next to it** (`00451d9`): Papers 1.3.11 at `d2a3c74`, `packaged false`, run against the Proxima build at `e08616d` in a disposable profile, with the artifact, stage list and reproduction command recorded in sections 2.7 and 2.9. The distinction the original cell drew is kept rather than collapsed: `0a0d89f` stays the baseline this repository was written against, and `d2a3c74` is what has actually been run against it most recently. |
@@ -3205,14 +3205,35 @@ and operate through Papers across restarts without human UI intervention.
 `native-fsa-grant-and-transaction-required`; enabling creator-vault writes is not
 claimed and requires a future native transaction capability plus explicit enrollment.
 
+`871a8a1` made that sentence a rule rather than a description: the gate refuses a live source on the host's own
+measured capability (`evaluateFsaWriteBoundary()`, which had no runtime caller before), then on the missing
+creator decision, then on the record type - in that order. Neither boundary report changed, and no authority was
+granted; what changed is that the product now consults them instead of restating them.
+
 Separate approval gate for creator data. Do not jump directly to Excalidraw writing.
 
 Separate approval gate.
 
 - [ ] Previous write-model gate signed off.
 - [ ] Explicit creator decision to allow writes.
-- [ ] Mutation UI clearly distinguishes live creator data from fixture mode.
-- [ ] Agent writes to real vault remain disabled by default.
+- [x] Mutation UI clearly distinguishes live creator data from fixture mode. — `871a8a1` @ `2026-09-12T21:19:39+07:00` *(the header badge now reads `Live data · read-only`, `Fixture data · read-only` or `Record store records · vault notes`,
+      carries `data-papers-visual-key="source-mode-badge"` with `data-proxima-source-mode` and `data-proxima-live-data`,
+      and is rendered next to a second badge carrying the gate's verdict and its machine-readable reason. Both come from
+      one call - `writeAdmissionViewFor(sourceMode, taskMutations !== null)` - rather than from a parallel guess, so a
+      surface that started inventing its own wording fails its own case. `isLiveSource` names exactly one mode as live:
+      `external`, the reader this process did not create. `fixture` and `record-store` are this product's own bytes and are
+      deliberately left unprotected, because inventing a protection for disposable bytes only makes the surface's claims
+      harder to keep true.)*
+- [x] Agent writes to real vault remain disabled by default. — `871a8a1` @ `2026-09-12T21:19:39+07:00` *(the default is enforced rather than reported. `src/app/writeAdmission.ts` refuses a live source **before** it consults
+      enrollment, so the most permissive enrollment anyone could write still cannot write the creator's bytes, and the
+      reason is `native-transaction-required` - measured from the host boundary report rather than assumed. The refusal
+      names the first thing standing in the way, in capability-then-permission-then-scope order, so a caller learns what
+      would actually have to change. `DEFAULT_WRITE_ENROLLMENT` is frozen, empty, and the only enrollment any code in this
+      tree constructs; `tests/writeAdmission.test.ts` asserts that by scanning `src/` for `enrolled: true` instead of
+      trusting the comment, so a future slice that flips it to make a test pass has to delete a case. Eight mutations of
+      the gate and its view all bite, with the source restored byte for byte. **What this does not do:** grant write
+      authority to anything, change what either boundary report says, or alter ordinary fixture and record-store runs,
+      which keep writing exactly as before.)*
 - [ ] One smallest record type enabled first.
 - [ ] Obsidian round-trip tested.
 - [ ] External-concurrent-edit test passes.
