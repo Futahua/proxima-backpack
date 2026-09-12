@@ -28,9 +28,11 @@
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { CanonicalExecutionState } from '../domain/canonicalTaskState.js';
+import type { IdGenerator } from '../domain/clock.js';
 import type { ProximaState } from '../domain/types.js';
 import type { FormEdit } from './formDraft.js';
 import { EXECUTION_STATE_STATUSES } from './recordStateProjection.js';
+import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import type { CreateTaskRequest, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
 import type { TaskEditorDraft, TaskEditorField, TaskEditorOption, TaskEditorSection } from './taskEditor.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
@@ -262,6 +264,10 @@ export interface TaskCreateDependencies {
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
   readonly setRefusal: (reason: string | null) => void;
   readonly render: () => void;
+  /** Mints this run's semantic request id. Injected, like the record identity itself. */
+  readonly ids: IdGenerator;
+  /** Where the run's one terminal audit event goes. */
+  readonly audit: SemanticAuditSink;
 }
 
 export type TaskCreateFailureReason =
@@ -275,6 +281,8 @@ export type TaskCreateOutcome =
   | {
       readonly ok: true;
       readonly schemaVersion: typeof TASK_CREATE_SCHEMA_VERSION;
+      /** This run's semantic request id: minted at the boundary, returned on every result. */
+      readonly requestId: string;
       readonly recordId: OpaqueRecordId;
       readonly revision: string;
       readonly refreshed: boolean;
@@ -285,16 +293,19 @@ export type TaskCreateOutcome =
       readonly reason: TaskCreateFailureReason;
       readonly detail: string;
       readonly fieldId: string | null;
+      /** Present on a refusal too, which is what makes a refused create correlatable. */
+      readonly requestId: string;
       readonly refreshed: boolean;
     };
 
 function createRefused(
   reason: TaskCreateFailureReason,
   detail: string,
+  requestId: string,
   fieldId: string | null = null,
   refreshed = false,
 ): TaskCreateOutcome {
-  return { ok: false, schemaVersion: TASK_CREATE_SCHEMA_VERSION, reason, detail, fieldId, refreshed };
+  return { ok: false, schemaVersion: TASK_CREATE_SCHEMA_VERSION, reason, detail, fieldId, requestId, refreshed };
 }
 
 /**
@@ -303,6 +314,11 @@ function createRefused(
  * The effect it reports is the same shape the editor's Save reports, so the shell treats "the form
  * is done" the same way in both places: an accepted create closes the form, a refused one leaves it
  * open with everything typed still in it.
+ *
+ * The envelope is minted as soon as there is a run at all - after the draft check, before the state check -
+ * so a refusal for a missing state or a refused plan is correlatable exactly like an accepted create, and one
+ * terminal event is appended for every run. A create is a single record, so the outcome is accepted or
+ * rejected and never partial; the shared rule decides that rather than this file.
  */
 export async function createTaskAction(
   deps: TaskCreateDependencies,
@@ -310,13 +326,26 @@ export async function createTaskAction(
 ): Promise<TaskEditorActionEffect<TaskCreateOutcome>> {
   if (input.draft === null) return { outcome: null, clearDraft: false, closeEditor: false };
 
+  const requestId = mintSemanticRequestId(deps.ids);
+  const audit = (outcome: SemanticOutcome, entityIds: readonly string[], errorCode?: string): void => {
+    deps.audit.append({
+      requestId,
+      actionType: 'task.create',
+      outcome,
+      entityIds: [...entityIds],
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  };
+
   if (deps.state === null) {
-    return { outcome: createRefused('not-open', 'no state is loaded to create into'), clearDraft: false, closeEditor: false };
+    audit('rejected', [], 'not-open');
+    return { outcome: createRefused('not-open', 'no state is loaded to create into', requestId), clearDraft: false, closeEditor: false };
   }
 
   const plan = planTaskCreate(deps.state, input.draft);
   if (!plan.ok) {
-    return { outcome: createRefused(plan.reason, plan.detail, plan.fieldId), clearDraft: false, closeEditor: false };
+    audit('rejected', [], plan.reason);
+    return { outcome: createRefused(plan.reason, plan.detail, requestId, plan.fieldId), clearDraft: false, closeEditor: false };
   }
 
   deps.setRefusal(null);
@@ -325,7 +354,8 @@ export async function createTaskAction(
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
     deps.setRefusal(reason);
     deps.render();
-    return { outcome: createRefused('writes-unavailable', reason), clearDraft: false, closeEditor: false };
+    audit('rejected', [], 'writes-unavailable');
+    return { outcome: createRefused('writes-unavailable', reason, requestId), clearDraft: false, closeEditor: false };
   }
 
   const written = await writes.createTask(plan.request);
@@ -334,17 +364,20 @@ export async function createTaskAction(
   deps.render();
 
   if (!written.ok) {
+    audit(semanticOutcomeOf({ wrote: 0, refused: true }), [], written.reason);
     return {
-      outcome: createRefused(written.reason, written.detail, null, convergence.refreshed),
+      outcome: createRefused(written.reason, written.detail, requestId, null, convergence.refreshed),
       clearDraft: false,
       closeEditor: false,
     };
   }
 
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId]);
   return {
     outcome: {
       ok: true,
       schemaVersion: TASK_CREATE_SCHEMA_VERSION,
+      requestId,
       recordId: written.recordId,
       revision: written.revision,
       refreshed: convergence.refreshed,

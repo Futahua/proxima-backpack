@@ -32,6 +32,7 @@ import { defineCanonicalRecordHeader, opaqueRecordIdFromRandomBytes, type Opaque
 import type { CanonicalProjectRecordV2, CanonicalRecordV2 } from '../src/domain/canonicalRecordV2.js';
 import type { ProximaState, Task } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T06:00:00+07:00';
 const BUILD = {
@@ -137,7 +138,7 @@ async function world(seedOffset: number): Promise<World> {
   const refresh = createRefreshController({ initial: await source.load(), source });
   const read = async (): Promise<ProximaState> => (await source.load()).state;
   const refreshFromSource = async (reason: RefreshReason): Promise<RefreshResult> => await refresh.refreshSource(reason);
-  const sinks = { unavailableReason: () => null, refresh: refreshFromSource, setRefusal: () => undefined, render: () => undefined };
+  const sinks = { unavailableReason: () => null, refresh: refreshFromSource, setRefusal: () => undefined, render: () => undefined, ids: semanticIds(), audit: recordingAudit() };
 
   const taskOf = async (id: string): Promise<Task> => {
     const state = await read();

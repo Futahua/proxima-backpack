@@ -632,14 +632,20 @@ interface ContractRowSpec {
   readonly observable: ObservableCell | { readonly gap: GapCell };
   /** The family this row is read against, when it is not the table's own: a bulk run reports itself. */
   readonly contract?: FamilyContract;
+  /**
+   * Cells this row answers differently from its family.
+   *
+   * Used where a family-wide gap has closed for one row and not for the rest - the semantic envelope is being
+   * wired one action at a time - so the closed row carries satisfied evidence while its unwired siblings keep
+   * asserting the absence. Keyed by the column name, so an override cannot silently land on the wrong column.
+   */
+  readonly overrides?: Partial<Record<string, ContractCell>>;
 }
 
 function contractRows(contract: FamilyContract, specs: readonly ContractRowSpec[]): readonly ContractRow[] {
   return specs.map((spec) => {
     const family = spec.contract ?? contract;
-    return {
-    action: spec.action,
-    cells: [
+    const built: readonly ContractCell[] = [
       rowCell(COLUMN_REQUEST, spec.request, family.requestFile),
       missing(
         COLUMN_VALIDATION,
@@ -704,7 +710,14 @@ function contractRows(contract: FamilyContract, specs: readonly ContractRowSpec[
         family.audit.witness,
         `${spec.action}: ${family.audit.note}`,
       ),
-    ],
+    ];
+
+    // A row that has closed a family-wide gap says so here rather than by loosening the family's contract:
+    // the envelope is wired one family at a time, so the cell that changes is this row's, and the rows still
+    // carrying the gap keep asserting its absence.
+    return {
+      action: spec.action,
+      cells: built.map((cell) => spec.overrides?.[cell.column] ?? cell),
     };
   });
 }
@@ -941,6 +954,13 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'create',
     refusal: { marker: "'a task needs a name'", reason: 'a create that names nothing is refused with a machine-readable reason before the first byte moves, and the same vocabulary answers an unreadable instant or a description that is too long' },
     observable: { file: 'tests/taskCreate.test.ts', marker: "state.tasks.find((task) => task.name === 'Created from the form')", note: 'the create case re-reads the world the form created into and finds the task there, then asserts the file count, so the record is observed rather than assumed' },
+    // The first task row wired to the semantic envelope: `createTaskAction` mints the id at the boundary and
+    // appends one terminal event per run, which is why this row closes the family's two gaps and its siblings
+    // keep asserting them.
+    overrides: {
+      [COLUMN_REQUEST_ID]: carried(COLUMN_REQUEST_ID, 'src/app/taskCreate.ts', 'readonly requestId: string;', 'the run mints a semantic request id before the state check and returns it on both branches, so a refused create - an unfillable form, a missing state, no write path, a refused write - is correlatable exactly like an accepted one; the input type accepts no caller-supplied id, which tests/taskCreateSemanticAudit.test.ts asserts by smuggling one in'),
+      [COLUMN_AUDIT]: carried(COLUMN_AUDIT, 'tests/taskCreateSemanticAudit.test.ts', 'audit:accepted', 'behavioural rather than structural: one terminal event per run through the injected sink, after convergence where there was a write and not before it, journalled accepted with the record id or rejected with the machine-readable code and no ids - including the refusals decided before the write path is asked, which is where an audit trail usually goes missing'),
+    },
   },
   {
     action: 'task.update (ordinary fields)',
