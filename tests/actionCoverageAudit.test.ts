@@ -250,6 +250,53 @@ describe('Stage 17 task action coverage', () => {
   });
 });
 
+type ContractStatus = 'satisfied' | 'gap' | 'n/a';
+
+interface ContractCell {
+  readonly column: string;
+  readonly status: ContractStatus;
+  /** Where the status is read from. */
+  readonly file: string;
+  /** Optional anchor: the marker is looked for from here on, so a request field is not confused with a result. */
+  readonly from?: string;
+  /** What must be there - or, for a gap, must not be. */
+  readonly marker: string;
+  /** A gap asserts the marker's absence, so the day the gap closes this table fails and the cell is revisited. */
+  readonly absent?: boolean;
+  /**
+   * For a gap: something that must be present in the same text.
+   *
+   * An absence assertion is green when its marker is misspelled as easily as when the gap is real, so every
+   * gap names a witness - the code it is a gap *in* - and the audit fails if that witness disappears.
+   */
+  readonly witness?: string;
+  /** Why, in one sentence a reader can check. */
+  readonly reason: string;
+}
+
+/**
+ * Stage 17's ten columns for the Templates row, as an inventory.
+ *
+ * The AUTHOR fixed what each column means on 2026-09-12 and ruled the order of work: build the matrix first,
+ * record every cell as satisfied, gap or not-applicable with its reason, and **do not fix anything while
+ * building it** - the matrix exists to expose the common gaps, and a gap is asserted as an absence so it
+ * cannot quietly become a claim later. The four gaps this row records are the ones the AUTHOR named, and the
+ * two that repeat across rows (a semantic request id, a bounded semantic event) become one cross-cutting
+ * slice once the matrix shows its whole coverage.
+ */
+const TEMPLATE_CONTRACT_CELLS: readonly ContractCell[] = [
+  { column: 'typed request exists', status: 'satisfied', file: 'src/app/templateExecuteAction.ts', marker: 'export interface TemplateExecuteRequest', reason: 'the request is a closed exported type naming the template text and an optional project' },
+  { column: 'runtime validation exists', status: 'gap', file: 'src/app/templateSubmission.ts', marker: 'parseOpaqueRecordId', absent: true, witness: "typeof candidate.projectId !== 'string'", reason: "the agent boundary validates the outer shape, but a projectId is only checked as a string and then cast to OpaqueRecordId - canonical-ID validation is missing, which is the AUTHOR's own reading of this row" },
+  { column: 'typed success exists', status: 'satisfied', file: 'src/app/templateExecuteAction.ts', marker: "outcome: 'created'", reason: 'the success branch is discriminated and names the semantic effect and the ids' },
+  { column: 'typed stale/conflict where applicable', status: 'gap', file: 'src/app/templateExecuteAction.ts', marker: "'semantic-conflict'", absent: true, witness: "'creation-refused'", reason: 'stale is not applicable to a create-only run (the action reads the lost-race cause only to decide whether to re-read), but a semantic conflict from the port arrives as creation-refused with the port sentence, so nothing in the result distinguishes it' },
+  { column: 'typed validation refusal exists', status: 'satisfied', file: 'src/app/templateExecuteAction.ts', marker: "'untranslatable-draft-field'", reason: 'invalid semantic input comes back as a machine-readable reason with a bounded sentence, not as prose or an exception' },
+  { column: 'typed storage/recovery failure exists', status: 'gap', file: 'src/app/templateExecuteAction.ts', marker: "'storage-failure'", absent: true, witness: "'creation-refused'", reason: 'a storage failure is collapsed into creation-refused; recovery is not applicable on this path because a create goes through createIfAbsent and never uses the recovery coordinator' },
+  { column: 'request ID exists', status: 'gap', file: 'src/app/templateExecuteAction.ts', from: 'export type TemplateExecuteOutcome', marker: 'requestId', absent: true, witness: 'readonly created', reason: 'the request type accepts a caller-supplied requestId that nothing reads, and neither outcome branch carries a system-generated correlation id' },
+  { column: 'affected entity IDs returned', status: 'satisfied', file: 'src/app/templateExecuteAction.ts', marker: 'readonly created: readonly OpaqueRecordId[]', reason: 'both branches carry the ids: empty for a refusal decided before the first call, and the ids that landed for a partial run' },
+  { column: 'state/revision observable afterward', status: 'satisfied', file: 'tests/templateExecuteClick.test.ts', marker: 'afterRuns', reason: 'behavioural rather than structural: the click test asserts the convergence step ran after a real run, and the caller-equivalence test decodes the stored records of both worlds afterwards' },
+  { column: 'event/audit record exists', status: 'gap', file: 'src/app/templateExecuteAction.ts', marker: 'eventRing', absent: true, witness: 'executeTemplatePlan', reason: 'nothing on this path emits a semantic event; the coordinator keeps a recovery journal, and its own contract says a recovery record is never exposed as an audit event' },
+];
+
 describe('Stage 17 template action coverage', () => {
   it('names the module, the shell caller and the tests for the template entry, in both halves', () => {
     for (const row of TEMPLATE_ROWS) {
@@ -259,6 +306,38 @@ describe('Stage 17 template action coverage', () => {
       const compared = PARITY.includes(row.testMarker)
         || (row.equivalenceFile !== undefined && source(row.equivalenceFile).includes(row.testMarker));
       expect(compared, `${row.action}: equivalence claimed but not asserted`).toBe(row.equivalence);
+    }
+  });
+
+  it('records the ten columns for the Templates row, gaps included', () => {
+    expect(TEMPLATE_CONTRACT_CELLS.map((cell) => cell.column)).toEqual([
+      'typed request exists',
+      'runtime validation exists',
+      'typed success exists',
+      'typed stale/conflict where applicable',
+      'typed validation refusal exists',
+      'typed storage/recovery failure exists',
+      'request ID exists',
+      'affected entity IDs returned',
+      'state/revision observable afterward',
+      'event/audit record exists',
+    ]);
+
+    for (const cell of TEMPLATE_CONTRACT_CELLS) {
+      const text = source(cell.file);
+      const scoped = cell.from === undefined
+        ? text
+        : text.slice(text.indexOf(cell.from));
+      if (cell.from !== undefined) {
+        expect(scoped, `${cell.column}: ${cell.file} must contain ${cell.from}`).not.toBe('');
+      }
+      if (cell.witness !== undefined) {
+        expect(scoped, `${cell.column}: ${cell.file} must carry the witness ${cell.witness}`).toContain(cell.witness);
+      }
+      // A satisfied cell or a not-applicable note must carry its marker; a gap must not. That is what makes
+      // a gap fail the day it closes, instead of staying a gap nobody revisits.
+      expect(scoped.includes(cell.marker), `${cell.column} (${cell.status}): ${cell.reason}`)
+        .toBe(cell.absent !== true);
     }
   });
 
