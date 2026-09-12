@@ -1568,3 +1568,56 @@ the protocol's own request id, which is one of the two gaps the Stage 17 matrix 
 multi-record runs. That is exactly the subject of the cross-cutting request-id slice the matrix's gaps point
 at, so this decision is expected to be revisited there rather than left standing on a technicality.
 
+## D73 — The agent write path is a sibling entry over the operation, and a wrapper does not reshape a result
+
+**Decided** on 2026-09-12, working the checklist's agent-parity gaps with the browser AUTHOR retired: three
+open boxes (Stage 0's UI/agent equivalence over the action protocol, its Evidence counterpart, and Stage 19's
+convergence and race boxes) all named the same missing thing — an agent-facing submission path. Nothing on the
+agent side could write a record: the loopback bridge is a read-only vault reader, and the dispatcher refuses
+every record verb with `action-not-available` before the record layer.
+
+**What it is:** `src/app/agentWritePath.ts`, a sibling entry on the pattern D72 fixed for templates. Its wire
+names a semantic verb and the facts the agent read — `{ type, taskId, from, to, targetIndex,
+expectedRevision }` — and hands the work to `moveTaskByGesture`, the operation the Elastic drop wrapper and
+(through it) the shell already reach. Four consequences follow from that shape, and each one is asserted rather
+than intended:
+
+- **A verb enters the wire only when its operation runs with no cockpit.** `task.execution.move` and
+  `task.execution.reorder` qualify; every other verb the taxonomy registers as a record or artifact mutation is
+  answered `unsupported-verb` with a sentence naming where it belongs. The set is derived from
+  `registeredActionTypes()` and `categoryOf()`, so a newly registered record verb cannot be silently unknown to
+  the wire. One of the two accepted verbs, `task.execution.reorder`, is not in the protocol's registry at all:
+  the registry carries what `parseAction` accepts, and a reorder arises from a gesture rather than a dispatcher
+  input. The wire speaks the operation's vocabulary, which `taskMoveActionType` owns.
+- **The revision is a required field and the wire never guesses one.** An agent that lost a race is refused
+  `stale-revision` with the revision that beat it, in the same words the UI's path uses.
+- **The request id is minted before the submission is parsed**, so a malformed or unsupported submission is
+  journalled with the id its own refusal names — the convention `dispatch` already follows, where the id exists
+  before `parseAction` is asked. A caller-supplied `requestId` is ignored.
+- **A declared verb that contradicts the record facts is refused, not corrected.** A drop from `running` to
+  `running` *is* `task.execution.reorder` by `taskMoveActionType`'s rule, and a submission that calls it a move
+  is told which one it is; silently renaming the operation would journal a verb the caller did not ask for.
+
+**The companion change, and why it was necessary:** `performElasticDrop` used to reshape the gesture's result
+into a narrower, surface-facing summary. A parity claim between two entries cannot be judged against a subset
+of fields — a divergence can hide in the fields one side drops — so the wrapper now returns the gesture's
+result untouched and adds only the two refusals it decides itself, in that same shape. A wrapper's job is the
+wiring and its own refusals, not a second vocabulary for one operation. Its pre-gesture refusals name the
+family `task.execution.move`, which is what its own audit event already said, because the column the card is in
+is exactly what is missing when the board cannot show the card.
+
+**The containment rule is untouched.** The dispatcher still refuses every record verb, the bridge is still
+GET/OPTIONS-only read transport, and `tests/agentWritePath.test.ts` asserts both facts in the same file that
+proves the wire works: an agent gains a record write, not a vault capability. Creator-vault write authority is
+unchanged.
+
+**One vocabulary fact recorded rather than smoothed:** an id that is not a canonical record id comes back from
+the record layer as `storage-failure` — the store refuses to read it and the layer maps a refused read to that
+reason — while a canonical id that is simply absent comes back as `not-found`. The wire reports both unchanged.
+Re-mapping that belongs to the record layer, not to a wire, and is not this slice.
+
+**Reverses if:** the protocol grows an asynchronous, correlation-carrying dispatch that can run record verbs
+against an observed revision — then this wire should fold into it rather than stay a sibling. Until then the
+alternative to a sibling entry is loosening `action-not-available`, which the containment and coverage suites
+exist to prevent.
+

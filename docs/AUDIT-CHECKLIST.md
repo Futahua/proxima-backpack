@@ -423,6 +423,17 @@ Potential categories:
 - [ ] refresh/reload source
 - [ ] future canvas selection/open
 - [x] mutation actions remain fixture-only while real vault is read-only
+- [x] first agent-facing record write entry — `src/app/agentWritePath.ts` submits the two drop
+      verbs (`task.execution.move` / `task.execution.reorder`) to `moveTaskByGesture` over a
+      resolved store, with the revision the agent read made a required field, one request id
+      minted before the submission is parsed, and one terminal semantic event; every other
+      registered record or artifact verb is answered `unsupported-verb` with the sentence
+      saying where it belongs, derived from `registeredActionTypes()` rather than a hand-kept
+      list. It is a sibling entry, not a `ProximaAction`, so the dispatcher's containment rule
+      is unchanged and is asserted in the same suite. `performElasticDrop` correspondingly
+      stopped reshaping the gesture's result, which is what lets the two entries be compared
+      as whole objects rather than as a chosen subset of fields
+      (`tests/agentWritePath.test.ts`, `docs/DECISIONS.md#d73`).
 
 ### 3.2 State-inspection seam
 
@@ -2923,6 +2934,13 @@ Developer control:
       POST/PUT/PATCH/DELETE and mutation-shaped routes fail closed, while the
       read-only source/action layers expose no writer methods (`tests/agentVaultBridge.test.ts`,
       `tests/zeroWriteWitness.test.ts`, `tests/obsidianCoexistence.test.ts`).
+- [x] an agent record write is a store operation, not a vault capability — the first
+      agent-facing write entry resolves the sanctioned record write path (memory, fixture or
+      activated OPFS store) and submits a record verb with a required observed revision, so an
+      authenticated agent gains a record write and no filesystem reach: the bridge stays
+      read-only GET/OPTIONS transport, the dispatcher still refuses every record verb, creator
+      vault write authority stays disabled, and a stale submission is refused with the revision
+      that beat it (`tests/agentWritePath.test.ts`, `docs/DECISIONS.md#d73`).
 - [x] no secrets in evidence/logs — defined disclosure surfaces emit no absolute
       creator paths or raw filesystem errors, and there is no credential/token
       mechanism to leak; bridge failures, startup output, inspection/evidence

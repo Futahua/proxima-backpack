@@ -22,7 +22,7 @@ import { executionStateOf } from './recordStateProjection.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import { moveTaskByGesture, type TaskMoveActionType, type TaskMoveGestureResult } from './taskMoveGesture.js';
-import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
+import type { TaskFieldMutation, TaskMutationResult } from './taskMutations.js';
 
 export const ELASTIC_DROP_ACTION_SCHEMA_VERSION = 1 as const;
 
@@ -63,33 +63,53 @@ export interface ElasticDropIntent {
   readonly targetIndex: number;
 }
 
-export type ElasticDropOutcome =
-  | {
-      readonly ok: true;
-      readonly schemaVersion: typeof ELASTIC_DROP_ACTION_SCHEMA_VERSION;
-      readonly actionType: TaskMoveActionType;
-      /** This run's semantic request id: the wrapper mints it and the gesture below carries it through. */
-      readonly requestId: string;
-      readonly revision: string;
-      readonly refreshed: boolean;
-    }
-  | {
-      readonly ok: false;
-      readonly schemaVersion: typeof ELASTIC_DROP_ACTION_SCHEMA_VERSION;
-      readonly reason: 'unknown-task' | 'writes-unavailable' | TaskMutationFailureReason;
-      readonly detail: string;
-      /** Present on a refusal too, including the two this wrapper decides before the gesture runs. */
-      readonly requestId: string;
-      readonly refreshed: boolean;
-    };
+/**
+ * A refusal this wrapper decides before the gesture is reached.
+ *
+ * A drop refused because the board is not showing the card, or because this run has no write path, has no
+ * truthful move-versus-reorder answer: the column the card is in is exactly what is missing. The wrapper
+ * names the family `task.execution.move`, which is what its own audit event already said, rather than
+ * guessing a verb it cannot know.
+ */
+export interface ElasticDropPreGestureRefusal {
+  readonly ok: false;
+  readonly schemaVersion: typeof ELASTIC_DROP_ACTION_SCHEMA_VERSION;
+  readonly outcome: 'refused';
+  readonly actionType: TaskMoveActionType;
+  readonly reason: 'unknown-task' | 'writes-unavailable';
+  readonly detail: string;
+  /** Present on a refusal too: a refused drop is correlatable with the event it left behind. */
+  readonly requestId: string;
+  readonly refreshed: boolean;
+}
+
+/**
+ * The drop's result **is** the gesture's result, deliberately.
+ *
+ * A wrapper that reshaped it would make the surface's answer and the agent's answer two vocabularies for
+ * one operation, which is the thing Stage 17's parity box exists to rule out: the same drop submitted
+ * through the agent write path returns the same object, field for field, apart from the run's own request
+ * id. So this file adds only the two refusals it decides itself - in that same shape - and hands everything
+ * else through untouched.
+ */
+export type ElasticDropOutcome = TaskMoveGestureResult | ElasticDropPreGestureRefusal;
 
 function refused(
-  reason: 'unknown-task' | 'writes-unavailable' | TaskMutationFailureReason,
+  reason: 'unknown-task' | 'writes-unavailable',
   detail: string,
   requestId: string,
   refreshed = false,
-): ElasticDropOutcome {
-  return { ok: false, schemaVersion: ELASTIC_DROP_ACTION_SCHEMA_VERSION, reason, detail, requestId, refreshed };
+): ElasticDropPreGestureRefusal {
+  return {
+    ok: false,
+    schemaVersion: ELASTIC_DROP_ACTION_SCHEMA_VERSION,
+    outcome: 'refused',
+    actionType: 'task.execution.move',
+    reason,
+    detail,
+    requestId,
+    refreshed,
+  };
 }
 
 export async function performElasticDrop(
@@ -148,14 +168,5 @@ export async function performElasticDrop(
   if (!result.ok) deps.setRefusal(result.reason);
   deps.render();
 
-  return result.ok
-    ? {
-        ok: true,
-        schemaVersion: ELASTIC_DROP_ACTION_SCHEMA_VERSION,
-        actionType: result.actionType,
-        requestId: result.requestId,
-        revision: result.revision,
-        refreshed: result.refreshed,
-      }
-    : refused(result.reason, result.detail, result.requestId, result.refreshed);
+  return result;
 }
