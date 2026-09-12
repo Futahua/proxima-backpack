@@ -1020,6 +1020,28 @@ const EVENT_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
   ),
 };
 
+/**
+ * The envelope cells for the two recurrence rows.
+ *
+ * They are the event family's last two and live in their own module, so they close together - and what they
+ * add is the scope in the journal's name: one occurrence is `event.occurrence.change`, the series is
+ * `event.series.change`, because both are the same record write with different meaning.
+ */
+const RECURRENCE_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/eventRecurrenceActions.ts',
+    'readonly requestId: string;',
+    'the sequence mints one semantic request id before the event lookup can refuse and returns it on every result, so a rule change, an occurrence exception or a series cancel refused because the event is gone, because the plan cannot be built or because there is no write path is correlatable exactly like an accepted one - those three refusals used to happen in front of the sequence, where they had no id at all',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/recurrenceSemanticAudit.test.ts',
+    'audit:accepted',
+    'behavioural rather than structural: one terminal event per run, after convergence where the store moved, whose name carries the scope (event.occurrence.change against event.series.change, and the two rule verbs by name), so a journal reader can tell which one a selection meant',
+  ),
+};
+
 const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
   {
     action: 'task.create',
@@ -1233,6 +1255,7 @@ const EVENT_CONTRACT_ROWS: readonly ContractRow[] = [
       shape: 'write',
       refusal: { file: 'src/app/eventRecurrencePlan.ts', marker: "'not-a-generated-occurrence'", reason: 'an override for an instant the rule does not generate is refused by name, and a moved occurrence with an impossible span is refused as invalid-span' },
       observable: { file: 'tests/recurrenceScopeWiring.test.ts', marker: 'const observation = await store.read(created.recordId);', note: 'the wiring case reads the event record back out of the store and asserts the exception the occurrence write left on it' },
+      overrides: RECURRENCE_ENVELOPE_OVERRIDES,
     },
     {
       action: 'event series change',
@@ -1241,14 +1264,19 @@ const EVENT_CONTRACT_ROWS: readonly ContractRow[] = [
       shape: 'write',
       refusal: { file: 'src/app/eventMutations.ts', marker: "'an event must end after it starts'", reason: 'a series move goes through the same validated span write, so an impossible span is refused with a machine-readable reason rather than written as the series rule' },
       observable: { file: 'tests/eventRecurrence.test.ts', marker: 'expect((await app.series())?.exceptions).toEqual([]);', note: 'the series case reads the series back out of the record and asserts the overrides were dropped, which is the claim a series-scoped move makes' },
+      overrides: RECURRENCE_ENVELOPE_OVERRIDES,
     },
     {
       action: 'event.recurrence.set/clear (retained)',
       request: { marker: 'readonly rule: CanonicalRecurrenceRule', reason: 'the set half names the rule it writes and the clear half names only the event; neither accepts a series id from the caller, because the series identity is allocated rather than supplied' },
       effect: "'updated'",
       shape: 'write',
-      refusal: { marker: 'refused(verb, scope, planned.reason, planned.detail)', reason: 'the rule is validated by the planner and its machine-readable reason travels back through planned.reason, so a rule that cannot be written is refused rather than thrown' },
+      refusal: { marker: 'refused(verb, scope, step.reason, step.detail, requestId)', reason: 'the rule is validated by the planner step and its machine-readable reason travels back through the sequence, so a rule that cannot be written is refused rather than thrown' },
       observable: { file: 'tests/eventRecurrence.test.ts', marker: 'expect(await app.series()).toBeNull();', note: 'the case reads the series back out of the store record through its own helper and asserts it is gone, and the schedule expansion is asserted empty beside it' },
+      // The row is still operation-only - no surface reaches the rule verbs, which its own sibling assertion
+      // keeps honest - but the sequence behind them carries the envelope like every other write. A gap cell is
+      // about what the action does, not about who calls it.
+      overrides: RECURRENCE_ENVELOPE_OVERRIDES,
     },
   ]),
 ];
