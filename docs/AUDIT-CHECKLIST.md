@@ -2063,11 +2063,14 @@ Papers-side route. None of this says a relay exists.
       out-of-vocabulary element **reported** rather than dropped (the census accounts for all three). The
       third case pins the boundary the drawings live on: `Proxima/drawings/` is not a record directory,
       so loading the vault as a record source finds no records and reports no problems. **Two rules the
-      fixture learned, now in its README**: fixture contents are compiled into
-      `src/browser/generated/fixtureVault.generated.ts` and so ship into the browser layer, which is why
-      the first version's `## Embedded Files` line failed `tests/boundaries.test.ts`'s wikilink rule -
-      the rule doing its job - and the compressed payload is the upstream-compressed one, never a
-      hand-written lookalike.
+      fixture learned, now in `fixtures/README.md` - beside the vaults rather than inside one**: fixture
+      contents are compiled into `src/browser/generated/fixtureVault.generated.ts` and so ship into the
+      browser layer, which is why the first version's `## Embedded Files` line failed
+      `tests/boundaries.test.ts`'s wikilink rule - and why a README *inside* the vault directory failed
+      the same check a second time by explaining the rule in the syntax it warns about. Both times the
+      rule did its job and the material moved rather than the rule being loosened; the second is the more
+      useful lesson, so it is written down. And the compressed payload is the upstream-compressed one the
+      suite already carried, never a hand-written lookalike.
 - [x] arbitrary unsupported file node (`tests/canvasLoader.test.ts` keeps unknown-extension files
       reachable and fails closed when a binary capability is absent;
       `tests/canvasFallbackIcon.test.ts` covers the passive fallback).
