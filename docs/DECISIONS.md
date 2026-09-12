@@ -2142,3 +2142,40 @@ the marker absent and still names its witness; and the entries the ruling rests 
 three crossings - a new host channel, a bridge, or an agent path that hands a parsed-by-nobody payload
 straight to a family module. That would make the literal per-module reading the true one, and the
 reversal is cheap to detect: the n/a cells already assert the marker that would have to appear.
+
+## D86 - Template-local relations name the created task by ordinal, and resolve only after identity exists
+
+**Decided** on 2026-09-12, closing the last semantic question in the Work template row. A template
+that creates several tasks may relate those new records to one another. The syntax is deliberately
+local and deliberately not a second record identity: inside `property.<relation-schema-id>`, `@N`
+means the Nth task declared by this template, using one-based declaration order. Several targets are
+comma-separated (`@2, @4`). Forward references and self-references are legal; duplicate targets,
+zero, an out-of-range ordinal and anything other than an `@N` token are refused before the first
+write.
+
+**The local token never reaches storage.** Execution has two phases. First every task is created
+through the ordinary task-create operation, and the executor records each returned opaque record id
+and revision. Only after all identities exist does the second phase resolve every `@N` to that
+returned id. Each relation value is then passed through `planPropertyMutation`, so the canonical
+relation rule remains the existing one: relation targets are opaque record ids and the stored value
+names the schema that defines it. No canonical record ever contains `@1`, `@2` or another
+template-local token.
+
+**Only relation properties get this syntax.** A `property.<id>` whose schema is absent, or whose
+schema is not `relation`, is still refused rather than guessed into text, select or another value.
+That keeps this slice from silently turning the template language into a second property editor.
+
+**Failure after creation is partial, not rollback.** Every refusal that can be known from the
+template and schema is decided before the first create. Once identities have been allocated and
+records have landed, a later relation-update refusal returns `partial`, carries every created record
+id and preserves the record-layer cause. The executor does not invent rollback authority over
+records whose creates already succeeded.
+
+**Why ordinal rather than a caller-supplied id:** the record layer owns durable identity. An ordinal
+is only a locator inside one template execution and therefore cannot collide with, predict or
+impersonate a canonical id. It also makes the intended relationship visible in the template before
+any write exists.
+
+**Reverses if:** templates acquire an explicit, parser-validated local-name declaration that is more
+readable than declaration order. Such a name may replace `@N`, but it must retain the same two-phase
+rule: local identity resolves to ids returned by creation, and only canonical ids reach storage.

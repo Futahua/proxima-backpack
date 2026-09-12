@@ -32,6 +32,7 @@ import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
 import { planPropertyMutation } from './propertyMutationPlan.js';
+import { planTaskRecurrenceMutation, type TaskRecurrenceSeriesAllocator } from './taskRecurrencePlan.js';
 import { refusalTextFor } from './refusalPresentation.js';
 import { convergeAfterWrite } from './writeConvergence.js';
 
@@ -113,6 +114,7 @@ export function planTaskEditorSave(
   draft: TaskEditorDraft | null,
   schemas: readonly PropertySchema[] = [],
   stagePlacement?: TaskEditorStagePlacement,
+  allocateRecurrenceSeriesId?: TaskRecurrenceSeriesAllocator,
 ): TaskEditorMutationPlan {
   if (draft === null) return planRefused('nothing-to-save', 'nothing has been edited yet', null);
 
@@ -200,6 +202,14 @@ export function planTaskEditorSave(
     mutations.push({ kind: 'dates', startDate: startDate.value, deadline: deadline.value });
   }
 
+  const recurrence = planTaskRecurrenceMutation(task, draft, allocateRecurrenceSeriesId);
+  if (!recurrence.ok) {
+    return planRefused(recurrence.reason, recurrence.detail, recurrence.fieldId);
+  }
+  if (recurrence.mutation !== null) {
+    mutations.push(recurrence.mutation);
+  }
+
   if (flagChanged('completion')) {
     // Completion as data. It deliberately does not move the execution state: a caller that wants
     // the board to change says so with the column.
@@ -268,6 +278,8 @@ export interface TaskEditorWriteDependencies {
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
   readonly setRefusal: (reason: string | null) => void;
   readonly render: () => void;
+  /** Mints a new series only when this Save changes a non-recurring task into a recurring one. */
+  readonly allocateRecurrenceSeriesId?: TaskRecurrenceSeriesAllocator;
   /** Mints this run's semantic request id. Injected, like every other identity in this repository. */
   readonly ids: IdGenerator;
   /** Where the run's one terminal audit event goes. */
@@ -368,6 +380,7 @@ export async function saveTaskFromEditor(
       return (deps.state?.tasks ?? []).filter((candidate) => candidate.workflowStageId === stageId).length;
     },
   });
+
   if (!plan.ok) {
     audit('rejected', 'task.update', [task.id], plan.reason);
     return writeRefused(plan.reason, plan.detail, requestId, plan.fieldId);

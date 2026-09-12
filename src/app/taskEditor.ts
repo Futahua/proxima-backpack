@@ -29,6 +29,7 @@ import {
   type FormDraft,
   type FormEdit,
 } from './formDraft.js';
+import { TASK_RECURRENCE_FIELD_IDS, taskRecurrenceValues } from './taskRecurrencePlan.js';
 
 import {
   type PropertySchema,
@@ -175,6 +176,7 @@ const TASK_FIELD_IDS:
     'maxDuration',
     'startDate',
     'deadline',
+    ...TASK_RECURRENCE_FIELD_IDS,
     'completion',
   ];
 
@@ -272,6 +274,7 @@ function taskValues(
       text(
         task.deadline,
       ),
+    ...taskRecurrenceValues(task),
   };
 }
 
@@ -713,6 +716,10 @@ export function projectTaskEditor(
       task,
     );
 
+  const recurrenceUnreadable =
+    task.properties.recurrenceUnreadable
+    === true;
+
   const taskFields:
     TaskEditorField[] = [
       field(
@@ -854,6 +861,83 @@ export function projectTaskEditor(
         [],
         true,
         null,
+        null,
+      ),
+      field(
+        'recurrenceFrequency',
+        'Repeat',
+        'select',
+        edited,
+        values.recurrenceFrequency!,
+        false,
+        [
+          { id: 'daily', label: 'Daily' },
+          { id: 'weekly', label: 'Weekly' },
+          { id: 'monthly', label: 'Monthly' },
+          { id: 'yearly', label: 'Yearly' },
+        ],
+        [],
+        !recurrenceUnreadable,
+        recurrenceUnreadable
+          ? 'This task has a recurrence this editor cannot represent, so Save will not rewrite it.'
+          : null,
+        null,
+      ),
+      field(
+        'recurrenceInterval',
+        'Repeat every',
+        'number',
+        edited,
+        values.recurrenceInterval!,
+        false,
+        [],
+        [],
+        !recurrenceUnreadable,
+        'A positive whole number of the selected frequency.',
+        null,
+      ),
+      field(
+        'recurrenceEndKind',
+        'Repeat ends',
+        'select',
+        edited,
+        values.recurrenceEndKind!,
+        false,
+        [
+          { id: 'none', label: 'Does not repeat' },
+          { id: 'never', label: 'Never' },
+          { id: 'until', label: 'Until' },
+          { id: 'count', label: 'After a count' },
+        ],
+        [],
+        !recurrenceUnreadable,
+        null,
+        null,
+      ),
+      field(
+        'recurrenceUntil',
+        'Repeat until',
+        'date',
+        edited,
+        values.recurrenceUntil!,
+        false,
+        [],
+        [],
+        !recurrenceUnreadable,
+        'Used when Repeat ends is Until.',
+        null,
+      ),
+      field(
+        'recurrenceCount',
+        'Repeat count',
+        'number',
+        edited,
+        values.recurrenceCount!,
+        false,
+        [],
+        [],
+        !recurrenceUnreadable,
+        'Used when Repeat ends is After a count.',
         null,
       ),
       field(

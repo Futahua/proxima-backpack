@@ -244,7 +244,10 @@ function taskFrom(
     createdAt: record.createdAt,
     startDate: record.startDate,
     deadline: record.deadline,
-    properties: legacyProperties(record.properties, labels, gaps, 'task', record.id),
+    properties: {
+      ...legacyProperties(record.properties, labels, gaps, 'task', record.id),
+      ...recurrenceProperties(record.recurrence, gaps, record.id, 'task'),
+    },
     // The workflow dimension travels with the task rather than replacing the execution one: a task
     // in Review is still Running, and that is A2 stated as two fields instead of one.
     workflowStageId: record.workflowStageId,
@@ -268,12 +271,13 @@ function recurrenceProperties(
   series: CanonicalRecurrenceSeries | null,
   gaps: RecordStateProjectionGap[],
   recordId: string,
+  kind: 'task' | 'event',
 ): Record<string, unknown> {
   if (series === null) return {};
   const rule = series.rule;
   if (rule.frequency === 'weekly' && rule.weekdays.length !== 1) {
     gaps.push({
-      kind: 'event',
+      kind,
       id: recordId,
       reason: 'recurrence-rule-not-representable',
       detail: `series ${series.seriesId} recurs on ${rule.weekdays.length} weekdays, which the readable rule cannot carry`,
@@ -329,7 +333,7 @@ function eventFrom(
     isCompleted: record.isCompleted,
     properties: {
       ...legacyProperties(record.properties, labels, gaps, 'event', record.id),
-      ...recurrenceProperties(record.recurrence, gaps, record.id),
+      ...recurrenceProperties(record.recurrence, gaps, record.id, 'event'),
     },
   };
 }

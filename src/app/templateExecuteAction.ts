@@ -25,7 +25,7 @@ import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import { parseTemplatePlan } from './templateComposer.js';
 import { executeTemplatePlan, type TemplateExecutionRefusal } from './templateExecution.js';
-import type { CreateTaskRequest, TaskMutationResult } from './taskMutations.js';
+import type { CreateTaskRequest, TaskFieldMutation, TaskMutationResult } from './taskMutations.js';
 
 export const TEMPLATE_EXECUTE_ACTION_SCHEMA_VERSION = 1 as const;
 
@@ -34,6 +34,11 @@ export type TemplateExecuteVerb = 'execute';
 /** The operations the shell resolved, structurally: no store, no coordinator, no paths. */
 export interface TemplateExecuteOperations {
   createTask(request: CreateTaskRequest): Promise<TaskMutationResult>;
+  updateTask?(input: {
+    taskId: OpaqueRecordId;
+    expectedRevision: string;
+    mutations: readonly TaskFieldMutation[];
+  }): Promise<TaskMutationResult>;
 }
 
 export interface TemplateExecuteDependencies {
@@ -180,6 +185,7 @@ export async function executeTemplateAction(
   const executed = await executeTemplatePlan({
     plan,
     tasks: operations,
+    schemas: deps.state?.taskSchema ?? [],
     projectId: request.projectId ?? null,
   });
 
