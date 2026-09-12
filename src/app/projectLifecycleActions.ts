@@ -15,6 +15,8 @@
  * for all five verbs, which is the property the stage's parity box asks for.
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import type { IdGenerator } from '../domain/clock.js';
+import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import type { ProximaState } from '../domain/types.js';
 import type { CreateProjectRequest, ProjectFieldMutation, ProjectMutationFailureReason, ProjectMutationResult } from './projectMutations.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
@@ -45,6 +47,10 @@ export interface ProjectLifecycleDependencies {
   /** The refusal the surface will draw, or null to clear it. */
   readonly setRefusal: (reason: string | null) => void;
   readonly render: () => void;
+  /** Mints this run's semantic request id. Injected, like every other identity in this repository. */
+  readonly ids: IdGenerator;
+  /** Where the run's one terminal audit event goes. */
+  readonly audit: SemanticAuditSink;
 }
 
 export type ProjectLifecycleFailureReason =
@@ -58,6 +64,8 @@ export type ProjectLifecycleOutcome =
       readonly schemaVersion: typeof PROJECT_LIFECYCLE_ACTION_SCHEMA_VERSION;
       readonly verb: ProjectLifecycleVerb;
       readonly outcome: 'created' | 'updated' | 'archived' | 'restored';
+      /** This run's semantic request id: minted at the boundary, returned on every result. */
+      readonly requestId: string;
       readonly recordId: OpaqueRecordId;
       readonly revision: string;
       readonly refreshed: boolean;
@@ -68,6 +76,8 @@ export type ProjectLifecycleOutcome =
       readonly verb: ProjectLifecycleVerb;
       readonly reason: ProjectLifecycleFailureReason;
       readonly detail: string;
+      /** Present on a refusal too - including the delete policy refusal, which is a real answer. */
+      readonly requestId: string;
       readonly refreshed: boolean;
     };
 
@@ -75,13 +85,19 @@ function refused(
   verb: ProjectLifecycleVerb,
   reason: ProjectLifecycleFailureReason,
   detail: string,
+  requestId: string,
   refreshed = false,
 ): ProjectLifecycleOutcome {
-  return { ok: false, schemaVersion: PROJECT_LIFECYCLE_ACTION_SCHEMA_VERSION, verb, reason, detail, refreshed };
+  return { ok: false, schemaVersion: PROJECT_LIFECYCLE_ACTION_SCHEMA_VERSION, verb, reason, detail, requestId, refreshed };
 }
 
 /**
- * Run one lifecycle write and converge the surfaces.
+ * Run one lifecycle write and converge the surfaces, under the semantic envelope.
+ *
+ * One sequence for all five verbs - create, update, archive, restore and the refusing delete - so the id is
+ * minted here rather than five times, one terminal event follows after convergence, and the journal names the
+ * verb as `project.<verb>`, which is the name each row of Stage 17's matrix already uses. A create has no id
+ * yet, so its refusals name no target rather than guessing one.
  *
  * @param deps - the shell's pieces.
  * @param verb - which lifecycle operation this is, so the result says what was attempted.
@@ -95,10 +111,25 @@ async function runLifecycle(
   projectId: string | null,
   write: (operations: ProjectLifecycleOperations, revision: string) => Promise<ProjectMutationResult>,
 ): Promise<ProjectLifecycleOutcome> {
+  const requestId = mintSemanticRequestId(deps.ids);
+  const audit = (outcome: SemanticOutcome, entityIds: readonly string[], errorCode?: string): void => {
+    deps.audit.append({
+      requestId,
+      actionType: `project.${verb}`,
+      outcome,
+      entityIds: [...entityIds],
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  };
+  const target = projectId === null ? [] : [projectId];
+
   let revision = '';
   if (projectId !== null) {
     const project = deps.state?.projects.find((candidate) => candidate.id === projectId);
-    if (project === undefined) return refused(verb, 'unknown-project', 'the hub has no project with that id');
+    if (project === undefined) {
+      audit('rejected', target, 'unknown-project');
+      return refused(verb, 'unknown-project', 'the hub has no project with that id', requestId);
+    }
     revision = project.source.revision;
   }
 
@@ -108,7 +139,8 @@ async function runLifecycle(
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
     deps.setRefusal(reason);
     deps.render();
-    return refused(verb, 'writes-unavailable', reason);
+    audit('rejected', target, 'writes-unavailable');
+    return refused(verb, 'writes-unavailable', reason, requestId);
   }
 
   const written = await write(operations, revision);
@@ -120,17 +152,22 @@ async function runLifecycle(
   if (!written.ok) deps.setRefusal(written.reason);
   deps.render();
 
-  return written.ok
-    ? {
-        ok: true,
-        schemaVersion: PROJECT_LIFECYCLE_ACTION_SCHEMA_VERSION,
-        verb,
-        outcome: written.outcome,
-        recordId: written.recordId,
-        revision: written.revision,
-        refreshed: convergence.refreshed,
-      }
-    : refused(verb, written.reason, written.detail, convergence.refreshed);
+  if (!written.ok) {
+    audit(semanticOutcomeOf({ wrote: 0, refused: true }), target, written.reason);
+    return refused(verb, written.reason, written.detail, requestId, convergence.refreshed);
+  }
+
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId]);
+  return {
+    ok: true,
+    schemaVersion: PROJECT_LIFECYCLE_ACTION_SCHEMA_VERSION,
+    verb,
+    outcome: written.outcome,
+    requestId,
+    recordId: written.recordId,
+    revision: written.revision,
+    refreshed: convergence.refreshed,
+  };
 }
 
 export async function createProjectAction(

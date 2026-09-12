@@ -29,6 +29,7 @@ import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domai
 import type { CanonicalRecordV2 } from '../src/domain/canonicalRecordV2.js';
 import type { ProximaState } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T10:00:00+07:00';
 
@@ -104,6 +105,8 @@ async function world(): Promise<World> {
       },
       setRefusal: (reason) => { refusals.push(reason); },
       render: () => undefined,
+      ids: semanticIds(),
+      audit: recordingAudit(),
     }),
     seed: async (name, withTask = false) => {
       const created = await createProject(deps, { name });

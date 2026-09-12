@@ -1281,6 +1281,22 @@ const EVENT_CONTRACT_ROWS: readonly ContractRow[] = [
   ]),
 ];
 
+/** The envelope cells for the project lifecycle family, all five verbs through one sequence. */
+const PROJECT_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/projectLifecycleActions.ts',
+    'readonly requestId: string;',
+    'the sequence mints one semantic request id before the project lookup can refuse and returns it on every result, so a lifecycle write refused because the project is gone, because there is no write path or because the operation answered (including delete policy refusal) is correlatable exactly like an accepted one; a create has no id yet, so its refusals name no target rather than guessing one',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/projectSemanticAudit.test.ts',
+    'audit:accepted',
+    'behavioural rather than structural: one terminal event per run, after convergence where the store moved and not before it, named `project.<verb>` - and the delete policy refusal is journalled like every other refusal, with the operation own machine-readable code, because an answer that leaves no trace is the one path a reader cannot audit',
+  ),
+};
+
 /** The project lifecycle family. */
 const PROJECT_CONTRACT_ROWS: readonly ContractRow[] = contractRows(PROJECT_CONTRACT, [
   {
@@ -1290,6 +1306,7 @@ const PROJECT_CONTRACT_ROWS: readonly ContractRow[] = contractRows(PROJECT_CONTR
     shape: 'create',
     refusal: { marker: "'a project needs a name'", reason: 'a create that names nothing is refused with a machine-readable reason before the record is built' },
     observable: { file: 'tests/projectLifecycleActions.test.ts', marker: "(await app.state()).projects.find((project) => project.name === 'From the modal')", note: 'the sequence case re-reads the hub state after the create and finds the project by the name the form typed' },
+    overrides: PROJECT_ENVELOPE_OVERRIDES,
   },
   {
     action: 'project.update',
@@ -1298,6 +1315,7 @@ const PROJECT_CONTRACT_ROWS: readonly ContractRow[] = contractRows(PROJECT_CONTR
     shape: 'write',
     refusal: { marker: "'an update with no field to change is not an update'", reason: 'a save with nothing changed is the operation own refusal, which the surface draws without a record being rewritten' },
     observable: { file: 'tests/projectLifecycleWiring.test.ts', marker: 'const renamed = (await app.read()).projects.find((project) => project.id === app.projectId)!;', note: 'the editor case re-reads the hub after the save and asserts the new name and the untouched description' },
+    overrides: PROJECT_ENVELOPE_OVERRIDES,
   },
   {
     action: 'project.archive',
@@ -1306,6 +1324,7 @@ const PROJECT_CONTRACT_ROWS: readonly ContractRow[] = contractRows(PROJECT_CONTR
     shape: 'write',
     refusal: { marker: "'this project is already archived'", reason: 'archiving a project that is already archived is a semantic conflict by name, and the refusal writes nothing' },
     observable: { file: 'tests/projectLifecycleWiring.test.ts', marker: 'const archived = (await app.read()).projects.find((project) => project.id === app.projectId)!;', note: 'the clicked-control case re-reads the hub after the click and asserts the status and the archive instant the store holds' },
+    overrides: PROJECT_ENVELOPE_OVERRIDES,
   },
   {
     action: 'project.restore',
@@ -1314,6 +1333,7 @@ const PROJECT_CONTRACT_ROWS: readonly ContractRow[] = contractRows(PROJECT_CONTR
     shape: 'write',
     refusal: { marker: "'this project is not archived, so there is nothing to restore'", reason: 'restoring a project that is not archived is refused by name rather than written as a no-op that moves the revision' },
     observable: { file: 'tests/projectLifecycleWiring.test.ts', marker: 'const restored = (await app.read()).projects.find((project) => project.id === app.projectId)!;', note: 'the same case clicks Restore and re-reads the hub, so the second status change is observed too' },
+    overrides: PROJECT_ENVELOPE_OVERRIDES,
   },
   {
     action: 'project.delete',
@@ -1325,6 +1345,7 @@ const PROJECT_CONTRACT_ROWS: readonly ContractRow[] = contractRows(PROJECT_CONTR
     refusal: { marker: "'policy-not-decided'", reason: 'the refusal is the answer the row is about: deterministic, typed, in the taxonomy vocabulary, naming the question and the counts it would affect while writing nothing' },
     idsGap: { file: 'src/app/projectMutations.ts', marker: 'affectedRecordIds', witness: 'would affect', reason: 'the only answer this verb gives summarises a multi-record effect as counts - how many tasks and events deleting would affect - and never names which ones, so a caller cannot enumerate the question it is being asked' },
     observable: { file: 'tests/projectMutations.test.ts', marker: 'expect((await app.bytes())).toEqual(before);', note: 'the case snapshots every record file byte and revision before the refusal and asserts the store is byte-identical afterwards, which is the observable state of a verb that wrote nothing' },
+    overrides: PROJECT_ENVELOPE_OVERRIDES,
   },
 ]);
 

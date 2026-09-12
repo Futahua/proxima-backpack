@@ -26,6 +26,7 @@ import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid } from '../src
 import { renderEventModal } from '../src/browser/eventModal.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import { EMPTY_STATE, type CalendarEvent, type Project, type ProximaState, type Task } from '../src/domain/types.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const NOW = new Date('2026-09-06T12:00:00.000Z');
 
@@ -248,7 +249,7 @@ describe('no write control can be clicked and do nothing', () => {
       createProject: ({ name, description }) => {
         draft = { name, description };
         pending.push((async () => {
-          const outcome = await createProjectAction({ state: loaded, writes: async () => null, unavailableReason: () => 'record-writes-need-an-activated-store', refresh: async () => null, setRefusal: () => {}, render: () => {} }, { name, description });
+          const outcome = await createProjectAction({ state: loaded, writes: async () => null, unavailableReason: () => 'record-writes-need-an-activated-store', refresh: async () => null, setRefusal: () => {}, render: () => {}, ids: semanticIds(), audit: recordingAudit() }, { name, description });
           if (outcome.ok) draft = null;
           refusal = outcome.ok ? null : { code: outcome.reason, sentence: `${outcome.reason}: ${outcome.detail}` };
           rerender();

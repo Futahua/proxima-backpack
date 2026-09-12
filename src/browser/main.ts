@@ -987,6 +987,14 @@ function projectLifecycleDependencies() {
     refresh: refreshFromSource,
     setRefusal: (reason: string | null) => { projectLifecycleFeedback = reason; projectLifecycleRefusalCode = reason; },
     render,
+    // One envelope for all five lifecycle verbs, because they all run through one sequence - including the
+    // delete whose policy refusal is a real answer rather than a missing feature.
+    ids: DETERMINISTIC_IDS,
+    audit: {
+      append: (event: SemanticAuditEvent) => {
+        actionDispatcher?.auditSemantic(event);
+      },
+    },
   };
 }
 

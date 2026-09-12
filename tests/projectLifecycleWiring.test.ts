@@ -53,6 +53,7 @@ import {
   type ProjectWriteView,
 } from '../src/browser/projectsHub.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 import { EMPTY_PROJECT_BACKLOG_VIEW } from '../src/browser/projectBacklog.js';
 import { EMPTY_PROJECT_SCHEDULE_VIEW } from '../src/browser/projectSchedule.js';
 import { sourceRef } from './fixtures.js';
@@ -309,6 +310,8 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
         refresh: async () => null,
         setRefusal: (reason: string | null) => { view = { ...view, feedbackRefusal: reason }; },
         render: () => undefined,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       };
       const outcome = kind === 'archive'
         ? await archiveProjectAction(dependencies, { projectId })
@@ -390,6 +393,8 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
               refresh: async () => null,
               setRefusal: () => undefined,
               render: () => undefined,
+              ids: semanticIds(),
+              audit: recordingAudit(),
             },
             { projectId },
           );
@@ -444,7 +449,7 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
       archiveProject: (projectId) => {
         pending.push((async () => {
           const outcome = await archiveProjectAction(
-            { state, writes: async () => app.operations, unavailableReason: () => null, refresh: async () => null, setRefusal: () => undefined, render: () => undefined },
+            { state, writes: async () => app.operations, unavailableReason: () => null, refresh: async () => null, setRefusal: () => undefined, render: () => undefined, ids: semanticIds(), audit: recordingAudit() },
             { projectId },
           );
           expect(outcome.ok).toBe(true);
@@ -530,6 +535,8 @@ describe('Stage 11 the project forms', () => {
               refresh: async () => null,
               setRefusal: () => undefined,
               render: () => undefined,
+              ids: semanticIds(),
+              audit: recordingAudit(),
             },
             { name, description },
           );
@@ -587,6 +594,8 @@ describe('Stage 11 the project forms', () => {
               refresh: async () => null,
               setRefusal: () => undefined,
               render: () => undefined,
+              ids: semanticIds(),
+              audit: recordingAudit(),
             },
             { name, description },
           );
@@ -640,6 +649,8 @@ describe('Stage 11 the project forms', () => {
               refresh: async () => null,
               setRefusal: () => undefined,
               render: () => undefined,
+              ids: semanticIds(),
+              audit: recordingAudit(),
             },
             { projectId, mutations: planProjectFieldMutations(project, { name, description }) },
           );
