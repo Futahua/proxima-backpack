@@ -2008,7 +2008,9 @@ function bindInteractions(): void {
 
 async function boot(): Promise<void> {
   setBootState('loading');
-  const bridgeUrl = bridgeUrlForLaunch(window.location.search, BUILD_IDENTITY.agentBridgeEnabled);
+  // The bridge needs both the build opt-in and a session token, which the launch carries in the
+  // fragment; without one there is no bridge rather than an unauthenticated one.
+  const bridgeUrl = bridgeUrlForLaunch(window.location.search, window.location.hash, BUILD_IDENTITY.agentBridgeEnabled);
   const automationDirectory = bridgeUrl ? createHttpDirectoryHandle(bridgeUrl) : null;
   const fixture = createBrowserSource();
   const loaded = await loadVaultState(fixture.reader);

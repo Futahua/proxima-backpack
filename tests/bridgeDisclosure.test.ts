@@ -69,11 +69,15 @@ async function listening(child: ReturnType<typeof spawn>): Promise<void> {
   });
 }
 
+/** One token for this suite: the bridge refuses to start without one, and every request carries it. */
+const TOKEN = 'bridge-disclosure-suite-token';
+const auth = () => ({ authorization: `Bearer ${TOKEN}` });
+
 describe('bridge disclosure bounds', () => {
   it('never emits the configured root, and answers only in bounded codes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-disclosure-'));
     const port = 4198;
-    const child = spawn(process.execPath, ['tools/agent-vault-bridge.mjs', '--root', root, '--port', String(port)], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, ['tools/agent-vault-bridge.mjs', '--root', root, '--port', String(port), '--token', TOKEN], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
     const stdout: string[] = [];
     child.stdout?.on('data', (chunk) => stdout.push(String(chunk)));
     try {
@@ -81,7 +85,7 @@ describe('bridge disclosure bounds', () => {
       await listening(child);
 
       // A missing path is where the raw errno message used to carry the absolute root.
-      const missing = await fetch(`http://127.0.0.1:${port}/api/vault/list?path=NoSuchFolder`);
+      const missing = await fetch(`http://127.0.0.1:${port}/api/vault/list?path=NoSuchFolder`, { headers: auth() });
       const missingBody = await missing.text();
       expect(missing.status).toBe(400);
       expect(missingBody).not.toContain(root);
@@ -97,7 +101,7 @@ describe('bridge disclosure bounds', () => {
         `/elsewhere`,
       ];
       for (const path of cases) {
-        const response = await fetch(`http://127.0.0.1:${port}${path}`);
+        const response = await fetch(`http://127.0.0.1:${port}${path}`, { headers: auth() });
         const body = await response.text();
         expect(body).not.toContain(root);
         expect(BOUNDED_CODES).toContain(JSON.parse(body).error);
@@ -111,30 +115,32 @@ describe('bridge disclosure bounds', () => {
   it('grants read permission to loopback pages only, and refuses a rebound Host', async () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-origin-'));
     const port = 4199;
-    const child = spawn(process.execPath, ['tools/agent-vault-bridge.mjs', '--root', root, '--port', String(port)], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, ['tools/agent-vault-bridge.mjs', '--root', root, '--port', String(port), '--token', TOKEN], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
     try {
       await copyFixtureToDisk(fixtureFiles('vault-basic'), root);
       await listening(child);
 
       // Any loopback port, not one hardcoded guess.
       for (const origin of ['http://127.0.0.1:4173', 'http://127.0.0.1:5999', 'http://localhost:8080']) {
-        const response = await fetch(`http://127.0.0.1:${port}/health`, { headers: { origin } });
+        const response = await fetch(`http://127.0.0.1:${port}/health`, { headers: { ...auth(), origin } });
         expect(response.headers.get('access-control-allow-origin')).toBe(origin);
       }
 
       // A public page reaching the socket gets no permission to read the answer.
-      const foreign = await fetch(`http://127.0.0.1:${port}/health`, { headers: { origin: 'https://example.com' } });
+      const foreign = await fetch(`http://127.0.0.1:${port}/health`, { headers: { ...auth(), origin: 'https://example.com' } });
       expect(foreign.headers.get('access-control-allow-origin')).toBeNull();
       expect(foreign.headers.get('vary')).toBe('Origin');
 
       // DNS rebinding: the packet arrives on loopback while the Host says otherwise.
       // fetch() refuses to send a Host header — it is forbidden to script — so this
       // has to go out over a raw request, or the check is never actually exercised.
-      const rebound = await rawGet(port, '/health', { host: 'evil.example.com' });
+      // The token is supplied on both raw probes, so what the first one proves is the Host check
+      // refusing an otherwise-authenticated caller rather than authentication refusing everyone.
+      const rebound = await rawGet(port, '/health', { host: 'evil.example.com', authorization: `Bearer ${TOKEN}` });
       expect(rebound.status).toBe(403);
       expect(JSON.parse(rebound.body).error).toBe('host-not-allowed');
 
-      const honest = await rawGet(port, '/health', { host: `127.0.0.1:${port}` });
+      const honest = await rawGet(port, '/health', { host: `127.0.0.1:${port}`, authorization: `Bearer ${TOKEN}` });
       expect(honest.status).toBe(200);
     } finally { child.kill(); await removeDiskFixture(root); }
   }, BRIDGE_START_BUDGET_MS);
@@ -143,7 +149,7 @@ describe('bridge disclosure bounds', () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-intermediate-link-'));
     const outside = await mkdtemp(join(tmpdir(), 'proxima-intermediate-outside-'));
     const port = 4200;
-    const child = spawn(process.execPath, ['tools/agent-vault-bridge.mjs', '--root', root, '--port', String(port)], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, ['tools/agent-vault-bridge.mjs', '--root', root, '--port', String(port), '--token', TOKEN], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
     try {
       await mkdir(join(outside, 'attachments'), { recursive: true });
       await writeFile(join(outside, 'attachments', 'secret.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
@@ -153,10 +159,10 @@ describe('bridge disclosure bounds', () => {
       }
       if (!linked) throw new Error('cannot create a directory link on this machine');
       await listening(child);
-      const response = await fetch(`http://127.0.0.1:${port}/api/vault/read-binary?path=${encodeURIComponent('inside-link/secret.png')}&maxBytes=1000`);
+      const response = await fetch(`http://127.0.0.1:${port}/api/vault/read-binary?path=${encodeURIComponent('inside-link/secret.png')}&maxBytes=1000`, { headers: auth() });
       expect(response.status).toBe(400);
       expect((await response.json()).error).toBe('symlink-rejected');
-      const listing = await fetch(`http://127.0.0.1:${port}/api/vault/list?path=${encodeURIComponent('inside-link')}`);
+      const listing = await fetch(`http://127.0.0.1:${port}/api/vault/list?path=${encodeURIComponent('inside-link')}`, { headers: auth() });
       expect(listing.status).toBe(400);
       expect((await listing.json()).error).toBe('symlink-rejected');
     } finally { child.kill(); await rm(root, { recursive: true, force: true }); await rm(outside, { recursive: true, force: true }); }

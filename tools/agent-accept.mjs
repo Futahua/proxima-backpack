@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -47,6 +48,7 @@ const CODES = Object.freeze({
   bridgeStartFailed: 'bridge-start-failed',
   bridgeUnreachable: 'bridge-unreachable',
   disclosureLeak: 'transport-disclosure-leak',
+  authenticationFailed: 'bridge-authentication-failed',
   sourceUnreadable: 'source-unreadable',
   loadFailed: 'source-load-failed',
   emptySource: 'source-empty',
@@ -99,20 +101,29 @@ export async function runAcceptance(options = {}) {
   try {
     // An ephemeral port by default: nothing binds a predictable port on a machine
     // that may be running several of these.
-    const started = await startBridge(root, options.port ?? 0, options.spawnBridge);
+    // One token per run, never reused and never written to evidence: it exists for the length of
+    // this process and travels to the bridge as an argument and to the adapter as a URL fragment.
+    const token = options.token ?? randomBytes(32).toString('base64url');
+    const started = await startBridge(root, options.port ?? 0, token, options.spawnBridge);
     bridge = started.child;
     port = started.port;
     stages.bridge = 'PASS';
 
+    // Authentication is checked before anything else is claimed: an unauthenticated caller must be
+    // refused, and the refusal must be the bounded code rather than a read.
+    const authentication = await probeAuthentication(port, token);
+    stages.authentication = authentication.ok ? 'PASS' : 'FAIL';
+    if (!authentication.ok) fail(CODES.authenticationFailed, { abort: true });
+
     // Prerequisite, before a single byte of the vault is read: prove the transport
     // itself cannot disclose the root. The layer beneath this one shipped leaking it.
-    const disclosure = await probeDisclosure(port, root, started.output);
+    const disclosure = await probeDisclosure(port, token, root, started.output);
     stages.disclosure = disclosure.ok ? 'PASS' : 'FAIL';
     if (!disclosure.ok) fail(CODES.disclosureLeak, { abort: true });
 
     const before = await fingerprint(root);
 
-    const read = await readThroughWitness(port, options);
+    const read = await readThroughWitness(port, token, options);
     const { witness, load } = read;
     stages.layout = read.detection?.kind === 'preferred' || read.detection?.kind === 'legacy' ? 'PASS' : 'FAIL';
     stages.baselineRead = load.ok ? 'PASS' : 'FAIL';
@@ -234,9 +245,9 @@ async function stopBridge(child) {
   child.stderr?.removeAllListeners();
 }
 
-async function startBridge(root, port, override) {
-  if (override) return override(root, port);
-  const child = spawn(process.execPath, [BRIDGE, '--root', root, '--port', String(port || 0)], { cwd: HERE, stdio: ['ignore', 'pipe', 'pipe'] });
+async function startBridge(root, port, token, override) {
+  if (override) return override(root, port, token);
+  const child = spawn(process.execPath, [BRIDGE, '--root', root, '--port', String(port || 0), '--token', token], { cwd: HERE, stdio: ['ignore', 'pipe', 'pipe'] });
   const output = [];
   child.stdout?.on('data', (chunk) => output.push(String(chunk)));
   child.stderr?.on('data', (chunk) => output.push(String(chunk)));
@@ -253,10 +264,31 @@ async function startBridge(root, port, override) {
 }
 
 /** Ask the transport for something that fails, and check what it says back. */
-async function probeDisclosure(port, root, output) {
+/**
+ * Whether the transport refuses a caller without this run's token.
+ *
+ * This is the check Gate 20's authentication box was missing: origin and Host say where a request
+ * came from, and every process on this machine can reach loopback. Three probes, because the first
+ * two alone are passed by a transport that refuses everyone: an anonymous request and a wrong token
+ * must both answer the bounded `unauthorized` code rather than serve a read, and the run's own token
+ * must then be served - which is what distinguishes authentication from a closed door.
+ */
+async function probeAuthentication(port, token) {
+  const url = `http://127.0.0.1:${port}/api/vault/list?path=`;
+  const anonymous = await fetch(url).catch(() => null);
+  if (!anonymous || anonymous.status !== 401) return { ok: false };
+  const anonymousBody = await anonymous.json().catch(() => null);
+  if (!anonymousBody || anonymousBody.error !== 'unauthorized') return { ok: false };
+  const wrong = await fetch(url, { headers: { authorization: 'Bearer not-this-run' } }).catch(() => null);
+  if (!wrong || wrong.status !== 401) return { ok: false };
+  const authenticated = await fetch(url, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+  if (!authenticated || authenticated.status !== 200) return { ok: false };
+  return { ok: true };
+}
+async function probeDisclosure(port, token, root, output) {
   const probes = ['/api/vault/list?path=__proxima_missing__', '/api/vault/read?path=' + encodeURIComponent('../escape')];
   for (const probe of probes) {
-    const response = await fetch(`http://127.0.0.1:${port}${probe}`);
+    const response = await fetch(`http://127.0.0.1:${port}${probe}`, { headers: { authorization: `Bearer ${token}` } });
     const body = await response.text();
     if (body.includes(root) || /ENOENT|scandir|no such file/i.test(body)) return { ok: false };
   }
@@ -289,7 +321,7 @@ function loadBuiltModule(relative) {
   return requireBuilt(fileURLToPath(new URL(relative, BUILD)));
 }
 
-async function readThroughWitness(port, options) {
+async function readThroughWitness(port, token, options) {
   let modules;
   try {
     modules = [
@@ -325,7 +357,8 @@ async function readThroughWitness(port, options) {
     { BUILD_IDENTITY },
   ] = modules;
 
-  const base = `http://127.0.0.1:${port}`;
+  // The token rides in the fragment, so it never appears in a request line or a log.
+  const base = `http://127.0.0.1:${port}#token=${encodeURIComponent(token)}`;
   // Presence comes through the adapter chain, not bolted on here: a capability the
   // harness patches onto a reader is one the browser path silently lacks, and one
   // that can disappear without any test noticing.

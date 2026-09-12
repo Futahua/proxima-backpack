@@ -3,6 +3,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
 import { createHttpDirectoryHandle, createHttpPresenceProbe } from '../src/adapters/httpDirectory.js';
+
+/** The bridge requires a session token, carried in the fragment rather than in a request line. */
+const BRIDGE = 'http://127.0.0.1:4174#token=presence-suite-token';
 import { createExternalDirectoryVault } from '../src/adapters/externalDirectoryVault.js';
 import { createZeroWriteWitness } from '../src/app/zeroWriteWitness.js';
 import { runAcceptance } from '../tools/agent-accept.mjs';
@@ -19,9 +22,9 @@ import { runAcceptance } from '../tools/agent-accept.mjs';
 
 describe('presence through the adapter chain', () => {
   it('appears on the reader when the source can answer, and not when it cannot', () => {
-    const handle = createHttpDirectoryHandle('http://127.0.0.1:4174');
+    const handle = createHttpDirectoryHandle(BRIDGE);
 
-    const withProbe = createExternalDirectoryVault(handle, { presence: createHttpPresenceProbe('http://127.0.0.1:4174') });
+    const withProbe = createExternalDirectoryVault(handle, { presence: createHttpPresenceProbe(BRIDGE) });
     expect(typeof withProbe.presence).toBe('function');
 
     // A generic OPFS/FSA handle cannot tell missing from unreadable. Staying silent
@@ -35,7 +38,7 @@ describe('presence through the adapter chain', () => {
     const reply = (body: unknown, ok = true) =>
       vi.fn(async () => new Response(JSON.stringify(body), { status: ok ? 200 : 500 })) as unknown as typeof fetch;
     try {
-      const probe = createHttpPresenceProbe('http://127.0.0.1:4174');
+      const probe = createHttpPresenceProbe(BRIDGE);
 
       globalThis.fetch = reply({ presence: 'present' });
       expect(await probe('Proxima/tasks')).toBe('present');

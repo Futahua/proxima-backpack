@@ -34,15 +34,18 @@ describe('Stage 6 slice 21 optional Papers control', () => {
     const query =
       '?bridge=http%3A%2F%2F127.0.0.1%3A4174';
 
-    expect(bridgeUrlForLaunch(query, false)).toBeNull();
-    expect(bridgeUrlForLaunch('', true)).toBeNull();
-    expect(bridgeUrlForLaunch(query, true))
-      .toBe('http://127.0.0.1:4174');
+    expect(bridgeUrlForLaunch(query, '#token=session', false)).toBeNull();
+    expect(bridgeUrlForLaunch('', '#token=session', true)).toBeNull();
+    expect(bridgeUrlForLaunch(query, '#token=session', true))
+      .toBe('http://127.0.0.1:4174#token=session');
+    // A bridge without a session token is not a bridge: the opt-in alone no longer opens a
+    // transport, because loopback reachability is not identity.
+    expect(bridgeUrlForLaunch(query, '', true)).toBeNull();
   });
 
   it('keeps browser startup viable when the optional bridge resolves to no automation directory', () => {
     expect(MAIN_SOURCE).toContain(
-      'const bridgeUrl = bridgeUrlForLaunch(window.location.search, BUILD_IDENTITY.agentBridgeEnabled);',
+      'const bridgeUrl = bridgeUrlForLaunch(window.location.search, window.location.hash, BUILD_IDENTITY.agentBridgeEnabled);',
     );
     expect(MAIN_SOURCE).toContain(
       'const automationDirectory = bridgeUrl ? createHttpDirectoryHandle(bridgeUrl) : null;',

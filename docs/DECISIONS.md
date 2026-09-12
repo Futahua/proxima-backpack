@@ -1888,3 +1888,46 @@ and pretending otherwise is how a matrix stops meaning anything.
 **Reverses if:** a surface composes a task series (the two `n/a` cells become gaps the audit enforces),
 or a future audit wants one event per dimension rather than one per run, in which case the precedence
 in `taskEditorSaveActionType` is the thing to revisit rather than the verbs.
+
+## D80 — The loopback bridge authenticates its caller, and the token never travels in a URL
+
+**Decided** on 2026-09-12, closing Gate 20's `authenticated` box. That box had been open with a precise
+reason: the explicitly enabled loopback bridge had origin/Host checks and a build opt-in, but no bearer
+credential, shared secret or other caller authentication, and loopback reachability is not identity - every
+process and every page on this machine can reach 127.0.0.1.
+
+**The decision: the bridge requires a per-run bearer token, and refuses to start without one.** The token
+is an argument (`--token`, or `PROXIMA_AGENT_BRIDGE_TOKEN`); a run that has none exits non-zero with the
+usage line rather than serving reads to whatever finds the port. Every request must carry
+`Authorization: Bearer <token>`; the comparison hashes both sides before `timingSafeEqual`, so the
+digests are the same length whatever the caller sent and nothing about the token's length or content
+leaks through the answer's timing. A missing or wrong token is answered with the bounded code
+`unauthorized` and nothing else, and the check sits **after** the Host check and **before** everything
+else - a rebound Host is refused whatever credential it presents, and an unauthenticated caller learns
+nothing about routes, methods or bounds. The CORS preflight is answered before the check, because a
+preflight carries no Authorization header by design, and it advertises `authorization` in
+`access-control-allow-headers`.
+
+**The token travels in the URL fragment, never in the query.** `bridgeUrlForLaunch(search, hash, enabled)`
+reads the bridge URL from the query and the token from the page's fragment, and returns the bridge URL
+with the token as its own fragment. A fragment is not sent to any server and does not appear in a request
+line, so the credential cannot land in a proxy log or a request transcript; the page that was launched
+with it is the only holder. An enabled build launched with no token resolves to **no bridge** rather than
+to an unauthenticated one, which is the fail-closed direction: the surface then behaves exactly as it
+does when the transport is absent.
+
+**The adapter never puts the credential on the wire as text.** `createHttpDirectoryHandle` and its two
+siblings read the token from the base URL's fragment, refuse a base with no token outright, and send it as
+a header on every request; every request URL is built with its fragment cleared, because a URL string is
+exactly what ends up in a log when something goes wrong. A page cannot smuggle a token through the query
+either: the launch helper only reads the fragment, so `?token=` is ignored rather than honoured.
+
+**The acceptance harness proves the refusal, not just the read.** `runAcceptance` mints one token per run
+and adds an `authentication` stage that probes three ways: an anonymous request and a wrong token must
+both answer `unauthorized`, and the run's own token must then be served. The third probe is what makes the
+first two mean something - a transport that refuses everyone would pass them.
+
+**Reverses if:** every caller of this bridge becomes authenticated by construction (for instance a
+transport that runs in-process rather than over a socket), or a host-level capability makes loopback
+reachability an identity - neither of which is true today, and both of which would make an application
+token redundant rather than wrong.

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { lstat, readdir, readFile, stat } from 'node:fs/promises';
 import { relative, resolve, sep } from 'node:path';
@@ -7,7 +7,17 @@ const args = process.argv.slice(2);
 const value = (name, fallback = '') => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] ?? fallback : fallback; };
 const rootArg = value('--root');
 const port = Number(value('--port', '4174'));
-if (!rootArg) throw new Error('Usage: node tools/agent-vault-bridge.mjs --root <creator-vault> [--port 4174]');
+if (!rootArg) throw new Error('Usage: node tools/agent-vault-bridge.mjs --root <creator-vault> [--port 4174] --token <token>');
+/**
+ * The caller credential, required rather than optional.
+ *
+ * Loopback reachability is not identity: every process and every page on this machine can reach
+ * 127.0.0.1, so origin and Host checks say where a request came from, not who sent it. Without a
+ * token this bridge now refuses to start instead of serving reads to anything that finds the port.
+ */
+const tokenArg = value('--token', process.env.PROXIMA_AGENT_BRIDGE_TOKEN ?? '');
+if (!tokenArg) throw new Error('Usage: node tools/agent-vault-bridge.mjs --root <creator-vault> [--port 4174] --token <token>   (or set PROXIMA_AGENT_BRIDGE_TOKEN)');
+const token = tokenArg;
 const root = resolve(rootArg);
 const MAX_ENTRIES = 10_000;
 const MAX_DEPTH = 64;
@@ -37,6 +47,7 @@ const BRIDGE_CODES = Object.freeze({
   notFoundRoute: 'not-found-route',
   readOnly: 'read-only-bridge',
   hostNotAllowed: 'host-not-allowed',
+  unauthorized: 'unauthorized',
 });
 
 /** Node errno -> bounded code. Anything unrecognised degrades to source-unavailable. */
@@ -164,8 +175,25 @@ function hostAllowed(request) {
   return isLoopbackHost(name);
 }
 
+/**
+ * Whether this request carries the run's bearer token.
+ *
+ * Both sides are hashed before the comparison so the digests are the same length whatever the
+ * caller sent: `timingSafeEqual` throws on a length mismatch, and comparing lengths first would
+ * leak the token's length to anyone who can time the answer. A malformed header is simply false -
+ * there is no second way in, and no path that skips this check.
+ */
+function tokenMatches(request) {
+  const header = String(request.headers.authorization ?? '');
+  const prefix = 'Bearer ';
+  if (!header.startsWith(prefix)) return false;
+  const presented = createHash('sha256').update(header.slice(prefix.length)).digest();
+  const expected = createHash('sha256').update(token).digest();
+  return timingSafeEqual(presented, expected);
+}
+
 function send(response, status, body, origin) {
-  const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'vary': 'Origin', 'access-control-allow-methods': 'GET, OPTIONS', 'access-control-allow-headers': 'content-type' };
+  const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'vary': 'Origin', 'access-control-allow-methods': 'GET, OPTIONS', 'access-control-allow-headers': 'content-type, authorization' };
   if (origin) headers['access-control-allow-origin'] = origin;
   response.writeHead(status, headers);
   response.end(JSON.stringify(body));
@@ -174,7 +202,10 @@ function send(response, status, body, origin) {
 const server = createServer(async (request, response) => {
   const origin = allowedOrigin(request);
   if (!hostAllowed(request)) return send(response, 403, { error: BRIDGE_CODES.hostNotAllowed }, origin);
+  // Preflight carries no Authorization header by design, so it is answered before the check and
+  // only advertises the header; every actual request below is authenticated.
   if (request.method === 'OPTIONS') return send(response, 204, {}, origin);
+  if (!tokenMatches(request)) return send(response, 401, { error: BRIDGE_CODES.unauthorized }, origin);
   if (request.method !== 'GET') return send(response, 405, { error: BRIDGE_CODES.readOnly }, origin);
   try {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');

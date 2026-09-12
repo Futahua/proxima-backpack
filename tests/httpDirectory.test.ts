@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { createHttpBinaryReader, createHttpDirectoryHandle, createHttpPresenceProbe } from '../src/adapters/httpDirectory.js';
 import { createExternalDirectoryVault } from '../src/adapters/externalDirectoryVault.js';
 
+/** The bridge refuses a caller without a token, and the adapter carries it in the URL fragment. */
+const TOKEN = 'http-directory-suite-token';
+const BRIDGE = `http://127.0.0.1:4174#token=${TOKEN}`;
+
 describe('zero-click loopback directory adapter', () => {
   it('maps bounded bridge list/read calls into the existing structural handle seam', async () => {
     const original = globalThis.fetch;
@@ -16,7 +20,7 @@ describe('zero-click loopback directory adapter', () => {
       throw new Error('unexpected bridge operation');
     }) as typeof fetch;
     try {
-      const root = createHttpDirectoryHandle('http://127.0.0.1:4174');
+      const root = createHttpDirectoryHandle(BRIDGE);
       const entries = [];
       for await (const [name, handle] of root.entries()) entries.push({ name, handle });
       expect(entries[0]?.name).toBe('Proxima');
@@ -27,6 +31,13 @@ describe('zero-click loopback directory adapter', () => {
 
   it('rejects non-loopback bridge URLs before any request', () => {
     expect(() => createHttpDirectoryHandle('https://example.com/bridge')).toThrow(/loopback/i);
+  });
+
+  it('refuses a bridge URL with no session token before any request', () => {
+    // The bridge would answer `unauthorized`, and the adapter says why instead: a URL carrying no
+    // credential is a configuration error, not a request to make.
+    expect(() => createHttpDirectoryHandle('http://127.0.0.1:4174')).toThrow(/session token/i);
+    expect(() => createHttpDirectoryHandle('http://127.0.0.1:4174#other=1')).toThrow(/session token/i);
   });
 
   it('uses only credentialless GET requests and rejects foreign URLs before fetch', async () => {
@@ -43,12 +54,16 @@ describe('zero-click loopback directory adapter', () => {
     try {
       expect(() => createHttpDirectoryHandle('https://example.com/bridge')).toThrow(/loopback/i);
       expect(calls).toHaveLength(0);
-      const root = createHttpDirectoryHandle('http://127.0.0.1:4174');
+      const root = createHttpDirectoryHandle(BRIDGE);
       for await (const _entry of root.entries()) { /* exercise list */ }
-      await createHttpPresenceProbe('http://localhost:4174')('Proxima/tasks');
-      await createHttpBinaryReader('http://[::1]:4174')('x.png', 100);
+      await createHttpPresenceProbe(`http://localhost:4174#token=${TOKEN}`)('Proxima/tasks');
+      await createHttpBinaryReader(`http://[::1]:4174#token=${TOKEN}`)('x.png', 100);
       expect(calls.length).toBe(3);
       expect(calls.every(({ init }) => init?.method === 'GET' && init.credentials === 'omit' && init.redirect === 'error')).toBe(true);
+      // Every request carries the run's bearer token, and no request URL carries it: the credential
+      // lives in the fragment, which fetch never puts on the wire.
+      expect(calls.every(({ init }) => new Headers(init?.headers).get('authorization') === `Bearer ${TOKEN}`)).toBe(true);
+      expect(calls.every(({ input }) => !input.includes(TOKEN))).toBe(true);
     } finally { globalThis.fetch = original; }
   });
 });
