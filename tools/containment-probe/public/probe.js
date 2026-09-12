@@ -85,6 +85,51 @@ try {
   answers.ownWrite = 'own-database-refused';
 }
 
+/**
+ * 7. The native-source handoff, from the side a page can reach without a real OS drop.
+ *
+ * Papers' production preload accepts three page messages - `native-source-grant` (which takes
+ * exactly one `File` and resolves its disk path itself), `native-source-open` and
+ * `native-source-reveal` (which take an opaque granted reference). Granting needs an
+ * OS-backed `File`, so a *positive* open cannot be measured without a drag-and-drop by a
+ * person; every *refusal* can be measured, and the refusals are what the handoff's
+ * authorization rests on. Each attempt records the host's own answer, not this page's opinion.
+ */
+const hostAnswer = (message) => new Promise((settle) => {
+  const requestId = `probe-${Math.random().toString(16).slice(2)}`;
+  const onResult = (event) => {
+    if (event.source !== window || event.origin !== window.location.origin) return;
+    const data = event.data;
+    if (!data || data.type !== 'papers:host:result' || data.requestId !== requestId) return;
+    window.removeEventListener('message', onResult);
+    settle({ answered: true, ok: data.ok === true, error: typeof data.error === 'string' ? data.error.slice(0, 80) : null });
+  };
+  window.addEventListener('message', onResult);
+  window.postMessage({ ...message, requestId }, window.location.origin);
+  setTimeout(() => { window.removeEventListener('message', onResult); settle({ answered: false, ok: false, error: 'no host answer within 3000ms' }); }, 3000);
+});
+
+const handoff = {};
+// A page-made File is not disk-backed: the host resolves paths itself, so this must be refused.
+handoff.fabricated = await hostAnswer({ type: 'papers:project:native-source-grant', files: [new File(['probe'], 'probe.txt', { type: 'text/plain' })] });
+// A reference nobody granted must not open anything.
+const ungranted = '00000000-0000-4000-8000-000000000000';
+handoff.ungranted = await hostAnswer({ type: 'papers:project:native-source-open', sourceRef: ungranted });
+// A machine path is not a reference: the preload's own shape check must refuse it.
+handoff.machinePath = await hostAnswer({ type: 'papers:project:native-source-reveal', sourceRef: 'C:\\Windows\\win.ini' });
+// And neither is a non-reference string.
+handoff.malformed = await hostAnswer({ type: 'papers:project:native-source-open', sourceRef: 'not-a-reference' });
+for (const [name, answer] of Object.entries(handoff)) {
+  // `no-answer` is a verdict of its own: silence is not a refusal, and reporting it as one would
+  // turn an unimplemented handler into evidence of authorization.
+  answers[`handoff-${name}`] = answer.answered ? (answer.ok ? 'ACCEPTED' : 'refused') : 'no-answer';
+}
+answers['handoff-answers'] = Object.entries(handoff)
+  .map(([name, answer]) => `${name}:${answer.answered ? (answer.ok ? 'accepted' : 'refused') : 'no-answer'}`)
+  .join('_')
+  .replace(/[^A-Za-z0-9._~-]/g, '_')
+  .slice(0, 80);
+
 const safe = (value) => String(value).replace(/[^A-Za-z0-9._~-]/g, '_').slice(0, 80);
 const host = document.querySelector('#answers');
 for (const [question, answer] of Object.entries(answers)) {

@@ -542,6 +542,31 @@ on that state instead of sleeping and retrying, because a retry would hide exact
 reader needs to see; an acceptance run opens the project once to warm the profile and then opens it
 again in a **new window** for the surface it accepts.
 
+### 2.10 The diagnostic preload does not carry the native-source handoff
+
+Gate 9's four acceptance boxes had been open on the reason that the host primitive did not exist. That
+reason is wrong, and the correction was measured rather than argued:
+
+- The page-side handoff **is implemented**, in the *production* preload. `src/preload/backpackProject.ts`
+  accepts `papers:project:native-source-grant` (taking exactly one `File` and resolving its disk path itself
+  through `webUtils.getPathForFile`, so a page can never name a path), `-open` and `-reveal` (taking an
+  opaque reference). Those reach `host:backpack-project:native-source-grant`, `-open-granted` and
+  `-reveal-granted` in `src/main/ipc/hostIpc.ts`, and `grantNativeSource`/`openNativeSource`/
+  `revealNativeSource` in `src/main/backpacks/backpackProjectService.ts`, whose `nativeSourceTarget` re-stats
+  the file and refuses a stale grant.
+- The **developer-control** preload, `src/preload/backpackProjectDevControl.ts`, does not carry those three
+  handlers. A diagnostic instance therefore answers them with nothing at all - no result, no refusal - which
+  `tools/containment-probe.mjs --handoff true` records as `no-answer` rather than as a refusal, because
+  silence must never be read as authorization.
+
+**Asked of Papers (not done, not authorized here):** the same three page messages in the developer-control
+preload, so an automated acceptance can exercise the handoff's refusals. The alternative is to record that
+developer control cannot exercise native-source paths at all, which is a usable answer too - what is not
+usable is a request that disappears.
+
+The positive half of Gate 9 remains a person's gesture on either host: a grant needs an OS-backed `File`, and
+only a drag-and-drop produces one.
+
 ---
 
 ## Gate 3 — Proxima programmability foundation
@@ -1983,17 +2008,30 @@ Papers must not know:
 
 ### 9.3 Acceptance
 
-- [ ] Open exact source in default/native app.
-      *(waiting on the host half: the contract is written, the primitive is not - the same dependency as
-      the Papers `activateWindowCapability` work the Quick Run checklist states.)*
-- [ ] Reveal exact source in Explorer.
-      *(same dependency.)*
-- [ ] Unauthorized source rejected.
-      *(the rule is asserted at the contract level - the capability is scoped to the owning Backpack and a
-      machine locator is refused - but there is no implementation to exercise until the host half
-      exists.)*
-- [ ] Stale source rejected safely.
-      *(same: the contract says the reference is opaque and single-use; the acceptance needs the host.)*
+- [ ] Open exact source in default/native app. — **reason corrected: the host half exists.** Papers'
+      *production* preload (`src/preload/backpackProject.ts`) already carries `papers:project:native-source-grant`,
+      `-open` and `-reveal`, backed by `host:backpack-project:native-source-*` in `src/main/ipc/hostIpc.ts` and
+      `openNativeSource`/`revealNativeSource` in `src/main/backpacks/backpackProjectService.ts`. What the
+      automated run found instead is in section 2.10: a diagnostic instance runs the **developer-control**
+      preload, which does not carry those three handlers, so the page's requests are answered with silence.
+      Two steps remain and they are different owners: a real OS drag-and-drop for a positive open (creator),
+      and the three handlers in the diagnostic preload if this is to be measured automatically (Papers).
+- [ ] Reveal exact source in Explorer. — same correction as the box above, and the same two steps: the
+      reveal path is the third of the three page messages the production preload implements, and the probe's
+      `papers:project:native-source-reveal` attempt with a path-shaped reference was answered with silence on a
+      diagnostic instance rather than with a refusal.
+- [ ] Unauthorized source rejected. — **still open, and now for a measured reason.** The probe attempts
+      four refusals from a page - a fabricated `File` (the host resolves real paths itself, so a page cannot
+      name one), an ungranted reference, a machine path, and a non-reference string - and on a diagnostic
+      instance all four are answered with **silence**, recorded as `no-answer` rather than as a refusal,
+      because silence is not evidence of authorization. The rule is still asserted at the contract level
+      (the capability is scoped to the owning Backpack and a machine locator is refused); it is not yet
+      observable. `npm run probe:containment -- --handoff true` is the command that will observe it, and it
+      fails today by design.
+- [ ] Stale source rejected safely. — unchanged in substance and now precisely blocked: the staleness check
+      lives behind a granted reference (`nativeSourceTarget` re-stats the file and answers `native source
+      grant is stale`), and a grant needs an OS-backed `File`, which only a person's drag-and-drop can
+      produce. No automated run can reach it, on a diagnostic or a production host.
 - [x] Capability scoped to owning Backpack (asserted by the handoff contract suite, which is the document
       this gate asked for: one authenticated Backpack, one opaque granted reference).
 - [x] No arbitrary ungranted machine path escalation (asserted in the same place and from the other side:

@@ -30,6 +30,20 @@ const EXPECTATIONS = [
   { question: 'origin', containsProjectId: true, claim: 'the page runs on the papers-backpack origin of its own Backpack id' },
 ];
 
+/**
+ * The native-source handoff, from the refusal side. Opt-in (`--handoff true`) because it is a
+ * different question about a different host: a positive open needs an OS-backed File, which only
+ * a person's drag-and-drop can produce, and the page-side handoff exists in Papers' production
+ * preload but not in its developer-control preload - so on a diagnostic instance these four
+ * requests are answered with silence, which is recorded as `no-answer` rather than as a refusal.
+ */
+const HANDOFF_EXPECTATIONS = [
+  { question: 'handoff-fabricated', accept: ['refused'], claim: 'a page-made File is not a disk-backed source, so no grant is issued for it' },
+  { question: 'handoff-ungranted', accept: ['refused'], claim: 'a reference nobody granted opens nothing' },
+  { question: 'handoff-machinePath', accept: ['refused'], claim: 'a machine path is refused as a reference rather than resolved' },
+  { question: 'handoff-malformed', accept: ['refused'], claim: 'a non-reference string is refused as malformed' },
+];
+
 const CODES = Object.freeze({
   descriptorMissing: 'descriptor-not-supplied',
   controlUnreachable: 'control-plane-unreachable',
@@ -85,6 +99,7 @@ export async function registerProbe(profileDataDirectory, projectRoot = PROBE_PR
 
 /** Read the probe's answers from the host's own inspection channels, then judge them. */
 export async function runContainmentProbe(options = {}) {
+  const expectations = options.handoff === true ? [...EXPECTATIONS, ...HANDOFF_EXPECTATIONS] : EXPECTATIONS;
   const report = {
     schemaVersion: CONTAINMENT_PROBE_SCHEMA_VERSION,
     status: 'BLOCKED',
@@ -161,15 +176,17 @@ export async function runContainmentProbe(options = {}) {
     report.keys = keys;
     if (!keys.some((key) => key.startsWith('probe-'))) { fail(CODES.noAnswers); return settle(); }
 
-    // The answer channel: one key per question, `probe-<question>-<answer>`.
+    // The answer channel: one key per question, `probe-<question>-<answer>`. The question is
+    // matched by prefix rather than by a pattern, because both halves may contain hyphens.
     const answers = {};
-    for (const key of keys) {
-      const match = /^probe-([a-zA-Z]+)-(.+)$/.exec(key);
-      if (match && match[1] !== 'report' && match[1] !== 'answers') answers[match[1]] = match[2];
+    for (const expectation of EXPECTATIONS) {
+      const prefix = `probe-${expectation.question}-`;
+      const key = keys.find((candidate) => candidate.startsWith(prefix));
+      if (key) answers[expectation.question] = key.slice(prefix.length);
     }
     report.answers = answers;
 
-    for (const expectation of EXPECTATIONS) {
+    for (const expectation of expectations) {
       const answer = answers[expectation.question] ?? null;
       const ok = expectation.containsProjectId
         ? typeof answer === 'string' && answer.includes(manifest.backpackId)
@@ -207,6 +224,7 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1].rep
       window: Number(value('--window') ?? 1),
       surface: value('--surface'),
       open: value('--open') === 'true',
+      handoff: value('--handoff') === 'true',
       waitMs: value('--wait-ms') === undefined ? undefined : Number(value('--wait-ms')),
     });
     const output = value('--output');
