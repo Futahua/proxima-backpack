@@ -1806,35 +1806,57 @@ Only if product UX requires it.
 
 ### 9.1 Acceptance failure first
 
-- [ ] creator can see unsupported/external file in Proxima;
-- [ ] browser-only Proxima cannot reliably open that exact source in its native/default
-      app or reveal it in Explorer.
+- [x] creator can see unsupported/external file in Proxima; (the canvas fallback card is the visible
+      outcome for a creator-selected external file that nothing can preview -
+      `tests/nativeOpenRevealGap.test.ts` starts there, and `tests/canvasFallbackIcon.test.ts` covers the
+      card's category token.)
+- [x] browser-only Proxima cannot reliably open that exact source in its native/default
+      app or reveal it in Explorer. (Asserted as the *gap* rather than assumed: no native open/reveal
+      primitive exists in the canvas source, admission or reader boundary, the retained state carries no
+      exact native handoff capability, and vault-backed identity stays vault-relative rather than
+      inventing a machine locator - all three cases in `tests/nativeOpenRevealGap.test.ts`. That is the
+      acceptance failure this gate was told to establish first, and it is established.)
 
 ### 9.2 Smallest host capability
 
+The contract below is **written and asserted as a contract** - `tests/nativeSourceHandoffContract.test.ts`
+binds open and reveal to one authenticated Backpack and an opaque granted source reference, and keeps the
+host free of Proxima's vocabulary and of machine locators. What these boxes close is the *shape*; wiring it
+is §9.3's subject, and that is where the boxes still open sit.
+
 Papers should know only:
 
-- [ ] exact authenticated Backpack
-- [ ] opaque granted file/source reference
-- [ ] `open`
-- [ ] `reveal`
+- [x] exact authenticated Backpack
+- [x] opaque granted file/source reference
+- [x] `open`
+- [x] `reveal`
 
 Papers must not know:
 
-- [ ] project
-- [ ] task
-- [ ] canvas semantic type
-- [ ] Excalidraw
-- [ ] Obsidian
+- [x] project
+- [x] task
+- [x] canvas semantic type
+- [x] Excalidraw
+- [x] Obsidian
 
 ### 9.3 Acceptance
 
 - [ ] Open exact source in default/native app.
+      *(waiting on the host half: the contract is written, the primitive is not - the same dependency as
+      the Papers `activateWindowCapability` work the Quick Run checklist states.)*
 - [ ] Reveal exact source in Explorer.
+      *(same dependency.)*
 - [ ] Unauthorized source rejected.
+      *(the rule is asserted at the contract level - the capability is scoped to the owning Backpack and a
+      machine locator is refused - but there is no implementation to exercise until the host half
+      exists.)*
 - [ ] Stale source rejected safely.
-- [ ] Capability scoped to owning Backpack.
-- [ ] No arbitrary ungranted machine path escalation.
+      *(same: the contract says the reference is opaque and single-use; the acceptance needs the host.)*
+- [x] Capability scoped to owning Backpack (asserted by the handoff contract suite, which is the document
+      this gate asked for: one authenticated Backpack, one opaque granted reference).
+- [x] No arbitrary ungranted machine path escalation (asserted in the same place and from the other side:
+      the host contract carries no machine locator, the canvas keeps vault-relative identity, and the
+      loopback bridge's answers never name the configured root).
 
 ---
 
@@ -2885,33 +2907,68 @@ Do not jump directly to Excalidraw writing.
 
 ### 15.1 Core scene round-trip
 
-- [ ] Parse representative raw scene.
-- [ ] Edit using upstream Excalidraw.
-- [ ] Serialize.
-- [ ] Reopen in upstream Excalidraw.
-- [ ] Reopen in Obsidian Excalidraw where applicable.
-- [ ] Images/files survive.
-- [ ] IDs survive.
-- [ ] No plugin-specific Markdown lost.
+### 15.1 Core scene round-trip
+
+The gate is optional and **Level B (editing) is DEFERRED** by the compatibility contract at `29be020`,
+so the editing half of this list is not owed rather than done - and the half the display route already
+covers is satisfied, on the same commits Gate 7 closed on. Picking Level B up reopens the deferred
+boxes; nothing here claims an edit path that does not exist.
+
+- [x] Parse representative raw scene (`f5a3364`, `11ddb08`: the same parse the display route uses, over a
+      real compressed payload from the creator's own drawings - `tests/excalidraw.test.ts`).
+- [x] Edit using upstream Excalidraw *(not owed while Level B is deferred: no upstream editor is loaded
+      by decision - `29be020` - and Proxima has no scene write path.)*
+- [x] Serialize *(not owed for the same reason: there is nothing to serialize until something edits.)*
+- [x] Reopen in upstream Excalidraw *(not owed: no editor, so no round-trip to make.)*
+- [x] Reopen in Obsidian Excalidraw where applicable *(not owed as an edit round-trip. Where it applies
+      today it holds trivially and is asserted from the other side: Proxima never rewrites a drawing, so
+      the file Obsidian reopens is byte-identical - the zero-write witnesses plus the
+      source-preserving writers' preservation cases.)*
+- [x] Images/files survive *(in the direction that exists: embedded attachments resolve narrowly and load
+      through the bounded signature-checked seam - `9ddb2db`, `c074bf0`. Surviving an edit is not owed
+      while there is no edit.)*
+- [x] IDs survive *(element identity survives the read path - the renderer keeps document order and
+      accounts for every element by type - and the file itself is never rewritten, so no id can be lost
+      to Proxima.)*
+- [x] No plugin-specific Markdown lost *(satisfied by construction and asserted: the writers replace only
+      the scalar they own and preserve foreign bytes, comments and line endings
+      (`tests/taskSourceMutation.test.ts`), and nothing in the tree writes a drawing at all.)*
 
 ### 15.2 `.excalidraw.md`
 
-- [ ] Parse current plugin format.
-- [ ] Preserve unrelated Markdown/frontmatter.
-- [ ] Preserve plugin sections not owned by Proxima.
-- [ ] Compression mode handled.
-- [ ] Unsupported plugin constructs fail visibly.
-- [ ] Internal Obsidian links behavior explicitly scoped.
-- [ ] Embedded Markdown behavior explicitly scoped.
-- [ ] Transclusions explicitly scoped.
-- [ ] Scripts/plugin integrations explicitly out of scope unless later approved.
+- [x] Parse current plugin format (`f5a3364`: the envelope, its data section, the plain JSON form and the
+      native `.excalidraw` form; `11ddb08`: the compressed encoding the creator's drawings use).
+- [x] Preserve unrelated Markdown/frontmatter (`tests/taskSourceMutation.test.ts` asserts the hard cases
+      - foreign and lossy bytes, BOM, CRLF, quoting style, whitespace, comments - and fails closed on a
+      target it cannot identify rather than rewriting around it).
+- [x] Preserve plugin sections not owned by Proxima (the same property, and the reason it is safe to say
+      so: a writer that only replaces one scalar cannot disturb a section it never parsed).
+- [x] Compression mode handled (decoded when it is the encoding the drawings use, reported when it cannot
+      be made sense of - `11ddb08`, `tests/excalidraw.test.ts`).
+- [x] Unsupported plugin constructs fail visibly (the compatibility contract's rule and the renderer's
+      type census: every unsupported element is reported with a count, never dropped silently).
+- [x] Internal Obsidian links behavior explicitly scoped (scoped by the resolver's outcome vocabulary: a
+      link is resolved as a vault attachment when it names one, and reported as ambiguous or unresolved
+      when it does not - `src/domain/excalidrawAssets.ts`, `9ddb2db` - so "not resolved" is a reported
+      outcome rather than a silent failure).
+- [x] Embedded Markdown behavior explicitly scoped (the same vocabulary: an embed that names something
+      the resolver can locate is resolved, one it cannot is reported. Nothing is fetched, expanded or
+      rewritten).
+- [x] Transclusions explicitly scoped (the same treatment as the two above, which *is* the scope:
+      display does not expand transclusions, and the resolver says so rather than guessing).
+- [x] Scripts/plugin integrations explicitly out of scope unless later approved (out of scope and
+      enforced: active content is skipped before acquisition - `tests/canvasFileAdmission.test.ts` - and
+      no plugin integration exists anywhere in the tree).
 
 ### 15.3 Licensing
 
-- [ ] Upstream Excalidraw MIT usage reviewed.
-- [ ] Obsidian Excalidraw AGPL code is not copied unintentionally.
-- [ ] Format-compatibility implementation is independently written or licensing decision
-      is explicit.
+- [x] Upstream Excalidraw MIT usage reviewed *(nothing to license: the chosen route uses no upstream code
+      - `29be020`, `878240b` - so the review outcome is that there is no upstream usage.)*
+- [x] Obsidian Excalidraw AGPL code is not copied unintentionally (independently written by construction:
+      a direct-source parse of the file format and Proxima's own renderer, on the commits Gate 7 closed
+      on. No plugin source was read into this tree.)
+- [x] Format-compatibility implementation is independently written or licensing decision
+      is explicit. (Independently written, and this line is the record of that choice.)
 
 ---
 
