@@ -39,9 +39,10 @@ back.”
 
 | Field | Value |
 | --- | --- |
-| Current slice | Documentation truth alignment at `071f8c3`; the latest closed creator-authority gate is Gate 14 - read-only owner boundary. |
-| Branch | `gate6o` |
-| Last audited SHA | `071f8c3` - typecheck clean; 92 test files / 574 tests pass. |
+| Current slice | Stage 17 record writes and Stage 20 chrome, at `425a631`: workflow-stage and property-schema operations with their surfaces, the acceptance probes behind one disclosure, and Stage 20 closed with no open boxes. `docs/DECISIONS.md` D60-D66 record the creator's answers (two-step project delete, no tag model, task recurrence retained, artifacts read-only for now, Gantt rows as a durable order, preserve-and-report for unmappable frontmatter, and boxes closing on tested logic). |
+| Branch | `stage7-record-store-contract` |
+| Last audited SHA | `425a631` - fixture generation 0, source/test typecheck 0, build 0, `git diff --check` 0, vitest 0 under default parallelism: 217 test files / 1448 tests. HEAD `912e79e` is documentation-only since that run. |
+| Parity agenda | `D:\Letters\MatTroiSeConMoc\LongHorizon\proxima\proxima-full-parity-checklist.md` (branch `codex/reviewer-send-verification`) carries the full-parity agenda this work is driven by: 763 ticked / 77 open at `9a090ec`. |
 | Papers changed | No Papers change is recorded by this Proxima commit. |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` - retained as the repository's recorded machine-local baseline, not a fresh current-Papers acceptance claim. |
 | Real-vault write authority | **Disabled.** Gate 13 contains the conditional mutation and recovery substrate for memory and disposable roots. Gate 13.3 closes native FSA writing as `BLOCKED / fsa-no-compare-and-swap`; Gate 14 closes owner authority as exact-root-scoped read-only with writes disabled. |
@@ -54,6 +55,10 @@ back.”
 - The vault remains canonical creator data.
 - Creator-data authority is currently read-only; that is a bootstrap safety milestone,
   not the terminal product scope.
+  not the terminal product scope. The creator confirmed this ordering on 2026-09-12
+  (D63): Proxima is intended to become a writer eventually, and the present pass is to
+  get the read-side UX right first, so artifact and vault-file writes stay unoffered
+  rather than half-offered.
 - The repository contains conditional mutation, semantic record-writing and recovery
   machinery for memory and disposable roots; no native FSA writer is exposed.
 - Native FSA write authority is CLOSED / NO-GO under D51, because the browser API
@@ -86,6 +91,17 @@ until it is decided.
       *Lands in:* `docs/VAULT-FORMATS.md`, since it fixes the meaning and severity of
       `unsupported-frontmatter`. If the answer deliberately distinguishes startup from
       refresh, record the rationale as a new decision in `docs/DECISIONS.md`.
+      *Answered by the creator on 2026-09-12, recorded as D65 in `docs/DECISIONS.md`:*
+      an otherwise readable record carrying `unsupported-frontmatter` **is importable**
+      using the interpreted fields, with the legacy source preserved as provenance and
+      the construct reported. That answer removes the asymmetry this question is about -
+      if the construct does not block an import, it cannot be what demotes a refreshed
+      generation either - so the blocking classification in `refreshController.ts` is now a
+      **work item rather than a question**: the code moves out of the blocking list,
+      `docs/VAULT-FORMATS.md` records its severity as a warning with a named report, and
+      the parity checklist's Stage 8 box carries the module and test list. The related
+      import-policy change - the staging planners currently treat such records as explicit
+      blockers - is the same answer seen from the import side.
 - [ ] **Exact currently validated Papers host SHA.** No fresh running-Papers acceptance
       artifact exists for the current tree, and source cannot make a newer Papers
       baseline true.
