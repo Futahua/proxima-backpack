@@ -39,7 +39,7 @@ back.”
 
 | Field | Value |
 | --- | --- |
-| Current slice | **The last five task-family rows name the operation they are, at `a00a749`, and the parity agenda's two envelope columns close on it.** The columns stood at 31 satisfied / 5 gaps and all five gaps were the task family's, which turned out to be one missing decision rather than five missing wires - D79 records it. `src/app/workflowMoveGesture.ts` reported a stage change and an in-stage position as `task.update` with a `workflowAction` discriminator, for a reason its own header had written down: the taxonomy had no registered workflow verb, and inventing one where nothing could audit it is how a coverage audit later finds unbacked vocabulary. The matrix **is** that audit, so the verbs are registered - `task.workflow.move`, `task.workflow.reorder` and, for the editor's save, `task.property.change` - and the boundaries that already existed now say them. The drop mints one semantic request id at `performWorkflowDrop`, hands it to the gesture, and leaves one terminal event naming the verb it is, after convergence and never before it; the two refusals the wrapper decides before the gesture is reached are journalled with that same id rather than not at all, which is the rule the Elastic drop already followed on the other axis. `taskEditorSaveActionType` names the structural edits a save carries in the order a reader would rank them - the execution column, then the workflow stage, then an in-stage position, then a property - because one run leaves one event and a save that moved the card should not be reported as if it had not. The operation-only recurrence row is recorded not-applicable on both columns rather than as a gap, and **the matrix asserts that status**: nothing runs it by decision, the audit asserts the caller is absent, and a gap would say the envelope is owed there and missing. Six mutations were written and all six fail their suite; two of them survived the first run, and both were holes in the tests rather than in the code - a gesture minting its own id leaves the same single event with a different id until the suite counts the ids a run consumes, and flipping the not-applicable cells back to gaps passes until the status itself is asserted. Behind this slice: the import policy D65 decided at `dfcb39e`, the Event editor's rule control at `c5823cb`, the Gantt write made read-model-free at `5781e96`, the schema family on the wire at `2f90e2c`, scoped ordering across surfaces at `b980c33`, the schema action layer at `65f88ef`, the agent write path at `32132bb`, and the contract matrix at `f9c202a` (re-measured at this commit: 35 satisfied / one not-applicable / no gaps for the two envelope columns, 33 gaps of 36 for runtime validation, one gap for affected entity ids, everything else satisfied, plus the Templates row's own table at 10 satisfied / 0 gaps, measured with the in-walker probe rather than carried). |
+| Current slice | **The last five task-family rows name the operation they are, at `a00a749`, and the parity agenda's two envelope columns close on it.** The columns stood at 31 satisfied / 5 gaps and all five gaps were the task family's, which turned out to be one missing decision rather than five missing wires - D79 records it. `src/app/workflowMoveGesture.ts` reported a stage change and an in-stage position as `task.update` with a `workflowAction` discriminator, for a reason its own header had written down: the taxonomy had no registered workflow verb, and inventing one where nothing could audit it is how a coverage audit later finds unbacked vocabulary. The matrix **is** that audit, so the verbs are registered - `task.workflow.move`, `task.workflow.reorder` and, for the editor's save, `task.property.change` - and the boundaries that already existed now say them. The drop mints one semantic request id at `performWorkflowDrop`, hands it to the gesture, and leaves one terminal event naming the verb it is, after convergence and never before it; the two refusals the wrapper decides before the gesture is reached are journalled with that same id rather than not at all, which is the rule the Elastic drop already followed on the other axis. `taskEditorSaveActionType` names the structural edits a save carries in the order a reader would rank them - the execution column, then the workflow stage, then an in-stage position, then a property - because one run leaves one event and a save that moved the card should not be reported as if it had not. The operation-only recurrence row is recorded not-applicable on both columns rather than as a gap, and **the matrix asserts that status**: nothing runs it by decision, the audit asserts the caller is absent, and a gap would say the envelope is owed there and missing. Six mutations were written and all six fail their suite; two of them survived the first run, and both were holes in the tests rather than in the code - a gesture minting its own id leaves the same single event with a different id until the suite counts the ids a run consumes, and flipping the not-applicable cells back to gaps passes until the status itself is asserted. Since that code slice, a sweep of **this document's own gate agenda** has closed 102 boxes that later work had already satisfied or that a recorded decision had superseded - Gates 7, 3, 11, 8, 2, 1, 17 and 19 - leaving **167 open**, and every tick names the code, test or decision that satisfies it rather than the sweep itself. The sweep is documents-only: no source or test file changed in it. Behind this slice: the import policy D65 decided at `dfcb39e`, the Event editor's rule control at `c5823cb`, the Gantt write made read-model-free at `5781e96`, the schema family on the wire at `2f90e2c`, scoped ordering across surfaces at `b980c33`, the schema action layer at `65f88ef`, the agent write path at `32132bb`, and the contract matrix at `f9c202a` (re-measured at this commit: 35 satisfied / one not-applicable / no gaps for the two envelope columns, 33 gaps of 36 for runtime validation, one gap for affected entity ids, everything else satisfied, plus the Templates row's own table at 10 satisfied / 0 gaps, measured with the in-walker probe rather than carried). |
 | Branch | `stage7-record-store-contract` |
 | Last audited SHA | `a00a749` - fixture generation 0, source/test typecheck 0, build 0, `git diff --check` 0 and `git show --check` 0 on this commit, vitest 0 under default parallelism: 247 test files / 1630 tests, run 2026-09-12 in this working tree. The file count is checked against the tree rather than quoted: 247 `*.test.ts` files exist and the runner collects all 247, which is a check worth keeping because another repository in this workspace turned out to have three test files no script ran. Six mutations of the new envelope were written and all six fail their suite, **but two survived the first run** and both were holes in the tests rather than in the code, which is why they are recorded rather than counted as passes. The gesture returning no request id, the wrapper's unknown-card refusal not journalling, a reorder named as a move, and the editor flattening a property edit to `task.update` all failed their suite immediately. The gesture minting its own id instead of taking the one handed down **survived**: the run still leaves exactly one event, carrying a different id, and nothing asserted which - the drop suite now counts the ids a run consumes, which is one. Flipping the operation-only row's two cells from not-applicable back to the family's gaps **survived** as well, because a gap cell without its absence flag still asks for its marker's presence; the matrix now asserts the status itself, so the recorded decision is load-bearing rather than decorative. Nine mutations of the import policy D65 decided were tried - four of the vocabulary and five of the staging rule. Eight failed their suite at once: the disposition renamed back to pending, a reported construct refusing a commit again, the answered check deferred again, the staging guard comparing a different disposition, each of the three families blocking on the unsupported code again, and the report count not the number of reports. The ninth **survived**: computing the report from every conversion in the plan rather than from the records that were staged left all 246 files green, so the property the code's own comment claims had no test, and `dfcb39e` supplies one - a task carrying the construct beside a project record this run never stages, which must be refused *and* reported as nothing. Re-run against that case the probe bites, so five of five staging probes and four of four vocabulary probes are caught by tests rather than by reading. Seven mutations of the recurrence rule's write path were tried and six failed their suite - the set half dropped, the clear half dropped, the unreadable-rule guard disarmed, the weekly weekday pinned, the projection's marker ignored, and the editor's controls left inert with a write path. The seventh, the shell's live-state getter replaced by a snapshot, cannot fail any test because `main.ts` is the one file no suite imports; the requirement is asserted at the app layer instead, and it is recorded rather than counted as a pass. Five mutations of the modal's workflow-stage control were tried and all five failed their suite - the append index ignored, the placement refusal removed, the project filter dropped from the choices, an unchanged stage written anyway, and the field taken off the form. Four mutations of the navigator surface were tried and all four failed their suite - an archived project made selectable again, the heading counting every project instead of the active ones, an archived project hidden rather than drawn, and the archived marker dropped from the row - and the surface exists because the parity agenda's project-archive box named its absence in its own text: the rendering was inline in `main.ts`, so "the navigator follows the archive too" had no evidence that was not a reading of the boot file. Four mutations of the Templates row's three closed cells were tried and all four failed their suite - each mapping flattened back into creation-refused, the audit event stripped of the specific code, and the project id cast instead of parsed - and one probe was corrected rather than recorded, because its own pattern did not match the source. Four mutations of the two new observable cells were tried and all four failed their suite: either read-back removed (a satisfied cell asserts its marker's presence, so removing the evidence fails the audit), the recurrence case no longer composing the mutation, and the schema read-back asserting a stale revision. Nine mutations of the schema panel's wiring were tried and all nine failed their suite; two of them found **missing assertions in the panel test rather than a flaw in the code** - it never asserted that the create form marks the chosen type as chosen, nor that it offers a labels field only to a type that takes options - and one was reported `NOT-APPLIED` at first because its own pattern was mistyped rather than because the mutation survived, which is the distinction the harness keeps by reporting the two differently. Seven mutations of the schema editor's contract were tried and all seven failed their suite - and one probe was **replaced rather than recorded as equivalent**: adding an irrelevant `option` field to a delete submission changes nothing, because the parser reads the fields its verb needs and ignores the rest, so the probe proved the parser's tolerance rather than the helper's correctness and a probe that does discriminate was written instead. Six mutations of the panel-sizing contract were tried and all six failed their suite, including a render that ignores the widths map - which is the one that keeps the binding honest rather than the arithmetic. Six mutations of the create family's contract were tried and all six failed their suite - and the fourth of them found a **latent flaw rather than a missing test**: the operation's project predicate defaulted to "the project is fine" when a caller supplied no resolver, which meant a caller that had not answered the question was relying on the record layer to disbelieve it and would have got the wrong reason when refused. The default is now a refusal. Five mutations of the bulk family's contract were tried and four failed their suite; the fifth - substituting a placeholder revision for a member whose revision the caller did not send - is **equivalent**, because the wire refuses a member without one before the resolver is ever asked, which is where the assertion that covers it lives. Five mutations of the project family's contract were tried and all five failed their suite. Six mutations of the event family's contract were tried and five failed their suite; the sixth - deleting the redraw from the no-write-path branch - survived because no case asserted that order, so one was added and the mutation is caught by it. Five mutations of the stage family's contract were tried and all five failed their suite. Two of the probes earned their keep by finding holes in the tests rather than in the code: a wire that dropped the revision it read survived until a read-back of the stored stage was added, and a delete quietly added to the wire survived the audit's two-way agent-reach assertion - which turned out to be a tautology, because `includes(undefined)` and "named no verb" are the same fact. That assertion is now a documented presence-only guard, and the delete's absence is asserted behaviourally where a delete submitted through the wire must come back refused. The previous slice's sixth probe - preferring the end the caller read over the end it proposed - remains recorded as **equivalent for a valid instant**, proved by reading the span it computes rather than assumed. Writing the probes found a real blind spot in the tests rather than in the code: every early case passed the record's *current* end as its proposal, which made "kept the end it read" and "wrote the end it was given" indistinguishable, so the assertion that separates them was added and the probe now bites. |
 | Parity agenda | `D:\Letters\MatTroiSeConMoc\LongHorizon\proxima\proxima-full-parity-checklist.md` (branch `codex/reviewer-send-verification`) carries the full-parity agenda this work is driven by: **835 ticked / 5 open** counting every box the document carries, or **743 / 5** counting only top-level boxes, at the agenda commit `166012e`. Nine of the ten "for every row above" umbrellas are now closed, the last two at `a00a749` - `request ID exists` and `event/audit record exists`, each 35 satisfied / one not-applicable / no gaps of 36 cells, re-measured with the in-walker probe rather than adjusted by hand - and the one that stays open carries its own figure and reason on its box: runtime validation, 33 gaps of 36, which is the one column this agenda asks for that the architecture deliberately does not have. The project-archive box closed at `aee729d`, the workflow-stage box at `0a39c83` on D77, the import-policy box at `b5d65d0` on D65, and the four release-gate scope statements closed at `24944c7` on a mechanical audit (fourteen checks over the three trees, exit 0) rather than on a reading. The agenda's tick audit was re-run rather than carried: 840 boxes, no ticked box without a SHA, no false timestamp, 948 SHA references with the one known unresolvable. Every box still open is a top-level one, so the two counting conventions continue to differ by nothing but the boxes they are asked about; the Gantt row-placement branch remains the one tick that closed as **decided against rather than done**. |
@@ -130,7 +130,12 @@ until it is decided.
   - [x] Svelte/UI framework
   - [x] browser File System Access APIs
 - [x] Domain functions are runnable headlessly.
-- [ ] UI cannot directly depend on filesystem adapters. _(no UI yet — re-assert at Gate 2)_
+- [x] UI cannot directly depend on filesystem adapters. **Re-asserted now that the UI exists** (this box
+      asked for exactly that at Gate 2): the production browser graph carries no Node import and no
+      runtime global, in source and in the emitted modules, which `tests/browserBoundary.test.ts`
+      asserts by walking the graph; the shell holds no store and no coordinator, only operations behind
+      an adapter (`tests/recordMutationContainment.test.ts`); and the adapters live above the domain
+      behind ports, which `tests/boundaries.test.ts` enforces from the other side.
 - [x] Filesystem adapters cannot contain Elastic/calendar/project business rules.
 - [x] Obsidian compatibility logic lives outside the domain.
 - [x] Papers-specific behavior lives outside the domain.
@@ -201,7 +206,12 @@ new preferred layout.
 - [x] Reader does not require migration or writes merely to read legacy data.
 - [x] Compatibility reader maps both old and new formats into the same clean domain
       model.
-- [ ] UI does not care which storage layout produced a record. _(no UI yet — Gate 2)_
+- [x] UI does not care which storage layout produced a record. **Re-asserted with the UI in place:** the
+      surfaces read one projection, and the source choice that produced it is a separate decision the
+      activation suite pins - the legacy reader answers every case except an intact activated store, and
+      an activated store becomes what the surfaces read with the vault still present
+      (`tests/recordStoreActivation.test.ts`). A record's origin changes which reader produced it and
+      changes nothing the UI asks about it.
 
 ### 1.6 Frontmatter safety
 
@@ -284,6 +294,11 @@ Pin important behavior from old `calculateLiquidTimeline`.
 - [x] Decide timezone semantics:
   - [x] machine-local timezone is intentional; or
   - [ ] timezone becomes explicit/injected.
+      *(Left open deliberately, and this is what it is waiting on: time is injected everywhere
+      (`src/domain/clock.ts`) and the calendar suites pin derivation and grid geometry, but no zone is
+      explicit anywhere in the tree - `timeZone` appears in no source file. Closing it means either an
+      explicit zone on the clock and in calendar derivation, or a recorded decision that the host's
+      local zone is the only supported semantics, which is a product question rather than a wiring one.)*
 - [x] Tests are deterministic across CI/developer timezone differences.
 - [x] Month boundaries covered.
 - [x] Year boundaries covered.
@@ -297,7 +312,12 @@ Pin important behavior from old `calculateLiquidTimeline`.
 - [x] Duplicate IDs fail visibly.
 - [x] No unrelated Markdown becomes a project/task/event accidentally.
 - [x] Frontmatter limitations are fail-visible.
-- [ ] Elastic behavior is sufficiently pinned. _(Gate 1C)_
+- [x] Elastic behavior is sufficiently pinned. (Gate 1C) The distribution and the board draw from one
+      canonical projection (`tests/recordStateProjection.test.ts`), the cockpit is active rather than a
+      projection (`tests/elasticCockpit.test.ts` drives a card open, a drop that writes, lock and
+      unlock), the two surfaces cannot disagree about a column
+      (`tests/boardElasticPresentation.test.ts`), and a change made there reaches the other surfaces
+      (`tests/elasticChangeConvergence.test.ts`).
 - [x] All tests and typecheck pass.
 - [x] No Papers changes.
 
@@ -2931,7 +2951,11 @@ Only after fallback file cards are already first-class.
 
 ### 17.2 If writes become enabled
 
-- [ ] simultaneous Proxima edits tested
+- [x] simultaneous Proxima edits tested (`tests/multiSurface.test.ts` converges two sessions over one
+      source - and a second case over a disposable real-disk vault - while keeping each session's
+      navigation state independent; `tests/surfaceConvergence.test.ts` shows one record changed at the
+      source reaching every surface that draws it, including the six Schedule views and the event
+      editor).
 - [x] stale writer refused — the store refuses a conditional write whose observed revision has
       moved, and the two Proxima callers that exist are asserted against each other over one
       record in **both** directions: the agent writes first and the UI drops from the projection
@@ -2939,12 +2963,20 @@ Only after fallback file cards are already first-class.
       before. Whichever loses is refused `stale-revision` **with the revision that beat it**,
       re-reads rather than merging, and the record keeps the winner's value
       (`tests/agentWritePath.test.ts`, `tests/recordMutationConcurrency.test.ts`).
-- [ ] unrelated-file edits preserved
+- [x] unrelated-file edits preserved (the coexistence suites are the evidence: Gate 6R is **signed PASS
+      at `abf99364`** over a real Obsidian vault with `tests/obsidianCoexistence.test.ts` as its
+      automated half, and `tests/vaultWriterCoexistence.test.ts` plus
+      `tests/importStagingBytePreservation.test.ts` assert the bytes of files a run did not touch are
+      identical afterwards).
 - [x] same-file conflict explicit — the refusal is typed, names the revision that won, and the
       loser's projection still holds what it held, so nothing was merged into it; the store-level
       contract is Gate 13's conditional writer and the two-caller case above is the surface level
       (`tests/agentWritePath.test.ts`, `tests/recordMutationConcurrency.test.ts`).
-- [ ] last-writer-wins used only where intentionally specified
+- [x] last-writer-wins used only where intentionally specified (a stale caller is refused rather than
+      merged or overwritten, and the refusal carries the revision that beat it: the stale cases in
+      `tests/surfaceConvergence.test.ts` and `tests/uiAgentMutationParity.test.ts` are the two callers
+      the rule is about, and the record layer's conditional write is what makes the refusal possible at
+      all).
 
 ---
 
@@ -3042,8 +3074,17 @@ Performance work must not move domain/file semantics into Papers.
       `tests/refreshIntegration.test.ts`).
 - [x] failed thumbnail — object-URL quota/invalid-URL failures keep the prior preview,
       reject the new preview, and revoke only owned URLs (`tests/canvasPreview.test.ts`).
-- [ ] failed native open/reveal
-- [ ] stale write if writes exist
+- [x] failed native open/reveal (not owed while the capability is unwired, and the current outcome is
+      asserted rather than assumed: there is no native open/reveal primitive in the canvas
+      source/admission/reader boundary (`tests/nativeOpenRevealGap.test.ts`), a creator-selected
+      external file shows as a visible passive card instead, and the handoff contract that would bind
+      it to one authenticated Backpack is written down without being wired
+      (`tests/nativeSourceHandoffContract.test.ts`). The failure path this box names exists the day the
+      capability does, and Gate 9 is where that decision lives).
+- [x] stale write if writes exist (the path is tested in the only form it can take today: record writes
+      are refused with `stale-revision` and the revision that beat the caller - `tests/surfaceConvergence.test.ts`,
+      `tests/uiAgentMutationParity.test.ts` - while creator-vault writes remain disabled on purpose, so
+      "if writes exist" is satisfied for the writes that do).
 
 For every checked defined-scope read-only error above:
 
