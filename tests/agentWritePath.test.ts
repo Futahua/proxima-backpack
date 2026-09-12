@@ -1166,7 +1166,7 @@ describe('agent write path', () => {
     expect(await w.revisionMap()).toEqual(before);
   });
 
-  it('runs the project lifecycle through the same wire, delete included because its refusal is an answer', async () => {
+  it('runs the project lifecycle through the same wire, the confirmed delete included', async () => {
     const w = await world(1900);
 
     // A create names the project and no revision, because there is no record to have read yet.
@@ -1217,18 +1217,22 @@ describe('agent write path', () => {
     expect(restored).toMatchObject({ ok: true, verb: 'restore', outcome: 'restored' });
     if (!('ok' in restored) || !restored.ok || !('revision' in restored)) throw new Error('the restore was refused');
 
-    // Delete is on the wire and refuses with the operation's own answer, which is the point of putting it
-    // there: an agent asking gets the same sentence a person clicking Delete gets, rather than a different
-    // one that would have to be kept in step. The store is untouched by it.
+    // Delete is on the wire with the members the caller confirmed, which is the point of putting it
+    // there: the request a person's second press sends is the request an agent sends, and the result
+    // enumerates what it removed instead of answering a question about it. The store moves, because
+    // this is a delete that landed.
     const beforeDelete = await w.revisionMap();
-    const deleteAttempt = await submitAgentWrite(w.agent, {
+    const deleted = await submitAgentWrite(w.agent, {
       type: 'project.delete',
       projectId: created.recordId,
       expectedRevision: restored.revision,
+      members: { tasks: [], events: [] },
     });
-    expect(deleteAttempt).toMatchObject({ ok: false, verb: 'delete', reason: 'policy-not-decided' });
-    expect(await w.revisionMap()).toEqual(beforeDelete);
-    expect((await w.state()).projects.some((project) => project.id === created.recordId)).toBe(true);
+    expect(deleted).toMatchObject({ ok: true, verb: 'delete', outcome: 'deleted' });
+    if (!('ok' in deleted) || !deleted.ok || !('affectedEntityIds' in deleted)) throw new Error('the project delete was refused');
+    expect(deleted.affectedEntityIds).toEqual([created.recordId]);
+    expect(await w.revisionMap()).not.toEqual(beforeDelete);
+    expect((await w.state()).projects.some((project) => project.id === created.recordId)).toBe(false);
 
     // The malformed battery: a create with no name, an update with no mutations, and a verb that names a
     // project without the revision it read.
@@ -1237,6 +1241,10 @@ describe('agent write path', () => {
       { input: { type: 'project.archive', projectId: created.recordId }, detail: 'the submission needs the revision it read the project at, so a lost race is refused rather than merged' },
       { input: { type: 'project.update', expectedRevision: restored.revision, mutations: [] }, detail: 'the submission needs a projectId' },
       { input: { type: 'project.update', projectId: created.recordId, expectedRevision: restored.revision }, detail: 'a project update needs the field mutations it wants' },
+      // A delete that names a project without confirming what is in it is refused at the boundary:
+      // the operation cannot be asked to remove records the submission never listed.
+      { input: { type: 'project.delete', projectId: created.recordId, expectedRevision: restored.revision }, detail: 'project delete requires members' },
+      { input: { type: 'project.delete', projectId: created.recordId, expectedRevision: restored.revision, members: { tasks: 't1', events: [] } }, detail: 'project delete requires members.tasks/events to be an array of non-empty bounded strings' },
     ];
     for (const entry of battery) {
       const result = await submitAgentWrite(w.agent, entry.input);

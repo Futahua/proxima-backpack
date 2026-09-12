@@ -2,22 +2,20 @@
  * Project lifecycle operations: `project.create`, `project.update`, `project.archive`,
  * `project.restore` and `project.delete`.
  *
- * Four of the five are ordinary record writes and are decided here. The fifth is not, and the code
- * says so rather than choosing for the creator.
+ * All five are record writes and are decided here.
  *
  * **Archive is a status change, not a removal.** A project carries `status` and `archivedAt`, so
  * archiving sets both and touches nothing else — not one task, not one event, not one byte of a
  * member record. That is the difference between an archive and a delete, and the only way to keep
  * the promise is to assert it against the members' own bytes.
  *
- * **Delete is an open semantic question.** The checklist names three possible answers — leave
- * members uncategorised, require an explicit cascade, or refuse while members exist — and says in as
- * many words that the source cannot answer what the creator wants. Each answer changes what a
- * click means and what an agent's request means, so implementing one of them would be inventing a
- * product decision. What this module does instead is refuse **deterministically and in the
- * taxonomy's vocabulary**, naming the question and the size of what it would affect, and touching
- * nothing at all. When the creator answers, this is the one function that changes, and every caller
- * — UI or agent — changes with it because they already meet here.
+ * **Delete is an explicit cascade (D60).** The checklist named three possible answers — leave
+ * members uncategorised, require an explicit cascade, or refuse while members exist — and the
+ * creator chose the cascade: the caller submits the task and event ids it is deleting, this module
+ * verifies them against the store, and the members go before the project. What replaced the old
+ * open-question refusal is not a looser check but a narrower one: the verb can no longer be called
+ * without saying what it means, which is why the request carries the membership and why every
+ * caller — UI or agent — had to change with it.
  *
  * `projectType` is deliberately absent from the mutable fields: A4 removed that legacy label from
  * capability decisions, so a lifecycle operation that could set it would be reintroducing the silo.
@@ -41,20 +39,27 @@ export const PROJECT_MUTATION_SCHEMA_VERSION = 1 as const;
 const MAX_NAME_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 20_000;
 
-/** The action taxonomy's non-accepted outcomes, plus the one that is this module's own. */
+/** The action taxonomy's non-accepted outcomes, plus the two that are this module's own. */
 export type ProjectMutationFailureReason =
   | 'validation-refused'
   | 'not-found'
   | 'stale-revision'
+  | 'membership-mismatch'
   | 'semantic-conflict'
   | 'recovery-required'
   | 'storage-failure'
+  /**
+   * Retired by the delete decision rather than deleted: D60 answered the question this code asked, so
+   * no path in this module returns it any more and the union keeps it until the taxonomy drops it.
+   */
   | 'policy-not-decided';
 
 export interface ProjectMutationSuccess {
   readonly ok: true;
   readonly schemaVersion: typeof PROJECT_MUTATION_SCHEMA_VERSION;
-  readonly outcome: 'created' | 'updated' | 'archived' | 'restored';
+  readonly outcome: 'created' | 'updated' | 'archived' | 'restored' | 'deleted';
+  /** Every entity the operation affected: the project alone, or the project with its confirmed members. */
+  readonly affectedEntityIds: readonly OpaqueRecordId[];
   readonly recordId: OpaqueRecordId;
   readonly revision: string;
   /** The project as written. */
@@ -164,6 +169,7 @@ async function write(
       recordId: input.record.id,
       revision: result.revision,
       record: input.record,
+      affectedEntityIds: [input.record.id],
     };
   }
 
@@ -220,6 +226,7 @@ export async function createProject(
     recordId: record.id,
     revision: result.revision,
     record,
+    affectedEntityIds: [record.id],
   };
 }
 
@@ -306,16 +313,25 @@ export async function restoreProject(
 }
 
 /**
- * Delete a project — refused, because what deleting *means* is the creator's decision.
+ * Delete a project and the members the caller confirmed.
  *
- * The refusal is the deterministic, typed answer the acceptance box asks for: same request, same
- * reason, same detail, nothing written. It names what the decision would affect, so a reader can
- * answer it, and it invents no policy of its own — the three candidates are exactly the ones the
- * checklist lists.
+ * The confirmation is the request: the caller submits the task and event ids it is deleting, and this
+ * function verifies them against the store before it removes anything, so a list that no longer
+ * matches the current membership is refused as `membership-mismatch` rather than acted on. Members go
+ * first and the project last, because a half-finished cascade that still has its project is a state a
+ * reader can finish from, and one whose members survived it is not — and every entity removed travels
+ * back to the caller in `affectedEntityIds` rather than being summarised as a count.
  */
 export async function deleteProject(
   deps: ProjectMutationDependencies,
-  input: { readonly projectId: OpaqueRecordId; readonly expectedRevision: string },
+  input: {
+    readonly projectId: OpaqueRecordId;
+    readonly expectedRevision: string;
+    readonly members: {
+      readonly tasks: readonly OpaqueRecordId[];
+      readonly events: readonly OpaqueRecordId[];
+    };
+  },
 ): Promise<ProjectMutationResult> {
   const found = await readProject(deps, input.projectId);
   if (!found.ok) return found.failure;
@@ -323,19 +339,147 @@ export async function deleteProject(
     return failed('stale-revision', 'another writer changed this project first', found.revision);
   }
 
-  let members = { tasks: 0, events: 0 };
+  let currentTasks: OpaqueRecordId[] = [];
+  let currentEvents: OpaqueRecordId[] = [];
+
   try {
     const observations = await deps.store.list();
+
     for (const observation of observations) {
-      if (observation.record.kind === 'task' && (observation.record as CanonicalTaskRecordV2).projectId === input.projectId) members = { ...members, tasks: members.tasks + 1 };
-      if (observation.record.kind === 'event' && (observation.record as CanonicalEventRecordV2).projectId === input.projectId) members = { ...members, events: members.events + 1 };
+      if (
+        observation.record.kind === 'task'
+        && (observation.record as CanonicalTaskRecordV2).projectId === input.projectId
+      ) {
+        currentTasks.push(observation.id);
+      }
+
+      if (
+        observation.record.kind === 'event'
+        && (observation.record as CanonicalEventRecordV2).projectId === input.projectId
+      ) {
+        currentEvents.push(observation.id);
+      }
     }
   } catch {
-    return failed('storage-failure', 'the record store could not be read');
+    return failed(
+      'storage-failure',
+      'the record store could not be read.',
+    );
   }
 
-  return failed(
-    'policy-not-decided',
-    `deleting ${found.record.name} would affect ${members.tasks} task(s) and ${members.events} event(s); whether those are left uncategorised, cascaded explicitly, or whether the delete is refused while they exist is the creator's decision, so nothing was changed`,
-  );
+  const submittedTasks = [...input.members.tasks].sort();
+  const submittedEvents = [...input.members.events].sort();
+
+  currentTasks.sort();
+  currentEvents.sort();
+
+  if (
+    submittedTasks.length !== currentTasks.length
+    || submittedTasks.some((id, index) => id !== currentTasks[index])
+    || submittedEvents.length !== currentEvents.length
+    || submittedEvents.some((id, index) => id !== currentEvents[index])
+  ) {
+    return failed(
+      'membership-mismatch',
+      'the submitted project members no longer match the current membership.',
+    );
+  }
+
+  // The membership guard above proved the submitted lists are the current ones, and every member is
+  // re-read and re-checked immediately before its own delete, so this is the set that will be gone.
+  const affectedEntityIds: OpaqueRecordId[] = [
+    input.projectId,
+    ...input.members.tasks,
+    ...input.members.events,
+  ];
+
+  const memberIds = [
+    ...input.members.tasks,
+    ...input.members.events,
+  ];
+
+  for (const memberId of memberIds) {
+    let member;
+    try {
+      member = await deps.store.read(memberId);
+    } catch {
+      return failed('storage-failure', 'the record store could not be read.');
+    }
+
+    if (
+      member === undefined
+      || (member.kind !== 'task' && member.kind !== 'event')
+      || (member.record.kind === 'task'
+        && (member.record as CanonicalTaskRecordV2).projectId !== input.projectId)
+      || (member.record.kind === 'event'
+        && (member.record as CanonicalEventRecordV2).projectId !== input.projectId)
+    ) {
+      return failed(
+        'membership-mismatch',
+        'the submitted project members no longer match the current membership.',
+      );
+    }
+
+    let deleted;
+    try {
+      deleted = await deps.coordinator.execute({
+        kind: 'delete',
+        fileName: recordFileNameFor(memberId),
+        expectedRevision: member.observedRevision,
+      });
+    } catch {
+      return failed('storage-failure', 'the member delete could not be attempted');
+    }
+
+    if (!deleted.ok) {
+      switch (deleted.reason) {
+        case 'stale':
+          return failed('stale-revision', 'another writer changed a confirmed project member first', deleted.actualRevision);
+        case 'missing':
+          return failed('membership-mismatch', 'a confirmed project member disappeared before deletion');
+        case 'recovery-required':
+          return failed('recovery-required', 'the store needs recovery before it accepts deletes');
+        case 'invalid-record-file-name':
+          return refused('the confirmed member id cannot name a record file');
+        default:
+          return failed('storage-failure', 'the member delete was rejected');
+      }
+    }
+  }
+
+  let projectDelete;
+  try {
+    projectDelete = await deps.coordinator.execute({
+      kind: 'delete',
+      fileName: recordFileNameFor(input.projectId),
+      expectedRevision: found.revision,
+    });
+  } catch {
+    return failed('storage-failure', 'the project delete could not be attempted');
+  }
+
+  if (!projectDelete.ok) {
+    switch (projectDelete.reason) {
+      case 'stale':
+        return failed('stale-revision', 'another writer changed this project first', projectDelete.actualRevision);
+      case 'missing':
+        return failed('not-found', 'the project record is not in the store');
+      case 'recovery-required':
+        return failed('recovery-required', 'the store needs recovery before it accepts deletes');
+      case 'invalid-record-file-name':
+        return refused('the project id cannot name a record file');
+      default:
+        return failed('storage-failure', 'the project delete was rejected');
+    }
+  }
+
+  return {
+    ok: true,
+    schemaVersion: PROJECT_MUTATION_SCHEMA_VERSION,
+    outcome: 'deleted',
+    recordId: input.projectId,
+    revision: projectDelete.revision,
+    record: found.record,
+    affectedEntityIds,
+  };
 }

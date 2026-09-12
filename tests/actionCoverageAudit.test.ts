@@ -133,9 +133,11 @@ const EVENT_OPERATION_ONLY_ROWS: readonly { readonly action: string }[] = [];
  *
  * Five of the eleven rows in this group are wired: a project is created, edited, archived, restored
  * and deleted through one operation each, and the Projects Hub reaches all five. Delete is the one to
- * read carefully — the operation exists and answers, and what it answers is `policy-not-decided` with
- * the counts it would affect, because what deleting a project *means* for its members is the creator's
- * decision (D56). This table therefore says "wired" about a verb that refuses, and says why.
+ * read carefully, and it is no longer the odd one out: the creator answered the open question (D60),
+ * so a delete submits the members it confirmed, the operation verifies that list against the store,
+ * and the run answers with the ids it removed. The table therefore says "wired" about five verbs that
+ * do what they say, and the row below names the test that proves the cascade and the test that proves
+ * the refusal a mismatched confirmation earns.
  *
  * The other rows are the workflow-stage ones, which are wired now and carry their own table below,
  * and the three property-schema rows, which are not: a record kind existing — and schema records do,
@@ -146,8 +148,9 @@ const PROJECT_ROWS: readonly TaskActionRow[] = [
   { action: 'project.update', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function updateProjectAction', caller: 'updateProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'updateProjectAction', equivalence: false, agentVerb: 'project.update' },
   { action: 'project.archive', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function archiveProjectAction', caller: 'archiveProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'archiveProjectAction', equivalence: false, agentVerb: 'project.archive' },
   { action: 'project.restore', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function restoreProjectAction', caller: 'restoreProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'restoreProjectAction', equivalence: false, agentVerb: 'project.restore' },
-  // Wired, and refused on purpose: the sequence runs and the operation answers `policy-not-decided`.
-  { action: 'project.delete', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function deleteProjectAction', caller: 'deleteProjectAction(', testFile: 'tests/projectMutations.test.ts', testMarker: 'policy-not-decided', equivalence: false, agentVerb: 'project.delete' },
+  // Wired, and it writes: the sequence carries the confirmed members, the operation verifies them and
+  // cascades, and the test marker is the refusal a confirmation that no longer matches earns.
+  { action: 'project.delete', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function deleteProjectAction', caller: 'deleteProjectAction(', testFile: 'tests/projectMutations.test.ts', testMarker: 'membership-mismatch', equivalence: false, agentVerb: 'project.delete' },
 ];
 
 /**
@@ -551,12 +554,21 @@ describe('Stage 17 project, workflow and schema coverage', () => {
     expect(mutations).toContain('updateTask(deps.taskDependencies');
   });
 
-  it('states what project delete answers, since the box is about a refusing verb being wired', () => {
+  it('states what project delete answers, since the box is about a verb whose meaning was decided', () => {
     const mutations = source('src/app/projectMutations.ts');
+    // The cascade: one request that carries the confirmed members, one membership guarantee that
+    // makes a list that no longer matches unactable, and a success that enumerates what it removed.
+    expect(mutations).toContain("'membership-mismatch'");
+    expect(mutations).toContain("outcome: 'deleted'");
+    expect(mutations).toContain('affectedEntityIds');
+    // The open question survives in the vocabulary and nowhere else: no path returns it any more, so
+    // the day it comes back this fails rather than passing as a refusal nobody noticed was restored.
     expect(mutations).toContain("'policy-not-decided'");
-    // The refusal names what it would affect, which is what makes it an answer rather than a failure.
-    expect(mutations).toContain('would affect');
+    expect(mutations).toContain('Retired by the delete decision');
+    // And the shell reaches it through the module that decides, not from a copy of the rule.
     expect(source('src/browser/main.ts')).toContain('deleteProjectAction(');
+    expect(source('src/browser/main.ts')).toContain('beginProjectDelete(');
+    expect(source('src/browser/projectsHub.ts')).toContain('export function beginProjectDelete');
   });
 });
 
@@ -963,15 +975,15 @@ const PROJECT_CONTRACT: FamilyContract = {
     witness: 'request: CreateProjectRequest',
     note: 'the name and the description are checked before the write, but the entry takes the typed request object and nothing accepts it as unknown, so the boundary is TypeScript rather than a parse',
   },
-  success: { file: 'src/app/projectMutations.ts', from: 'export interface ProjectMutationSuccess', marker: "readonly outcome: 'created' | 'updated' | 'archived' | 'restored';" },
+  success: { file: 'src/app/projectMutations.ts', from: 'export interface ProjectMutationSuccess', marker: "readonly outcome: 'created' | 'updated' | 'archived' | 'restored' | 'deleted';" },
   conflictFile: 'src/app/projectMutations.ts',
   storage: {
     file: 'src/app/projectMutations.ts',
     create: "'storage-failure'",
     write: "'recovery-required'",
     createNote: 'a create goes through the store own createIfAbsent and never journals, so recovery is not applicable and a rejected write is a storage failure of its own',
-    writeNote: 'a storage failure and a store that needs recovery stay distinguishable, which is what a conditional lifecycle write needs',
-    refusingNote: 'the store list that counts the members is a storage failure of its own, and recovery is not applicable because the delete writes nothing',
+    writeNote: 'a storage failure and a store that needs recovery stay distinguishable, which is what a conditional lifecycle write needs - and on the delete path that includes the member deletes: a listed record the coordinator refuses to remove stops the cascade with the typed reason rather than half-finished',
+    refusingNote: 'unused since the delete decision landed: no project row is refusing-shaped any more, because the fifth verb writes like the other four, and this note is what a future refusing verb in this family would have to say about its storage cell',
   },
   requestId: {
     file: 'src/app/projectMutations.ts',
@@ -1493,13 +1505,13 @@ const PROJECT_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
     COLUMN_REQUEST_ID,
     'src/app/projectLifecycleActions.ts',
     'readonly requestId: string;',
-    'the sequence mints one semantic request id before the project lookup can refuse and returns it on every result, so a lifecycle write refused because the project is gone, because there is no write path or because the operation answered (including delete policy refusal) is correlatable exactly like an accepted one; a create has no id yet, so its refusals name no target rather than guessing one',
+    'the sequence mints one semantic request id before the project lookup can refuse and returns it on every result, so a lifecycle write refused because the project is gone, because there is no write path or because the operation answered (including a delete whose confirmed membership no longer matches) is correlatable exactly like an accepted one; a create has no id yet, so its refusals name no target rather than guessing one',
   ),
   [COLUMN_AUDIT]: carried(
     COLUMN_AUDIT,
     'tests/projectSemanticAudit.test.ts',
     'audit:accepted',
-    'behavioural rather than structural: one terminal event per run, after convergence where the store moved and not before it, named `project.<verb>` - and the delete policy refusal is journalled like every other refusal, with the operation own machine-readable code, because an answer that leaves no trace is the one path a reader cannot audit',
+    'behavioural rather than structural: one terminal event per run, after convergence where the store moved and not before it, named `project.<verb>` - and delete is journalled the same way in both directions, accepted with the ids it removed once the cascade has converged and rejected with the operation own machine-readable code when the confirmation did not match, because an answer that leaves no trace is the one path a reader cannot audit',
   ),
 };
 
@@ -1543,14 +1555,14 @@ const PROJECT_CONTRACT_ROWS: readonly ContractRow[] = contractRows(PROJECT_CONTR
   },
   {
     action: 'project.delete',
-    request: { marker: 'export async function deleteProject', reason: 'the request is the exported delete operation with the project and the revision; what the verb means for the members is the creator decision the module refuses to invent' },
-    effect: 'nothing: this operation has no success branch',
-    success: { marker: "readonly outcome: 'created' | 'updated' | 'archived' | 'restored';", status: 'n/a', reason: 'deleteProject always answers policy-not-decided, and the project success union names created, updated, archived and restored and deliberately no delete, so there is no success half for this row to carry' },
-    shape: 'refusing',
-    conflictNote: 'the revision is checked before the policy question, so a caller that lost a race is refused as stale-revision rather than answered with the policy question',
-    refusal: { marker: "'policy-not-decided'", reason: 'the refusal is the answer the row is about: deterministic, typed, in the taxonomy vocabulary, naming the question and the counts it would affect while writing nothing' },
-    idsGap: { file: 'src/app/projectMutations.ts', marker: 'affectedRecordIds', witness: 'would affect', reason: 'the only answer this verb gives summarises a multi-record effect as counts - how many tasks and events deleting would affect - and never names which ones, so a caller cannot enumerate the question it is being asked' },
-    observable: { file: 'tests/projectMutations.test.ts', marker: 'expect((await app.bytes())).toEqual(before);', note: 'the case snapshots every record file byte and revision before the refusal and asserts the store is byte-identical afterwards, which is the observable state of a verb that wrote nothing' },
+    request: { marker: 'export async function deleteProject', reason: 'the request is the exported delete operation with the project, the revision, and the members the caller confirmed; the membership is part of the request rather than something the operation discovers, which is what makes a delete that was never confirmed unmakeable' },
+    effect: "'deleted', with every affected entity id",
+    success: { marker: "readonly affectedEntityIds: readonly OpaqueRecordId[];", reason: 'the success branch names the effect and, unlike the refusal it replaced, enumerates what it removed: the project and the confirmed members, so a caller can report what a delete did instead of how many records it would have touched' },
+    shape: 'write',
+    conflictNote: 'the revision is checked before the membership question, so a caller that lost a race is refused as stale-revision rather than answered with a membership comparison against a project it never read — and a member deleted under the run is stale-revision too, naming the revision that beat it',
+    refusal: { marker: "'membership-mismatch'", reason: 'the refusal the cascade needs and the one it earns: a submitted list that is not the current membership - short, long, or naming a record that does not belong to this project - is refused by name before anything is removed, and the store is left byte-identical' },
+    ids: { marker: 'affectedEntityIds', reason: 'the result names the project and every member it removed rather than summarising the effect as counts, which is the gap the open-question refusal carried and could not close' },
+    observable: { file: 'tests/projectMutations.test.ts', marker: 'expect((await app.bytes())).toEqual(before);', note: 'the mismatch case snapshots every record file byte and revision before the refusal and asserts the store is byte-identical afterwards, so the promise that a refused cascade removes nothing is asserted against the bytes rather than the projection' },
     overrides: PROJECT_ENVELOPE_OVERRIDES,
   },
 ]);
@@ -1735,7 +1747,7 @@ describe('Stage 17 event contract matrix', () => {
 });
 
 describe('Stage 17 project contract matrix', () => {
-  it('records the ten columns for every project row, the refusing delete included', () => {
+  it('records the ten columns for every project row, the cascading delete included', () => {
     expect(PROJECT_CONTRACT_ROWS.map((row) => row.action)).toEqual(PROJECT_ROWS.map((row) => row.action));
     assertContractRows(PROJECT_CONTRACT_ROWS);
   });

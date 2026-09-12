@@ -3,9 +3,10 @@
  *
  * The cases are about the two promises the module makes. **Archive is not a delete:** the members'
  * own bytes are snapshotted before and after, so a task or event that moved, or was marked, or lost
- * a field, would fail the case rather than merely look wrong in a projection. **Delete is an open
- * question:** the refusal is asserted to be deterministic, typed, informative about what it would
- * affect, and to have changed nothing at all — including the members and the project itself.
+ * a field, would fail the case rather than merely look wrong in a projection. **Delete is a
+ * confirmed cascade:** the members the caller listed go, the project goes, and every id that was
+ * removed comes back in the result — while a list that no longer matches the store is refused and
+ * changes nothing at all, which is the half of the old open-question case that still has to hold.
  */
 import { describe, expect, it } from 'vitest';
 import { createCanonicalJsonRecordStore } from '../src/app/canonicalRecordCodec.js';
@@ -54,7 +55,7 @@ interface World {
   bytes(): Promise<Record<string, string>>;
   create(name: string): ReturnType<typeof createProject>;
   /** A project holding both a task and an event, which is the case A4 made ordinary. */
-  combined(): Promise<{ projectId: OpaqueRecordId; revision: string }>;
+  combined(): Promise<{ projectId: OpaqueRecordId; revision: string; taskId: OpaqueRecordId; eventId: OpaqueRecordId }>;
 }
 
 async function world(): Promise<World> {
@@ -104,7 +105,7 @@ async function world(): Promise<World> {
         recurrence: null,
       };
       await store.createIfAbsent(event as CanonicalRecordV2);
-      return { projectId: created.recordId, revision: created.revision };
+      return { projectId: created.recordId, revision: created.revision, taskId: task.recordId, eventId: event.id as OpaqueRecordId };
     },
   };
 }
@@ -207,44 +208,88 @@ describe('Stage 11 project lifecycle operations', () => {
     }
   });
 
-  it('refuses a delete as an open question, deterministically and without changing anything', async () => {
+  it('deletes the confirmed members and then the project, and names every id it removed', async () => {
+    const app = await world();
+    const combined = await app.combined();
+    const before = await app.bytes();
+    expect(before[`${combined.projectId}.json`]).toBeDefined();
+
+    const deleted = await deleteProject(app.deps, {
+      projectId: combined.projectId,
+      expectedRevision: combined.revision,
+      members: { tasks: [combined.taskId], events: [combined.eventId] },
+    });
+
+    expect(deleted).toMatchObject({ ok: true, outcome: 'deleted', recordId: combined.projectId });
+    if (!deleted.ok) return;
+    // The ids travel back rather than as a count: the caller can enumerate what it removed, which is
+    // the half the old open-question refusal could not answer.
+    expect(deleted.affectedEntityIds).toEqual([combined.projectId, combined.taskId, combined.eventId]);
+    expect(deleted.record).toMatchObject({ id: combined.projectId, name: 'Combined project' });
+
+    // Every record the request named is gone from the store, and the projection agrees.
+    const after = await app.bytes();
+    expect(Object.keys(after).filter((name) => name.startsWith(combined.projectId))).toEqual([]);
+    const state = await app.state();
+    expect(state.projects).toHaveLength(0);
+    expect(state.tasks).toHaveLength(0);
+    expect(state.events).toHaveLength(0);
+  });
+
+  it('refuses a delete whose confirmed members no longer match, and changes nothing', async () => {
     const app = await world();
     const combined = await app.combined();
     const before = await app.bytes();
 
-    const refused = await deleteProject(app.deps, { projectId: combined.projectId, expectedRevision: combined.revision });
+    // The project has one task and one event; the caller confirms only the task. The list is not the
+    // membership, so the verb refuses rather than deleting half of what the project holds.
+    const refused = await deleteProject(app.deps, {
+      projectId: combined.projectId,
+      expectedRevision: combined.revision,
+      members: { tasks: [combined.taskId], events: [] },
+    });
 
-    expect(refused).toMatchObject({ ok: false, reason: 'policy-not-decided' });
+    expect(refused).toMatchObject({ ok: false, reason: 'membership-mismatch' });
     if (refused.ok) return;
-    // It names what the decision affects, so a reader can answer it, and it names no path: inferring
-    // the old plugin's filesystem behaviour is exactly what the checklist forbids.
-    expect(refused.detail).toContain('1 task(s) and 1 event(s)');
-    expect(refused.detail).toContain('creator');
-    const refusedDetail = refused.detail;
-    expect(before[`${combined.projectId}.json`]).toBeDefined();
+    expect(refused.detail).toContain('no longer match');
+    // The refusal is the guarantee that matters: a store that cannot be listed, or a membership that
+    // moved, leaves every byte where it was — the project and both members included.
     expect((await app.bytes())).toEqual(before);
 
     // Deterministic: the same request refuses the same way, with the same words.
-    const again = await deleteProject(app.deps, { projectId: combined.projectId, expectedRevision: combined.revision });
-    expect(again).toMatchObject({ ok: false, reason: 'policy-not-decided' });
-    if (!again.ok) expect(again.detail).toBe(refusedDetail);
+    const again = await deleteProject(app.deps, {
+      projectId: combined.projectId,
+      expectedRevision: combined.revision,
+      members: { tasks: [combined.taskId], events: [] },
+    });
+    expect(again).toMatchObject({ ok: false, reason: 'membership-mismatch' });
+    if (!again.ok) expect(again.detail).toBe(refused.detail);
 
-    // A stale caller is refused as stale before the policy question is even reached.
-    const stale = await deleteProject(app.deps, { projectId: combined.projectId, expectedRevision: `${combined.projectId}@99` });
+    // A stale caller is refused as stale before the membership question is even reached.
+    const stale = await deleteProject(app.deps, {
+      projectId: combined.projectId,
+      expectedRevision: `${combined.projectId}@99`,
+      members: { tasks: [combined.taskId], events: [combined.eventId] },
+    });
     expect(stale).toMatchObject({ ok: false, reason: 'stale-revision' });
   });
 
-  it('keeps a project with no members deletable-shaped: the refusal names zero members', async () => {
+  it('deletes a project with no members in one request, because there is nothing to confirm', async () => {
     const app = await world();
     const empty = await app.create('Empty project');
     if (!empty.ok) throw new Error('create failed');
 
-    const refused = await deleteProject(app.deps, { projectId: empty.recordId, expectedRevision: empty.revision });
+    const deleted = await deleteProject(app.deps, {
+      projectId: empty.recordId,
+      expectedRevision: empty.revision,
+      members: { tasks: [], events: [] },
+    });
 
-    // The refusal is about the policy, not about the members: an empty project is refused for the
-    // same reason and with the same reason code as a full one, which is what makes the answer a
-    // decision rather than a side effect of how many tasks happen to exist.
-    expect(refused).toMatchObject({ ok: false, reason: 'policy-not-decided' });
-    if (!refused.ok) expect(refused.detail).toContain('0 task(s) and 0 event(s)');
+    // The empty lists are the honest statement of an empty membership rather than a default: the
+    // same request on a project that holds members is refused as membership-mismatch above.
+    expect(deleted).toMatchObject({ ok: true, outcome: 'deleted' });
+    if (!deleted.ok) return;
+    expect(deleted.affectedEntityIds).toEqual([empty.recordId]);
+    expect((await app.state()).projects).toHaveLength(0);
   });
 });

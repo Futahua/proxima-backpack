@@ -182,18 +182,45 @@ describe('Stage 11 lifecycle sequences', () => {
     expect(await projectById(ui, uiProject.projectId)).toMatchObject({ status: 'active' });
   });
 
-  it('passes delete\'s refusal through as the operation wrote it, and writes nothing', async () => {
+  it('carries the confirmed members into the operation, and answers with what it removed', async () => {
+    const app = await world();
+    const project = await app.seed('Has members', true);
+    const rendered = await app.state();
+    // The id the projection displays is the record's own, so submitting it is what the hub does.
+    const memberId = rendered.tasks.find((task) => task.projectId === project.projectId)!.id as OpaqueRecordId;
+
+    const outcome: ProjectLifecycleOutcome = await deleteProjectAction(app.shell({ rendered }), {
+      projectId: project.projectId,
+      members: { tasks: [memberId], events: [] },
+    });
+
+    expect(outcome).toMatchObject({ ok: true, verb: 'delete', outcome: 'deleted', revision: expect.any(String) });
+    if (!outcome.ok) return;
+    // The result names every entity it removed rather than summarising them as counts, which is the
+    // half the old open-question refusal could not answer.
+    expect(outcome.affectedEntityIds).toEqual([project.projectId, memberId]);
+    expect(app.refusals).toEqual([null]);
+    const after = await app.state();
+    expect(after.projects).toHaveLength(0);
+    expect(after.tasks).toHaveLength(0);
+  });
+
+  it('passes a delete refusal through as the operation wrote it, and writes nothing', async () => {
     const app = await world();
     const project = await app.seed('Has members', true);
 
-    const outcome: ProjectLifecycleOutcome = await deleteProjectAction(app.shell({ rendered: await app.state() }), { projectId: project.projectId });
+    // The caller confirms an empty membership for a project that holds a task, which is the refusal
+    // that replaced the open policy question: the list it submitted is not the list the store has.
+    const outcome: ProjectLifecycleOutcome = await deleteProjectAction(app.shell({ rendered: await app.state() }), {
+      projectId: project.projectId,
+      members: { tasks: [], events: [] },
+    });
 
-    expect(outcome).toMatchObject({ ok: false, verb: 'delete', reason: 'policy-not-decided' });
+    expect(outcome).toMatchObject({ ok: false, verb: 'delete', reason: 'membership-mismatch' });
     if (outcome.ok) return;
-    // The sentence is the operation's own — the counts and the decision — not a wrapper's.
-    expect(outcome.detail).toContain('1 task(s) and 0 event(s)');
-    expect(outcome.detail).toContain('creator');
-    expect(app.refusals).toEqual([null, 'policy-not-decided']);
+    // The sentence is the operation's own, not a wrapper's.
+    expect(outcome.detail).toContain('no longer match');
+    expect(app.refusals).toEqual([null, 'membership-mismatch']);
     // A refusal that is not a lost race does not re-read: the world did not move.
     expect(app.refreshCalls).toEqual([]);
     expect(await projectById(app, project.projectId)).toMatchObject({ name: 'Has members' });

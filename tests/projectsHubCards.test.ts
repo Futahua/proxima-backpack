@@ -97,6 +97,7 @@ function mount(hubState: ProximaState = state(), filter: ProjectsHubFilter = 'ac
     closeProjectEditor: () => undefined,
     saveProjectEdit: () => undefined,
     archiveProject: () => undefined, restoreProject: () => undefined, deleteProject: () => undefined,
+    confirmDeleteProject: () => undefined, cancelDeleteProject: () => undefined,
   });
   rerender();
   return { root, harness: createInteractionHarness(root), opened, filter: () => currentFilter, selection: () => selection };

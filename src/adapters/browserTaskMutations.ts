@@ -99,7 +99,14 @@ export interface BrowserProjectMutations {
   updateProject(input: { projectId: OpaqueRecordId; expectedRevision: string; mutations: readonly ProjectFieldMutation[] }): Promise<ProjectMutationResult>;
   archiveProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
   restoreProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
-  deleteProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
+  deleteProject(input: {
+    projectId: OpaqueRecordId;
+    expectedRevision: string;
+    members: {
+      tasks: readonly OpaqueRecordId[];
+      events: readonly OpaqueRecordId[];
+    };
+  }): Promise<ProjectMutationResult>;
 }
 
 /** The event verbs. A reschedule and a resize are their own operations, not field updates. */

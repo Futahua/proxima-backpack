@@ -120,13 +120,15 @@ const EVENT_WRITE_VERB_TYPES: Readonly<Record<string, EventWriteVerb>> = {
 };
 
 /**
- * The five project verbs, all of them, and one of them refuses on purpose.
+ * The five project verbs, all of them, and the one that has to say what it means.
  *
- * `project.delete` is on this wire even though it always answers `policy-not-decided` today, because that
- * refusal is the operation's real answer rather than a wiring gap: what deleting a project does with its
- * members is the creator's decision (D56), and the sequence passes that reason through unchanged. An agent
- * that asks gets the same sentence a person clicking Delete gets, which is the property the parity box wants -
- * and when the creator answers, both callers start working without either of them changing.
+ * `project.delete` is on this wire and carries its membership, because the operation verifies the
+ * confirmed list before it removes anything: the creator answered the open question (D60), so what
+ * deleting a project does with its members is no longer the thing this boundary has to refuse to
+ * invent. A submission that names a project without its members is refused here rather than sent on,
+ * and a list that no longer matches the store comes back as the operation's own
+ * `membership-mismatch`. An agent that asks gets the same answer a person clicking Delete gets,
+ * which is the property the parity box wants.
  */
 const PROJECT_VERB_TYPES: Readonly<Record<string, ProjectLifecycleVerb>> = {
   'project.create': 'create',
@@ -378,6 +380,17 @@ export interface AgentProjectWriteSubmission {
   readonly description?: string;
   /** An update's fields, in the record layer's own vocabulary. */
   readonly mutations?: readonly ProjectFieldMutation[];
+  /**
+   * A delete's confirmed members (D60): the exact ids the caller saw, partitioned by kind.
+   *
+   * Optional on the wire shape because only the delete verb carries it; the parser refuses a delete
+   * without it, and the parsed result for that verb requires it, so no caller can reach the operation with
+   * an absent list and no member is ever inferred from the store.
+   */
+  readonly members?: {
+    readonly tasks: readonly string[];
+    readonly events: readonly string[];
+  };
 }
 
 /**
@@ -548,7 +561,20 @@ export type ParsedAgentWrite =
       readonly ok: true;
       readonly kind: 'project';
       readonly actionType: string;
-      readonly verb: ProjectLifecycleVerb;
+      readonly verb: 'delete';
+      /** A delete always carries its confirmed members: the parser refuses one without them. */
+      readonly submission: AgentProjectWriteSubmission & {
+        readonly members: {
+          readonly tasks: readonly string[];
+          readonly events: readonly string[];
+        };
+      };
+    }
+  | {
+      readonly ok: true;
+      readonly kind: 'project';
+      readonly actionType: string;
+      readonly verb: Exclude<ProjectLifecycleVerb, 'delete'>;
       readonly submission: AgentProjectWriteSubmission;
     }
   | {
@@ -729,6 +755,9 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
   // re-validated here - the operation owns whether a mutation list is one, and answers an empty one with its
   // own sentence.
   const projectVerb = PROJECT_VERB_TYPES[rawType];
+  // A delete's confirmed members, bound as they are validated: the parser refuses a delete without them, and
+  // the parsed result for that verb requires them, so nothing downstream has to ask whether they are there.
+  const confirmedMembers: { tasks: readonly string[]; events: readonly string[] } = { tasks: [], events: [] };
   if (projectVerb !== undefined) {
     if (projectVerb === 'create') {
       if (typeof candidate.name !== 'string' || candidate.name.trim() === '') return fail('a project create needs a name');
@@ -741,6 +770,30 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
       if (projectVerb === 'update' && !Array.isArray(candidate.mutations)) {
         return fail('a project update needs the field mutations it wants');
       }
+
+      if (projectVerb === 'delete') {
+        const submitted = candidate.members;
+        if (typeof submitted !== 'object' || submitted === null || Array.isArray(submitted)) {
+          return fail('project delete requires members');
+        }
+
+        const record = submitted as Record<string, unknown>;
+        for (const field of ['tasks', 'events'] as const) {
+          const value = record[field];
+          if (
+            !Array.isArray(value)
+            || value.some(
+              (memberId) =>
+                typeof memberId !== 'string'
+                || memberId.length === 0
+                || memberId.length > 200,
+            )
+          ) {
+            return fail('project delete requires members.tasks/events to be an array of non-empty bounded strings');
+          }
+          confirmedMembers[field] = value as readonly string[];
+        }
+      }
     }
 
     const project: AgentProjectWriteSubmission = {
@@ -752,6 +805,9 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
       ...(Array.isArray(candidate.mutations) ? { mutations: candidate.mutations as readonly ProjectFieldMutation[] } : {}),
     };
 
+    if (projectVerb === 'delete') {
+      return { ok: true, kind: 'project', actionType: rawType, verb: 'delete', submission: { ...project, members: confirmedMembers } };
+    }
     return { ok: true, kind: 'project', actionType: rawType, verb: projectVerb, submission: project };
   }
 
@@ -1021,9 +1077,16 @@ export async function submitAgentWrite(
       }));
     }
 
+    const confirmedMembers = submission.members;
+    if (confirmedMembers === undefined) throw new Error('the parser refuses a project delete without its confirmed members');
+
     return await runLifecycle(projectDeps, 'delete', projectId, resolver, async (operations, revision) => await operations.deleteProject({
       projectId: projectId as OpaqueRecordId,
       expectedRevision: revision,
+      members: {
+        tasks: confirmedMembers.tasks as readonly OpaqueRecordId[],
+        events: confirmedMembers.events as readonly OpaqueRecordId[],
+      },
     }));
   }
 

@@ -178,12 +178,34 @@ describe('the semantic envelope on the project lifecycle', () => {
     ]);
   });
 
-  it('treats the delete policy refusal as an answer: correlated, coded, and converging nothing', async () => {
+  it('journals the delete it performed: correlated, coded, and converging the store it moved', async () => {
     const w = await world();
-    const refused = await deleteProjectAction(w.deps, { projectId: w.projectId });
+    // The world's project holds no members, so an empty confirmation is the honest one and the verb
+    // is a one-step delete. What this case is about is the envelope rather than the cascade: the run
+    // that really removed a project leaves the same correlatable record a refusal does.
+    const deleted = await deleteProjectAction(w.deps, { projectId: w.projectId, members: { tasks: [], events: [] } });
 
-    expect(refused).toMatchObject({ ok: false, verb: 'delete' });
-    expect(refused.requestId.startsWith(SEMANTIC_REQUEST_PREFIX)).toBe(true);
+    expect(deleted).toMatchObject({ ok: true, verb: 'delete', outcome: 'deleted' });
+    expect(deleted.requestId.startsWith(SEMANTIC_REQUEST_PREFIX)).toBe(true);
+    expect(w.audit.events).toHaveLength(1);
+    expect(w.audit.events[0]).toMatchObject({
+      requestId: deleted.requestId,
+      actionType: 'project.delete',
+      outcome: 'accepted',
+      entityIds: [w.projectId],
+    });
+    // The store moved, so convergence ran before the event was written, and the surface redrew after
+    // the run rather than instead of it.
+    expect(w.order).toEqual(['refresh', 'render', 'audit:accepted']);
+  });
+
+  it('journals a delete the confirmation did not match, with the operation own code', async () => {
+    const w = await world();
+    // A list that is not the current membership - here a task the project does not hold - is the
+    // refusal that replaced the open policy question, and it leaves a trace like every other refusal.
+    const refused = await deleteProjectAction(w.deps, { projectId: w.projectId, members: { tasks: ['pxr_not_a_member'], events: [] } });
+
+    expect(refused).toMatchObject({ ok: false, verb: 'delete', reason: 'membership-mismatch' });
     expect(w.audit.events).toHaveLength(1);
     expect(w.audit.events[0]).toMatchObject({
       requestId: refused.requestId,
@@ -191,9 +213,7 @@ describe('the semantic envelope on the project lifecycle', () => {
       outcome: 'rejected',
       entityIds: [w.projectId],
     });
-    // The operation's own machine-readable reason travels into the journal, so "why did nothing happen" is
-    // answerable from the event alone rather than only from a sentence on screen.
-    expect(w.audit.events[0]!.errorCode).toBeDefined();
+    expect(w.audit.events[0]!.errorCode).toBe('membership-mismatch');
     // Nothing was written, so nothing converged; the surface still redraws to show the answer.
     expect(w.order).toEqual(['render', 'audit:rejected']);
   });

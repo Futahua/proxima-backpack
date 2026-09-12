@@ -43,7 +43,14 @@ export type ProximaAction =
   | { type: 'project.create'; name: string; description: string }
   | { type: 'project.archive'; projectId: string }
   | { type: 'project.restore'; projectId: string }
-  | { type: 'project.delete'; projectId: string }
+  | {
+      type: 'project.delete';
+      projectId: string;
+      members: {
+        tasks: string[];
+        events: string[];
+      };
+    }
   | { type: 'surface.select'; surface: Surface }
   | { type: 'source.refresh' }
   | { type: 'canvas.node.select'; nodeId: string | null }
@@ -314,11 +321,7 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
         };
   }
 
-  if (
-    input.type === 'project.archive'
-    || input.type === 'project.restore'
-    || input.type === 'project.delete'
-  ) {
+  if (input.type === 'project.archive' || input.type === 'project.restore') {
     if (
       typeof input.projectId !== 'string'
       || input.projectId.length === 0
@@ -334,6 +337,67 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
       };
     }
     return { ok: true, action: { type: input.type, projectId: input.projectId } };
+  }
+
+  if (input.type === 'project.delete') {
+    if (
+      typeof input.projectId !== 'string'
+      || input.projectId.length === 0
+      || input.projectId.length > 200
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'project lifecycle action requires a non-empty bounded projectId',
+          field: 'projectId',
+        },
+      };
+    }
+
+    if (!isRecord(input.members)) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-action-input',
+          message: 'project delete requires members',
+          field: 'members',
+        },
+      };
+    }
+
+    const members: { tasks: string[]; events: string[] } = { tasks: [], events: [] };
+    for (const field of ['tasks', 'events'] as const) {
+      const value = input.members[field];
+      if (
+        !Array.isArray(value)
+        || value.some(
+          (memberId) =>
+            typeof memberId !== 'string'
+            || memberId.length === 0
+            || memberId.length > 200,
+        )
+      ) {
+        return {
+          ok: false,
+          error: {
+            code: 'invalid-action-input',
+            message: `project delete requires members.${field} to be an array of non-empty bounded strings`,
+            field: `members.${field}`,
+          },
+        };
+      }
+      members[field] = value;
+    }
+
+    return {
+      ok: true,
+      action: {
+        type: input.type,
+        projectId: input.projectId,
+        members,
+      },
+    };
   }
   if (input.type === 'project.create') {
     if (

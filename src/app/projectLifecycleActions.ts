@@ -7,12 +7,14 @@
  * state and sinks, and every accepted write is followed by a re-read rather than a redraw from a
  * guess.
  *
- * One thing is different here, and it is the interesting one. **Delete's refusal is an answer, not a
- * failure to wire.** `deleteProject` refuses `policy-not-decided` because what deleting does with a
- * project's members is the creator's decision (D56), and this layer passes that reason through
- * unchanged rather than flattening it into "unavailable": a reader who clicks Delete is told the
- * question and the counts it would affect. That also means the UI and an agent get the same answer
- * for all five verbs, which is the property the stage's parity box asks for.
+ * One thing is different here, and it is the interesting one. **Delete carries its own confirmation
+ * into the operation.** The creator answered the open question (D60): deleting a project deletes the
+ * members the caller confirmed, so this layer's delete takes the task and event ids the surface
+ * captured and passes them through unchanged, and the operation verifies them against the store
+ * before it removes anything. A list that no longer matches is refused as `membership-mismatch`
+ * rather than acted on, which is the same answer the UI and an agent get for all five verbs — the
+ * property the stage's parity box asks for — and the reason the verb can no longer be called without
+ * saying what it means.
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { IdGenerator } from '../domain/clock.js';
@@ -36,7 +38,14 @@ export interface ProjectLifecycleOperations {
   }): Promise<ProjectMutationResult>;
   archiveProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
   restoreProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
-  deleteProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
+  deleteProject(input: {
+    projectId: OpaqueRecordId;
+    expectedRevision: string;
+    members: {
+      tasks: readonly OpaqueRecordId[];
+      events: readonly OpaqueRecordId[];
+    };
+  }): Promise<ProjectMutationResult>;
 }
 
 export interface ProjectLifecycleDependencies extends ProjectLifecycleOperationDependencies {
@@ -75,7 +84,9 @@ export type ProjectLifecycleOutcome =
       readonly ok: true;
       readonly schemaVersion: typeof PROJECT_LIFECYCLE_ACTION_SCHEMA_VERSION;
       readonly verb: ProjectLifecycleVerb;
-      readonly outcome: 'created' | 'updated' | 'archived' | 'restored';
+      readonly outcome: 'created' | 'updated' | 'archived' | 'restored' | 'deleted';
+  /** Every entity the run affected, so a cascade reports its members as well as the project. */
+  readonly affectedEntityIds: readonly OpaqueRecordId[];
       /** This run's semantic request id: minted at the boundary, returned on every result. */
       readonly requestId: string;
       readonly recordId: OpaqueRecordId;
@@ -106,7 +117,7 @@ function refused(
 /**
  * Run one lifecycle write and converge the surfaces, under the semantic envelope.
  *
- * One sequence for all five verbs - create, update, archive, restore and the refusing delete - so the id is
+ * One sequence for all five verbs - create, update, archive, restore and the confirmed delete - so the id is
  * minted here rather than five times, one terminal event follows after convergence, and the journal names the
  * verb as `project.<verb>`, which is the name each row of Stage 17's matrix already uses. A create has no id
  * yet, so its refusals name no target rather than guessing one.
@@ -181,9 +192,10 @@ export async function runLifecycle(
     recordId: written.recordId,
     revision: written.revision,
     refreshed: convergence.refreshed,
+    affectedEntityIds: written.affectedEntityIds,
   };
   deps.settle?.(accepted);
-  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId]);
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), written.affectedEntityIds);
   return accepted;
 }
 
@@ -268,18 +280,30 @@ export async function restoreProjectAction(
 }
 
 /**
- * Delete a project — and pass the answer through.
+ * Delete a project, with the members the caller confirmed — and pass the answer through.
  *
- * The refusal this returns is the operation's own reason (`policy-not-decided` while the creator has
- * not answered), not a wrapper: a caller that wants to say *why* nothing happened has the sentence
- * the operation wrote.
+ * The request carries the membership because the operation verifies it: a delete that named only a
+ * project id would be asking to remove records it never listed. A refusal here is the operation's own
+ * reason — `membership-mismatch` when the confirmed list is no longer the current one, or the store's
+ * own typed failure — rather than a wrapper, so a caller that wants to say *why* nothing happened has
+ * the sentence the operation wrote.
  */
 export async function deleteProjectAction(
   deps: ProjectLifecycleDependencies,
-  input: { readonly projectId: string },
+  input: {
+    readonly projectId: string;
+    readonly members: {
+      readonly tasks: readonly string[];
+      readonly events: readonly string[];
+    };
+  },
 ): Promise<ProjectLifecycleOutcome> {
   return await runLifecycleFromHub(deps, 'delete', input.projectId, async (operations, revision) => await operations.deleteProject({
     projectId: input.projectId as OpaqueRecordId,
     expectedRevision: revision,
+    members: {
+      tasks: input.members.tasks as readonly OpaqueRecordId[],
+      events: input.members.events as readonly OpaqueRecordId[],
+    },
   }));
 }

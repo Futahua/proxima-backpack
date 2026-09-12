@@ -197,12 +197,17 @@ describe('Gate 3A semantic action protocol', () => {
     const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture', clock: fixedClock('2026-09-06T12:00:00.000Z') });
     const beforeRevision = dispatcher.snapshot().stateRevision;
     for (const type of ['project.archive', 'project.restore', 'project.delete'] as const) {
-      const result = dispatcher.dispatch({ type, projectId: project.id });
+      const result = type === 'project.delete'
+        ? dispatcher.dispatch({ type, projectId: project.id, members: { tasks: [], events: [] } })
+        : dispatcher.dispatch({ type, projectId: project.id });
       expect(result).toMatchObject({ ok: false, actionType: type, category: 'record-mutation', outcome: 'unavailable', stateRevision: beforeRevision, entityIds: [project.id], error: { code: 'action-not-available' } });
       expect(isActionResult(result)).toBe(true);
     }
     for (const type of ['project.archive', 'project.restore', 'project.delete'] as const) {
-      expect(dispatcher.dispatch({ type, projectId: 'missing-project' })).toMatchObject({ ok: false, actionType: type, category: 'record-mutation', outcome: 'not-found', stateRevision: beforeRevision, entityIds: ['missing-project'], error: { code: 'project-not-found', field: 'projectId' } });
+      const missing = type === 'project.delete'
+        ? dispatcher.dispatch({ type, projectId: 'missing-project', members: { tasks: [], events: [] } })
+        : dispatcher.dispatch({ type, projectId: 'missing-project' });
+      expect(missing).toMatchObject({ ok: false, actionType: type, category: 'record-mutation', outcome: 'not-found', stateRevision: beforeRevision, entityIds: ['missing-project'], error: { code: 'project-not-found', field: 'projectId' } });
     }
     expect(await vaultByteHash(vault)).toBe(before);
   });
