@@ -1289,7 +1289,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     effect: "'updated'",
     shape: 'write',
     refusal: { marker: "'an update with no field to change is not an update'", reason: 'the field union is what refuses here, and an update with nothing to change is refused rather than written' },
-    observable: { gap: { file: 'tests/taskMutations.test.ts', marker: "kind: 'recurrence'", witness: 'recurrence: null', reason: 'no test reads a task recurrence write back: the record-layer suite seeds every task with recurrence null and never composes the mutation, so this row is unobserved as well as unreached' } },
+    observable: { file: 'tests/taskMutations.test.ts', marker: 'expect(stored?.observedRevision).toBe(written.revision);', note: 'the recurrence case composes the mutation through the field union - which no other case did, because the record-layer suite seeds every task with recurrence null - and then reads the task back out of the store: the stored rule, the observed revision the write reported and the clear that removes it are all asserted, so the record rather than the value the operation returned is what this row observes. The row stays operation-only; unobserved stopped being true of it at this commit' },
   },
 ]);
 
@@ -1554,7 +1554,7 @@ const SCHEMA_CONTRACT_ROWS: readonly ContractRow[] = contractRows(SCHEMA_CONTRAC
     effect: "'updated'",
     shape: 'write',
     refusal: { marker: 'a field edit may not change ${current.record.definition.type} into ${input.definition.type}', reason: 'a field edit that would change the kind of value is refused with a sentence naming both kinds, because that is a value migration rather than an edit' },
-    observable: { gap: { file: 'tests/propertySchemaMutations.test.ts', marker: 'store.read(formula.recordId)', witness: "expect(edited.record).toMatchObject({ name: 'Score', definition: { type: 'formula', expression: 'weight * 3' } });", reason: 'the field-edit case asserts the definition the operation returned and never reads the schema record back out of the store, so the authoritative post-action state of this verb is not observed by any test' } },
+    observable: { file: 'tests/propertySchemaMutations.test.ts', marker: 'expect(stored?.observedRevision).toBe(edited.revision);', note: 'the field-edit case reads the schema record back out of the store at the revision the write reported and asserts the stored definition, and asserts that the refused kind change left the record exactly where the edit did - so the authoritative post-action state of this verb is observed instead of inferred from the value the operation returned' },
     overrides: SCHEMA_ENVELOPE_OVERRIDES,
   },
 ]);

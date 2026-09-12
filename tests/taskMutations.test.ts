@@ -21,6 +21,7 @@ import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/
 import { fixedClock } from '../src/domain/clock.js';
 import { defineCanonicalRecordHeader, opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
 import { canonicalOrderPosition, orderCanonicalWorkflowStage } from '../src/domain/canonicalOrdering.js';
+import { defineCanonicalRecurrenceSeries, opaqueRecurrenceSeriesIdFromRandomBytes } from '../src/domain/canonicalRecurrence.js';
 import type { CanonicalEventRecordV2, CanonicalProjectRecordV2, CanonicalRecordV2, CanonicalTaskRecordV2 } from '../src/domain/canonicalRecordV2.js';
 import { defineCanonicalPropertySchema, type CanonicalPropertySchemaRecord } from '../src/domain/canonicalSchema.js';
 import type { CanonicalWorkflowStageStateRecord } from '../src/domain/canonicalTaskState.js';
@@ -63,6 +64,15 @@ const STAGE_B = idFromLastByte(4);
 const EFFORT = idFromLastByte(5);
 const PRIORITY = idFromLastByte(6);
 const EVENT = idFromLastByte(7);
+
+/** A recurrence series id, built the way the domain builds one rather than parsed from a literal. */
+function seriesFromLastByte(value: number) {
+  const bytes = new Uint8Array(16);
+  bytes[15] = value;
+  return opaqueRecurrenceSeriesIdFromRandomBytes(bytes);
+}
+
+const REPEATS = seriesFromLastByte(9);
 
 function projectRecord(id: OpaqueRecordId, name: string): CanonicalProjectRecordV2 {
   return {
@@ -285,6 +295,52 @@ describe('Stage 9 semantic task mutations', () => {
     expect(detailOf(refused)).toContain('no schema record defines the property');
     expect(await revisions(files)).toEqual(beforeRefusal);
     expect((await deps.store.read(seeded.recordId))?.observedRevision).toBe(cleared.revision);
+  });
+
+  it('writes a recurrence series through the field union, and the record is what says so', async () => {
+    const { deps } = await world();
+    const seeded = ok(await createTask(deps, { name: 'Repeats', projectId: PROJECT, executionState: 'backlog' }));
+    expect((await deps.store.read(seeded.recordId))?.record).toMatchObject({ recurrence: null });
+
+    const series = defineCanonicalRecurrenceSeries({
+      seriesId: REPEATS,
+      ownerKind: 'task',
+      ownerRecordId: seeded.recordId,
+      rule: { frequency: 'daily', interval: 1, end: { kind: 'count', count: 5 } },
+    });
+    const written = ok(await updateTask(deps, {
+      taskId: seeded.recordId,
+      expectedRevision: seeded.revision,
+      mutations: [{ kind: 'recurrence', value: series }],
+    }));
+    expect(written.outcome).toBe('updated');
+
+    // The record is the authority for this row, not the value the operation returned: the matrix's
+    // observable cell for task recurrence reads the task back out of the store, at the revision the write
+    // reported. The row stays operation-only - no surface composes the mutation - but "operation-only" is
+    // not the same claim as "unobserved", and this is the half that was missing.
+    const stored = await deps.store.read(seeded.recordId);
+    expect(stored?.observedRevision).toBe(written.revision);
+    expect(stored?.record).toMatchObject({
+      recurrence: {
+        seriesId: REPEATS,
+        ownerKind: 'task',
+        ownerRecordId: seeded.recordId,
+        rule: { frequency: 'daily', interval: 1, end: { kind: 'count', count: 5 } },
+      },
+    });
+
+    // Clearing goes through the same field, and the read-back is what says the series is gone rather than
+    // zeroed or left at the revision the set landed on.
+    const cleared = ok(await updateTask(deps, {
+      taskId: seeded.recordId,
+      expectedRevision: written.revision,
+      mutations: [{ kind: 'recurrence', value: null }],
+    }));
+    expect(cleared.outcome).toBe('updated');
+    const afterClear = await deps.store.read(seeded.recordId);
+    expect(afterClear?.observedRevision).toBe(cleared.revision);
+    expect(afterClear?.record).toMatchObject({ recurrence: null });
   });
 
   it('keeps completion and both orderings consistent when a task moves between states', async () => {

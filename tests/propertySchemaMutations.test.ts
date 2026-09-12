@@ -251,6 +251,11 @@ describe('Stage 17 property-schema writes', () => {
       definition: { type: 'formula', expression: 'weight * 3' },
     }));
     expect(edited.record).toMatchObject({ name: 'Score', definition: { type: 'formula', expression: 'weight * 3' } });
+    // The record is the authority for this row, not the value the operation returned: the matrix's observable
+    // cell for a field edit reads the schema back out of the store at the revision the write reported.
+    const stored = await worldValue.deps.store.read(formula.recordId);
+    expect(stored?.observedRevision).toBe(edited.revision);
+    expect(stored?.record).toMatchObject({ name: 'Score', definition: { type: 'formula', expression: 'weight * 3' } });
 
     const refused = refusalOf(await updateSchemaField(worldValue.deps, {
       schemaId: formula.recordId,
@@ -259,6 +264,8 @@ describe('Stage 17 property-schema writes', () => {
     }));
     expect(refused.reason).toBe('validation-refused');
     expect(refused.detail).toBe('a field edit may not change formula into rollup; that is a value migration');
+    // And the refusal wrote nothing: the record is still where the edit left it.
+    expect((await worldValue.deps.store.read(formula.recordId))?.observedRevision).toBe(edited.revision);
 
     // A rollup whose targets are named is ordinary through the schema verb, though.
     const relation = ok(await createPropertySchema(worldValue.deps, {
