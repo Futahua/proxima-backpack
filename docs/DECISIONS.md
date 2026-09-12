@@ -1370,6 +1370,12 @@ one project, and a per-view order has no view to belong to until saved views exi
 of D64 the creator has not been asked about; the slice should confirm it before the field is added, since
 changing the scope later means migrating rows rather than editing a rule.
 
+**Amended while unblocking the work** (the creator instructed the pass to proceed without further
+questions rather than wait): the scope is taken as **one global order**, which is the proposal above.
+It is reversible with no migration until the field ships — before the row order exists in any record,
+changing the scope is editing a rule; after it ships, the same change is a data migration, which is why
+this is written down as an assumption the working slice carries rather than a question left open.
+
 **Reverses if:** the creator prefers local state after seeing the drift, at which point the field is
 removed and rows are derived again; or the scope answer is per-project or per-view, which changes where
 the position lives and what a reorder means when the Gantt is filtered.
