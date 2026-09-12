@@ -483,15 +483,35 @@ describe('Stage 17 project, workflow and schema coverage', () => {
     }
   });
 
-  it('declares the schema rows operation-only, and asserts that no surface reaches them', () => {
+  it('names a module, a caller and a test for every schema action, and proves the surface reaches the verbs', () => {
+    // These three rows were declared **operation-only** for the whole life of the matrix, and the assertion then
+    // was the *absence* of a caller - which is what kept a gap from quietly becoming a claim. The gap is closed:
+    // `src/browser/propertySchemaPanel.ts` draws the controls and `main.ts` binds them, so the assertion flips.
+    //
+    // It flips to two halves rather than to one, because "a caller exists" and "the caller reaches a record
+    // write" are different claims: the shell must name the schema entry, and the surface must be exercised by a
+    // click. `tests/propertySchemaPanel.test.ts` drives the controls through the harness and asserts the forms
+    // they produce; `tests/propertySchemaEditor.test.ts` runs those forms through the real entry against a real
+    // store. Reading `main.ts` as text would prove a string is present and nothing more, which is exactly the
+    // reasoning D70 recorded for the template row.
+    const shell = MAIN;
     for (const row of SCHEMA_ROWS) {
       expect(source(row.module), `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
       expect(source(row.testFile), `${row.action}: ${row.testFile} must exercise it`).toContain(row.testMarker);
-      // The operation exists and the shell does not reach it. That is the gap this row records, and
-      // the assertion is what keeps it from being claimed as wired.
-      expect(MAIN, `${row.action}: a caller appeared, so the row is no longer operation-only`).not.toContain(row.testMarker);
-      expect(PARITY, `${row.action}: equivalence cannot be claimed without a UI caller`).not.toContain(row.testMarker);
     }
+    // The shell reaches the entry, and it reaches it for all five verbs rather than for a subset.
+    expect(shell).toContain('submitPropertySchemaAction(');
+    expect(shell).toContain('bindPropertySchemaPanelInteractions(');
+    for (const builder of ['schemaCreateSubmission', 'schemaRenameSubmission', 'schemaAddOptionSubmission', 'schemaDeleteSubmission']) {
+      expect(shell, `the shell must build the ${builder} it submits`).toContain(builder);
+    }
+    // The render lives in the Backlog - which is where a project's properties belong - and the shell is what
+    // hands it the projection, so both halves of "this surface is drawn" are asserted rather than one of them
+    // standing in for the other.
+    expect(shell, 'the shell must hand the Backlog the projection the panel draws')
+      .toContain('schemaProjection: propertySchemaProjection');
+    expect(source('src/browser/projectBacklog.ts'), 'the Backlog must draw the panel')
+      .toContain('renderPropertySchemaPanel(view.schemaProjection,view.schemaPanel)');
   });
 
   it('carries the record layer contract the schema rows lean on', () => {

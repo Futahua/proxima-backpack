@@ -56,6 +56,21 @@ import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WR
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectWorkflowBoardInteractions, EMPTY_PROJECT_WORKFLOW_BOARD_VIEW, NO_WORKFLOW_STAGE, type ProjectWorkflowBoardViewState } from './projectWorkflowBoard.js';
 import { bindProjectBacklogInteractions, EMPTY_PROJECT_BACKLOG_VIEW, PROJECT_BACKLOG_WRITE_REFUSAL, type ProjectBacklogViewState } from './projectBacklog.js';
+import {
+  propertySchemaEditor,
+  schemaAddOptionSubmission,
+  schemaCreateOptionSubmissions,
+  schemaCreateSubmission,
+  schemaDeleteSubmission,
+  schemaRenameSubmission,
+  type PropertySchemaCreateForm,
+} from '../app/propertySchemaEditor.js';
+import { submitPropertySchemaAction } from '../app/propertySchemaActions.js';
+import {
+  bindPropertySchemaPanelInteractions,
+  EMPTY_PROPERTY_SCHEMA_PANEL_VIEW,
+  type PropertySchemaPanelView,
+} from './propertySchemaPanel.js';
 import { applyBacklogControl, buildBacklogFilter, buildBacklogPropertyFilter, clearBacklogSelection, resizeBacklogColumn, selectAllBacklogVisible, toggleBacklogSelection } from '../app/backlogControls.js';
 import { propertyValueTypeFor } from '../app/backlogView.js';
 import { applyTaskEditorEdit, taskEditorDraftFor, type TaskEditorDraft } from '../app/taskEditor.js';
@@ -144,6 +159,16 @@ let projectLifecycleFeedback: string | null = null;
 /** The refusal code that sentence belongs to, null when the last attempt was accepted. */
 let projectLifecycleRefusalCode: string | null = null;
 let projectBacklogView: ProjectBacklogViewState = EMPTY_PROJECT_BACKLOG_VIEW;
+/**
+ * The property-schema editor's view state, and the projection it draws.
+ *
+ * Separate from the Backlog's own state because the schema is not a fact about one project: the records are
+ * global, and a reader who opens the panel while looking at one project should not lose it by switching. The
+ * projection is loaded rather than derived, because it reads the canonical records for the revision and the
+ * definition that `appState.taskSchema` does not carry.
+ */
+let propertySchemaPanelView: PropertySchemaPanelView = EMPTY_PROPERTY_SCHEMA_PANEL_VIEW;
+let propertySchemaProjection = propertySchemaEditor([]);
 let projectDeadlinesView: ProjectDeadlinesViewState = EMPTY_PROJECT_DEADLINES_VIEW;
 let projectScheduleView: ProjectScheduleViewState = EMPTY_PROJECT_SCHEDULE_VIEW;
 let projectNotesView: ProjectNotesViewState = EMPTY_PROJECT_NOTES_VIEW;
@@ -455,7 +480,7 @@ function projectsHubSurface(state: ProximaState): string {
       // The same resolution the drop path uses: a stage control is a record write, so it is real
       // exactly when this run can write, and otherwise carries the reason that it is not.
       stageWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null,
-    }, projectBacklog: { ...projectBacklogView, bulkWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null }, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView, projectWrites: lifecycleWrites, ...projectForms });
+    }, projectBacklog: { ...projectBacklogView, schemaPanel: propertySchemaPanelView, schemaProjection: propertySchemaProjection, schemaWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null, bulkWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null }, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView, projectWrites: lifecycleWrites, ...projectForms });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -721,6 +746,119 @@ async function resolveTaskWritePath(): Promise<BrowserRecordMutations | null> {
   // to the answer it would have given before.
   if (resolved === null) taskMutationResolution = null;
   return resolved;
+}
+
+/**
+ * Re-read the canonical schema records and project them for the panel.
+ *
+ * Called after every schema write and once at startup, for the same reason every other write in this tree is
+ * followed by a re-read: the panel should draw what the store holds rather than what this session believes it
+ * asked for. A run that cannot resolve a write path leaves the projection as it was, because there is nothing
+ * to have changed.
+ */
+async function reloadPropertySchemaProjection(): Promise<void> {
+  const writes = await resolveTaskWritePath();
+  if (writes === null) return;
+  propertySchemaProjection = propertySchemaEditor(await writes.readPropertySchemaRecords());
+}
+
+/**
+ * Run one schema submission and draw what came back.
+ *
+ * The submission goes to `submitPropertySchemaAction`, which is the same entry the agent wire uses - so a
+ * refusal a person sees here is the refusal an agent gets for the same submission, because there is one parser
+ * and one set of sentences. Nothing in this function decides anything about the schema: it hands over a
+ * submission and prints the answer.
+ */
+async function submitSchemaSubmission(submission: unknown): Promise<boolean> {
+  const writes = await resolveTaskWritePath();
+  if (writes === null) {
+    propertySchemaPanelView = { ...propertySchemaPanelView, refusal: taskMutationUnavailable ?? 'record-writes-need-an-activated-store', feedback: null };
+    render();
+    return false;
+  }
+
+  const outcome = await submitPropertySchemaAction(
+    {
+      writes: async () => writes,
+      unavailableReason: () => taskMutationUnavailable,
+      ids: DETERMINISTIC_IDS,
+      // The dispatcher's sink is the shell's one journal, so a schema write leaves its event in the same ring as
+      // every other action rather than in a private one this file would have to keep in step.
+      audit: { append: (event: SemanticAuditEvent) => { actionDispatcher?.auditSemantic(event); } },
+    },
+    submission,
+  );
+
+  if (!outcome.ok) {
+    propertySchemaPanelView = { ...propertySchemaPanelView, refusal: outcome.detail, feedback: null };
+    render();
+    return false;
+  }
+
+  await reloadPropertySchemaProjection();
+  propertySchemaPanelView = { ...propertySchemaPanelView, refusal: null, feedback: `saved ${outcome.actionType}` };
+  render();
+  return true;
+}
+
+/**
+ * The create form's Save: the schema, then one option verb per label.
+ *
+ * Sequenced rather than batched, because a canonical option carries an id the record layer allocates and the
+ * option verb is what allocates it - so the labels cannot travel with the create, and each write creates the
+ * revision the next one must name. A run that stops after the create therefore leaves a select with no options
+ * rather than a broken schema, which is the honest half-way state.
+ */
+async function createSchemaFromPanel(): Promise<void> {
+  const form: PropertySchemaCreateForm = {
+    name: propertySchemaPanelView.createName,
+    type: propertySchemaPanelView.createType,
+    options: propertySchemaPanelView.createOptions,
+  };
+  const submission = schemaCreateSubmission(form);
+  if (submission === null) {
+    propertySchemaPanelView = { ...propertySchemaPanelView, refusal: `${form.type} is not a type this form can create`, feedback: null };
+    render();
+    return;
+  }
+
+  const writes = await resolveTaskWritePath();
+  if (writes === null) {
+    propertySchemaPanelView = { ...propertySchemaPanelView, refusal: taskMutationUnavailable ?? 'record-writes-need-an-activated-store', feedback: null };
+    render();
+    return;
+  }
+
+  const created = await submitPropertySchemaAction(
+    { writes: async () => writes, unavailableReason: () => taskMutationUnavailable, ids: DETERMINISTIC_IDS, audit: { append: (event: SemanticAuditEvent) => { actionDispatcher?.auditSemantic(event); } } },
+    submission,
+  );
+  if (!created.ok) {
+    propertySchemaPanelView = { ...propertySchemaPanelView, refusal: created.detail, feedback: null };
+    render();
+    return;
+  }
+
+  // Each label at the revision the previous write returned, read out of the outcome rather than assumed.
+  let revision = created.revision;
+  for (const optionSubmission of schemaCreateOptionSubmissions(form, created.recordId, created.revision)) {
+    const added = await submitPropertySchemaAction(
+      { writes: async () => writes, unavailableReason: () => taskMutationUnavailable, ids: DETERMINISTIC_IDS, audit: { append: (event: SemanticAuditEvent) => { actionDispatcher?.auditSemantic(event); } } },
+      { ...(optionSubmission as Record<string, unknown>), expectedRevision: revision },
+    );
+    if (!added.ok) {
+      propertySchemaPanelView = { ...propertySchemaPanelView, refusal: added.detail, feedback: null };
+      await reloadPropertySchemaProjection();
+      render();
+      return;
+    }
+    revision = added.revision;
+  }
+
+  await reloadPropertySchemaProjection();
+  propertySchemaPanelView = { ...propertySchemaPanelView, refusal: null, feedback: `created ${form.name}`, createName: '', createOptions: '' };
+  render();
 }
 
 /**
@@ -1496,6 +1634,42 @@ function bindInteractions(): void {
     closeStageForm: () => { projectWorkflowStageForm = null; projectWorkflowStageRefusal = null; render(); },
   });
   const restoreBacklogSearchFocus = (caret: number) => { const field = root.querySelector<HTMLInputElement>('[data-project-backlog-search-input]'); if (!field) return; field.focus(); field.setSelectionRange(caret, caret); };
+  // The schema panel's own binding, beside the Backlog's because that is the surface it is drawn in. It is
+  // bound from the shell rather than from the Backlog's handler table so that the panel's four verbs stay in
+  // one place a reader can find: a write to a schema is not a Backlog gesture, it only happens to be drawn
+  // there.
+  bindPropertySchemaPanelInteractions(
+    root,
+    propertySchemaProjection,
+    () => propertySchemaPanelView,
+    {
+      toggle: () => { propertySchemaPanelView = { ...propertySchemaPanelView, open: !propertySchemaPanelView.open, refusal: null, feedback: null }; render(); },
+      setCreateName: (value) => { propertySchemaPanelView = { ...propertySchemaPanelView, createName: value }; },
+      setCreateType: (value) => { propertySchemaPanelView = { ...propertySchemaPanelView, createType: value }; },
+      setCreateOptions: (value) => { propertySchemaPanelView = { ...propertySchemaPanelView, createOptions: value }; },
+      setRowName: (schemaId, value) => { propertySchemaPanelView = { ...propertySchemaPanelView, rowNames: { ...propertySchemaPanelView.rowNames, [schemaId]: value } }; },
+      setRowOptionLabel: (schemaId, value) => { propertySchemaPanelView = { ...propertySchemaPanelView, rowOptionLabels: { ...propertySchemaPanelView.rowOptionLabels, [schemaId]: value } }; },
+      create: () => { void createSchemaFromPanel(); },
+      rename: ({ schemaId, name }) => {
+        // The revision comes from the projection the panel was drawn from, never from the form: a revision a
+        // caller typed is not a revision it read, which is the whole rule the field exists for.
+        const row = propertySchemaProjection.rows.find((candidate) => candidate.schemaId === schemaId);
+        if (row === undefined) return;
+        void submitSchemaSubmission(schemaRenameSubmission({ schemaId, revision: row.revision, name }));
+      },
+      addOption: ({ schemaId, label }) => {
+        const row = propertySchemaProjection.rows.find((candidate) => candidate.schemaId === schemaId);
+        if (row === undefined) return;
+        void submitSchemaSubmission(schemaAddOptionSubmission({ schemaId, revision: row.revision, label }));
+      },
+      remove: (schemaId) => {
+        const row = propertySchemaProjection.rows.find((candidate) => candidate.schemaId === schemaId);
+        if (row === undefined) return;
+        void submitSchemaSubmission(schemaDeleteSubmission(schemaId, row.revision));
+      },
+    },
+  );
+
   bindProjectBacklogInteractions(root, {
     // A row click opens that task in the Backlog's Task editor, which starts with no draft:
     // the record is what the form shows until something is typed.
@@ -1854,7 +2028,7 @@ async function boot(): Promise<void> {
   render();
   // Resolved once so the Task editor knows whether Save and Delete are real controls before a
   // reader opens it: the answer is a property of this run, not of the gesture that needs it.
-  void resolveTaskWritePath().then(() => { render(); }).catch(() => undefined);
+  void resolveTaskWritePath().then(async () => { await reloadPropertySchemaProjection(); render(); }).catch(() => undefined);
   void restoreAndProbeDirectory().then((report) => { if (report) renderFsaProbe(report); }).catch(() => undefined);
 }
 

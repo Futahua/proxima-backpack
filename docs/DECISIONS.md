@@ -1725,3 +1725,41 @@ need a rendered cockpit (`task.create`, the `project.*`, `event.*`, `workflow.st
 same authority a cockpit read has — then the operation could take that model as a dependency instead of
 parameters. It would not change what is written or what is refused, only where the facts come from.
 
+## D76 — The schema panel offers only the forms it can build, and hands its handlers no revision
+
+**Decided** on 2026-09-12, working the parity agenda's schema rows. Those three rows were operation-only for
+the whole life of the matrix, and they all said the same thing: the record layer writes a schema, the agent wire
+reaches those writes (D74), and **no surface had ever offered them**. The audit asserted that absence, so it
+could not quietly become a claim — and the shared-implementation box stayed open for the honest reason that a
+UI/agent equivalence is asserted *between two callers*, and there was only one.
+
+**What it is:** `src/browser/propertySchemaPanel.ts` draws the rows from the editor projection and binds the
+controls that produce the three forms; `src/browser/main.ts` binds it inside the Backlog and submits through
+`submitPropertySchemaAction` — the same entry the agent wire calls. So the refusal a person reads beside the
+control and the refusal an agent gets are the same sentence from the same parser, which is what makes the two
+paths one implementation rather than two that happen to agree today.
+
+**Two limits are drawn rather than hidden, because both would otherwise look like oversights:**
+
+1. **The create form offers only the types a form can build** (`PROPERTY_SCHEMA_CREATABLE_TYPES`). A relation, a
+   rollup and a formula each need a chooser this panel does not have, so offering them would promise a definition
+   it cannot build. The list comes from the projection rather than from the panel, and a stale `<select>` value
+   the projection does not offer is **ignored rather than submitted**.
+2. **A select's options are added after its create, one label at a time.** A canonical option carries an id the
+   record layer allocates, so a panel that minted ids would be deciding identity — which belongs to the record
+   layer for the same reason record identity does. The create form takes comma-separated labels and the shell runs
+   the create and then one `option.change` verb per label, in order, because each write creates the next revision.
+
+**The rule the controls follow:** a row draws the revision it was read at as a data attribute, and the handler is
+handed the id and the typed value and **never a revision** — the shell takes it from the projection it drew. A
+revision a caller typed is not a revision it read, and a surface with text fields is exactly where that mistake
+becomes available.
+
+**Consequence:** the audit's three absence assertions for the schema rows flip to presence assertions, with the
+reason recorded in place, and the rows stop being operation-only. The panel itself decides nothing: every rule —
+whether a name is acceptable, whether a definition is real, whether a re-type would orphan stored values — stays
+the record layer's and arrives as a printed refusal.
+
+**Reverses if:** a chooser for relation, rollup or formula lands, in which case the create form's list grows by
+one entry in the projection rather than by hand in the panel; or the record layer starts allocating option ids at
+the proposal boundary, in which case a create could carry its labels and the second limit would go away.

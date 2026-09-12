@@ -63,6 +63,19 @@ import {
   type WorkflowStageMutationDependencies,
   type WorkflowStageRemapTarget,
 } from '../app/workflowStageMutations.js';
+import {
+  createPropertySchema,
+  deletePropertySchema,
+  updatePropertySchema,
+  updateSchemaField,
+  updateSchemaOption,
+  type CreatePropertySchemaRequest,
+  type PropertySchemaMutationDependencies,
+  type PropertySchemaMutationResult,
+  type SchemaOptionMutation,
+} from '../app/propertySchemaMutations.js';
+import type { CanonicalPropertyDefinition, CanonicalPropertySchemaRecord } from '../domain/canonicalSchema.js';
+import { opaqueSchemaOptionIdFromRandomBytes, type OpaqueSchemaOptionId } from '../domain/canonicalSchema.js';
 import type { Clock } from '../domain/clock.js';
 import { systemClock } from '../domain/clock.js';
 import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../domain/canonicalIdentity.js';
@@ -106,8 +119,46 @@ export interface BrowserWorkflowStageMutations {
   deleteWorkflowStage(input: { stageId: OpaqueRecordId; expectedRevision: string; remapTo?: WorkflowStageRemapTarget }): Promise<WorkflowStageMutationResult>;
 }
 
+/**
+ * The property-schema verbs, structurally.
+ *
+ * A schema is a record of its own kind with its own operations, so it is its own port rather than a member of
+ * the task one - and it is the port that gives the schema editor its UI caller, which the parity agenda's three
+ * schema rows have been waiting for.
+ */
+export interface BrowserPropertySchemaMutations {
+  createPropertySchema(request: CreatePropertySchemaRequest): Promise<PropertySchemaMutationResult>;
+  updatePropertySchema(input: {
+    readonly schemaId: OpaqueRecordId;
+    readonly expectedRevision: string;
+    readonly name?: string;
+    readonly definition?: CanonicalPropertyDefinition;
+  }): Promise<PropertySchemaMutationResult>;
+  updateSchemaField(input: {
+    readonly schemaId: OpaqueRecordId;
+    readonly expectedRevision: string;
+    readonly definition: CanonicalPropertyDefinition;
+  }): Promise<PropertySchemaMutationResult>;
+  updateSchemaOption(input: {
+    readonly schemaId: OpaqueRecordId;
+    readonly expectedRevision: string;
+    readonly option: SchemaOptionMutation;
+  }): Promise<PropertySchemaMutationResult>;
+  deletePropertySchema(input: { schemaId: OpaqueRecordId; expectedRevision: string }): Promise<PropertySchemaMutationResult>;
+  /**
+   * Every canonical schema record, each with the revision the store observed.
+   *
+   * A read beside the writes, and it is here rather than in the surface for the reason this boundary exists: a
+   * record store is this layer's business. The schema editor needs the revision and the canonical definition,
+   * and `ProximaState.taskSchema` carries neither - it is the legacy shape, whose options have a `name` and a
+   * `color` and whose records have no observed revision. A surface that read the store itself would be reaching
+   * past the composition this file exists to be.
+   */
+  readPropertySchemaRecords(): Promise<readonly { readonly record: CanonicalPropertySchemaRecord; readonly revision: string }[]>;
+}
+
 /** Everything one activated store hands a surface, resolved once. */
-export type BrowserRecordMutations = BrowserTaskMutations & BrowserProjectMutations & BrowserEventMutations & BrowserWorkflowStageMutations;
+export type BrowserRecordMutations = BrowserTaskMutations & BrowserProjectMutations & BrowserEventMutations & BrowserWorkflowStageMutations & BrowserPropertySchemaMutations;
 
 export type BrowserTaskMutationResolution =
   | { readonly ok: true; readonly mutations: BrowserRecordMutations }
@@ -116,6 +167,12 @@ export type BrowserTaskMutationResolution =
       readonly reason: 'not-activated' | 'recovery-blocked' | 'store-unreadable';
       readonly detail: string;
     };
+
+/** The other identity this adapter mints: a select option's, which the schema verbs allocate one at a time. */
+function freshSchemaOptionId(): OpaqueSchemaOptionId {
+  const bytes = new Uint8Array(16);
+  return opaqueSchemaOptionIdFromRandomBytes(bytes);
+}
 
 function freshRecordId(): OpaqueRecordId {
   const bytes = new Uint8Array(16);
@@ -196,6 +253,15 @@ export async function resolveBrowserTaskMutations(
     allocateRecordId: freshRecordId,
     taskDependencies: deps,
   };
+  // A schema needs a second allocator besides its records: a select option carries its own opaque id, and the
+  // record layer is the one that mints it - so this is the only other place in the tree that allocates identity,
+  // and it allocates the kind the schema verbs expect.
+  const schemaDeps: PropertySchemaMutationDependencies = {
+    store,
+    coordinator: authority.coordinator,
+    allocateRecordId: freshRecordId,
+    allocateOptionId: freshSchemaOptionId,
+  };
 
   return {
     ok: true,
@@ -216,6 +282,23 @@ export async function resolveBrowserTaskMutations(
       createWorkflowStage: (request) => createWorkflowStage(stageDeps, request),
       renameWorkflowStage: (input) => renameWorkflowStage(stageDeps, input),
       deleteWorkflowStage: (input) => deleteWorkflowStage(stageDeps, input),
+      createPropertySchema: (request) => createPropertySchema(schemaDeps, request),
+      updatePropertySchema: (input) => updatePropertySchema(schemaDeps, input),
+      updateSchemaField: (input) => updateSchemaField(schemaDeps, input),
+      updateSchemaOption: (input) => updateSchemaOption(schemaDeps, input),
+      deletePropertySchema: (input) => deletePropertySchema(schemaDeps, input),
+      readPropertySchemaRecords: async () => {
+        // The same list the store would give, filtered to the schema kind and paired with each record's
+        // observed revision - because a revision the reader did not observe is one a write must not name.
+        const listed = await store.list();
+        const records: { record: CanonicalPropertySchemaRecord; revision: string }[] = [];
+        for (const entry of listed) {
+          const observation = await store.read(entry.id);
+          if (observation === null || observation === undefined || observation.record.kind !== 'schema') continue;
+          records.push({ record: observation.record as CanonicalPropertySchemaRecord, revision: observation.observedRevision });
+        }
+        return records;
+      },
     },
   };
 }
