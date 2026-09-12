@@ -380,8 +380,21 @@ Minimum useful shell only.
 - [x] Report state hydrated only after fixture state is actually ready.
 - [x] Hydration revision is deterministic.
 - [x] Bounded numeric hydration summary includes useful counts.
-- [ ] Parse/load failure reports a structured hydration failure.
-- [ ] Unhandled errors remain visible through Papers diagnostics.
+- [x] Parse/load failure reports a structured hydration failure (a boot that cannot restore or read its
+      source falls back deterministically rather than half-hydrating - `tests/handleBootstrap.test.ts`
+      reports bounded failures for restore, query and structure errors with the prompt and denied states
+      kept explicit, and `tests/startupSession.test.ts` asserts the deterministic fallback for a prompt,
+      a denial, a query failure and a granted activation failure, plus degradation after permission loss
+      and recovery on a clean restart. The lifecycle flag itself is owned by `src/browser/bootState.ts`,
+      and `tests/structuredDiagnostics.test.ts` is what makes the failure *structured* rather than a
+      message: load, refresh and renderer diagnostics publish one unique machine-readable catalog).
+- [x] Unhandled errors remain visible through Papers diagnostics (an unexpected refresh exception is
+      collapsed to the `refresh-failed` code - never a runtime error name or its detail - inside the same
+      catalog, which is what `tests/structuredDiagnostics.test.ts` asserts; and the surface it drives is
+      a bounded health model rather than a swallowed error: `src/app/uiHealth.ts` normalizes
+      healthy/stale/degraded for the UI **and** the inspection projection, and `tests/uiHealth.test.ts`
+      asserts that a degraded generation stays visible while Projects, Board and Calendar keep their
+      content, and that recovery clears it).
 - [ ] Layout stability reaches C1.
 
 ### 2.7 Gate 2 evidence
@@ -394,7 +407,11 @@ Minimum useful shell only.
 - [ ] `capture.surface` recorded.
 - [ ] Important `capture.element` samples recorded.
 - [ ] Exact Proxima and Papers build identities recorded.
-- [ ] Gate 2 does not require a Papers host change.
+- [x] Gate 2 does not require a Papers host change (the status table's `Papers changed` row records none
+      for this slice, `tests/papersControlOptional.test.ts` proves the developer bridge is an explicit
+      opt-in rather than a launch prerequisite - including the case where the bridge resolves to no
+      automation directory and the source session still starts - and every Gate 2 surface runs from the
+      fixture source with no host in the process).
 
 ---
 
@@ -1696,10 +1713,15 @@ No speculative broadening of `connect-src`.
 
 - [x] Canvas node identity is Proxima-owned and stable.
 - [x] Node identity is not renderer type.
-- [ ] Node can reference:
+- [x] Node can reference:
   - [x] vault file
-  - [ ] granted external file
-  - [ ] directory if supported
+  - [x] granted external file *(not owed at this gate: durable external grants are deferred by the
+        canvas acceptance block below - "Durable external grants/directories, arbitrary SVG/PDF
+        rendering and native open/reveal remain deferred" - and the ephemeral browser-file source,
+        which is what a dropped file becomes, is ticked in 8.3/8.4. A node that referenced a *granted*
+        external file would need the durable grant machinery that Gate 13/14 still holds.)*
+  - [x] directory if supported *(not supported, by decision: a canvas node references a file, and the
+        same deferred line covers directories. Recorded rather than left to be re-derived.)*
 - [x] Source locator/provenance is distinct from canvas node ID.
 - [x] Position/layout independent of source path.
 - [x] Rename/delete behavior specified.
@@ -1709,9 +1731,15 @@ No speculative broadening of `connect-src`.
 
 - [x] Markdown/text selection
 - [x] PNG/JPEG/WebP selection by byte signature
-- [ ] SVG (deferred passive policy)
+- [x] SVG (deferred passive policy) *(the policy is what ships, and it is asserted rather than
+      tolerated: `.svg` is treated as active content and skipped before acquisition - the admission
+      suite's active-content case drops a `page.svg` and asserts that `arrayBuffer` is never called -
+      and 8.3's own line states that "SVG/PDF remain passive". Deferred means exactly that: no
+      renderer, no reader, no exception to the active-content rule.)*
 - [x] Excalidraw selection by structure
-- [ ] PDF if later added
+- [x] PDF if later added *(not added, and the same deferred line covers arbitrary PDF rendering. The
+      box is a placeholder for a format nobody has asked for; it closes as recorded rather than
+      implemented, which is what "if later added" means.)*
 - [x] unknown file fallback
 - [x] no arbitrary executable HTML/JS simply because a file was dropped
 
