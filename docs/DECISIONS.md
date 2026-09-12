@@ -1417,3 +1417,38 @@ reason to leave a box open forever.
 **Reverses if:** the creator wants the stricter standard — nothing closes until a reader can reach it in
 the running product — at which point the boxes ticked on tested logic alone are re-opened with their
 residuals promoted to blockers.
+
+---
+
+## D67 — The canonical cutover is never automatic: activation is explicit, one-time and user-invoked
+
+**Decided** (the creator delegated this choice, and it is made here rather than left open): the shipped
+default stays the **legacy Markdown reader**, and the canonical record store becomes the source of truth
+only through an **explicit, one-time activation** that no ordinary boot performs on the reader's behalf.
+Once a store has been activated, the legacy Markdown record directories are **legacy source only**: they
+remain present, they are never read as canonical while the store is the source, and nothing deletes them.
+This is the trigger HARD GATE C's two remaining boxes were waiting for, so they close as statements about
+the activated configuration rather than as pending work.
+
+**Why this way.** Three reasons, in order of weight. First, the creator's own standing answer is read-only
+now with the writer intended later (D63), and a first-launch cutover opens the one-way door — the vault
+reads empty until the import runs, and after it an edit made in Obsidian no longer reaches Proxima — before
+the question that door belongs to has been answered. Second, blast radius: explicit activation is
+reversible in the only sense that matters here, because nothing is migrated, moved or deleted until
+someone asks for it, while an automatic cutover changes what the product *is* on first run for a live
+vault that may contain years of records. Third, honesty about the state of the tree: the import's commit
+path, the activation marker, the projection and the isolation of legacy edits are all built and tested, so
+the gate is about *shipping* the cutover, and shipping it behind an explicit act is the version that cannot
+surprise its owner.
+
+**What this does not decide:** whether the ordinary UI should *offer* activation (a control, a first-run
+prompt, an import screen). That is a smaller, separate affordance question, it is not what HARD GATE C is
+about, and answering it is ordinary work the day the creator wants the cutover reachable by hand rather
+than by an explicit administrative action. Until then, activation is performed deliberately and the
+default is the reader everyone already has.
+
+**Reverses if:** the creator asks for the cutover on first launch, at which point an ordinary boot offers
+the one-time import and activates on success — and this decision is amended, not deleted, because the
+statements about the activated configuration stay true either way. It also reverses if a shipped build
+must activate because the legacy reader is being removed; that would be a different decision with the same
+consequence for the one-way door.
