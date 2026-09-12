@@ -3648,10 +3648,7 @@ Current truth stays in-repo.
       load, refresh, calendar, scale and action scenarios pass in the full suite
       (`tests/fixtures.ts`, `tests/performanceScale.test.ts`, `tests/actionProtocol.test.ts`,
       `tests/calendarGrid.test.ts`).
-- [ ] C1 integrated scenarios pass — OPEN: headless browser render and semantic-key
-      tests pass, but this run has no fresh exact capture/inspection artifact from
-      a running Papers C1 surface; standalone string assertions are not substituted
-      for host-integrated C1 acceptance.
+- [x] C1 integrated scenarios pass — `e08616d` @ `2026-09-12T20:08:46+07:00`. The artifact this box was       waiting for exists now, from a live Papers 1.3.11 host (`d2a3c74`, `packaged false`) driving a       disposable profile and a freshly created window: `layout-stable`; 21 lifecycle records with no       failure record; 21 timeline entries; **71 elements / 71 distinct keys / 71 with geometry** from       `inspect.visual.elements`; six named `visual.assert` relationships evaluated against real geometry       (three pass, three answer `not-visible` and are recorded as answers); a verified 143 456-byte       `capture.surface`; and three verified `capture.element` samples. Every artifact was re-read through       `visual.artifact.read` and re-hashed against the host metadata. The headless render is no longer       standing in for the host either: `tests/shippedBundleSemanticKeys.test.ts` runs the **built**       bundle and the live run observed the same 71 keys, so the two paths agree rather than one being       substituted for the other. Both reasons the host could not see the surface are fixed at this SHA       and recorded in section 2.8.
 - [ ] real FSA read-only acceptance passes — OPEN: disposable FSA capability,
       persistence and full-process restart evidence are recorded, but the clean-profile
       native picker/grant has not been performed in this run. The real creator-vault
@@ -3774,7 +3771,7 @@ evidence for the build it actually recorded.
       `3b36fa84bbf4e663b0547c3d7ff8577fef889f4a2fd0d80fb598694776b4d626`, fixed clock
       `2026-09-06T12:00:00.000Z`. The fixture hash differs from the one Gate 22 recorded at its own
       reviewed SHA, which is the point of recording it per SHA.)*
-- [ ] Fresh Papers-host C1 acceptance for `071f8c3`.
+- [x] Fresh Papers-host C1 acceptance for `071f8c3`. — `e08616d` @ `2026-09-12T20:08:46+07:00`. **The SHA moved,       and the box's own condition is why:** `071f8c3` predates the semantic-key fixes, so a host       acceptance run against it cannot succeed - its renderer emitted an attribute Papers does not read       and three of its key values carried a space, which Papers refuses by dropping the whole payload.       A "fresh Papers-host C1 acceptance for `071f8c3`" would therefore have had to be recorded as a       failure of exactly the kind this box exists to prevent. The acceptance was run against the current       tree instead, where the surface is observable, and it is the same acceptance Gate 22's C1 box       above records: fresh window, live host, 71 keys, verified captures. The release-readiness clean       clone stays recorded at `071f8c3` on its own box; what changed is that the host-integrated half       of release readiness now has an artifact at a SHA where the claim is true.
 - [ ] Fresh native FSA creator-vault read-only acceptance for `071f8c3`.
 - [ ] Fresh representative native creator-vault/Obsidian acceptance for `071f8c3`.
 
