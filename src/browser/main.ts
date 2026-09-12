@@ -67,6 +67,7 @@ import { archiveProjectAction, createProjectAction, deleteProjectAction, restore
 import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
 import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, type EventWriteOutcome } from '../app/eventWriteActions.js';
 import { changeTaskDatesAction } from '../app/timelineChangeAction.js';
+import { acceptanceToolsAfterToggle, EMPTY_ACCEPTANCE_TOOLS_VIEW, renderAcceptanceTools, type AcceptanceToolsViewState } from './acceptanceTools.js';
 import { createWorkflowStageAction, deleteWorkflowStageAction, renameWorkflowStageAction, type WorkflowStageWriteOutcome } from '../app/workflowStageWriteActions.js';
 import { skipOccurrenceFromScope, updateOccurrenceFromScope } from './scheduleScopeWiring.js';
 import { eventEditorDraftFor, type EventEditorDraft } from '../app/eventEditor.js';
@@ -125,6 +126,8 @@ let projectWorkflowRefusal: string | null = null;
 let projectWorkflowStageForm: ProjectWorkflowBoardViewState['stageForm'] = null;
 let projectWorkflowStageRefusal: string | null = null;
 let projectWorkflowStageFeedback: string | null = null;
+/** The acceptance-probe disclosure: closed on an ordinary boot, so the product leads. */
+let acceptanceToolsView: AcceptanceToolsViewState = EMPTY_ACCEPTANCE_TOOLS_VIEW;
 /** The lifecycle line the Projects Hub draws: an outcome's own words, or the refusal's. */
 let projectLifecycleFeedback: string | null = null;
 /** The refusal code that sentence belongs to, null when the last attempt was accepted. */
@@ -590,7 +593,7 @@ function render(): void {
   });
   if (surfaceMarkup.failure) root.dataset.proximaRendererFailure = surfaceMarkup.failure.code;
   else delete root.dataset.proximaRendererFailure;
-  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span data-c1-key="workspace-identity" data-workspace-writes="${workspaceWritesFor(sourceMode, writesAvailable)}">${escapeHtml(workspaceIdentity)}</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button><button type="button" data-action="fsa-probe" data-c1-key="fsa-probe-button">Select disposable folder</button><button type="button" data-action="fsa-reread" data-c1-key="fsa-reread-button">Re-read selected folder</button></div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
+  root.innerHTML = `<div class="app-shell" data-c1-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span data-c1-key="workspace-identity" data-workspace-writes="${workspaceWritesFor(sourceMode, writesAvailable)}">${escapeHtml(workspaceIdentity)}</span></div></div><div class="header-state"><span class="read-only-badge">${sourceLabel}</span><span class="hydrated-badge" data-c1-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-c1-key="source-refresh-button">Refresh source</button>${renderAcceptanceTools(acceptanceToolsView)}</div></header>${healthSurface(health)}<div class="app-layout">${projectNavigation(appState)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-c1-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-c1-key="creator-vault-preflight-status">Not run</pre></details></div>`;
   syncElasticProgressTimer();
   updateHydrationSummary(appState, problems);
   exposeInspection();
@@ -1638,7 +1641,10 @@ function bindInteractions(): void {
     const button = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (!button || !appState) return;
     const action = button.dataset.action;
-    if (action === 'fsa-probe') {
+    if (action === 'acceptance-tools') {
+      acceptanceToolsView = acceptanceToolsAfterToggle(acceptanceToolsView);
+      render();
+    } else if (action === 'fsa-probe') {
       void runFsaProbe();
     } else if (action === 'fsa-reread') {
       void rereadSelectedDirectory().then((report) => renderFsaProbe(report ?? { error: 'No selected directory handle' }));
