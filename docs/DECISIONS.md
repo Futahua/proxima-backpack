@@ -1486,3 +1486,41 @@ that weight. The test's seam is `MemoryRecordFiles` from `tests/test-record-stor
 `createCanonicalJsonRecordStore`, driving the real `createTask` path the way `tests/taskMutations.test.ts`
 does.
 
+## D70 — Stage 17's "UI invocation test exists" is evidenced in the two halves the shell allows
+
+**Decided** on 2026-09-12, while closing the Templates row of Stage 17's matrix. The box names a test that
+clicks the UI and observes the action; this repository cannot produce one. The shell is a single
+`src/browser/main.ts` whose top-level composition runs on import, which is why `tests/acceptanceTools.test.ts`
+records that it is not importable from a test, and the backlog harness binds its own interactions rather than
+the shell's chain. So the box is evidenced in the two halves that do exist: the pure part rendered while
+bound to **the options the shell itself passes** (not convenient ones), and the shell composition read as
+source - the branch that dispatches, the named function it reaches, and the state it sets. The box is ticked
+at that strength and says so in the checklist rather than being left open forever or claimed as a click test.
+
+**Consequence:** `tests/templateExecuteWiring.test.ts` holds the two halves and `tests/actionCoverageAudit.test.ts`
+holds the claim, so a later rename of the verb or of `createTemplateTasksAction()` breaks a test instead of
+silently orphaning the evidence. The same shape is the precedent for every later surface whose claim would
+otherwise need the chain to be executable.
+
+**Reverses if:** the shell gains an injectable composition seam, or a harness appears that runs the real
+chain headlessly. Then the box should be re-evidenced by an actual click, and this decision amended rather
+than deleted - the two halves stay true, they simply stop being the strongest available evidence.
+
+## D71 — A UI/agent equivalence is asserted through the shipped entry, not the executor beneath it
+
+**Decided** on 2026-09-12, after the Templates equivalence case was found to drive `executeTemplatePlan`
+directly. Both shipped callers - the composer panel's Confirm and the agent submission - go through
+`executeTemplateAction`, which parses the template text itself so that no caller can execute a hand-built
+plan. An equivalence asserted one layer below the path that runs compares two things nobody does: it would
+stay green if the action grew a divergence of its own. The case now drives the action, keeping D69's
+record-level judgement unchanged.
+
+**Consequence:** `tests/templateEquivalence.test.ts` supplies the action's dependencies structurally (the
+operations, plus surface hooks that record rather than draw, and a refresh that declines - a state the action
+already answers with `refreshed: false`). The executor keeps its own coverage in `tests/templateExecution.test.ts`;
+the record-level comparison is not duplicated there.
+
+**Reverses if:** the action stops being the single entry (a second caller with its own translation would
+reopen the question), or an equivalence claim is genuinely about the executor's contract - in which case it
+belongs in the executor's suite **as well as**, never instead of, the record-level case here.
+
