@@ -441,7 +441,14 @@ describe('Stage 9 shell glue', () => {
 
     expect(outcome).toMatchObject({ ok: false, reason: 'stale-revision', refreshed: true });
     expect(glue.events).toEqual(['writes', 'refresh', 'render']);
-    expect(glue.refusals).toEqual([null, 'stale-revision']);
+    // The surface is handed a refusal that explains itself: the code a selector matches, the sentence
+    // the record layer wrote, and the revision that won the race. Passing the bare code through was
+    // the defect, so this pins the whole string rather than only its first word.
+    expect(glue.refusals[0]).toBeNull();
+    expect(glue.refusals[1]).toContain('stale-revision');
+    expect(glue.refusals[1]).toContain('another writer changed this task first');
+    if (!winner.ok) throw new Error('unreachable');
+    expect(glue.refusals[1]).toContain(winner.revision);
     expect(await app.projected(task.id)).toMatchObject({ name: 'Moved on without it', status: 'backlog' });
   });
 });

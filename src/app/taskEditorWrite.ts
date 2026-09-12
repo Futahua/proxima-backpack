@@ -32,6 +32,7 @@ import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
 import { planPropertyMutation } from './propertyMutationPlan.js';
+import { refusalTextFor } from './refusalPresentation.js';
 import { convergeAfterWrite } from './writeConvergence.js';
 
 export const TASK_EDITOR_WRITE_SCHEMA_VERSION = 1 as const;
@@ -395,7 +396,15 @@ export async function saveTaskFromEditor(
     lostRace: !written.ok && written.reason === 'stale-revision',
   });
 
-  if (!written.ok) deps.setRefusal(written.reason);
+  // Written down rather than passed through as a code: the failure carries the sentence the record
+  // layer wrote and, on a lost race, the revision that beat this editor.
+  if (!written.ok) {
+    deps.setRefusal(refusalTextFor({
+      code: written.reason,
+      detail: written.detail,
+      actualRevision: written.actualRevision,
+    }));
+  }
   deps.render();
 
   if (!written.ok) {
@@ -461,7 +470,15 @@ export async function deleteTaskFromEditor(
     lostRace: !written.ok && written.reason === 'stale-revision',
   });
 
-  if (!written.ok) deps.setRefusal(written.reason);
+  // Written down rather than passed through as a code: the failure carries the sentence the record
+  // layer wrote and, on a lost race, the revision that beat this editor.
+  if (!written.ok) {
+    deps.setRefusal(refusalTextFor({
+      code: written.reason,
+      detail: written.detail,
+      actualRevision: written.actualRevision,
+    }));
+  }
   deps.render();
 
   if (!written.ok) {

@@ -10,6 +10,7 @@ import {
 } from '../src/browser/elasticCockpit.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import { applyTaskEditorEdit, taskEditorDraftFor, type TaskEditorDraft } from '../src/app/taskEditor.js';
+import { refusalTextFor } from '../src/app/refusalPresentation.js';
 import type { ProximaState, PropertySchema, Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
 
@@ -277,6 +278,35 @@ describe('Stage 2 Elastic execution cockpit', () => {
     const refusal = harness.target('elastic-drop-refusal');
 
     expect(refusal.textContent).toContain('action-not-available');
+    expect(refusal.textContent).toContain('Task data was not changed');
+  });
+
+  it('shows a lost race with the sentence and the revision that beat the caller', () => {
+    document.body.innerHTML = renderElasticCockpit({
+      state,
+      tasks: state.tasks,
+      projectNames: new Map(),
+      selectionLabel: 'All projects',
+      session,
+      now: new Date('2026-09-06T12:00:00.000Z'),
+      selectedTaskId: null,
+      editorDraft: null,
+      // Exactly what the drop action hands the shell after a lost race.
+      dropRefusal: refusalTextFor({
+        code: 'stale-revision',
+        detail: 'another writer changed this task first',
+        actualRevision: 'rev-7',
+      }),
+      taskWrites: { refusal: null, editorRefusal: null },
+      newTaskDraft: null,
+      newTaskRefusal: null,
+      containerHeight: 800,
+    });
+
+    const refusal = createInteractionHarness(document).target('elastic-drop-refusal');
+    expect(refusal.textContent).toContain('stale-revision');
+    expect(refusal.textContent).toContain('another writer changed this task first');
+    expect(refusal.textContent).toContain('now at revision rev-7');
     expect(refusal.textContent).toContain('Task data was not changed');
   });
 

@@ -19,6 +19,7 @@ import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { ElasticColumn, ProximaState } from '../domain/types.js';
 import type { IdGenerator } from '../domain/clock.js';
 import { executionStateOf } from './recordStateProjection.js';
+import { refusalTextFor } from './refusalPresentation.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import { moveTaskByGesture, type TaskMoveActionType, type TaskMoveGestureResult } from './taskMoveGesture.js';
@@ -165,7 +166,16 @@ export async function performElasticDrop(
 
   // One render either way, and it happens after the store answered: on success the refresh has
   // already redrawn from the store, and on refusal this is what shows the card beside the reason.
-  if (!result.ok) deps.setRefusal(result.reason);
+  // The refusal is written down rather than passed through as a code: the gesture result already
+  // carries the sentence and the revision that beat this caller, and a reader who lost a race needs
+  // both to know what happened to their card.
+  if (!result.ok) {
+    deps.setRefusal(refusalTextFor({
+      code: result.reason,
+      detail: result.detail,
+      actualRevision: result.actualRevision,
+    }));
+  }
   deps.render();
 
   return result;

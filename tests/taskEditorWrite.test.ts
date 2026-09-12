@@ -237,6 +237,39 @@ describe('Stage 9 planTaskEditorSave', () => {
     expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'workflowStage', value: '' }))).toMatchObject({ ok: false, reason: 'nothing-to-save' });
   });
 
+  it('writes down what happened to an editor that lost the race, and at which revision', async () => {
+    const app = await world();
+    const id = await app.seed('Raced', 'backlog');
+    const editor = app.editor();
+
+    // The record as this editor read it. The late save below writes against *this* revision, which is
+    // what a lost race is: not a malformed request, but a correct one aimed at a record that moved.
+    const snapshot = await editor.state();
+    const winner = await editor.save({
+      taskId: id,
+      draft: applyTaskEditorEdit(taskEditorDraftFor(await app.task(id)), { fieldId: 'name', value: 'Winner' }),
+    });
+    expect(winner).toMatchObject({ ok: true });
+    if (!winner.ok) throw new Error('unreachable');
+
+    const staleTask = snapshot.tasks.find((candidate) => candidate.id === id);
+    if (staleTask === undefined) throw new Error('the snapshot is missing the seeded task');
+    const late = await saveTaskFromEditor(editor.depsFor(snapshot), {
+      taskId: id,
+      draft: applyTaskEditorEdit(taskEditorDraftFor(staleTask), { fieldId: 'weight', value: '9' }),
+    });
+    expect(late).toMatchObject({ ok: false, reason: 'stale-revision' });
+
+    // What the surface is handed: the code a selector matches, the sentence the record layer wrote,
+    // and the revision that won. Before this, the first of those arrived alone.
+    const printed = editor.refusals.filter((entry): entry is string => entry !== null).at(-1) ?? '';
+    expect(printed).toContain('stale-revision');
+    expect(printed).toContain('another writer changed this task first');
+    expect(printed).toContain(winner.revision);
+    // The refusal did not become a claim about the record: the winner's write still stands.
+    expect((await app.stored(id as OpaqueRecordId)).name).toBe('Winner');
+  });
+
   it('carries a stage move through the record layer, appending to the end of the stage it enters', async () => {
     const app = await world();
     const stageId = await app.stage('Review');

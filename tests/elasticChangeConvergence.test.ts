@@ -21,6 +21,7 @@ import { recordStoreStateSource } from '../src/app/stateSource.js';
 import { applyTaskEditorEdit, projectTaskEditor, taskEditorDraftFor } from '../src/app/taskEditor.js';
 import { saveTaskAction, type TaskEditorWriteDependencies } from '../src/app/taskEditorWrite.js';
 import { moveTaskByGesture } from '../src/app/taskMoveGesture.js';
+import { performElasticDrop } from '../src/app/elasticDropAction.js';
 import { createTask, updateTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
 import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/app/vaultRecovery.js';
 import { fixedClock } from '../src/domain/clock.js';
@@ -110,6 +111,30 @@ async function world() {
         },
         { taskId, from: task.status === 'running' || task.status === 'finished' ? task.status : 'backlog', to, targetIndex: index, expectedRevision: task.source.revision },
       );
+    },
+    /**
+     * The same drop, through the action the shell actually runs, capturing what the surface is told.
+     *
+     * The `drop` helper above calls the gesture directly, so it can see the gesture's result but not
+     * the string the shell hands its renderer. This one runs `performElasticDrop`, which is the layer
+     * that composes a refusal for a reader.
+     */
+    dropThroughAction: async (state: ProximaState, taskId: OpaqueRecordId, to: 'backlog' | 'running' | 'finished', index: number) => {
+      const refusals: (string | null)[] = [];
+      const result = await performElasticDrop(
+        {
+          state,
+          writes: async () => ({ updateTask: (input) => updateTask(deps, input) }),
+          unavailableReason: () => null,
+          refresh: refreshFromSource,
+          setRefusal: (reason) => { refusals.push(reason); },
+          render: () => undefined,
+          ids: semanticIds(),
+          audit: recordingAudit(),
+        },
+        { taskId, targetColumn: to, targetIndex: index },
+      );
+      return { result, refusals };
     },
     editor: (state: ProximaState): TaskEditorWriteDependencies => ({
       state,
@@ -218,5 +243,35 @@ describe('Stage 19 a change made on Elastic reaches the other surfaces', () => {
     expect(document.querySelector(`[data-papers-visual-key="project-board-task-${id}"]`)!.textContent).toContain('Saved on Elastic');
     expect(document.querySelector(`[data-papers-visual-key="elastic-task-${id}"]`)!.textContent).toContain('Saved on Elastic');
     expect(projectTaskEditor(after, id, null)!.title).toBe('Saved on Elastic');
+  });
+
+  it('tells the surface what happened when a drop loses the race, and at which revision', async () => {
+    const app = await world();
+    const id = await app.seed('Raced drop');
+
+    // The board as the drop sees it, and then the other writer: the same record layer, one field,
+    // committed before the drop's write lands. A lost race is a correct request aimed at a record
+    // that moved, so nothing here is malformed.
+    const asTheBoardSawIt = await app.read();
+    const staleTask = asTheBoardSawIt.tasks.find((candidate) => candidate.id === id)!;
+    const winner = await updateTask(app.deps, {
+      taskId: id as OpaqueRecordId,
+      expectedRevision: staleTask.source.revision,
+      mutations: [{ kind: 'weight', value: 7 }],
+    });
+    expect(winner).toMatchObject({ ok: true });
+    if (!winner.ok) throw new Error('unreachable');
+
+    const { result, refusals } = await app.dropThroughAction(asTheBoardSawIt, id as OpaqueRecordId, 'running', 0);
+
+    expect(result).toMatchObject({ ok: false, reason: 'stale-revision' });
+    const printed = refusals.filter((entry): entry is string => entry !== null).at(-1) ?? '';
+    // What the shell is handed for its renderer: the code, the sentence, and the revision that won.
+    expect(printed).toContain('stale-revision');
+    expect(printed).toContain('another writer changed this task first');
+    expect(printed).toContain(winner.revision);
+    // And the dropped card's own column did not move: the refusal is a refusal.
+    const after = await app.read();
+    expect(after.tasks.find((candidate) => candidate.id === id)!.status).toBe('backlog');
   });
 });
