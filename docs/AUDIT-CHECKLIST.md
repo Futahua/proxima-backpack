@@ -1845,48 +1845,106 @@ If a Papers change is authorized:
 
 ### 11.1 Fixture scenarios
 
-- [ ] boot fixture
-- [ ] select project
-- [ ] switch board/calendar
-- [ ] inspect Elastic distribution
-- [ ] verify fixed-duration task
-- [ ] verify capped task
-- [ ] verify uncategorised record
-- [ ] verify multi-day event
-- [ ] simulate external file revision
-- [ ] simulate rename/delete
-- [ ] unsupported frontmatter
-- [ ] duplicate ID
-- [ ] malformed date/numeric field
+- [x] boot fixture (`fixtures/vault-basic`, `vault-malformed`, `vault-duplicates` and `vault-legacy` are
+      real files with fixed ids and dates; `tests/bootState.test.ts` drives the boot the scenario
+      starts from).
+- [x] select project (`tests/projectWorkspacePanels.test.ts` opens a project and asserts its own
+      workspace; `tests/cockpitNavigation.test.ts` covers the navigation between surfaces).
+- [x] switch board/calendar (`tests/elasticCockpit.test.ts` and `tests/timekeepingCockpit.test.ts`
+      mount the surfaces and drive them through the real DOM).
+- [x] inspect Elastic distribution (`tests/recordStateProjection.test.ts` reads the one projection both
+      surfaces draw from, so the distribution a scenario inspects is the canonical execution state).
+- [x] verify fixed-duration task (the duration mutations are covered in `tests/taskMutations.test.ts`
+      and the cockpit's duration edit in `tests/taskEditorWrite.test.ts`).
+- [x] verify capped task (same suites: a `max-duration` mutation with its own validation).
+- [x] verify uncategorised record (a record with no project is a first-class case in
+      `tests/canonicalDataOwnership.test.ts` and in the create suites, which accept a null project).
+- [x] verify multi-day event (`tests/scheduleTimeGrid.test.ts` and `tests/scheduleProjection.test.ts`
+      carry spans across days, including the bounded expansion contract).
+- [x] simulate external file revision (`tests/externalDirectoryVault.test.ts` and
+      `tests/surfaceConvergence.test.ts` mutate the source under a live session and assert what the
+      surfaces then read).
+- [x] simulate rename/delete (the identity-promotion suites rename and re-store records and assert the
+      id is unchanged, and the delete paths are covered in the record-store suites).
+- [x] unsupported frontmatter (`fixtures/vault-malformed` carries it, `tests/frontmatterParseDiagnostics.test.ts`
+      asserts the reported code, and since D65 the import reports rather than blocks: `8a14f3f`).
+- [x] duplicate ID (`fixtures/vault-duplicates` is that scenario, and `tests/canonicalIdentity.test.ts`
+      asserts a duplicate logical id is a reported error rather than a tiebreak).
+- [x] malformed date/numeric field (`fixtures/vault-malformed`; the codes are `bad-date`, `bad-number`,
+      `bad-boolean`, and the validation suites cover each).
 - [ ] Excalidraw display fixture
-- [ ] arbitrary unsupported file node
+      *(no fixture vault carries a drawing yet: the display scenario is carried inline by
+      `tests/excalidraw.test.ts`, which holds a real compressed payload from the creator's own
+      drawings, and by `tests/excalidrawRender.test.ts`. Running it as a *fixture* scenario needs a
+      drawing inside a fixture vault, which is small work and is what this box is waiting on.)*
+- [x] arbitrary unsupported file node (`tests/canvasLoader.test.ts` keeps unknown-extension files
+      reachable and fails closed when a binary capability is absent;
+      `tests/canvasFallbackIcon.test.ts` covers the passive fallback).
 
 ### 11.2 Scenario execution
 
 Each scenario:
 
-- [ ] starts from known fixture hash
-- [ ] resets deterministic clock
-- [ ] resets deterministic IDs
-- [ ] records starting state revision
-- [ ] issues semantic actions
-- [ ] waits on semantic settled state
-- [ ] reads event sequence
-- [ ] asserts domain state
+- [x] starts from known fixture hash (`src/app/evidence.ts` records the fixture hash in the scenario
+      result and `tests/evidence.test.ts` asserts the schema, so a run says which bytes it started
+      from).
+- [x] resets deterministic clock (the clock is injected everywhere behaviour depends on time -
+      `src/domain/clock.ts`, `fixedClock` in the fixtures - which Gate 1.2 already files as done).
+- [x] resets deterministic IDs (the id generator is injected the same way; `sequentialIdGenerator`
+      gives a run the same ids in the same order).
+- [x] records starting state revision (the evidence schema carries the initial and final state
+      revision, Gate 3.6).
+- [x] issues semantic actions (the scenario path is the action dispatcher, the same one the UI uses -
+      Gate 3.1).
+- [x] waits on semantic settled state (the convergence helper is what makes a wait mean "the store
+      answered", not "some time passed" - `src/app/writeConvergence.ts`, and
+      `tests/deterministicEventsEvidence.test.ts` covers the event side).
+- [x] reads event sequence (the event ring's `events.read(afterSequence)` contract, Gate 3.4).
+- [x] asserts domain state (the suites assert stored records read back out of the store rather than
+      the values an operation returned - the rule the matrix's observable column rests on).
 - [ ] asks Papers C1 for visual stability
+      *(needs the Papers developer-control plane against a live host; `tests/papersControlOptional.test.ts`
+      proves the bridge is optional rather than required, which is a different claim.)*
 - [ ] runs visual assertions
+      *(same dependency: the C1 visual assertions exist in the host's control vocabulary, and Proxima's
+      side of it is the semantic-key contract in §2.5, which is ticked.)*
 - [ ] captures relevant elements/surface
-- [ ] records diagnostics
-- [ ] emits machine-readable evidence
+      *(same dependency - capture is a host capability, and nothing in this tree substitutes a
+      screenshot for it.)*
+- [x] records diagnostics (the bounded diagnostic vocabulary, Gate 3.5).
+- [x] emits machine-readable evidence (`src/app/evidence.ts` with the scenario schema Gate 3.6
+      describes; `tests/agentAccept.test.ts` and `tests/cleanProfileAcceptance.test.ts` produce it
+      against disposable roots).
 
 ### 11.3 No meaningless mocks
 
-- [ ] Domain tests use actual representative file bytes.
-- [ ] Disk integration uses actual directories.
-- [ ] Browser filesystem tests use real browser filesystem primitives.
-- [ ] Real FSA acceptance uses disposable actual Windows directories.
-- [ ] Real Obsidian acceptance remains small but genuine.
-- [ ] Mock-only success cannot sign off vault compatibility.
+- [x] Domain tests use actual representative file bytes (the fixtures are real Markdown with real
+      frontmatter, and `tests/importStagingBytePreservation.test.ts` hashes those bytes before and
+      after a migration run to assert they are unchanged).
+- [x] Disk integration uses actual directories (fifteen suites create disposable roots with
+      `mkdtemp` under the system temp directory - `obsidianCoexistence`, `importStagingBytePreservation`,
+      `zeroWriteWitness`, `vaultWriterCoexistence`, `vaultRecoveryCrash`, `adapterConformance`,
+      `agentAccept`, `agentVaultBridge`, `bridgeDisclosure`, `multiSurface`, `presencePropagation`,
+      `taskSourceMutation`, `transportCompleteness`, `vaultMultiCoordinator` and
+      `vaultWriterConformance` - and none of them writes inside the repository or the creator's vault).
+- [ ] Browser filesystem tests use real browser filesystem primitives
+      *(not satisfied as written: the canvas admission and surface suites build File-like objects and
+      inject `createObjectURL`/`revokeObjectURL` rather than using the real primitives, and OPFS is not
+      reachable from the node test runner. Closing it means either a case that uses real
+      `File`/`Blob`/object URLs where node provides them, or an Electron-hosted run - and it should say
+      which, because the two prove different things.)*
+- [ ] Real FSA acceptance uses disposable actual Windows directories
+      *(the disposable-root discipline is real in the fifteen suites above, but the *FSA* acceptance
+      itself is not exercised by any of them: native FSA writing is closed as
+      `BLOCKED / fsa-no-compare-and-swap`, and the signed real-vault ledger entries are read-only. This
+      box stays open until either an FSA read acceptance runs against a disposable Windows directory or
+      the box is rewritten to say what it can mean while the writer is closed.)*
+- [x] Real Obsidian acceptance remains small but genuine (Gate 6R is **signed PASS at `abf99364`** with
+      `tests/obsidianCoexistence.test.ts` (`fff4fee`) as its evidence, and that verdict stands in the
+      signed gate ledger).
+- [x] Mock-only success cannot sign off vault compatibility (the rule is the reason the signed ledger
+      entries are real-vault runs; the suites above are the automated half and are not offered as a
+      substitute - which is also why the two boxes above stay open rather than being closed on them).
 
 ---
 
