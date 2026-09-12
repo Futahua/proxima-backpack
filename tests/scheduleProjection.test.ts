@@ -17,6 +17,10 @@ import { localDateKey } from '../src/domain/time.js';
 import { scheduleNavigationDateKey } from '../src/browser/scheduleNavigation.js';
 import type { CalendarEvent } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
+import { fixedOffsetZone } from '../src/domain/timeZone.js';
+
+/** The zone these fixtures were authored in. Stated, not inherited. */
+const FIXTURE_ZONE = fixedOffsetZone('UTC+07:00', 420);
 
 const CURSOR = localCalendarDate(2026, 8, 1);
 const NOW = new Date(2026, 8, 6, 12, 0, 0, 0);
@@ -443,7 +447,7 @@ describe('Schedule Month, Year and Agenda projection', () => {
       });
 
       expect(pairs(document.body))
-        .toEqual(occurrencesOn(scheduleVisibleDays(cursor, mode).map((day) => localDateKey(day))));
+        .toEqual(occurrencesOn(scheduleVisibleDays(cursor, mode).map((day) => localDateKey(day, FIXTURE_ZONE))));
     }
 
     document.body.innerHTML = renderScheduleProjection({

@@ -2,6 +2,7 @@ import { calculateElasticTimeline, elasticCardHeights } from '../domain/elastic.
 import { isBlocking, type LoadProblem } from '../domain/problems.js';
 import { elasticBoard, eventsByDay, eventsForSelection, projectCapabilities, projectsFor, tasksForSelection, type ProjectCapabilities, type ProjectSelection } from '../domain/selectors.js';
 import { localDateKey } from '../domain/time.js';
+import { utcZone, type TimeZone } from '../domain/timeZone.js';
 import type { CalendarEvent, ProximaState, Task } from '../domain/types.js';
 import type { ActionDispatcherState, ProjectWorkspaceTab, ScheduleMode, Surface, TasksMode, TimekeepingPanelVisibility } from './actionProtocol.js';
 import { boundDiagnosticProblems, DIAGNOSTIC_LIMITS } from './diagnostics.js';
@@ -285,7 +286,7 @@ function eventSummary(event: CalendarEvent, dayKeysById: Map<string, string[]>):
 }
 
 /** Build a bounded, renderer-independent, read-only state projection. */
-export function createInspectionProjection(dispatcher: ActionDispatcherState, build: BuildIdentityLike, sourceHealth?: ReadOnlyProjectionHealth): InspectionProjection {
+export function createInspectionProjection(dispatcher: ActionDispatcherState, build: BuildIdentityLike, sourceHealth?: ReadOnlyProjectionHealth, zone: TimeZone = utcZone()): InspectionProjection {
   const boardProjects = new Set(projectsFor(dispatcher.state.projects, 'task').map((project) => project.id));
   const boardTasks = dispatcher.state.tasks.filter((task) => task.projectId === null || boardProjects.has(task.projectId));
   const selectedTasks = tasksForSelection(boardTasks, dispatcher.selection);
@@ -308,7 +309,7 @@ export function createInspectionProjection(dispatcher: ActionDispatcherState, bu
   const scheduleProjects = new Set(projectsFor(dispatcher.state.projects, 'schedule').map((project) => project.id));
   const calendarEvents = eventsForSelection(dispatcher.state.events.filter((event) => event.projectId === null || scheduleProjects.has(event.projectId)), dispatcher.selection);
   const calendarProblems: LoadProblem[] = [];
-  const byDay = eventsByDay(calendarEvents, calendarProblems);
+  const byDay = eventsByDay(calendarEvents, calendarProblems, zone);
   const dayKeysById = eventDayKeysById(byDay);
   const problems = [...dispatcher.problems, ...calendarProblems];
   const health = createUiHealthModel(sourceHealth ?? {

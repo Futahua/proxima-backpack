@@ -11,6 +11,7 @@ import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupS
 import { resolveBrowserTaskMutations, resolveBrowserRecoveryStartup, type BrowserRecordMutations } from '../adapters/browserTaskMutations.js';
 import { performElasticDrop } from '../app/elasticDropAction.js';
 import { normalizeSemanticKeyValues } from './semanticKeyValue.js';
+import { hostZone } from './hostTimeZone.js';
 import { performWorkflowDrop } from '../app/workflowBoardDrop.js';
 import { bulkCompleteTasks, bulkDeleteTasks, type BulkTaskActionReport } from '../app/bulkTaskActions.js';
 import { deleteTaskAction, saveTaskAction } from '../app/taskEditorWrite.js';
@@ -476,7 +477,7 @@ function updateHydrationSummary(state: ProximaState, problems: LoadProblem[]): v
 
 function exposeInspection(): void {
   if (!actionDispatcher) return;
-  const inspection = createInspectionProjection(actionDispatcher.snapshot(), BUILD_IDENTITY, currentUiHealth());
+  const inspection = createInspectionProjection(actionDispatcher.snapshot(), BUILD_IDENTITY, currentUiHealth(), hostZone());
   const session = sourceSession?.snapshot();
   const report = evaluateRealVaultAcceptance({
     build: BUILD_IDENTITY,

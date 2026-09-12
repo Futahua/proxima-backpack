@@ -23,6 +23,10 @@ import { scheduleNavigationDateKey } from '../src/browser/scheduleNavigation.js'
 import type { CalendarEvent } from '../src/domain/types.js';
 import { localDateKey } from '../src/domain/time.js';
 import { sourceRef } from './fixtures.js';
+import { fixedOffsetZone } from '../src/domain/timeZone.js';
+
+/** The zone these fixtures were authored in. Stated, not inherited. */
+const FIXTURE_ZONE = fixedOffsetZone('UTC+07:00', 420);
 
 const NOW = new Date(2026, 8, 6, 12, 30, 0, 0);
 const CURSOR = new Date(2026, 8, 6, 0, 0, 0, 0);
@@ -264,7 +268,7 @@ describe('Schedule Day, 4-Day and Week presentation', () => {
       const visibleDays = scheduleVisibleDays(CURSOR, mode);
 
       expect(visibleDays).toHaveLength(expectedDays);
-      expect(localDateKey(visibleDays[0]!)).toBe('2026-09-06');
+      expect(localDateKey(visibleDays[0]!, FIXTURE_ZONE)).toBe('2026-09-06');
     }
   });
 

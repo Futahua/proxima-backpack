@@ -24,6 +24,10 @@ import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
 import { localDateKey } from '../src/domain/time.js';
 import type { ProximaState, Task } from '../src/domain/types.js';
 import { sourceRef } from './fixtures.js';
+import { fixedOffsetZone } from '../src/domain/timeZone.js';
+
+/** The zone these fixtures were authored in. Stated, not inherited. */
+const FIXTURE_ZONE = fixedOffsetZone('UTC+07:00', 420);
 
 const NOW = new Date(2026, 8, 6, 12, 0, 0, 0);
 
@@ -242,7 +246,7 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
     ]) {
       expect(
         projection.find((entry) => entry.taskId === item.id)?.dayKey,
-      ).toBe(localDateKey(item.deadline!));
+      ).toBe(localDateKey(item.deadline!, FIXTURE_ZONE));
     }
 
     expect(

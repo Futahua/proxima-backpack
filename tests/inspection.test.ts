@@ -4,6 +4,10 @@ import { DIAGNOSTIC_LIMITS } from '../src/app/diagnostics.js';
 import { createInspectionProjection, isInspectionProjection } from '../src/app/inspection.js';
 import { loadVaultState } from '../src/app/vaultRepository.js';
 import { fixtureVault } from './fixtures.js';
+import { fixedOffsetZone } from '../src/domain/timeZone.js';
+
+/** The zone these fixtures were authored in. Stated, not inherited. */
+const FIXTURE_ZONE = fixedOffsetZone('UTC+07:00', 420);
 
 const build = {
   proximaVersion: '0.1.0',
@@ -21,7 +25,7 @@ describe('Gate 3A inspection projection', () => {
   it('projects fixture state without depending on renderer or store details', async () => {
     const loaded = await loadVaultState(fixtureVault('vault-basic'));
     const dispatcher = createActionDispatcher({ state: loaded.state, problems: loaded.problems, revisions: loaded.revisions, mode: 'fixture' });
-    const projection = createInspectionProjection(dispatcher.snapshot(), build);
+    const projection = createInspectionProjection(dispatcher.snapshot(), build, undefined, FIXTURE_ZONE);
 
     expect(isInspectionProjection(projection)).toBe(true);
     expect(projection).toMatchObject({

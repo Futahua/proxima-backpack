@@ -1,7 +1,7 @@
 import type { LoadProblem } from '../domain/problems.js';
 import { eventFormValuesFrom, renderEventModal as renderEventEditorModal } from './eventModal.js';
 import { eventsByDay } from '../domain/selectors.js';
-import { localDateKey } from '../domain/time.js';
+import { formatClockTime, localDateKey } from '../domain/time.js';
 import type { EventEditorDraft } from '../app/eventEditor.js';
 import type { EventFormValues } from '../app/eventFormPlan.js';
 import type { CalendarEvent } from '../domain/types.js';
@@ -10,6 +10,25 @@ import {
   localCalendarDate,
 } from './calendarGrid.js';
 import { renderScheduleNavigation } from './scheduleNavigation.js';
+import { hostZone } from './hostTimeZone.js';
+import type { TimeZone } from '../domain/timeZone.js';
+
+/**
+ * The zone this module derives civil dates in.
+ *
+ * Bound once per render call from the options the caller passed, defaulting to the host zone
+ * read in exactly one place (`src/browser/hostTimeZone.ts`). Nothing here reads the ambient
+ * zone itself, which is what makes the derivation testable by passing a zone.
+ */
+let activeZone: TimeZone = hostZone();
+
+function bindZone(zone: TimeZone | undefined): void {
+  activeZone = zone ?? hostZone();
+}
+
+const dateKeyOf = (value: string | number | Date): string => localDateKey(value, activeZone);
+const clockTimeOf = (value: string | number | Date): string => formatClockTime(value, activeZone);
+
 import {
   expandScheduleRecurringOccurrences,
   hasScheduleRecurrence,
@@ -35,6 +54,10 @@ export interface ScheduleProjectionRenderOptions {
   selectionLabel: string;
   calendarCursor: Date;
   now: Date;
+
+  /** The zone dates are derived in. Absent means the host zone. */
+
+  zone?: TimeZone;
   selectedEventId: string | null;
   selectedRecurringOccurrence?: ScheduleRecurringOccurrenceSelection | null;
   selectedRecurringScope?: ScheduleRecurrenceScope | null;
@@ -136,7 +159,7 @@ function sortedEventsByDay(
   const ordinaryEvents = recurrenceWindow
     ? events.filter((event) => !hasScheduleRecurrence(event))
     : [...events];
-  const ordinary = eventsByDay(ordinaryEvents, problems);
+  const ordinary = eventsByDay(ordinaryEvents, problems, activeZone);
 
   for (const [key, dayEvents] of ordinary) {
     result.set(key, dayEvents.map((event) => ({
@@ -155,7 +178,7 @@ function sortedEventsByDay(
         startDate: occurrence.startDate,
         deadline: occurrence.deadline,
       };
-      const covered = eventsByDay([temporalView], problems);
+      const covered = eventsByDay([temporalView], problems, activeZone);
       for (const key of covered.keys()) {
         const bucket = result.get(key) ?? [];
         bucket.push({
@@ -242,10 +265,10 @@ function renderMonth(
   byDay: Map<string, ScheduleProjectedDateOccurrence[]>,
 ): string {
   const days = calendarGridDates(options.calendarCursor);
-  const todayKey = localDateKey(options.now);
+  const todayKey = dateKeyOf(options.now);
 
   const cells = days.map((day) => {
-    const key = localDateKey(day);
+    const key = dateKeyOf(day);
     const outside = day.getMonth() !== options.calendarCursor.getMonth();
     const dayEvents = byDay.get(key) ?? [];
     const events = dayEvents.map((occurrence) => (
@@ -260,7 +283,7 @@ function renderMonth(
     return `<div class="calendar-day${outside ? ' outside' : ''}${key === todayKey ? ' today' : ''}" data-schedule-month-day="${escapeHtml(key)}" data-schedule-occurrence-count="${dayEvents.length}" data-papers-visual-key="schedule-month-day-${escapeHtml(key)}" aria-label="${escapeHtml(key)}"${key === todayKey ? ' aria-current="date"' : ''}><span class="day-number">${day.getDate()}</span><div class="day-events">${events}</div></div>`;
   }).join('');
 
-  return `<section class="surface calendar-surface schedule-month-projection" data-schedule-projection-mode="month" data-papers-visual-key="schedule-month-region" aria-label="Month schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Month</h2><p class="surface-description">Date-level event occurrences on local civil days.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${cells}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames, options.recurrenceScopeWrites ?? null, options.occurrenceDraft ?? null) : renderProjectionEventModal(options.events, options.selectedEventId, options.projectNames, options.eventEditorWrites ?? null, options.eventEditorDraft ?? null)}</section>`;
+  return `<section class="surface calendar-surface schedule-month-projection" data-schedule-projection-mode="month" data-papers-visual-key="schedule-month-region" aria-label="Month schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Month</h2><p class="surface-description">Date-level event occurrences on local civil days.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode, activeZone)}</header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${cells}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames, options.recurrenceScopeWrites ?? null, options.occurrenceDraft ?? null) : renderProjectionEventModal(options.events, options.selectedEventId, options.projectNames, options.eventEditorWrites ?? null, options.eventEditorDraft ?? null)}</section>`;
 }
 
 function renderYear(
@@ -268,7 +291,7 @@ function renderYear(
   byDay: Map<string, ScheduleProjectedDateOccurrence[]>,
 ): string {
   const year = options.calendarCursor.getFullYear();
-  const todayKey = localDateKey(options.now);
+  const todayKey = dateKeyOf(options.now);
 
   const months = Array.from(
     { length: 12 },
@@ -283,7 +306,7 @@ function renderYear(
           return '<span class="schedule-year-day outside" aria-hidden="true"></span>';
         }
 
-        const key = localDateKey(day);
+        const key = dateKeyOf(day);
         const count = byDay.get(key)?.length ?? 0;
         const indicator = count > 0
           ? `<span class="schedule-year-event-indicator" data-schedule-year-event-indicator="${escapeHtml(key)}" data-schedule-occurrence-count="${count}" aria-label="${count} event occurrence${count === 1 ? '' : 's'}">${count}</span>`
@@ -296,7 +319,7 @@ function renderYear(
     },
   ).join('');
 
-  return `<section class="surface calendar-surface schedule-year-projection" data-schedule-projection-mode="year" data-papers-visual-key="schedule-year-region" aria-label="Year schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Year</h2><p class="surface-description">Twelve mini-months with date-level event indicators.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="schedule-year-grid">${months}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames, options.recurrenceScopeWrites ?? null, options.occurrenceDraft ?? null) : renderProjectionEventModal(options.events, options.selectedEventId, options.projectNames, options.eventEditorWrites ?? null, options.eventEditorDraft ?? null)}</section>`;
+  return `<section class="surface calendar-surface schedule-year-projection" data-schedule-projection-mode="year" data-papers-visual-key="schedule-year-region" aria-label="Year schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Year</h2><p class="surface-description">Twelve mini-months with date-level event indicators.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode, activeZone)}</header><div class="schedule-year-grid">${months}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames, options.recurrenceScopeWrites ?? null, options.occurrenceDraft ?? null) : renderProjectionEventModal(options.events, options.selectedEventId, options.projectNames, options.eventEditorWrites ?? null, options.eventEditorDraft ?? null)}</section>`;
 }
 
 function renderAgenda(
@@ -311,7 +334,7 @@ function renderAgenda(
     return `<section class="schedule-agenda-date-group" data-schedule-agenda-date="${escapeHtml(dayKey)}" data-papers-visual-key="schedule-agenda-date-${escapeHtml(dayKey)}"><header><h3>${escapeHtml(dayKey)}</h3><span>${dayEvents.length}</span></header>${rows}</section>`;
   }).join('');
 
-  return `<section class="surface calendar-surface schedule-agenda-projection" data-schedule-projection-mode="agenda" data-papers-visual-key="schedule-agenda-region" aria-label="Agenda schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Agenda</h2><p class="surface-description">Chronological local-date groups of event occurrences.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode)}</header><div class="schedule-agenda-groups">${groups || '<p class="empty-state" data-papers-visual-key="schedule-agenda-empty">No dated events.</p>'}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames, options.recurrenceScopeWrites ?? null, options.occurrenceDraft ?? null) : renderProjectionEventModal(options.events, options.selectedEventId, options.projectNames, options.eventEditorWrites ?? null, options.eventEditorDraft ?? null)}</section>`;
+  return `<section class="surface calendar-surface schedule-agenda-projection" data-schedule-projection-mode="agenda" data-papers-visual-key="schedule-agenda-region" aria-label="Agenda schedule"><header class="surface-header"><div><p class="eyebrow">${escapeHtml(options.selectionLabel)}</p><h2>Agenda</h2><p class="surface-description">Chronological local-date groups of event occurrences.</p></div>${renderScheduleNavigation(options.calendarCursor, options.mode, activeZone)}</header><div class="schedule-agenda-groups">${groups || '<p class="empty-state" data-papers-visual-key="schedule-agenda-empty">No dated events.</p>'}</div>${options.selectedRecurringOccurrence ? renderScheduleRecurrenceScopeModal(options.events, options.selectedRecurringOccurrence, options.selectedRecurringScope ?? null, options.projectNames, options.recurrenceScopeWrites ?? null, options.occurrenceDraft ?? null) : renderProjectionEventModal(options.events, options.selectedEventId, options.projectNames, options.eventEditorWrites ?? null, options.eventEditorDraft ?? null)}</section>`;
 }
 
 export function renderScheduleProjection(

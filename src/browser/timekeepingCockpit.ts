@@ -4,12 +4,31 @@ import type {
   TimekeepingPanelVisibility,
   TimelineChangeOperation,
 } from '../app/actionProtocol.js';
-import { deadlineHue, localDateKey } from '../domain/time.js';
+import { deadlineHue, formatClockTime, localDateKey } from '../domain/time.js';
 import type { ProximaState, Task } from '../domain/types.js';
 import { calendarGridDates } from './calendarGrid.js';
 import { renderTaskModal } from './elasticCockpit.js';
 import { TASK_EDITOR_SAVE_REFUSAL, type TaskEditorDraft } from '../app/taskEditor.js';
 import { timekeepingPanelWidth } from '../app/panelSizing.js';
+import { hostZone } from './hostTimeZone.js';
+import type { TimeZone } from '../domain/timeZone.js';
+
+/**
+ * The zone this module derives civil dates in.
+ *
+ * Bound once per render call from the options the caller passed, defaulting to the host zone
+ * read in exactly one place (`src/browser/hostTimeZone.ts`). Nothing here reads the ambient
+ * zone itself, which is what makes the derivation testable by passing a zone.
+ */
+let activeZone: TimeZone = hostZone();
+
+function bindZone(zone: TimeZone | undefined): void {
+  activeZone = zone ?? hostZone();
+}
+
+const dateKeyOf = (value: string | number | Date): string => localDateKey(value, activeZone);
+const clockTimeOf = (value: string | number | Date): string => formatClockTime(value, activeZone);
+
 
 export interface DeadlineCalendarEntry {
   taskId: string;
@@ -58,6 +77,10 @@ export interface TimekeepingCockpitRenderOptions {
   panelWidths?: Readonly<Record<string, number>>;
   calendarCursor: Date;
   now: Date;
+
+  /** The zone dates are derived in. Absent means the host zone. */
+
+  zone?: TimeZone;
   selectedTaskId: string | null;
   /** The Task editor's provisional edits, which this surface's modal also shows. */
   editorDraft: TaskEditorDraft | null;
@@ -135,7 +158,7 @@ export function deadlineCalendarProjection(
 
       return [{
         taskId: task.id,
-        dayKey: localDateKey(task.deadline),
+        dayKey: dateKeyOf(task.deadline),
         deadline: task.deadline,
         remainingMs: deadlineMs - nowMs,
       }];
@@ -198,8 +221,8 @@ export function timelineGanttProjection(
   now: Date,
 ): TimelineGanttEntry[] {
   const days = calendarGridDates(calendarCursor);
-  const firstKey = localDateKey(days[0]!);
-  const lastKey = localDateKey(days[days.length - 1]!);
+  const firstKey = dateKeyOf(days[0]!);
+  const lastKey = dateKeyOf(days[days.length - 1]!);
   const firstOrdinal = civilDayOrdinal(firstKey);
   const lastOrdinal = civilDayOrdinal(lastKey);
   const nowMs = now.getTime();
@@ -215,8 +238,8 @@ export function timelineGanttProjection(
 
     if (!hasStart && !hasDeadline) continue;
 
-    const startKey = hasStart ? localDateKey(rawStart!) : null;
-    const endKey = hasDeadline ? localDateKey(rawDeadline!) : null;
+    const startKey = hasStart ? dateKeyOf(rawStart!) : null;
+    const endKey = hasDeadline ? dateKeyOf(rawDeadline!) : null;
 
     let kind: TimelineGanttKind;
     let firstEntryOrdinal: number;
@@ -374,7 +397,7 @@ function renderCalendar(
   options: TimekeepingCockpitRenderOptions,
 ): string {
   const days = calendarGridDates(options.calendarCursor);
-  const todayKey = localDateKey(options.now);
+  const todayKey = dateKeyOf(options.now);
   const tasksById = new Map(options.tasks.map((task) => [task.id, task]));
   const entriesByDay = new Map<string, DeadlineCalendarEntry[]>();
 
@@ -389,7 +412,7 @@ function renderCalendar(
   }
 
   return `<section class="timekeeping-panel calendar-surface" data-papers-visual-key="timekeeping-panel-calendar" aria-label="Deadline Calendar"><header class="surface-header"><div><h3>Deadline Calendar</h3><p class="surface-description">Task deadlines, separate from Schedule events.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-timekeeping-action="month-navigate" data-direction="previous" data-papers-visual-key="timekeeping-calendar-previous" aria-label="Previous month">←</button><button type="button" class="icon-button" data-timekeeping-action="month-today" data-papers-visual-key="timekeeping-calendar-today">Today</button><strong data-papers-visual-key="timekeeping-calendar-month" data-calendar-month="${monthKey(options.calendarCursor)}">${escapeHtml(monthTitle(options.calendarCursor))}</strong><button type="button" class="icon-button" data-timekeeping-action="month-navigate" data-direction="next" data-papers-visual-key="timekeeping-calendar-next" aria-label="Next month">→</button></div></header><div class="weekday-row" aria-hidden="true">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${days.map((day) => {
-    const key = localDateKey(day);
+    const key = dateKeyOf(day);
     const outside = day.getMonth() !== options.calendarCursor.getMonth();
     const entries = entriesByDay.get(key) ?? [];
 
@@ -406,8 +429,8 @@ function renderTimelineGantt(
   options: TimekeepingCockpitRenderOptions,
 ): string {
   const days = calendarGridDates(options.calendarCursor);
-  const todayKey = localDateKey(options.now);
-  const todayColumn = days.findIndex((day) => localDateKey(day) === todayKey) + 1;
+  const todayKey = dateKeyOf(options.now);
+  const todayColumn = days.findIndex((day) => dateKeyOf(day) === todayKey) + 1;
   const entries = timelineGanttProjection(
     options.tasks,
     options.calendarCursor,
@@ -456,7 +479,7 @@ function renderTimelineGantt(
   }).join('');
 
   return `<section class="timekeeping-panel project-details" data-papers-visual-key="timekeeping-panel-timeline" aria-label="Timeline/Gantt"><header class="surface-header"><div><h3>Timeline/Gantt</h3><p class="surface-description">Task starts and deadlines across the active calendar window.</p></div><div class="calendar-controls"><button type="button" class="icon-button" data-timekeeping-action="month-navigate" data-direction="previous" data-papers-visual-key="timekeeping-gantt-previous" aria-label="Previous month">←</button><button type="button" class="icon-button" data-timekeeping-action="month-today" data-papers-visual-key="timekeeping-gantt-today">Today</button><strong data-papers-visual-key="timekeeping-gantt-month" data-calendar-month="${monthKey(options.calendarCursor)}">${escapeHtml(monthTitle(options.calendarCursor))}</strong><button type="button" class="icon-button" data-timekeeping-action="month-navigate" data-direction="next" data-papers-visual-key="timekeeping-gantt-next" aria-label="Next month">→</button></div></header><div class="timekeeping-gantt-header" style="display:grid;grid-template-columns:220px 1fr;"><span>Task</span><div style="display:grid;grid-template-columns:repeat(42,minmax(12px,1fr));">${days.map((day) => {
-    const key = localDateKey(day);
+    const key = dateKeyOf(day);
     return `<span class="${key === todayKey ? 'today' : ''}" data-papers-visual-key="timekeeping-gantt-day-${escapeHtml(key)}" aria-current="${key === todayKey ? 'date' : 'false'}">${day.getDate()}</span>`;
   }).join('')}</div></div><div class="timekeeping-gantt-body" data-papers-visual-key="timekeeping-gantt-body" data-gantt-today-column="${todayColumn > 0 ? todayColumn : ''}">${options.timelineFeedback === null || options.timelineFeedback === undefined ? '' : `<p data-papers-visual-key="timekeeping-gantt-feedback" data-gantt-feedback="${escapeHtml(options.timelineWrites?.code ?? '')}">${escapeHtml(options.timelineFeedback)}</p>`}${rows || '<p class="empty-state" data-papers-visual-key="timekeeping-gantt-empty">No task starts or deadlines fall in this window.</p>'}</div></section>`;
 }
@@ -549,8 +572,8 @@ function timelineProposalLabel(
   startDate: string | null,
   deadline: string | null,
 ): string {
-  const start = startDate ? localDateKey(startDate) : '—';
-  const deadlineLabel = deadline ? localDateKey(deadline) : '—';
+  const start = startDate ? dateKeyOf(startDate) : '—';
+  const deadlineLabel = deadline ? dateKeyOf(deadline) : '—';
   return `${start} → ${deadlineLabel}`;
 }
 
@@ -684,10 +707,10 @@ export function bindTimekeepingCockpitInteractions(
     }
 
     const proposedStartKey = proposedStartDate
-      ? localDateKey(proposedStartDate)
+      ? dateKeyOf(proposedStartDate)
       : null;
     const proposedDeadlineKey = proposedDeadline
-      ? localDateKey(proposedDeadline)
+      ? dateKeyOf(proposedDeadline)
       : null;
     const validTemporalOrder = (
       proposedStartKey === null
