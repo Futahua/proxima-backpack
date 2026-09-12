@@ -216,6 +216,10 @@ describe('the semantic envelope on the Schedule writes', () => {
       entityIds: [],
       errorCode: 'writes-unavailable',
     });
+    // The board is told and redrawn even though no write path resolved: a refusal a surface cannot show is a
+    // refusal the reader of that surface does not get. Asserted here because it is the one branch of this
+    // sequence a mutation can delete without any other case noticing.
+    expect(w.order).toEqual(['render', 'audit:rejected']);
   });
 
   it('correlates a lost race, and converges because the store moved under it', async () => {

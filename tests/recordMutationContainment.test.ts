@@ -171,8 +171,11 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     const eventActions = await readFile(new URL('../src/app/eventWriteActions.ts', import.meta.url), 'utf8');
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(eventActions).not.toContain(forbidden);
     expect(eventActions).not.toContain('RecordStore');
-    // The revision is the one the surface was rendering, and a lost race re-reads.
-    expect(eventActions).toContain('revision = event.source.revision');
+    // The revision is the one the surface was rendering, and a lost race re-reads. It reaches the sequence
+    // through the resolver rather than from a projection the operation reads for itself - the same split the
+    // Gantt below has - so the assertion follows the fact to where it now lives.
+    expect(eventActions).toContain('const event = deps.state?.events.find((candidate) => candidate.id === eventId);');
+    expect(eventActions).toContain('return event === undefined ? null : { revision: event.source.revision, record: event };');
     expect(eventActions).toContain('convergeAfterWrite(');
 
     // The Gantt's date change is wired the same way, and the guard follows it: the shell runs a

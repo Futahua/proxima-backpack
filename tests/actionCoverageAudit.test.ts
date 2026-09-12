@@ -107,11 +107,11 @@ const TASK_ROWS: readonly TaskActionRow[] = [
  * it operation-only and the audit asserts the missing caller rather than assuming it.
  */
 const EVENT_ROWS: readonly TaskActionRow[] = [
-  { action: 'event.create', module: 'src/app/eventWriteActions.ts', marker: 'export async function createEventAction', caller: 'createEventFromSeed(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'createEventAction', equivalence: false },
+  { action: 'event.create', module: 'src/app/eventWriteActions.ts', marker: 'export async function createEventAction', caller: 'createEventFromSeed(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'createEventAction', equivalence: false, agentVerb: 'event.create' },
   { action: 'event.update', module: 'src/app/eventWriteActions.ts', marker: 'export async function saveEventAction', caller: 'saveEventFromEditor(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'saveEventAction', equivalence: false },
-  { action: 'event.delete', module: 'src/app/eventWriteActions.ts', marker: 'export async function deleteEventAction', caller: 'deleteEventFromEditor(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'deleteEventAction', equivalence: false },
-  { action: 'event.reschedule', module: 'src/app/eventWriteActions.ts', marker: 'export async function rescheduleEventAction', caller: 'changeEventFromGesture(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'rescheduleEventAction', equivalence: false },
-  { action: 'event.resize', module: 'src/app/eventWriteActions.ts', marker: 'export async function resizeEventAction', caller: 'changeEventFromGesture(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'resizeEventAction', equivalence: false },
+  { action: 'event.delete', module: 'src/app/eventWriteActions.ts', marker: 'export async function deleteEventAction', caller: 'deleteEventFromEditor(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'deleteEventAction', equivalence: false, agentVerb: 'event.delete' },
+  { action: 'event.reschedule', module: 'src/app/eventWriteActions.ts', marker: 'export async function rescheduleEventAction', caller: 'changeEventFromGesture(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'rescheduleEventAction', equivalence: false, agentVerb: 'event.reschedule' },
+  { action: 'event.resize', module: 'src/app/eventWriteActions.ts', marker: 'export async function resizeEventAction', caller: 'changeEventFromGesture(', testFile: 'tests/scheduleWriteWiring.test.ts', testMarker: 'resizeEventAction', equivalence: false, agentVerb: 'event.resize' },
   { action: 'event occurrence change', module: 'src/app/eventRecurrenceActions.ts', marker: 'export async function updateOccurrenceAction', caller: 'updateOccurrenceFromScope(', testFile: 'tests/recurrenceScopeWiring.test.ts', testMarker: 'updateOccurrenceAction', equivalence: false },
   // A series-scoped change is the same operation with the other scope, and it is the request's scope that
   // the case names: the module declares the scope type, and the comment above the branch says which write
@@ -374,6 +374,8 @@ describe('Stage 17 template action coverage', () => {
 
 describe('Stage 17 event action coverage', () => {
   it('names a module, a caller and a test for every event action the UI reaches', () => {
+    // The wire's own list, imported rather than read as text: a verb is on it or it is not.
+    const onWire: readonly string[] = AGENT_WRITE_VERBS;
     for (const row of EVENT_ROWS) {
       expect(source(row.module), `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
       const callerText = row.callerFile === undefined ? MAIN : source(row.callerFile);
@@ -382,7 +384,18 @@ describe('Stage 17 event action coverage', () => {
       const compared = PARITY.includes(row.testMarker)
         || (row.equivalenceFile !== undefined && source(row.equivalenceFile).includes(row.testMarker));
       expect(compared, `${row.action}: equivalence claimed but not asserted`).toBe(row.equivalence);
+      // A row that declares an agent verb must have it on the wire. This is a presence guard only, for the
+      // reason written down beside the stage rows: the two-way form is a tautology, so the *absence* of a verb
+      // is asserted behaviourally in `tests/agentWritePath.test.ts` instead.
+      if (row.agentVerb !== undefined) {
+        expect(onWire.includes(row.agentVerb), `${row.action}: ${row.agentVerb} must be on the agent wire`).toBe(true);
+      }
     }
+    // The one event verb deliberately not on the wire, asserted by the table rather than by a comment: a row
+    // that gains an `agentVerb` for it would have to be a decision, and the table is where decisions live.
+    const update = EVENT_ROWS.find((row) => row.action === 'event.update');
+    expect(update?.agentVerb, 'event.update must declare no agent verb: it plans against the record it edits').toBeUndefined();
+    expect(onWire.includes('event.update'), 'event.update must not be on the agent wire').toBe(false);
   });
 
   it('leaves no event action silently agent-only, and says which one is', () => {

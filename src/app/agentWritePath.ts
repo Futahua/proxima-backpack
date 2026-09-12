@@ -36,6 +36,13 @@ import type { CanonicalExecutionState } from '../domain/canonicalTaskState.js';
 import type { IdGenerator } from '../domain/clock.js';
 import { categoryOf, registeredActionTypes } from './actionTaxonomy.js';
 import {
+  runEventWrite,
+  type EventWriteOperations,
+  type EventWriteOutcome,
+  type EventWriteVerb,
+} from './eventWriteActions.js';
+import type { EventResizeTarget } from './eventMutations.js';
+import {
   PROPERTY_SCHEMA_ACTION_TYPES,
   submitPropertySchemaAction,
   type PropertySchemaActionOutcome,
@@ -79,15 +86,33 @@ function stageVerbOf(type: string): WorkflowStageWriteVerb | null {
 }
 
 /**
+ * The event verbs this wire runs, and the one it deliberately does not.
+ *
+ * `event.update` plans a diff against the record it edits, so it needs a caller that read one - a board. Every
+ * other verb in the family takes only a revision, or nothing at all, which is why they are here and it is not.
+ */
+const EVENT_WRITE_VERB_TYPES: Readonly<Record<string, EventWriteVerb>> = {
+  'event.create': 'create',
+  'event.delete': 'delete',
+  'event.reschedule': 'reschedule',
+  'event.resize': 'resize',
+};
+
+/**
  * The verbs this wire runs without a cockpit. Every other registered verb is answered, not ignored.
  *
- * Four families qualify today and they qualify by the same rule rather than by seniority: `moveTaskByGesture`
+ * Five families qualify today and they qualify by the same rule rather than by seniority: `moveTaskByGesture`
  * takes the update callable, the refresh, the id source and the sink; `propertySchemaActions` takes the five
  * schema operations, the id source and the sink; `changeTaskSpan` takes the same four the gesture does, having
- * been given the record facts - the revision and the end a resize keeps - as a parameter; and `runStageWrite`
- * takes those same four, with the one fact it used to read from a board supplied as a lookup the caller owns.
- * None of the four reads a projection, a draft or a modal. Not every family's verbs are on it yet: a stage
- * delete carries the caller's remap decision and is deliberately not run here.
+ * been given the record facts - the revision and the end a resize keeps - as a parameter; `runStageWrite` takes
+ * those same four, with the one fact it used to read from a board supplied as a lookup the caller owns; and
+ * `runEventWrite` takes them with the revision the caller read, for the four verbs that need nothing else.
+ * None of the five reads a projection, a draft or a modal.
+ *
+ * Two verbs are deliberately absent, and both for the same reason rather than by oversight: `workflow.stage.delete`
+ * carries the caller's remap decision about the cards the stage holds, and `event.update` plans a diff against
+ * the record it edits. Each is a thing a board owns, and a wire that carried either would be a second way to
+ * decide it. `event.create`, `delete`, `reschedule` and `resize` take a revision or nothing, so they are here.
  */
 export const AGENT_WRITE_VERBS = [
   'task.execution.move',
@@ -95,6 +120,7 @@ export const AGENT_WRITE_VERBS = [
   TIMELINE_CHANGE_ACTION_TYPE,
   workflowStageActionType('create'),
   workflowStageActionType('rename'),
+  ...Object.keys(EVENT_WRITE_VERB_TYPES),
   ...Object.values(PROPERTY_SCHEMA_ACTION_TYPES),
 ] as const;
 
@@ -177,6 +203,33 @@ export interface AgentStageWriteSubmission {
   readonly expectedRevision?: string;
 }
 
+/**
+ * The wire shape an agent submits for one of the four event verbs it can run.
+ *
+ * One shape for four verbs, because they differ in which fields they carry rather than in what they mean: a
+ * create names the whole span and no id, a delete names the id and the revision, a reschedule names a new start,
+ * and a resize names either the end the pointer would land on or a duration. Which fields a verb requires is
+ * decided where the verb is, so this type is the superset a caller may fill in.
+ *
+ * `event.update` is not here: it plans a diff against the record it edits, which is a thing a board owns.
+ */
+export interface AgentEventWriteSubmission {
+  readonly type: AgentWriteVerb;
+  /** The event a non-create verb names. Absent on a create, which has no id yet. */
+  readonly eventId?: string;
+  /** The revision the agent read the event at. Required by every verb except a create. */
+  readonly expectedRevision?: string;
+  /** A create's fields. */
+  readonly name?: string;
+  readonly description?: string;
+  readonly projectId?: string | null;
+  readonly startDate?: string;
+  readonly deadline?: string;
+  readonly isCompleted?: boolean;
+  /** A resize's answer: the end the edge landed on, or a duration in minutes. */
+  readonly resize?: EventResizeTarget;
+}
+
 export interface AgentWriteDependencies {  /** Resolve the sanctioned record write path; null when this run may not write records. */
   readonly writes: () => Promise<AgentWriteOperations | null>;
   /**
@@ -197,6 +250,13 @@ export interface AgentWriteDependencies {  /** Resolve the sanctioned record wri
    * refuses the family it cannot reach with `writes-unavailable` rather than pretending the verb is unknown.
    */
   readonly stageWrites?: () => Promise<WorkflowStageWriteOperations | null>;
+  /**
+   * Resolve the event write path, when this composition has one.
+   *
+   * The third write path, and separate for the same reason as the other two: an event is neither a task nor a
+   * stage, and a composition may resolve one store's operations without another's.
+   */
+  readonly eventWrites?: () => Promise<EventWriteOperations | null>;
   /** Why there is no write path, in words a reader can act on. */
   readonly unavailableReason: () => string | null;
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
@@ -236,6 +296,7 @@ export type AgentWriteResult =
   | TaskMoveGestureResult
   | TimelineSpanWriteOutcome
   | WorkflowStageWriteOutcome
+  | EventWriteOutcome
   | PropertySchemaActionOutcome
   | AgentWriteRefusal;
 
@@ -267,6 +328,13 @@ export type ParsedAgentWrite =
       readonly actionType: string;
       readonly verb: WorkflowStageWriteVerb;
       readonly submission: AgentStageWriteSubmission;
+    }
+  | {
+      readonly ok: true;
+      readonly kind: 'event';
+      readonly actionType: string;
+      readonly verb: EventWriteVerb;
+      readonly submission: AgentEventWriteSubmission;
     }
   | {
       readonly ok: true;
@@ -323,6 +391,18 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
   }
 
   if (!(AGENT_WRITE_VERBS as readonly string[]).includes(rawType)) {
+    // The one verb a family owns and this wire deliberately does not run. It is answered in the operation's own
+    // vocabulary rather than as a malformed submission, because the submission is not malformed - it is a
+    // perfectly good request for something a board owns, and the caller needs to be told which.
+    if (rawType === 'event.update') {
+      return {
+        ok: false,
+        reason: 'unsupported-verb',
+        detail: 'this verb plans against the record it edits, so it needs a caller that read one',
+        actionType: rawType,
+        entityIds: namedEntityIds(candidate),
+      };
+    }
     const registered = registeredActionTypes().some((type) => type === rawType);
     if (!registered) {
       return {
@@ -360,6 +440,63 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
     actionType: rawType,
     entityIds: ids,
   });
+
+  // The event family: four of its five verbs, and the fields each requires stated once here rather than left
+  // to the operation to discover. An instant that is not a real one is refused here because a span the caller
+  // cannot read is not a record-layer question; whether the *record* it names exists is, and stays there.
+  const eventVerb = EVENT_WRITE_VERB_TYPES[rawType];
+  if (eventVerb !== undefined) {
+    const instantOrNull = (field: 'startDate' | 'deadline'): string | null | undefined => {
+      const value = candidate[field];
+      if (value === undefined) return undefined;
+      if (typeof value !== 'string' || value === '' || !Number.isFinite(Date.parse(value))) return null;
+      return value;
+    };
+
+    if (eventVerb === 'create') {
+      if (typeof candidate.name !== 'string' || candidate.name.trim() === '') return fail('an event create needs a name');
+      const startDate = instantOrNull('startDate');
+      const deadline = instantOrNull('deadline');
+      if (startDate === undefined || startDate === null) return fail('an event create needs a start that is a real instant');
+      if (deadline === undefined || deadline === null) return fail('an event create needs an end that is a real instant');
+      if (typeof candidate.description !== 'string') return fail('an event create needs a description, which may be empty');
+      if (candidate.projectId !== null && typeof candidate.projectId !== 'string') return fail('projectId must be a project or null');
+      if (typeof candidate.isCompleted !== 'boolean') return fail('isCompleted must be true or false');
+    } else {
+      if (typeof candidate.eventId !== 'string' || candidate.eventId === '') return fail('the submission needs an eventId');
+      if (typeof candidate.expectedRevision !== 'string' || candidate.expectedRevision === '') {
+        return fail('the submission needs the revision it read the event at, so a lost race is refused rather than merged');
+      }
+      if (eventVerb === 'reschedule') {
+        const startDate = instantOrNull('startDate');
+        if (startDate === undefined || startDate === null) return fail('a reschedule needs a start that is a real instant');
+      }
+      if (eventVerb === 'resize') {
+        const resize = candidate.resize;
+        const wellFormed = typeof resize === 'object' && resize !== null && !Array.isArray(resize)
+          && (
+            ((resize as EventResizeTarget).kind === 'end' && Number.isFinite(Date.parse((resize as { value?: unknown }).value as string)))
+            || ((resize as EventResizeTarget).kind === 'duration' && typeof (resize as { minutes?: unknown }).minutes === 'number')
+          );
+        if (!wellFormed) return fail('a resize names either the end it moved or a duration in minutes');
+      }
+    }
+
+    const event: AgentEventWriteSubmission = {
+      type: rawType as AgentWriteVerb,
+      ...(typeof candidate.eventId === 'string' ? { eventId: candidate.eventId } : {}),
+      ...(typeof candidate.expectedRevision === 'string' ? { expectedRevision: candidate.expectedRevision } : {}),
+      ...(typeof candidate.name === 'string' ? { name: candidate.name } : {}),
+      ...(typeof candidate.description === 'string' ? { description: candidate.description } : {}),
+      ...(candidate.projectId === null || typeof candidate.projectId === 'string' ? { projectId: candidate.projectId as string | null } : {}),
+      ...(typeof candidate.startDate === 'string' ? { startDate: candidate.startDate } : {}),
+      ...(typeof candidate.deadline === 'string' ? { deadline: candidate.deadline } : {}),
+      ...(typeof candidate.isCompleted === 'boolean' ? { isCompleted: candidate.isCompleted } : {}),
+      ...(typeof candidate.resize === 'object' && candidate.resize !== null ? { resize: candidate.resize as EventResizeTarget } : {}),
+    };
+
+    return { ok: true, kind: 'event', actionType: rawType, verb: eventVerb, submission: event };
+  }
 
   // The stage family: two of its three verbs, and which fields each requires is a rule this wire states once
   // rather than one it lets the operation discover. A create has no revision to carry and a rename has no
@@ -504,6 +641,58 @@ export async function submitAgentWrite(
       input,
       { requestId },
     );
+  }
+
+  // The event arm: the same sequence the Schedule runs, with the revision the agent read instead of a record
+  // taken from a projection. The resolver answers that revision and **no record**, because the one verb that
+  // plans against a record is not on this wire - so a verb that somehow needed one is refused by the operation
+  // with its own sentence rather than reaching a write with a null it would have to invent around.
+  if (parsed.kind === 'event') {
+    const eventOperations = deps.eventWrites === undefined ? null : await deps.eventWrites();
+    const { submission, verb } = parsed;
+    const eventDeps = {
+      writes: async () => eventOperations,
+      unavailableReason: () => deps.unavailableReason() ?? 'writes-unavailable',
+      refresh: deps.refresh,
+      ids: deps.ids,
+      audit: deps.audit,
+    };
+    const resolver = () => ({ revision: submission.expectedRevision ?? '', record: null });
+
+    if (verb === 'create') {
+      return await runEventWrite(eventDeps, 'create', null, null, async (operations) => await operations.createEvent({
+        name: submission.name ?? '',
+        projectId: (submission.projectId ?? null) as OpaqueRecordId | null,
+        description: submission.description ?? '',
+        startDate: submission.startDate ?? '',
+        deadline: submission.deadline ?? '',
+        isCompleted: submission.isCompleted ?? false,
+      }));
+    }
+
+    const eventId = submission.eventId ?? '';
+    if (verb === 'delete') {
+      return await runEventWrite(eventDeps, 'delete', eventId, resolver, async (operations, revision) => await operations.deleteEvent({
+        eventId: eventId as OpaqueRecordId,
+        expectedRevision: revision,
+      }));
+    }
+
+    if (verb === 'reschedule') {
+      return await runEventWrite(eventDeps, 'reschedule', eventId, resolver, async (operations, revision) => await operations.rescheduleEvent({
+        eventId: eventId as OpaqueRecordId,
+        expectedRevision: revision,
+        startDate: submission.startDate ?? '',
+      }));
+    }
+
+    // Resize: the last of the four, and the shape is checked at the parse, so the target here is one of the two
+    // the record layer takes - an end the pointer landed on, or a duration an agent asked for.
+    return await runEventWrite(eventDeps, 'resize', eventId, resolver, async (operations, revision) => await operations.resizeEvent({
+      eventId: eventId as OpaqueRecordId,
+      expectedRevision: revision,
+      target: submission.resize as EventResizeTarget,
+    }));
   }
 
   // The stage arm: the same operation the board runs, resolved through its own optional path because a stage

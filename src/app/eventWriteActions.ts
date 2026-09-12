@@ -46,22 +46,49 @@ export interface EventWriteOperations {
   resizeEvent(input: { eventId: OpaqueRecordId; expectedRevision: string; target: EventResizeTarget }): Promise<EventMutationResult>;
 }
 
-export interface EventWriteDependencies {
+export interface EventWriteDependencies extends EventWriteOperationDependencies {
   readonly state: ProximaState | null;
-  readonly writes: () => Promise<EventWriteOperations | null>;
-  readonly unavailableReason: () => string | null;
-  readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
   /** The refusal the surface will draw, or null to clear it. */
   readonly setRefusal: (reason: string | null) => void;
   readonly render: () => void;
-  /** Mints this run's semantic request id. Injected, like every other identity in this repository. */
-  readonly ids: IdGenerator;
-  /** Where the run's one terminal audit event goes. */
-  readonly audit: SemanticAuditSink;
 }
+
+/**
+ * What the operation needs, and nothing a cockpit owns.
+ *
+ * The record facts a run needs - the revision, and the record itself where the verb plans against it - arrive
+ * through `resolveEvent` rather than from a projection, which is what makes the family reachable from an entry
+ * with no schedule to consult. The board answers with the event it was rendering; the agent wire answers with
+ * the revision the agent read, and the record is absent because the wire's verbs do not plan against one.
+ */
+export interface EventWriteOperationDependencies {
+  readonly writes: () => Promise<EventWriteOperations | null>;
+  readonly unavailableReason: () => string | null;
+  readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
+  readonly ids: IdGenerator;
+  readonly audit: SemanticAuditSink;
+  /**
+   * What the surface does with the answer, before the run is journalled.
+   *
+   * Present only where there is a surface, because the order is this family's contract and its own test pins
+   * it. A caller with no surface omits it. It is not called for an event the resolver could not find, because
+   * that refusal is decided before the write path was ever resolved and the schedule is left as it was.
+   */
+  readonly settle?: (outcome: EventWriteOutcome) => void;
+}
+
+/**
+ * Where a run's record facts come from.
+ *
+ * `revision` is the revision the record was read at and is always required for a verb that names one. `record`
+ * is the record itself, and it is null on a caller that read only the revision - which is enough for delete,
+ * reschedule and resize, and not enough for a verb that plans a diff against the record.
+ */
+export type EventRecordResolver = () => { readonly revision: string; readonly record: CalendarEvent | null } | null;
 
 export type EventWriteFailureReason =
   | 'unknown-event'
+  | 'unsupported-verb'
   | 'writes-unavailable'
   | EventMutationFailureReason;
 
@@ -111,10 +138,11 @@ function refused(
  * @param write - the operation to call once a path has resolved.
  * @returns the outcome, with the store's revision when it was accepted.
  */
-async function runEventWrite(
-  deps: EventWriteDependencies,
+export async function runEventWrite(
+  deps: EventWriteOperationDependencies,
   verb: EventWriteVerb,
   eventId: string | null,
+  resolveEvent: EventRecordResolver | null,
   write: (
     operations: EventWriteOperations,
     revision: string,
@@ -137,22 +165,31 @@ async function runEventWrite(
   let revision = '';
   let event: CalendarEvent | null = null;
   if (eventId !== null) {
-    event = deps.state?.events.find((candidate) => candidate.id === eventId) ?? null;
-    if (event === null) {
-      audit('rejected', target, 'unknown-event');
-      return refused(verb, 'unknown-event', 'the schedule has no event with that id', requestId);
+    const resolved = resolveEvent?.() ?? null;
+    if (resolved === null) {
+      // A verb that names an event must be able to say which revision it read. A board cannot find the event it
+      // was not showing and says so; a caller that read the record supplies the revision, so it has no such
+      // answer to give and this branch is the board's. `unsupported-verb` is the exception, and it is the
+      // family's own: four of its five verbs are reachable without a schedule, and the one that plans a diff
+      // against the record is not, which a caller has to be told rather than left to infer from a refusal
+      // about a revision.
+      const askable = resolveEvent !== null;
+      audit('rejected', target, askable ? 'unknown-event' : 'unsupported-verb');
+      return askable
+        ? refused(verb, 'unknown-event', 'the schedule has no event with that id', requestId)
+        : refused(verb, 'unsupported-verb', 'this verb plans against the record it edits, so it needs a caller that read one', requestId);
     }
-    revision = event.source.revision;
+    revision = resolved.revision;
+    event = resolved.record;
   }
 
-  deps.setRefusal(null);
   const operations = await deps.writes();
   if (operations === null) {
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
-    deps.setRefusal(reason);
-    deps.render();
+    const refusal = refused(verb, 'writes-unavailable', reason, requestId);
+    deps.settle?.(refusal);
     audit('rejected', target, 'writes-unavailable');
-    return refused(verb, 'writes-unavailable', reason, requestId);
+    return refusal;
   }
 
   // The write is reached only once the event is known to exist, which is why the callback is handed the
@@ -163,16 +200,14 @@ async function runEventWrite(
     lostRace: !written.ok && written.reason === 'stale-revision',
   });
 
-  if (!written.ok) deps.setRefusal(written.reason);
-  deps.render();
-
   if (!written.ok) {
+    const refusal = refused(verb, written.reason, written.detail, requestId, convergence.refreshed);
+    deps.settle?.(refusal);
     audit(semanticOutcomeOf({ wrote: 0, refused: true }), target, written.reason);
-    return refused(verb, written.reason, written.detail, requestId, convergence.refreshed);
+    return refusal;
   }
 
-  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId]);
-  return {
+  const accepted: EventWriteOutcome = {
     ok: true,
     schemaVersion: EVENT_WRITE_ACTION_SCHEMA_VERSION,
     verb,
@@ -182,6 +217,44 @@ async function runEventWrite(
     revision: written.revision,
     refreshed: convergence.refreshed,
   };
+  deps.settle?.(accepted);
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId]);
+  return accepted;
+}
+
+/**
+ * The board's entry over the operation: answer with the event it was rendering, and draw the answer.
+ *
+ * Everything the cockpit owns is here - the projection the record facts come from, the refusal sink and the
+ * redraw - and the operation above knows none of it.
+ */
+async function runEventWriteFromSchedule(
+  deps: EventWriteDependencies,
+  verb: EventWriteVerb,
+  eventId: string | null,
+  write: (
+    operations: EventWriteOperations,
+    revision: string,
+    event: CalendarEvent | null,
+  ) => Promise<EventMutationResult>,
+): Promise<EventWriteOutcome> {
+  deps.setRefusal(null);
+  return await runEventWrite(
+    {
+      ...deps,
+      settle: (outcome) => {
+        if (!outcome.ok) deps.setRefusal(outcome.reason);
+        deps.render();
+      },
+    },
+    verb,
+    eventId,
+    () => {
+      const event = deps.state?.events.find((candidate) => candidate.id === eventId);
+      return event === undefined ? null : { revision: event.source.revision, record: event };
+    },
+    write,
+  );
 }
 
 /**
@@ -195,7 +268,7 @@ export async function createEventAction(
   input: { readonly values: EventFormValues },
 ): Promise<EventWriteOutcome> {
   const values = input.values;
-  return await runEventWrite(deps, 'create', null, async (operations) => await operations.createEvent({
+  return await runEventWriteFromSchedule(deps, 'create', null, async (operations) => await operations.createEvent({
     name: values.name,
     projectId: values.projectId === null ? null : values.projectId as OpaqueRecordId,
     description: values.description,
@@ -219,7 +292,7 @@ export async function saveEventAction(
   // No pre-check here: `runEventWrite` refuses an event the schedule does not hold, with the envelope, and the
   // callback below is handed the record it found. Planning before the sequence would mean minting a second id
   // for a run that then refused, or refusing with no id at all.
-  return await runEventWrite(deps, 'update', input.eventId, async (operations, revision, event) => {
+  return await runEventWriteFromSchedule(deps, 'update', input.eventId, async (operations, revision, event) => {
     if (event === null) throw new Error('runEventWrite must hand the update a record');
     return await operations.updateEvent({
       eventId: input.eventId as OpaqueRecordId,
@@ -234,7 +307,7 @@ export async function deleteEventAction(
   deps: EventWriteDependencies,
   input: { readonly eventId: string },
 ): Promise<EventWriteOutcome> {
-  return await runEventWrite(deps, 'delete', input.eventId, async (operations, revision) => await operations.deleteEvent({
+  return await runEventWriteFromSchedule(deps, 'delete', input.eventId, async (operations, revision) => await operations.deleteEvent({
     eventId: input.eventId as OpaqueRecordId,
     expectedRevision: revision,
   }));
@@ -251,7 +324,7 @@ export async function rescheduleEventAction(
   deps: EventWriteDependencies,
   input: { readonly eventId: string; readonly startDate: string },
 ): Promise<EventWriteOutcome> {
-  return await runEventWrite(deps, 'reschedule', input.eventId, async (operations, revision) => await operations.rescheduleEvent({
+  return await runEventWriteFromSchedule(deps, 'reschedule', input.eventId, async (operations, revision) => await operations.rescheduleEvent({
     eventId: input.eventId as OpaqueRecordId,
     expectedRevision: revision,
     startDate: input.startDate,
@@ -268,7 +341,7 @@ export async function resizeEventAction(
   deps: EventWriteDependencies,
   input: { readonly eventId: string; readonly target: EventResizeTarget },
 ): Promise<EventWriteOutcome> {
-  return await runEventWrite(deps, 'resize', input.eventId, async (operations, revision) => await operations.resizeEvent({
+  return await runEventWriteFromSchedule(deps, 'resize', input.eventId, async (operations, revision) => await operations.resizeEvent({
     eventId: input.eventId as OpaqueRecordId,
     expectedRevision: revision,
     target: input.target,

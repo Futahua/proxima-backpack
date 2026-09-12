@@ -64,11 +64,19 @@ import {
   workflowStageActionType,
   type WorkflowStageWriteOperations,
 } from '../src/app/workflowStageWriteActions.js';
+import type { EventWriteOperations } from '../src/app/eventWriteActions.js';
 import {
   createWorkflowStage,
   renameWorkflowStage,
   type WorkflowStageMutationDependencies,
 } from '../src/app/workflowStageMutations.js';
+import {
+  createEvent,
+  deleteEvent,
+  rescheduleEvent,
+  resizeEvent,
+  type EventMutationDependencies,
+} from '../src/app/eventMutations.js';
 import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/app/vaultRecovery.js';
 import { EMPTY_PROJECT_BACKLOG_VIEW, renderProjectBacklog } from '../src/browser/projectBacklog.js';
 import { renderProjectTaskBoard } from '../src/browser/projectTaskBoard.js';
@@ -219,6 +227,19 @@ async function world(seedOffset: number): Promise<World> {
     renameWorkflowStage: (input) => renameWorkflowStage(stageMutations, input),
     deleteWorkflowStage: async () => { throw new Error('this world resolves no stage delete'); },
   };
+  const eventMutations: EventMutationDependencies = {
+    store,
+    coordinator: authority.coordinator,
+    clock: fixedClock(CLOCK_ISO),
+    allocateRecordId: () => idFromLastByte(nextId++),
+  };
+  const eventOperations: EventWriteOperations = {
+    createEvent: (request) => createEvent(eventMutations, request),
+    updateEvent: async () => { throw new Error('this world resolves no event update'); },
+    deleteEvent: (input) => deleteEvent(eventMutations, input),
+    rescheduleEvent: (input) => rescheduleEvent(eventMutations, input),
+    resizeEvent: (input) => resizeEvent(eventMutations, input),
+  };
 
   const agent: AgentWriteDependencies = {
     writes: async () => operations,
@@ -233,6 +254,8 @@ async function world(seedOffset: number): Promise<World> {
     }),
     // The stage family, resolved the way a composition with a workflow board would resolve it.
     stageWrites: async () => stageOperations,
+    // …and the Schedule's, resolved the way a composition with a calendar would.
+    eventWrites: async () => eventOperations,
     unavailableReason: () => null,
     refresh,
     ids,
@@ -407,7 +430,7 @@ describe('agent write path', () => {
     // module - a source read is the check that survives a well-meaning later edit. The two resolvers it does
     // take are write paths, and one of them is optional precisely because a composition need not have it.
     expect(AGENT_WRITE_SOURCE).not.toContain('ProximaState');
-    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'ids', 'refresh', 'schemaWrites', 'stageWrites', 'unavailableReason', 'writes']);
+    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'eventWrites', 'ids', 'refresh', 'schemaWrites', 'stageWrites', 'unavailableReason', 'writes']);
   });
 
   it('returns the same result object as the UI gesture, for an accepted run and for a lost race', async () => {
@@ -976,6 +999,133 @@ describe('agent write path', () => {
       expectedRevision: task.source.revision,
     });
     expect(moved).toMatchObject({ ok: true, actionType: 'task.execution.move' });
+  });
+
+  it('runs four of the five event verbs through the same wire, and refuses the fifth for its own reason', async () => {
+    const w = await world(1800);
+
+    // A create names the whole span and no revision, because there is no record to have read yet.
+    const created = await submitAgentWrite(w.agent, {
+      type: 'event.create',
+      name: 'Kickoff',
+      description: 'First session',
+      projectId: PROJECT,
+      startDate: '2026-10-01T09:00:00.000Z',
+      deadline: '2026-10-01T11:00:00.000Z',
+      isCompleted: false,
+    });
+    expect(created).toMatchObject({ ok: true, verb: 'create', outcome: 'created' });
+    if (!created.ok || !('verb' in created)) throw new Error('the event create was refused');
+    expect(created.requestId).toMatch(/^semantic-request/);
+    expect(w.audit.events).toEqual([{
+      requestId: created.requestId,
+      actionType: 'event.create',
+      outcome: 'accepted',
+      entityIds: [created.recordId],
+    }]);
+    // The span landed, read back out of the projection rather than taken from the result.
+    const stored = (await w.state()).events.find((event) => event.id === created.recordId);
+    expect(stored).toMatchObject({ name: 'Kickoff', startDate: '2026-10-01T09:00:00.000Z', deadline: '2026-10-01T11:00:00.000Z' });
+
+    // A create's project is the caller's answer, and "no project" is a real answer: an event belonging to no
+    // project is ordinary, so a submission that names none must not be given the one that happens to be around.
+    // This assertion is what tells the two readings apart - a wire that substituted a default would pass every
+    // other case here, because the world seeds exactly one project and it is the one they name.
+    const orphan = await submitAgentWrite(w.agent, {
+      type: 'event.create',
+      name: 'Standalone',
+      description: '',
+      projectId: null,
+      startDate: '2026-10-04T09:00:00.000Z',
+      deadline: '2026-10-04T10:00:00.000Z',
+      isCompleted: false,
+    });
+    if (!orphan.ok || !('verb' in orphan)) throw new Error('the projectless event create was refused');
+    expect((await w.state()).events.find((event) => event.id === orphan.recordId)?.projectId).toBeNull();
+
+    // A reschedule moves the start and keeps the record's duration, which is what makes a drag and a sentence
+    // the same request - and it writes at the revision the agent read.
+    const moved = await submitAgentWrite(w.agent, {
+      type: 'event.reschedule',
+      eventId: created.recordId,
+      expectedRevision: created.revision,
+      startDate: '2026-10-02T09:00:00.000Z',
+    });
+    expect(moved).toMatchObject({ ok: true, verb: 'reschedule', outcome: 'rescheduled' });
+    if (!moved.ok) throw new Error('the reschedule was refused');
+    const rescheduled = (await w.state()).events.find((event) => event.id === created.recordId);
+    expect(rescheduled?.startDate).toBe('2026-10-02T09:00:00.000Z');
+    // The duration is the record's: two hours in, two hours out.
+    expect(Date.parse(rescheduled!.deadline) - Date.parse(rescheduled!.startDate)).toBe(2 * 60 * 60 * 1000);
+
+    // A resize by duration is the agent's own form of the gesture: the end the pointer would have landed on is
+    // not something a sentence has, so the target names minutes instead.
+    const resized = await submitAgentWrite(w.agent, {
+      type: 'event.resize',
+      eventId: created.recordId,
+      expectedRevision: moved.revision,
+      resize: { kind: 'duration', minutes: 90 },
+    });
+    expect(resized).toMatchObject({ ok: true, verb: 'resize', outcome: 'resized' });
+    const sized = (await w.state()).events.find((event) => event.id === created.recordId);
+    expect(Date.parse(sized!.deadline) - Date.parse(sized!.startDate)).toBe(90 * 60 * 1000);
+
+    // A lost race, in both directions: the agent holds the revision it read, the store has moved on, and the
+    // refusal names the revision that beat it.
+    if (!resized.ok) throw new Error('the resize was refused');
+    const stale = await submitAgentWrite(w.agent, {
+      type: 'event.reschedule',
+      eventId: created.recordId,
+      expectedRevision: moved.revision,
+      startDate: '2026-10-05T09:00:00.000Z',
+    });
+    expect(stale).toMatchObject({ ok: false, reason: 'stale-revision', refreshed: true });
+    expect(w.audit.events.at(-1)).toMatchObject({ outcome: 'rejected', errorCode: 'stale-revision' });
+
+    // A delete names the id and the revision, and nothing else.
+    const deleted = await submitAgentWrite(w.agent, {
+      type: 'event.delete',
+      eventId: created.recordId,
+      expectedRevision: resized.revision,
+    });
+    expect(deleted).toMatchObject({ ok: true, verb: 'delete', outcome: 'deleted' });
+    expect((await w.state()).events.some((event) => event.id === created.recordId)).toBe(false);
+
+    // The fifth verb is answered rather than silently absent, and in the wire's own shape: the refusal is
+    // decided before the family's operation is reached, so it names the verb it was about rather than a `verb`
+    // field, and it carries the run's id like every other refusal here.
+    const update = await submitAgentWrite(w.agent, {
+      type: 'event.update',
+      eventId: created.recordId,
+      expectedRevision: resized.revision,
+    });
+    expect(update).toMatchObject({ ok: false, reason: 'unsupported-verb', actionType: 'event.update' });
+    if (update.ok || !('detail' in update)) throw new Error('an event update is not on this wire');
+    expect(update.detail).toBe('this verb plans against the record it edits, so it needs a caller that read one');
+    expect(update.requestId).toMatch(/^semantic-request/);
+    expect(w.audit.events.at(-1)).toMatchObject({ actionType: 'event.update', outcome: 'rejected', errorCode: 'action-not-available' });
+
+    // The malformed battery: each refusal names what the submission was missing, and the store is untouched by
+    // every one of them because they are all decided before a write path is even resolved.
+    const before = await w.revisionMap();
+    const battery: readonly { readonly input: unknown; readonly detail: string }[] = [
+      { input: { type: 'event.create', name: '  ', description: '', projectId: null, startDate: '2026-10-01T09:00:00.000Z', deadline: '2026-10-01T11:00:00.000Z', isCompleted: false }, detail: 'an event create needs a name' },
+      { input: { type: 'event.create', name: 'No span', description: '', projectId: null, startDate: 'sometime', deadline: '2026-10-01T11:00:00.000Z', isCompleted: false }, detail: 'an event create needs a start that is a real instant' },
+      { input: { type: 'event.create', name: 'No end', description: '', projectId: null, startDate: '2026-10-01T09:00:00.000Z', isCompleted: false }, detail: 'an event create needs an end that is a real instant' },
+      { input: { type: 'event.delete', expectedRevision: 'event@1' }, detail: 'the submission needs an eventId' },
+      { input: { type: 'event.delete', eventId: 'event-missing' }, detail: 'the submission needs the revision it read the event at, so a lost race is refused rather than merged' },
+      { input: { type: 'event.reschedule', eventId: 'event-missing', expectedRevision: 'event@1', startDate: 'never' }, detail: 'a reschedule needs a start that is a real instant' },
+      { input: { type: 'event.resize', eventId: 'event-missing', expectedRevision: 'event@1', resize: { kind: 'end', value: 'never' } }, detail: 'a resize names either the end it moved or a duration in minutes' },
+      { input: { type: 'event.resize', eventId: 'event-missing', expectedRevision: 'event@1', resize: { kind: 'duration' } }, detail: 'a resize names either the end it moved or a duration in minutes' },
+    ];
+    for (const entry of battery) {
+      const result = await submitAgentWrite(w.agent, entry.input);
+      expect(result.ok, `${JSON.stringify(entry.input)} must be refused`).toBe(false);
+      if (result.ok || !('detail' in result)) throw new Error(`${JSON.stringify(entry.input)} was not refused by the wire`);
+      expect(result.detail).toBe(entry.detail);
+      expect(result.requestId).toMatch(/^semantic-request/);
+    }
+    expect(await w.revisionMap()).toEqual(before);
   });
 
   it('leaves the dispatcher containment rule exactly where it was', async () => {
