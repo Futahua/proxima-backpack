@@ -316,12 +316,18 @@ function refusal(
  *
  * The request id is minted before the submission is parsed, which is the same convention `dispatch` and the
  * agent write path follow: a submission this layer cannot read is still correlatable with the refusal it got.
+ *
+ * `options.requestId` exists for the same reason `moveTaskByGesture` accepts one: a trusted layer that has
+ * already minted an id for this run - the agent write path, which answers refusals of its own before reaching
+ * here - hands it down rather than letting a second boundary mint a second id and append a second event. A
+ * wire never supplies one, and nothing here reads one out of the submission.
  */
 export async function submitPropertySchemaAction(
   deps: PropertySchemaActionDependencies,
   input: unknown,
+  options: { readonly requestId?: string } = {},
 ): Promise<PropertySchemaActionOutcome> {
-  const requestId = mintSemanticRequestId(deps.ids);
+  const requestId = options.requestId ?? mintSemanticRequestId(deps.ids);
   const audit = (actionType: string, outcome: SemanticOutcome, entityIds: readonly string[], errorCode?: string): void => {
     deps.audit.append({
       requestId,

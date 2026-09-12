@@ -32,6 +32,12 @@ import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { CanonicalExecutionState } from '../domain/canonicalTaskState.js';
 import type { IdGenerator } from '../domain/clock.js';
 import { categoryOf, registeredActionTypes } from './actionTaxonomy.js';
+import {
+  PROPERTY_SCHEMA_ACTION_TYPES,
+  submitPropertySchemaAction,
+  type PropertySchemaActionOutcome,
+  type PropertySchemaWriteOperations,
+} from './propertySchemaActions.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import {
@@ -45,10 +51,23 @@ import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult }
 
 export const AGENT_WRITE_SCHEMA_VERSION = 1 as const;
 
-/** The verbs this wire runs without a cockpit. Every other registered verb is answered, not ignored. */
-export const AGENT_WRITE_VERBS = ['task.execution.move', 'task.execution.reorder'] as const;
+/**
+ * The verbs this wire runs without a cockpit. Every other registered verb is answered, not ignored.
+ *
+ * Two families qualify today and they qualify by the same rule rather than by seniority: `moveTaskByGesture`
+ * takes the update callable, the refresh, the id source and the sink, and `propertySchemaActions` takes the
+ * five schema operations, the id source and the sink. Neither reads a projection, a draft or a modal.
+ */
+export const AGENT_WRITE_VERBS = [
+  'task.execution.move',
+  'task.execution.reorder',
+  ...Object.values(PROPERTY_SCHEMA_ACTION_TYPES),
+] as const;
 
 export type AgentWriteVerb = (typeof AGENT_WRITE_VERBS)[number];
+
+/** The five schema verbs, as a set the parse can test against. */
+const SCHEMA_VERB_TYPES: readonly string[] = Object.values(PROPERTY_SCHEMA_ACTION_TYPES);
 
 /** The wire shape an agent submits for a drop. */
 export interface AgentTaskMoveSubmission {
@@ -79,6 +98,15 @@ export interface AgentWriteOperations {
 export interface AgentWriteDependencies {
   /** Resolve the sanctioned record write path; null when this run may not write records. */
   readonly writes: () => Promise<AgentWriteOperations | null>;
+  /**
+   * Resolve the schema write path, when this composition has one.
+   *
+   * Separate from `writes` because the browser shell resolves no schema operations yet - there is no schema
+   * editor for them to serve - and requiring them there would make a composition that cannot write schemas
+   * unable to use the wire for the drops it can write. Absent or null, a schema verb is refused
+   * `writes-unavailable` with this run's own reason rather than pretended away.
+   */
+  readonly schemaWrites?: () => Promise<PropertySchemaWriteOperations | null>;
   /** Why there is no write path, in words a reader can act on. */
   readonly unavailableReason: () => string | null;
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
@@ -114,12 +142,27 @@ export interface AgentWriteRefusal {
   readonly actualRevision?: string;
 }
 
-export type AgentWriteResult = TaskMoveGestureResult | AgentWriteRefusal;
+export type AgentWriteResult = TaskMoveGestureResult | PropertySchemaActionOutcome | AgentWriteRefusal;
 
-export interface ParsedAgentWrite {
-  readonly ok: true;
-  readonly submission: AgentTaskMoveSubmission;
-}
+/**
+ * A submission this wire recognises.
+ *
+ * Two shapes, because the two families own their own rules: a drop's facts are parsed here (the wire is what
+ * knows `from`, `to` and the revision), while a schema submission is recognised and handed to the entry that
+ * already parses it, so a name, a definition or an option change is validated in one place rather than two.
+ */
+export type ParsedAgentWrite =
+  | {
+      readonly ok: true;
+      readonly kind: 'move';
+      readonly actionType: string;
+      readonly submission: AgentTaskMoveSubmission;
+    }
+  | {
+      readonly ok: true;
+      readonly kind: 'schema';
+      readonly actionType: string;
+    };
 
 export interface RejectedAgentWrite {
   readonly ok: false;
@@ -193,6 +236,13 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
   }
 
   const ids = namedEntityIds(candidate);
+
+  // The schema family: recognised here, parsed by the entry that owns its shape. A wire that re-implemented
+  // "what a property definition is" would be a second copy of a rule the domain constructor already owns.
+  if (SCHEMA_VERB_TYPES.includes(rawType)) {
+    return { ok: true, kind: 'schema', actionType: rawType };
+  }
+
   const fail = (detail: string): RejectedAgentWrite => ({
     ok: false,
     reason: 'malformed-submission',
@@ -226,7 +276,7 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
     return fail(`a drop from ${submission.from} to ${submission.to} is ${actual}, not ${submission.type}`);
   }
 
-  return { ok: true, submission };
+  return { ok: true, kind: 'move', actionType: rawType, submission };
 }
 
 function refused(
@@ -264,6 +314,24 @@ export async function submitAgentWrite(
   if (!parsed.ok) {
     audit(parsed.actionType, 'rejected', parsed.entityIds, parsed.reason === 'unsupported-verb' ? 'action-not-available' : 'validation-refused');
     return refused(parsed.actionType, parsed.reason, parsed.detail, requestId);
+  }
+
+  if (parsed.kind === 'schema') {
+    // The schema entry parses the submission, appends the run's one event and reports the record layer's own
+    // outcome. It is handed the id this boundary minted, because a second mint would be a second run: one
+    // submission, one id, one event - and the refusal it decides itself (no schema composition resolved) is
+    // journalled under the family name `property.schema`, since at that point it has parsed no verb.
+    const schemaOperations = deps.schemaWrites === undefined ? null : await deps.schemaWrites();
+    return await submitPropertySchemaAction(
+      {
+        writes: async () => schemaOperations,
+        unavailableReason: () => deps.unavailableReason() ?? 'writes-unavailable',
+        ids: deps.ids,
+        audit: deps.audit,
+      },
+      input,
+      { requestId },
+    );
   }
 
   const { submission } = parsed;

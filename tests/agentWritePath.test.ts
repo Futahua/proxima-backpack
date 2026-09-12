@@ -45,6 +45,18 @@ import { createInspectionProjection, type InspectionProjection } from '../src/ap
 import { startRecordMutationAuthority } from '../src/app/recordRecoveryStartup.js';
 import { createRefreshController, type RefreshReason, type RefreshResult } from '../src/app/refreshController.js';
 import { recordStoreStateSource } from '../src/app/stateSource.js';
+import {
+  PROPERTY_SCHEMA_ACTION_TYPES,
+  type PropertySchemaWriteOperations,
+} from '../src/app/propertySchemaActions.js';
+import {
+  createPropertySchema,
+  deletePropertySchema,
+  updatePropertySchema,
+  updateSchemaField,
+  updateSchemaOption,
+  type PropertySchemaMutationDependencies,
+} from '../src/app/propertySchemaMutations.js';
 import { createTask, updateTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
 import { createDurableRecoveryStore, type RecoveryJournalBackend } from '../src/app/vaultRecovery.js';
 import { EMPTY_PROJECT_BACKLOG_VIEW, renderProjectBacklog } from '../src/browser/projectBacklog.js';
@@ -52,6 +64,7 @@ import { renderProjectTaskBoard } from '../src/browser/projectTaskBoard.js';
 import { fixedClock, sequentialIdGenerator } from '../src/domain/clock.js';
 import { defineCanonicalRecordHeader, opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
 import type { CanonicalProjectRecordV2, CanonicalRecordV2 } from '../src/domain/canonicalRecordV2.js';
+import { opaqueSchemaOptionIdFromRandomBytes } from '../src/domain/canonicalSchema.js';
 import type { ProximaState, Task } from '../src/domain/types.js';
 import type { RecordStoreFileName } from '../src/ports/recordStore.js';
 import { MemoryRecordFiles } from './test-record-store.js';
@@ -171,9 +184,25 @@ async function world(seedOffset: number): Promise<World> {
   // call would make every run's id `0001` and hide a wire that reused an id it had already issued.
   const ids = semanticIds();
   const operations = { updateTask: (input: Parameters<typeof updateTask>[1]) => updateTask(deps, input) };
+  let nextOption = 300;
+  const schemaMutations: PropertySchemaMutationDependencies = {
+    store,
+    coordinator: authority.coordinator,
+    allocateRecordId: () => idFromLastByte(nextId++),
+    allocateOptionId: () => opaqueSchemaOptionIdFromRandomBytes((() => { const bytes = new Uint8Array(16); bytes[15] = nextOption++; return bytes; })()),
+  };
 
   const agent: AgentWriteDependencies = {
     writes: async () => operations,
+    // The schema family, resolved the way a composition with a schema editor would resolve it. The wire's
+    // own deps make this optional on purpose: the browser shell has no schema editor yet.
+    schemaWrites: async () => ({
+      createPropertySchema: (request) => createPropertySchema(schemaMutations, request),
+      updatePropertySchema: (input) => updatePropertySchema(schemaMutations, input),
+      updateSchemaField: (input) => updateSchemaField(schemaMutations, input),
+      updateSchemaOption: (input) => updateSchemaOption(schemaMutations, input),
+      deletePropertySchema: (input) => deletePropertySchema(schemaMutations, input),
+    }),
     unavailableReason: () => null,
     refresh,
     ids,
@@ -326,9 +355,10 @@ describe('agent write path', () => {
     }]);
 
     // The wire cannot reach a cockpit: its dependency type has no projection to read, and neither does the
-    // module - a source read is the check that survives a well-meaning later edit.
+    // module - a source read is the check that survives a well-meaning later edit. The two resolvers it does
+    // take are write paths, and one of them is optional precisely because a composition need not have it.
     expect(AGENT_WRITE_SOURCE).not.toContain('ProximaState');
-    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'ids', 'refresh', 'unavailableReason', 'writes']);
+    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'ids', 'refresh', 'schemaWrites', 'unavailableReason', 'writes']);
   });
 
   it('returns the same result object as the UI gesture, for an accepted run and for a lost race', async () => {
@@ -531,6 +561,69 @@ describe('agent write path', () => {
       answered += 1;
     }
     expect(answered).toBeGreaterThan(0);
+  });
+
+  it('runs the schema family through the same wire, with one id and one event per run', async () => {
+    const w = await world(1300);
+    const created = await submitAgentWrite(w.agent, {
+      type: PROPERTY_SCHEMA_ACTION_TYPES.create,
+      name: 'Story points',
+      definition: { type: 'number' },
+    });
+
+    expect(created).toMatchObject({ ok: true, verb: 'create', actionType: 'property.schema.create', outcome: 'created' });
+    if (!created.ok) throw new Error('the schema create was refused');
+    if (!('verb' in created)) throw new Error('a schema submission answered as something else');
+    // The wire's id is the run's id: the schema entry was handed it rather than minting a second one, so the
+    // world's first run carries the first id and the run leaves exactly one event.
+    expect(created.requestId).toBe('semantic-request-0001');
+    expect(w.audit.events).toEqual([{
+      requestId: created.requestId,
+      actionType: 'property.schema.create',
+      outcome: 'accepted',
+      entityIds: [created.recordId],
+    }]);
+    expect(created.revision).toBe(await w.revisionOf(created.recordId));
+
+    // A refusal passes through in the record layer's vocabulary, and is journalled under the verb.
+    const stale = await submitAgentWrite(w.agent, {
+      type: PROPERTY_SCHEMA_ACTION_TYPES.update,
+      schemaId: created.recordId,
+      expectedRevision: 'nothing@1',
+      name: 'Effort',
+    });
+    expect(stale).toMatchObject({ ok: false, reason: 'stale-revision', actualRevision: created.revision });
+    expect(stale.requestId).toBe('semantic-request-0002');
+    expect(w.audit.events.at(-1)).toMatchObject({
+      requestId: stale.requestId,
+      actionType: 'property.schema.update',
+      outcome: 'rejected',
+      errorCode: 'stale-revision',
+      entityIds: [created.recordId],
+    });
+
+    // A composition with no schema operations refuses by name rather than pretending the verb is unknown,
+    // and the refusal still carries the run's own id and one event.
+    const bare = await submitAgentWrite({ ...w.agent, schemaWrites: undefined }, {
+      type: PROPERTY_SCHEMA_ACTION_TYPES.create,
+      name: 'Story points',
+      definition: { type: 'number' },
+    });
+    expect(bare).toMatchObject({ ok: false, reason: 'writes-unavailable' });
+    expect(bare.requestId).toBe('semantic-request-0003');
+    expect(w.audit.events).toHaveLength(3);
+
+    // And the drop family is untouched by the widening: the same world still moves a task.
+    const task = await w.seed('Still moves', 0);
+    const moved = await submitAgentWrite(w.agent, {
+      type: 'task.execution.move',
+      taskId: task.id,
+      from: 'backlog',
+      to: 'running',
+      targetIndex: 0,
+      expectedRevision: task.source.revision,
+    });
+    expect(moved).toMatchObject({ ok: true, actionType: 'task.execution.move' });
   });
 
   it('leaves the dispatcher containment rule exactly where it was', async () => {

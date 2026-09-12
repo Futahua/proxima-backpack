@@ -1421,8 +1421,8 @@ const SCHEMA_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
   [COLUMN_REQUEST_ID]: carried(
     COLUMN_REQUEST_ID,
     'src/app/propertySchemaActions.ts',
-    'const requestId = mintSemanticRequestId(deps.ids);',
-    'one semantic request id, minted before the submission is parsed so a malformed one is still correlatable, returned on every branch and never read from the caller - the record layer\'s dropped coordinator id is untouched and the two are different ids for different things',
+    'const requestId = options.requestId ?? mintSemanticRequestId(deps.ids);',
+    'one semantic request id, minted before the submission is parsed so a malformed one is still correlatable, returned on every branch and never read from the caller - and minted once per run even when a second entry (the agent write path) reaches this family, because a trusted layer that already minted one hands it down exactly as the Elastic drop wrapper hands one to the gesture. The record layer\'s dropped coordinator id is untouched and is a different id for a different thing',
   ),
   [COLUMN_AUDIT]: carried(
     COLUMN_AUDIT,
