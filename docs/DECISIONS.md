@@ -2104,3 +2104,41 @@ is consulted.
 recovery becomes the host's to run and this journal becomes evidence rather than mechanism - or if the
 product decides recovery must be a deliberate act on every boot, which would make the automatic
 reconciliation the wrong default rather than the right one.
+
+## D85 - The runtime-validation column is answered at the entry, not by every member module
+
+**Decided** on 2026-09-12, at `ecf435a`. Stage 17's contract matrix carried the column *runtime
+validation exists* as a gap on thirty-three of its thirty-six rows, and the box holding that figure
+recorded why rather than guessing: two readings were defensible and they are not the same column - the
+row's own member module accepting `input: unknown` and parsing it (about twenty new parse boundaries),
+or every entry in front of the row parsing `unknown`, which is the tree's present shape. The retired
+AUTHOR left the choice explicitly open, with the reason an executor must not take it: "an executor that
+closes a box by redefining what it measures has closed nothing". This session holds both roles, so the
+reading is fixed here.
+
+**The decision: the column is answered at the crossing.** A row is validated when the entry that faces
+an untyped caller parses the input before the member module is reached. There are three such crossings
+in this tree: `parseAction` for the action protocol, `parseAgentWriteSubmission` for the agent wire, and
+the editor's field parse for a form that arrives as text. Every row's own contract is a *typed request*
+- that is what the column beside this one asserts, 36 of 36 - so a module that re-parsed its argument
+would be a second boundary standing behind a boundary that had already refused, and the typed-request
+column would be left measuring nothing.
+
+**What did not change, and this is the point.** The column's purpose is that unvalidated data never
+reaches a durable write, and that is still asserted where it can fail: *typed validation refusal exists*
+is 36 of 36, and the ruling's own case names the three entries and fails if either parser stops taking
+`unknown` in its signature. The ruling is therefore a relocation of the evidence, not a waiver of it -
+and it is recorded with the figure both ways: 3 satisfied, 33 not-applicable by decision, 0 gaps.
+
+**The mechanism keeps the decision falsifiable.** A new cell kind sits beside the existing gap cell:
+`decided` asserts the same absent marker with status `n/a`, so a gap still means "owed and missing"
+while an n/a means "not this row's shape" - and both fail the day the marker appears. The day a member
+module starts accepting `input: unknown`, the audit goes red and this decision has to be re-taken rather
+than quietly outgrown. Four cases assert it: every row is answered and never a gap; the satisfied set is
+exactly the three schema rows, whose boundary really does take `unknown`; every n/a cell still asserts
+the marker absent and still names its witness; and the entries the ruling rests on exist.
+
+**Reverses if:** a caller can reach a member module with unvalidated data without passing one of the
+three crossings - a new host channel, a bridge, or an agent path that hands a parsed-by-nobody payload
+straight to a family module. That would make the literal per-module reading the true one, and the
+reversal is cheap to detect: the n/a cells already assert the marker that would have to appear.
