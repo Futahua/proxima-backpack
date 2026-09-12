@@ -1982,3 +1982,43 @@ violations - and the live host, running a different code path in a different pro
 than one fixed name, or accepts a key alphabet that includes identities verbatim - at which point the
 encoding becomes unnecessary rather than wrong, and the attribute stops being a contract this project
 has to restate. Until then, the host's validation is the contract and this project encodes to it.
+
+## D82 - The civil-time zone is an injected parameter, and the machine's zone is read once at the boundary
+
+**Decided** on 2026-09-12, closing Gate 1's last open box at `58f7291`. That box had been open on a
+question the source could not settle: whether machine-local time is the intended semantics, or whether the
+zone becomes explicit. Time was already injected through `src/domain/clock.ts`; the zone was not, so
+`localDateKey` and `formatClockTime` read whatever zone the machine was in. A calendar derived that way
+renders one grid in Bangkok and another in Berlin from identical data, and no fixture can pin either.
+
+**The decision: the zone is a parameter, and the domain never reads it.** `src/domain/timeZone.ts` holds
+`TimeZone`, a fixed-offset constructor, a platform-backed IANA zone whose offsets come from the platform's
+own zone database through `Intl` - a table in this repository would be wrong at the next transition - and
+the two conversions derivation needs, `civilFieldsAt` and `instantOfCivil`. `src/browser/hostTimeZone.ts`
+is the only place in the tree that reads the machine's zone, and the shell calls it once and hands the same
+zone down; `tests/boundaries.test.ts` is what put it there, having refused the first draft of the zone module
+for reading ambient state inside `src/domain`.
+
+**`instantOfCivil` states its rule rather than inheriting one.** Candidates are built from the offsets
+sampled a day either side of the naive guess and kept only if they convert back to the fields they came from:
+one candidate is an ordinary time, two means the hour a fall-back repeats and the earlier instant wins, none
+means the hour a spring-forward skips and the pre-transition offset shifts forward. All three match the
+convention platform local-time parsing uses, and all three are asserted across UTC, a half-hour zone, both
+Berlin transitions, the southern hemisphere and a previous-day western case.
+
+**The migration was the finding.** Wiring this through the modules turned 25 assertions red, and every one of
+them was a fixture written as a UTC midnight while the machine is UTC+07: those suites had been passing
+because they inherited the ambient zone - deterministic in one zone and nowhere else. The suites now state
+the zone their fixtures were authored in. That is why this decision is worth its cost: it converted an
+untestable assumption into named decisions about what each fixture means.
+
+**One idiom is documented rather than converted.** `src/browser/calendarGrid.ts` builds *floating* civil
+dates - local midnight through the local setters, read back through the local getters - which is consistent
+by construction because the same zone both builds and reads them. A later slice that needs cross-zone grids
+should anchor those through `instantOfCivil`/`civilFieldsAt`; until then they are a labelled idiom, not an
+ambient read of an instant's zone.
+
+**Reverses if:** the product decides that civil dates are the only thing it manipulates and no user ever
+crosses a zone - at which point the parameter becomes ceremony. That is a product decision rather than an
+engineering one, and it is the alternative this box offered; the engineering answer is the one recorded here
+because it keeps the option open without costing anything at the call sites.

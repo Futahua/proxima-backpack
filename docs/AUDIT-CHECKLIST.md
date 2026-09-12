@@ -39,9 +39,9 @@ back.”
 
 | Field | Value |
 | --- | --- |
-| Current slice | **The zone port is in and the first wiring attempt is parked, at `0c0d593` on `wip/explicit-zone-derivation`.** `a3bede7` landed the type (`src/domain/timeZone.ts`), the single ambient reader above the domain (`src/browser/hostTimeZone.ts`) and the twelve-case correctness suite whose three disambiguation branches are the whole point. The next step is wiring derivation through it, and the honest result of trying is worth more than a green-looking half: switching `localDateKey`/`formatClockTime` to an explicit zone with a UTC default removes the ambient read from the domain - and turns **7 files / 25 tests red**, every one of them a schedule or inspection assertion whose fixture means "+07 local", this machine's zone. That is the measurement the ticked "deterministic across CI/developer timezone differences" box deserved: those 25 were deterministic in UTC+07 specifically. `typecheck` is clean on the parked branch and the other 246 files pass, so it is a worklist rather than a broken build; it is parked because the fix is to thread a `zone` through the render-options objects of six modules (~forty call sites), which does not fit one slice. Two shortcuts were tried and abandoned, and both are recorded on the branch: a scripted rename that rewrote its own wrapper bodies into self-recursion, and rewriting the fixtures to UTC construction, which moved the count by nothing. The accepted branch is untouched and green. Agenda: 51 open of 1177, unchanged. |
+| Current slice | **The zone became explicit and injected, closing Gate 1's last open box at `58f7291`.** `src/domain/timeZone.ts` took the type, the platform-backed zone and the two conversions; `src/browser/hostTimeZone.ts` is the only ambient reader; `time.ts` stopped reading the ambient zone; and every browser module, the navigation helper, the domain day selector and the inspection projection now take a zone, with the shell passing `hostZone()` once. The migration is where the value is: 25 assertions had been passing because their fixtures inherited this machine's zone, so the suites now state theirs and answer the same anywhere. Four red assertions ended the slice and each was resolved as a decision about what its fixture means. `src/browser/calendarGrid.ts` keeps *floating* civil dates - local midnight, read back with local getters - which is consistent by construction and documented as the next thing to anchor if cross-zone grids ever matter. Decisions: D82. Agenda: **50 open of 1177**, from 51. |
 | Branch | `stage7-record-store-contract` |
-| Last audited SHA | `feeb48c` - source/test typecheck 0, build 0, `git diff --check` 0, `npm test` 0 under default parallelism: **253 test files / 1673 passed / 1 skipped**, run 2026-09-12 in this working tree. The zone-port slice (`a3bede7`) added `tests/timeZone.test.ts` and five mutations of the new module all bite with the source restored byte for byte. The wiring attempt parked at `0c0d593` is **not** part of this count and is not on this branch: it is red there by measurement (7 files / 25 tests), and it is recorded as parked work rather than as an accepted slice, because a branch whose own suite fails is not a slice boundary. |
+| Last audited SHA | `58f7291` - source/test typecheck 0, build 0, `git diff --check` 0, `npm test` 0 under default parallelism: **253 test files / 1673 passed / 1 skipped**, run 2026-09-12 in this working tree. This slice changed twelve source files and four suites to make one parameter explicit, and the suites it changed are the evidence that it worked: they had been relying on the ambient zone, and now name theirs. Five mutations of the zone module bite with the source restored byte for byte. The attempt that carried the dead ends is parked on `wip/explicit-zone-derivation`, and every failure it recorded (25 red at `0c0d593`, 5 at `c41fd3e`, 4 at `a131ec7`) is resolved here. |
 | Parity agenda | `D:\Letters\MatTroiSeConMoc\LongHorizon\proxima\proxima-full-parity-checklist.md` (branch `codex/reviewer-send-verification`) carries the full-parity agenda this work is driven by: **835 ticked / 5 open** counting every box the document carries, or **743 / 5** counting only top-level boxes, at the agenda commit `166012e`. Nine of the ten "for every row above" umbrellas are now closed, the last two at `a00a749` - `request ID exists` and `event/audit record exists`, each 35 satisfied / one not-applicable / no gaps of 36 cells, re-measured with the in-walker probe rather than adjusted by hand - and the one that stays open carries its own figure and reason on its box: runtime validation, 33 gaps of 36, which is the one column this agenda asks for that the architecture deliberately does not have. The project-archive box closed at `aee729d`, the workflow-stage box at `0a39c83` on D77, the import-policy box at `b5d65d0` on D65, and the four release-gate scope statements closed at `24944c7` on a mechanical audit (fourteen checks over the three trees, exit 0) rather than on a reading. The agenda's tick audit was re-run rather than carried: 840 boxes, no ticked box without a SHA, no false timestamp, 948 SHA references with the one known unresolvable. Every box still open is a top-level one, so the two counting conventions continue to differ by nothing but the boxes they are asked about; the Gantt row-placement branch remains the one tick that closed as **decided against rather than done**. |
 | Papers changed | No Papers change is recorded by this Proxima commit. Gate 2.8 records three host-side findings as requests - a refused semantic-keys payload is refused in silence, three `tools/*.mjs` CLIs are no-ops on Windows, and an unpresented surface answers a capture with an artifact-bound error - and none of the three was implemented: Papers is read-only for this work until the creator authorizes a host change. |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` - retained as the repository's recorded machine-local baseline, not a fresh current-Papers acceptance claim. **A fresh current acceptance now exists next to it** (`00451d9`): Papers 1.3.11 at `d2a3c74`, `packaged false`, run against the Proxima build at `e08616d` in a disposable profile, with the artifact, stage list and reproduction command recorded in sections 2.7 and 2.9. The distinction the original cell drew is kept rather than collapsed: `0a0d89f` stays the baseline this repository was written against, and `d2a3c74` is what has actually been run against it most recently. |
@@ -287,49 +287,23 @@ Pin important behavior from old `calculateLiquidTimeline`.
 - [x] Undated/partially dated records have specified behavior.
 - [x] Decide timezone semantics:
   - [x] machine-local timezone is intentional; or
-  - [ ] timezone becomes explicit/injected.
-      *(**Half done at `a3bede7` @ `2026-09-12T20:51:30+07:00`, and the box stays open until derivation
-      uses it.** The zone is now a type: `src/domain/timeZone.ts` defines `TimeZone`, a fixed-offset
-      constructor, a platform-backed IANA zone and the two conversions derivation needs
-      (`civilFieldsAt`, `instantOfCivil`), with offsets read from the platform's zone database through
-      `Intl` rather than from a table this repository would get wrong at the next transition. The machine's
-      zone is read once, above the domain, in `src/browser/hostTimeZone.ts` - the boundary suite refused
-      `hostZone()` inside `src/domain` on the first run, which is the rule working. `instantOfCivil`'s three
-      branches are explicit and asserted (one candidate: ordinary; two: a repeated fall-back hour takes the
-      earlier; none: a skipped spring-forward hour shifts forward), across UTC, a half-hour zone, both Berlin
-      transitions, the southern hemisphere and a previous-day western case, and five mutations of the module
-      all bite. **What remains is the wiring, and it is the box's actual condition:** `localDateKey` and
-      `formatClockTime` still read the ambient zone, and the schedule and calendar modules carry around a
-      hundred `Date` getter reads between them, so no derivation takes the injected zone yet. A zone port
-      nothing derives through is the "capability present, not exercised" pattern this checklist refuses,
-      which is why the box is still open.)
-      *(**A first wiring attempt is parked, not accepted, at `0c0d593` on
-      `wip/explicit-zone-derivation` @ `2026-09-12T20:57:21+07:00`.** It switches `localDateKey` and
-      `formatClockTime` to an explicit `TimeZone` with a UTC default, so the ambient read is gone from
-      `src/domain/time.ts` - and it is red: **7 files / 25 tests**. Every one of them is a schedule or
-      inspection assertion whose fixture means "+07 local", this machine's zone, which is how they passed
-      here and would have failed in Berlin. `typecheck` is clean there and the other 246 files pass, so the
-      failures are a worklist rather than a broken build: `scheduleTimeGrid` 10, `scheduleProjection` 5,
-      `scheduleWriteWiring` 5, `scheduleRecurrence` 2, `surfaceConvergence` 1, `inspection` 1, `modalAudit` 1.
-      It is parked rather than finished because the fix is to thread a `zone` through the render-options
-      objects of the schedule and timekeeping modules - roughly forty call sites across six modules - and
-      that does not fit one slice. Two shortcuts were tried and abandoned: a scripted rename that rewrote
-      its own wrapper bodies into self-recursion, and rewriting the *fixtures* to UTC construction, which
-      moved the count by nothing at all. The accepted branch is untouched by it and stays green.
-      **This also qualifies the ticked "tests are deterministic across CI/developer timezone differences"
-      box honestly:** the suites it names are, and these 25 assertions were not - they were deterministic in
-      UTC+07 specifically. They are the reason the wiring is worth doing rather than cosmetic.
-      **A second attempt is parked on the same branch at `c41fd3e` @ `2026-09-12T20:58:53+07:00`,** and it is
-      the behaviour-preserving half: the four browser modules that derive calendar dates now go through a
-      `bindZone(options.zone)` wrapper whose default is the host zone read in `src/browser/hostTimeZone.ts`, so
-      *where* the zone is read moves to one boundary while the zone itself does not change. That ordering is the
-      whole lesson of the two attempts: with every call site passing a zone explicitly, switching the default to
-      UTC changes nothing, and the suites never have to go red. The branch records five remaining mechanical
-      items (add the `formatClockTime` import to four files, apply this branch's own two-argument `time.ts`
-      signature, bind the entries by hand because the signature shape defeats a regex, migrate
-      `scheduleNavigation`'s four sites after finding where it gets `localDateKey`, and give
-      `daysCovered`/`inspection.ts` an explicit parameter rather than a default), and the script that produced
-      the state is kept at `.dsh/zone-pass1.mjs` with the previous attempt's ordering bug already fixed.** A third pass is parked on the same branch at `c41fd3e`'s successor, and it is close: typecheck clean, `1668 of 1674` tests passing, five red, each one a named site - `src/app/inspection.ts` calling `eventsByDay` without a zone, `scheduleNavigationDateKey` still four-argument on one path, and `src/browser/calendarGrid.ts`, which has no imports and reads the ambient zone through its own date construction. The four browser modules now route every derivation through a `bindZone(options.zone)` wrapper defaulting to the host zone, `scheduleNavigation` takes an injected zone through three functions, and the domain selector does too. From 25 red to 5 in one pass, by hand rather than by script. **Pass 1c followed at `a131ec7` @ `2026-09-12T21:05:45+07:00`: `1669 of 1674` passing, four red, one per file, and all four are the same shape - a fixture written as a UTC midnight while the machine is UTC+07, so the assertion depended on the ambient zone for its meaning (`inspection` reads a six-day span as five, `scheduleProjection` lands `multi` a day late, `scheduleTimeGrid` a column a day early, `timekeepingCockpit` a deadline a day late).** This pass also re-applied the navigation threading the previous stash dance lost, and recorded two dead ends: a blanket `zone: utcZone()` sweep beside every `now:` line breaks `timekeepingCockpit.test.ts` outright because not every `now:` is a render option, and making the fixtures UTC-constructed moved the failure count by nothing. The remaining four want per-assertion care.)*
+  - [x] timezone becomes explicit/injected. - `58f7291` @ `2026-09-12T21:09:56+07:00`. **The zone is a parameter
+      everywhere a civil date is derived from an instant, and the machine's zone is read in exactly one
+      function at the boundary.** `src/domain/timeZone.ts` holds the type, a platform-backed IANA zone
+      (offsets from the platform's own database, and an unknown id refused rather than approximated) and the
+      two conversions derivation needs; `src/browser/hostTimeZone.ts` is the only ambient reader in the tree;
+      `time.ts` takes the zone explicitly and no longer reads the ambient one. The browser modules bind one per
+      render call from their own options (`bindZone(options.zone)`), `scheduleNavigation` takes it through its
+      three functions, `eventsByDay` takes it, and the inspection projection takes it with the shell passing
+      `hostZone()`. **What the migration exposed is the part worth keeping:** 25 assertions had been passing
+      because their fixtures inherited this machine's zone - written as a UTC midnight while the machine is
+      UTC+07 - so the suites now state the zone their fixtures were authored in instead of inheriting it, and
+      the whole suite answers the same in Berlin as in Bangkok. One idiom is documented rather than converted:
+      `src/browser/calendarGrid.ts` builds *floating* civil dates (local midnight, read back with local
+      getters), which is consistent by construction; a later slice that needs cross-zone grids should anchor
+      those through `instantOfCivil`/`civilFieldsAt` too. The four red assertions this slice ended on were each
+      resolved as a decision about what its fixture means, not as a guess, and five mutations of the zone module
+      bite with the source restored byte for byte. D82 records the choice and what would reverse it.
 - [x] Tests are deterministic across CI/developer timezone differences.
 - [x] Month boundaries covered.
 - [x] Year boundaries covered.
