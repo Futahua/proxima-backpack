@@ -96,12 +96,17 @@ until it is decided.
       using the interpreted fields, with the legacy source preserved as provenance and
       the construct reported. That answer removes the asymmetry this question is about -
       if the construct does not block an import, it cannot be what demotes a refreshed
-      generation either - so the blocking classification in `refreshController.ts` is now a
-      **work item rather than a question**: the code moves out of the blocking list,
-      `docs/VAULT-FORMATS.md` records its severity as a warning with a named report, and
-      the parity checklist's Stage 8 box carries the module and test list. The related
-      import-policy change - the staging planners currently treat such records as explicit
-      blockers - is the same answer seen from the import side.
+      generation either. **Checked against the code while recording that, and the asymmetry is not
+      visible in it:** `isBlocking` is severity-only (`src/domain/problems.ts:65-66` - `severity ===
+      'error'`), and the refresh failure predicate is `isBlocking(problem) ||
+      isFrontmatterParseFailure(problem)` (`src/app/refreshController.ts:101-107`), while the reader
+      emits `unsupported-frontmatter` at `warning`. So the refresh half may need **no code change at
+      all** - what it needs is the test that proves a refresh carrying the warning is accepted rather
+      than demoted, and a fix only if that test fails. `docs/VAULT-FORMATS.md` still records the
+      severity as a warning with a named report. The related import-policy change - the staging
+      planners currently treat such records as explicit blockers - is the same answer seen from the
+      import side, and that half *is* a code change; the parity checklist's Stage 8 box carries its
+      module and test list.
 - [ ] **Exact currently validated Papers host SHA.** No fresh running-Papers acceptance
       artifact exists for the current tree, and source cannot make a newer Papers
       baseline true.
