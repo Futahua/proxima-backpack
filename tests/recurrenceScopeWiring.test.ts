@@ -35,6 +35,7 @@ import {
 } from '../src/browser/scheduleRecurrence.js';
 import { bindScheduleTimeGridInteractions, renderScheduleTimeGrid } from '../src/browser/scheduleTimeGrid.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T09:30:00+07:00';
 const ANCHOR_DAY = new Date(2026, 8, 1);
@@ -101,6 +102,8 @@ async function recurringWorld() {
     refresh: async () => null,
     setRefusal: () => undefined,
     render: () => undefined,
+    ids: semanticIds(),
+    audit: recordingAudit(),
   });
 
   await setRecurrenceAction(dependencies(), {

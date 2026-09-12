@@ -36,6 +36,7 @@ import {
   type ScheduleTimeGridMode,
 } from '../src/browser/scheduleTimeGrid.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T09:30:00+07:00';
 /** The local civil day the grid is looking at, so the geometry below is in the same frame as it. */
@@ -174,6 +175,8 @@ function mount(
     refresh: async () => null,
     setRefusal: () => undefined,
     render: () => undefined,
+    ids: semanticIds(),
+    audit: recordingAudit(),
   });
 
   bindScheduleTimeGridInteractions(host, {
@@ -288,6 +291,8 @@ function mountProjection(
             refresh: async () => null,
             setRefusal: () => undefined,
             render: () => undefined,
+            ids: semanticIds(),
+            audit: recordingAudit(),
           },
           { eventId, values },
         );

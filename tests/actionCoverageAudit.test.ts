@@ -999,6 +999,27 @@ const BULK_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
   ),
 };
 
+/**
+ * The envelope cells for the five Schedule verbs.
+ *
+ * All five run through one sequence (`runEventWrite`), so they close together - and the journal names the verb,
+ * `event.<verb>`, which is what lets one sequence tell five stories.
+ */
+const EVENT_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/eventWriteActions.ts',
+    'readonly requestId: string;',
+    'the sequence mints one semantic request id before the event lookup can refuse and returns it on every result, so a schedule write refused because the event is gone, because nothing changed or because there is no write path is correlatable exactly like an accepted one; a create has no id yet, so its refusals name no target rather than guessing one',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/eventSemanticAudit.test.ts',
+    'audit:accepted',
+    'behavioural rather than structural: one terminal event per run, after convergence where the store moved, named `event.<verb>` so a reschedule and a resize are distinguishable, carrying the record the run touched - and five runs leave five events with five ids rather than one per module',
+  ),
+};
+
 const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
   {
     action: 'task.create',
@@ -1165,6 +1186,7 @@ const EVENT_CONTRACT_ROWS: readonly ContractRow[] = [
       shape: 'create',
       refusal: { marker: "'an event needs a start that is a real instant'", reason: 'a create without a real start or end is refused by name, and so is a span that ends before it starts' },
       observable: { file: 'tests/scheduleWriteWiring.test.ts', marker: "drawn.events.find((event) => event.name === 'Seeded through the grid')", note: 'the seeded form case re-reads the schedule after the create and finds the event by name in what came back' },
+      overrides: EVENT_ENVELOPE_OVERRIDES,
     },
     {
       action: 'event.update',
@@ -1173,6 +1195,7 @@ const EVENT_CONTRACT_ROWS: readonly ContractRow[] = [
       shape: 'write',
       refusal: { marker: "'an update with no field to change is not an update'", reason: 'a save that changed nothing submits nothing and is answered by the operation refusal rather than written as a record that says the same thing' },
       observable: { file: 'tests/scheduleWriteWiring.test.ts', marker: 'const saved = drawn.events.find((event) => event.id === app.eventId)!;', note: 'the editor case reads the saved event back out of the re-read schedule rather than out of the draft it typed' },
+      overrides: EVENT_ENVELOPE_OVERRIDES,
     },
     {
       action: 'event.delete',
@@ -1181,6 +1204,7 @@ const EVENT_CONTRACT_ROWS: readonly ContractRow[] = [
       shape: 'write',
       refusal: { marker: "'the event record is not in the store'", reason: 'deleting an event the store does not hold answers a reason instead of throwing, and a record at that id that is not an event is answered as not-found too' },
       observable: { file: 'tests/scheduleWriteWiring.test.ts', marker: 'expect(drawn.events.some((event) => event.id === app.eventId)).toBe(false);', note: 'the delete case asserts the event is gone from the re-read schedule, which is deletion absence rather than a returned flag' },
+      overrides: EVENT_ENVELOPE_OVERRIDES,
     },
     {
       action: 'event.reschedule',
@@ -1189,6 +1213,7 @@ const EVENT_CONTRACT_ROWS: readonly ContractRow[] = [
       shape: 'write',
       refusal: { marker: "'the new start is not a real instant'", reason: 'an unreadable new start is refused by name before the record is read, and the resulting span is validated before the write' },
       observable: { file: 'tests/scheduleWriteWiring.test.ts', marker: 'const moved = drawn.events.find((event) => event.id === app.eventId)!;', note: 'the drag case reads the moved event back out of the re-read schedule and asserts the start the store holds' },
+      overrides: EVENT_ENVELOPE_OVERRIDES,
     },
     {
       action: 'event.resize',
@@ -1197,6 +1222,7 @@ const EVENT_CONTRACT_ROWS: readonly ContractRow[] = [
       shape: 'write',
       refusal: { marker: "'a duration must be a whole number of minutes greater than zero'", reason: 'an impossible duration and an unreadable end are each refused by name before the span is written' },
       observable: { file: 'tests/scheduleWriteWiring.test.ts', marker: 'const resized = drawn.events.find((event) => event.id === app.eventId)!;', note: 'the resize case reads the resized event back out of the re-read schedule' },
+      overrides: EVENT_ENVELOPE_OVERRIDES,
     },
   ]),
   ...contractRows(RECURRENCE_CONTRACT, [

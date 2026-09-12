@@ -13,7 +13,8 @@
  * where the pointer did.
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
-import type { ProximaState } from '../domain/types.js';
+import type { CalendarEvent, ProximaState } from '../domain/types.js';
+import type { IdGenerator } from '../domain/clock.js';
 import type {
   CreateEventRequest,
   EventFieldMutation,
@@ -23,6 +24,7 @@ import type {
 } from './eventMutations.js';
 import { planEventFormMutations, type EventFormValues } from './eventFormPlan.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
+import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import { convergeAfterWrite } from './writeConvergence.js';
 
 export const EVENT_WRITE_ACTION_SCHEMA_VERSION = 1 as const;
@@ -52,6 +54,10 @@ export interface EventWriteDependencies {
   /** The refusal the surface will draw, or null to clear it. */
   readonly setRefusal: (reason: string | null) => void;
   readonly render: () => void;
+  /** Mints this run's semantic request id. Injected, like every other identity in this repository. */
+  readonly ids: IdGenerator;
+  /** Where the run's one terminal audit event goes. */
+  readonly audit: SemanticAuditSink;
 }
 
 export type EventWriteFailureReason =
@@ -65,6 +71,8 @@ export type EventWriteOutcome =
       readonly schemaVersion: typeof EVENT_WRITE_ACTION_SCHEMA_VERSION;
       readonly verb: EventWriteVerb;
       readonly outcome: 'created' | 'updated' | 'deleted' | 'rescheduled' | 'resized';
+      /** This run's semantic request id: minted at the boundary, returned on every result. */
+      readonly requestId: string;
       readonly recordId: OpaqueRecordId;
       readonly revision: string;
       readonly refreshed: boolean;
@@ -75,6 +83,8 @@ export type EventWriteOutcome =
       readonly verb: EventWriteVerb;
       readonly reason: EventWriteFailureReason;
       readonly detail: string;
+      /** Present on a refusal too, so a refused schedule write is correlatable with the event it left. */
+      readonly requestId: string;
       readonly refreshed: boolean;
     };
 
@@ -82,13 +92,18 @@ function refused(
   verb: EventWriteVerb,
   reason: EventWriteFailureReason,
   detail: string,
+  requestId: string,
   refreshed = false,
 ): EventWriteOutcome {
-  return { ok: false, schemaVersion: EVENT_WRITE_ACTION_SCHEMA_VERSION, verb, reason, detail, refreshed };
+  return { ok: false, schemaVersion: EVENT_WRITE_ACTION_SCHEMA_VERSION, verb, reason, detail, requestId, refreshed };
 }
 
 /**
  * Run one event write and converge the surfaces.
+ *
+ * One sequence for all five verbs, so the envelope is minted here rather than five times: the id exists before
+ * the event lookup can refuse, one terminal event follows - after convergence where the store moved - and the
+ * journal names the verb as `event.<verb>`, which is the name each row of Stage 17's matrix already uses.
  *
  * @param deps - the shell's pieces.
  * @param verb - which operation this is, so the result says what was attempted.
@@ -100,12 +115,33 @@ async function runEventWrite(
   deps: EventWriteDependencies,
   verb: EventWriteVerb,
   eventId: string | null,
-  write: (operations: EventWriteOperations, revision: string) => Promise<EventMutationResult>,
+  write: (
+    operations: EventWriteOperations,
+    revision: string,
+    event: CalendarEvent | null,
+  ) => Promise<EventMutationResult>,
 ): Promise<EventWriteOutcome> {
+  const requestId = mintSemanticRequestId(deps.ids);
+  const audit = (outcome: SemanticOutcome, entityIds: readonly string[], errorCode?: string): void => {
+    deps.audit.append({
+      requestId,
+      actionType: `event.${verb}`,
+      outcome,
+      entityIds: [...entityIds],
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  };
+  // The target, when there is one: a create has no id yet, so its refusals name nothing rather than guessing.
+  const target = eventId === null ? [] : [eventId];
+
   let revision = '';
+  let event: CalendarEvent | null = null;
   if (eventId !== null) {
-    const event = deps.state?.events.find((candidate) => candidate.id === eventId);
-    if (event === undefined) return refused(verb, 'unknown-event', 'the schedule has no event with that id');
+    event = deps.state?.events.find((candidate) => candidate.id === eventId) ?? null;
+    if (event === null) {
+      audit('rejected', target, 'unknown-event');
+      return refused(verb, 'unknown-event', 'the schedule has no event with that id', requestId);
+    }
     revision = event.source.revision;
   }
 
@@ -115,10 +151,13 @@ async function runEventWrite(
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
     deps.setRefusal(reason);
     deps.render();
-    return refused(verb, 'writes-unavailable', reason);
+    audit('rejected', target, 'writes-unavailable');
+    return refused(verb, 'writes-unavailable', reason, requestId);
   }
 
-  const written = await write(operations, revision);
+  // The write is reached only once the event is known to exist, which is why the callback is handed the
+  // record: a plan built from a missing event is exactly the refusal above, said once rather than twice.
+  const written = await write(operations, revision, event);
   const convergence = await convergeAfterWrite(deps, {
     accepted: written.ok,
     lostRace: !written.ok && written.reason === 'stale-revision',
@@ -127,17 +166,22 @@ async function runEventWrite(
   if (!written.ok) deps.setRefusal(written.reason);
   deps.render();
 
-  return written.ok
-    ? {
-        ok: true,
-        schemaVersion: EVENT_WRITE_ACTION_SCHEMA_VERSION,
-        verb,
-        outcome: written.outcome,
-        recordId: written.recordId,
-        revision: written.revision,
-        refreshed: convergence.refreshed,
-      }
-    : refused(verb, written.reason, written.detail, convergence.refreshed);
+  if (!written.ok) {
+    audit(semanticOutcomeOf({ wrote: 0, refused: true }), target, written.reason);
+    return refused(verb, written.reason, written.detail, requestId, convergence.refreshed);
+  }
+
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId]);
+  return {
+    ok: true,
+    schemaVersion: EVENT_WRITE_ACTION_SCHEMA_VERSION,
+    verb,
+    outcome: written.outcome,
+    requestId,
+    recordId: written.recordId,
+    revision: written.revision,
+    refreshed: convergence.refreshed,
+  };
 }
 
 /**
@@ -172,15 +216,17 @@ export async function saveEventAction(
   deps: EventWriteDependencies,
   input: { readonly eventId: string; readonly values: EventFormValues },
 ): Promise<EventWriteOutcome> {
-  const event = deps.state?.events.find((candidate) => candidate.id === input.eventId);
-  if (event === undefined) return refused('update', 'unknown-event', 'the schedule has no event with that id');
-
-  const mutations = planEventFormMutations(event, input.values);
-  return await runEventWrite(deps, 'update', input.eventId, async (operations, revision) => await operations.updateEvent({
-    eventId: input.eventId as OpaqueRecordId,
-    expectedRevision: revision,
-    mutations,
-  }));
+  // No pre-check here: `runEventWrite` refuses an event the schedule does not hold, with the envelope, and the
+  // callback below is handed the record it found. Planning before the sequence would mean minting a second id
+  // for a run that then refused, or refusing with no id at all.
+  return await runEventWrite(deps, 'update', input.eventId, async (operations, revision, event) => {
+    if (event === null) throw new Error('runEventWrite must hand the update a record');
+    return await operations.updateEvent({
+      eventId: input.eventId as OpaqueRecordId,
+      expectedRevision: revision,
+      mutations: planEventFormMutations(event, input.values),
+    });
+  });
 }
 
 /** Delete the event the editor is showing, at the revision the surface was rendering. */

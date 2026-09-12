@@ -28,6 +28,7 @@ import { fixedClock } from '../src/domain/clock.js';
 import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../src/domain/canonicalIdentity.js';
 import type { CalendarEvent, ProximaState } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T09:30:00+07:00';
 
@@ -201,6 +202,8 @@ function dependenciesFor(
     },
     setRefusal: (reason) => { refusals.push(reason); },
     render: () => { renders.count += 1; },
+    ids: semanticIds(),
+    audit: recordingAudit(),
   };
 }
 

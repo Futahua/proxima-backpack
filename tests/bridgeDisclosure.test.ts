@@ -14,6 +14,15 @@ import { fixtureFiles } from './fixtures.js';
  * loopback is never granted permission to read one.
  */
 
+/**
+ * How long a spawned bridge gets to announce itself.
+ *
+ * These cases start a real child process and wait for it to print `listening`, and under a full parallel suite
+ * - where every other test file is competing for the same machine - thirty seconds was not enough: this file
+ * failed twice in one session at ~30.0 s while passing in under half a second on its own. The budget is a
+ * safety bound, not a measurement, so it is generous on purpose.
+ */
+const BRIDGE_START_BUDGET_MS = 90_000;
 const BOUNDED_CODES = new Set([
   'invalid-path',
   'path-escapes-root',
@@ -53,7 +62,7 @@ async function listening(child: ReturnType<typeof spawn>): Promise<void> {
     // running alongside, could fail here while the same file passed alone in half a second —
     // a flake that makes the whole suite untrustworthy. Thirty seconds still fails a bridge
     // that never starts, and no longer fails one that is merely queued behind other work.
-    const timer = setTimeout(() => reject(new Error('bridge did not start')), 30_000);
+    const timer = setTimeout(() => reject(new Error('bridge did not start')), BRIDGE_START_BUDGET_MS);
     child.stdout?.on('data', (chunk) => { if (String(chunk).includes('listening')) { clearTimeout(timer); resolve(); } });
     child.once('error', (error) => { clearTimeout(timer); reject(error); });
     child.once('exit', (code) => { if (code !== 0) { clearTimeout(timer); reject(new Error(`bridge exited ${code}`)); } });
@@ -97,7 +106,7 @@ describe('bridge disclosure bounds', () => {
       // The startup banner reports where it listens, never what it exposes.
       expect(stdout.join('')).not.toContain(root);
     } finally { child.kill(); await removeDiskFixture(root); }
-  }, 30_000);
+  }, BRIDGE_START_BUDGET_MS);
 
   it('grants read permission to loopback pages only, and refuses a rebound Host', async () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-origin-'));
@@ -128,7 +137,7 @@ describe('bridge disclosure bounds', () => {
       const honest = await rawGet(port, '/health', { host: `127.0.0.1:${port}` });
       expect(honest.status).toBe(200);
     } finally { child.kill(); await removeDiskFixture(root); }
-  }, 30_000);
+  }, BRIDGE_START_BUDGET_MS);
 
   it('refuses binary reads through an intermediate symlink component', async () => {
     const root = await mkdtemp(join(tmpdir(), 'proxima-intermediate-link-'));
@@ -151,5 +160,5 @@ describe('bridge disclosure bounds', () => {
       expect(listing.status).toBe(400);
       expect((await listing.json()).error).toBe('symlink-rejected');
     } finally { child.kill(); await rm(root, { recursive: true, force: true }); await rm(outside, { recursive: true, force: true }); }
-  }, 30_000);
+  }, BRIDGE_START_BUDGET_MS);
 });

@@ -31,6 +31,7 @@ import type { CanonicalEventRecordV2 } from '../src/domain/canonicalRecordV2.js'
 import type { ProximaState } from '../src/domain/types.js';
 import { expandScheduleRecurringOccurrences } from '../src/browser/scheduleRecurrence.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T09:30:00+07:00';
 
@@ -102,6 +103,8 @@ async function world() {
     refresh: async (reason) => { refreshCalls.push(reason); return null; },
     setRefusal: () => undefined,
     render: () => undefined,
+    ids: semanticIds(),
+    audit: recordingAudit(),
   });
 
   return {

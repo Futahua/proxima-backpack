@@ -1078,6 +1078,14 @@ function eventWriteDependencies() {
     refresh: refreshFromSource,
     setRefusal: (reason: string | null) => { scheduleWriteFeedback = reason; },
     render,
+    // One envelope for all five event verbs, because they all run through one sequence: the id is minted by
+    // that sequence, and the event lands in the ring the surfaces are inspected through.
+    ids: DETERMINISTIC_IDS,
+    audit: {
+      append: (event: SemanticAuditEvent) => {
+        actionDispatcher?.auditSemantic(event);
+      },
+    },
   };
 }
 
