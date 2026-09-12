@@ -654,7 +654,11 @@ describe('Stage 7 slice 1 JSON RecordStore contract', () => {
       expect(categoryOf(updateAction.action.type)).toBe('record-mutation');
       await expect(records.updateIfUnchanged(task(updateAction.action.taskId as OpaqueRecordId, 'Path-shaped semantic update'), 'semantic-observed-revision')).rejects.toThrow(/Invalid opaque Proxima record id/);
 
-      const deleteAction = parseAction({ type: 'project.delete', projectId: creatorVaultPath });
+      const deleteAction = parseAction({
+      type: 'project.delete',
+      projectId: creatorVaultPath,
+      members: { tasks: [], events: [] },
+    });
       expect(deleteAction.ok).toBe(true);
       if (!deleteAction.ok || deleteAction.action.type !== 'project.delete') throw new Error('expected parsed project record-mutation action');
       expect(categoryOf(deleteAction.action.type)).toBe('record-mutation');

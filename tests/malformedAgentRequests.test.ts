@@ -130,10 +130,10 @@ describe('record-mutation-shaped requests through the protocol', () => {
     const app = await world();
     const before = await app.snapshot();
 
-    const parsed = parseAction({ type: 'project.delete', projectId: PROJECT });
+    const parsed = parseAction({ type: 'project.delete', projectId: PROJECT, members: { tasks: [], events: [] } });
     expect(parsed.ok).toBe(true);
 
-    const result = app.dispatcher.dispatch({ type: 'project.delete', projectId: PROJECT });
+    const result = app.dispatcher.dispatch({ type: 'project.delete', projectId: PROJECT, members: { tasks: [], events: [] } });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(typeof result.error.code).toBe('string');
     expect(await app.snapshot()).toEqual(before);

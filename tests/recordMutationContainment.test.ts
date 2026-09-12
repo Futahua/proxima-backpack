@@ -56,7 +56,7 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     const beforeRevision = dispatcher.snapshot().stateRevision; const beforeState = JSON.stringify(dispatcher.snapshot().state);
     const actions: ProximaAction[] = [
       { type: 'project.create', name: 'Containment proof', description: '' },
-      { type: 'project.archive', projectId: project.id }, { type: 'project.restore', projectId: project.id }, { type: 'project.delete', projectId: project.id },
+      { type: 'project.archive', projectId: project.id }, { type: 'project.restore', projectId: project.id }, { type: 'project.delete', projectId: project.id, members: { tasks: [], events: [] } },
       { type: 'canvas.node.geometry.change', nodeId: 'containment-node', operation: 'move', proposedX: 100, proposedY: 120, proposedWidth: 320, proposedHeight: 240 },
       { type: 'canvas.node.remove', nodeId: 'containment-node' },
       { type: 'task.timeline.change', taskId: task.id, operation: 'move', proposedStartDate: '2026-09-07T10:00:00.000Z', proposedDeadline: '2026-09-07T11:00:00.000Z', targetRowIndex: 0 },
