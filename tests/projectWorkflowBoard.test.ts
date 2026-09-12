@@ -174,6 +174,12 @@ describe('Stage 10 project workflow board surface', () => {
       previewMove: (intent) => { previews.push(intent); view = { ...view, dragTaskId: intent.taskId, dragTargetStageId: intent.targetStageId ?? NO_WORKFLOW_STAGE, dragTargetIndex: intent.targetIndex }; },
       dropMove: (intent) => { drops.push(intent); },
       clearDrag: () => { view = { ...view, dragTaskId: null, dragTargetStageId: null, dragTargetIndex: null }; },
+      // This file is about the drop; the board's stage controls have their own suite.
+      openStageForm: () => undefined,
+      editStageName: () => undefined,
+      saveStageForm: () => undefined,
+      deleteStage: () => undefined,
+      closeStageForm: () => undefined,
     });
 
     const harness = createInteractionHarness(root);
@@ -214,6 +220,11 @@ describe('Stage 10 project workflow board surface', () => {
       previewMove: () => undefined,
       dropMove: () => undefined,
       clearDrag: () => undefined,
+      openStageForm: () => undefined,
+      editStageName: () => undefined,
+      saveStageForm: () => undefined,
+      deleteStage: () => undefined,
+      closeStageForm: () => undefined,
     });
 
     createInteractionHarness(root).click('project-workflow-task-in-review');

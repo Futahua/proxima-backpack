@@ -27,6 +27,11 @@ export interface ProjectWorkflowMoveIntent {
   readonly targetIndex: number;
 }
 
+/** The open stage form: a new stage, or the rename of one the board is showing. */
+export type ProjectWorkflowStageForm =
+  | { readonly kind: 'create'; readonly name: string }
+  | { readonly kind: 'rename'; readonly stageId: string; readonly name: string };
+
 export interface ProjectWorkflowBoardViewState {
   projectId: string | null;
   selectedTaskId: string | null;
@@ -36,6 +41,16 @@ export interface ProjectWorkflowBoardViewState {
   dragTargetIndex: number | null;
   writeRefusal: string | null;
   lastRefusedMove: ProjectWorkflowMoveIntent | null;
+  /**
+   * Non-null when this run has no record write path, which is what disables the stage controls:
+   * a stage control that writes nothing is worse than one that says why.
+   */
+  stageWriteRefusal?: string | null;
+  /** The refusal the last stage write produced, drawn beside the controls. */
+  stageRefusal?: string | null;
+  /** What the last accepted stage write did, so a reader sees the change rather than guessing. */
+  stageFeedback?: string | null;
+  stageForm?: ProjectWorkflowStageForm | null;
 }
 
 export const EMPTY_PROJECT_WORKFLOW_BOARD_VIEW: ProjectWorkflowBoardViewState = {
@@ -46,6 +61,10 @@ export const EMPTY_PROJECT_WORKFLOW_BOARD_VIEW: ProjectWorkflowBoardViewState = 
   dragTargetIndex: null,
   writeRefusal: null,
   lastRefusedMove: null,
+  stageWriteRefusal: null,
+  stageRefusal: null,
+  stageFeedback: null,
+  stageForm: null,
 };
 
 export interface ProjectWorkflowBoardHandlers {
@@ -56,6 +75,15 @@ export interface ProjectWorkflowBoardHandlers {
   /** A drop the board could not complete locally: the shell decides what the write means. */
   dropMove(intent: ProjectWorkflowMoveIntent): void;
   clearDrag(): void;
+  /** Open the new-stage form, or the rename form for a stage the board is showing. */
+  openStageForm(form: { kind: 'create' } | { kind: 'rename'; stageId: string }): void;
+  /** What the reader typed into the open stage form. */
+  editStageName(value: string): void;
+  /** Submit the open stage form; the shell owns what the write means. */
+  saveStageForm(): void;
+  /** Delete a stage, at the revision the board is rendering. */
+  deleteStage(stageId: string): void;
+  closeStageForm(): void;
 }
 
 /** The stages this project declares, in the order the state carries them. */
@@ -100,13 +128,46 @@ function column(input: {
   tasks: readonly Task[];
   selected: string | null;
   previewTarget: boolean;
+  stageControls: string;
 }): string {
   const key = stageKeyOf(input.stageId);
   const dropStage = input.stageId ?? NO_WORKFLOW_STAGE;
   const slots = (index: number): string => `<div class="project-board-drop-slot" data-project-workflow-drop-stage="${escapeHtml(dropStage)}" data-project-workflow-drop-index="${index}" data-c1-key="project-workflow-drop-${escapeHtml(input.project.id)}-${escapeHtml(key)}-${index}"><div class="project-board-insertion-placeholder"></div></div>`;
   const cards = input.tasks.map((task, index) => card(task, input.selected) + slots(index + 1)).join('');
 
-  return `<section class="project-board-column project-workflow-column" data-project-workflow-stage-column="${escapeHtml(key)}" data-project-workflow-drag-target="${input.previewTarget ? 'true' : 'false'}" data-c1-key="project-workflow-column-${escapeHtml(key)}"><header><strong>${escapeHtml(input.label)}</strong><span>${input.tasks.length}</span></header><div class="project-board-column-cards">${input.tasks.length === 0 ? '<p class="empty-state">No tasks.</p>' : ''}${slots(0)}${cards}</div></section>`;
+  return `<section class="project-board-column project-workflow-column" data-project-workflow-stage-column="${escapeHtml(key)}" data-project-workflow-drag-target="${input.previewTarget ? 'true' : 'false'}" data-c1-key="project-workflow-column-${escapeHtml(key)}"><header><strong>${escapeHtml(input.label)}</strong><span>${input.tasks.length}</span>${input.stageControls}</header><div class="project-board-column-cards">${input.tasks.length === 0 ? '<p class="empty-state">No tasks.</p>' : ''}${slots(0)}${cards}</div></section>`;
+}
+
+/**
+ * One stage's own controls: a rename form, or the rename and delete buttons.
+ *
+ * A stage control is a record write like every other, so it is disabled — with the reason carried
+ * on the control itself — whenever this run has no write path, rather than offering a button that
+ * would write nothing.
+ */
+function stageControls(input: {
+  stage: WorkflowStage;
+  form: ProjectWorkflowStageForm | null | undefined;
+  unavailable: string | null;
+}): string {
+  const stageId = escapeHtml(input.stage.id);
+  if (input.form !== null && input.form !== undefined && input.form.kind === 'rename' && input.form.stageId === input.stage.id) {
+    return `<input type="text" class="project-workflow-stage-name" value="${escapeHtml(input.form.name)}" aria-label="Stage name" data-project-workflow-stage-name="${stageId}" data-c1-key="project-workflow-stage-name-${stageId}"><button type="button" data-project-workflow-action="save-stage" data-c1-key="project-workflow-stage-save-${stageId}">Save</button><button type="button" data-project-workflow-action="close-stage-form" data-c1-key="project-workflow-stage-cancel-${stageId}">Cancel</button>`;
+  }
+  const disabled = input.unavailable === null ? '' : ` disabled data-project-workflow-stage-write-refusal="${escapeHtml(input.unavailable)}"`;
+  return `<button type="button" data-project-workflow-action="rename-stage" data-project-workflow-stage-id="${stageId}" data-c1-key="project-workflow-stage-rename-${stageId}"${disabled}>Rename</button><button type="button" data-project-workflow-action="delete-stage" data-project-workflow-stage-id="${stageId}" data-c1-key="project-workflow-stage-delete-${stageId}"${disabled}>Delete</button>`;
+}
+
+/** The board's own stage form: the new-stage button, or the form it opens. */
+function stageFormMarkup(input: {
+  form: ProjectWorkflowStageForm | null | undefined;
+  unavailable: string | null;
+}): string {
+  if (input.form !== null && input.form !== undefined && input.form.kind === 'create') {
+    return `<span class="project-workflow-stage-create"><input type="text" class="project-workflow-stage-name" value="${escapeHtml(input.form.name)}" aria-label="New stage name" data-project-workflow-stage-name="${NO_WORKFLOW_STAGE}" data-c1-key="project-workflow-stage-name"><button type="button" data-project-workflow-action="save-stage" data-c1-key="project-workflow-stage-save">Save</button><button type="button" data-project-workflow-action="close-stage-form" data-c1-key="project-workflow-stage-cancel">Cancel</button></span>`;
+  }
+  const disabled = input.unavailable === null ? '' : ` disabled data-project-workflow-stage-write-refusal="${escapeHtml(input.unavailable)}"`;
+  return `<button type="button" class="project-workflow-stage-new" data-project-workflow-action="new-stage" data-c1-key="project-workflow-stage-new"${disabled}>New stage</button>`;
 }
 
 function inspector(state: ProximaState, project: Project, task: Task): string {
@@ -132,6 +193,14 @@ export function renderProjectWorkflowBoard(
   const active = view.projectId === project.id;
   const selected = active ? view.selectedTaskId : null;
   const unstaged = tasks.filter((task) => task.workflowStageId === null || task.workflowStageId === undefined);
+  const stageUnavailable = active ? view.stageWriteRefusal ?? null : null;
+  const stageForm = active ? view.stageForm ?? null : null;
+  const stageFeedback = active && view.stageFeedback !== null && view.stageFeedback !== undefined
+    ? `<p class="project-workflow-stage-feedback" data-project-workflow-stage-feedback="${escapeHtml(view.stageFeedback)}">${escapeHtml(view.stageFeedback)}</p>`
+    : '';
+  const stageRefusal = active && view.stageRefusal !== null && view.stageRefusal !== undefined
+    ? `<p class="diagnostics" data-project-workflow-stage-refusal="${escapeHtml(view.stageRefusal)}">The stage was not changed: ${escapeHtml(view.stageRefusal)}.</p>`
+    : '';
 
   const columns = [
     ...stages.map((stage) => column({
@@ -141,6 +210,7 @@ export function renderProjectWorkflowBoard(
       tasks: tasks.filter((task) => task.workflowStageId === stage.id).sort(byWorkflowOrder),
       selected,
       previewTarget: active && view.dragTargetStageId === stage.id,
+      stageControls: active ? stageControls({ stage, form: stageForm, unavailable: stageUnavailable }) : '',
     })),
     column({
       project,
@@ -149,6 +219,7 @@ export function renderProjectWorkflowBoard(
       tasks: [...unstaged].sort(byWorkflowOrder),
       selected,
       previewTarget: active && view.dragTargetStageId === NO_WORKFLOW_STAGE,
+      stageControls: '',
     }),
   ].join('');
 
@@ -157,8 +228,11 @@ export function renderProjectWorkflowBoard(
   const refusal = active && view.writeRefusal !== null
     ? `<p class="diagnostics" data-project-workflow-write-refusal="${escapeHtml(view.writeRefusal)}">Workflow drop refused: ${escapeHtml(view.writeRefusal)}. No task was changed.</p>`
     : '';
+  const stageToolbar = active
+    ? `<div class="project-workflow-stage-toolbar" data-project-workflow-stage-write="${stageUnavailable === null ? 'available' : 'unavailable'}">${stageFormMarkup({ form: stageForm, unavailable: stageUnavailable })}${stageFeedback}${stageRefusal}</div>`
+    : '';
 
-  return `<section class="project-workspace-panel project-workflow-board" data-project-workflow-project-id="${escapeHtml(project.id)}" data-project-workflow-stage-count="${stages.length}" data-c1-key="project-workflow-board"><header><h3>Task board</h3><small>${stages.length} workflow ${stages.length === 1 ? 'stage' : 'stages'} · ${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}</small></header><div class="project-board-grid project-workflow-grid">${columns}</div>${refusal}${inspectorMarkup}</section>`;
+  return `<section class="project-workspace-panel project-workflow-board" data-project-workflow-project-id="${escapeHtml(project.id)}" data-project-workflow-stage-count="${stages.length}" data-c1-key="project-workflow-board"><header><h3>Task board</h3><small>${stages.length} workflow ${stages.length === 1 ? 'stage' : 'stages'} · ${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}</small>${stageToolbar}</header><div class="project-board-grid project-workflow-grid">${columns}</div>${refusal}${inspectorMarkup}</section>`;
 }
 
 function markPreview(root: HTMLElement, stage: string | null, slot: HTMLElement): void {
@@ -189,15 +263,40 @@ export function bindProjectWorkflowBoardInteractions(root: HTMLElement, handlers
   root.addEventListener('click', (event) => {
     const control = (event.target as HTMLElement).closest<HTMLElement>('[data-project-workflow-action]');
     if (!control || !root.contains(control)) return;
-    if (control.dataset.projectWorkflowAction === 'open-task' && control.dataset.projectWorkflowTaskId) {
+    const action = control.dataset.projectWorkflowAction;
+    const stageId = control.dataset.projectWorkflowStageId;
+    if (action === 'open-task' && control.dataset.projectWorkflowTaskId) {
       handlers.openTask(control.dataset.projectWorkflowTaskId);
-    } else if (control.dataset.projectWorkflowAction === 'close-task') {
+    } else if (action === 'close-task') {
       handlers.closeTask();
+    } else if (action === 'new-stage') {
+      handlers.openStageForm({ kind: 'create' });
+    } else if (action === 'rename-stage' && stageId) {
+      handlers.openStageForm({ kind: 'rename', stageId });
+    } else if (action === 'save-stage') {
+      handlers.saveStageForm();
+    } else if (action === 'delete-stage' && stageId) {
+      handlers.deleteStage(stageId);
+    } else if (action === 'close-stage-form') {
+      handlers.closeStageForm();
     }
+  });
+
+  // A stage name is typed, so the field reports what it holds rather than the shell reading a
+  // value out of the DOM when Save is pressed: the form and the record cannot disagree.
+  root.addEventListener('input', (event) => {
+    const field = (event.target as HTMLElement).closest<HTMLInputElement>('[data-project-workflow-stage-name]');
+    if (!field || !root.contains(field)) return;
+    handlers.editStageName(field.value);
   });
 
   root.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    if (root.querySelector('[data-project-workflow-stage-name]')) {
+      event.preventDefault();
+      handlers.closeStageForm();
+      return;
+    }
     if (!root.querySelector('[data-project-workflow-inspector-task-id]')) return;
     event.preventDefault();
     handlers.closeTask();

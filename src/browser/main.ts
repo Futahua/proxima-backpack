@@ -67,6 +67,7 @@ import { archiveProjectAction, createProjectAction, deleteProjectAction, restore
 import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
 import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, type EventWriteOutcome } from '../app/eventWriteActions.js';
 import { changeTaskDatesAction } from '../app/timelineChangeAction.js';
+import { createWorkflowStageAction, deleteWorkflowStageAction, renameWorkflowStageAction, type WorkflowStageWriteOutcome } from '../app/workflowStageWriteActions.js';
 import { skipOccurrenceFromScope, updateOccurrenceFromScope } from './scheduleScopeWiring.js';
 import { eventEditorDraftFor, type EventEditorDraft } from '../app/eventEditor.js';
 import type { EventFormValues } from '../app/eventFormPlan.js';
@@ -120,6 +121,10 @@ let projectTaskBoardView: ProjectTaskBoardViewState = EMPTY_PROJECT_TASK_BOARD_V
 /** The workflow board's own state: it groups by stage, so it previews and refuses separately. */
 let projectWorkflowBoardView: ProjectWorkflowBoardViewState = EMPTY_PROJECT_WORKFLOW_BOARD_VIEW;
 let projectWorkflowRefusal: string | null = null;
+/** The workflow board's stage form, the refusal a stage write produced, and what it did. */
+let projectWorkflowStageForm: ProjectWorkflowBoardViewState['stageForm'] = null;
+let projectWorkflowStageRefusal: string | null = null;
+let projectWorkflowStageFeedback: string | null = null;
 /** The lifecycle line the Projects Hub draws: an outcome's own words, or the refusal's. */
 let projectLifecycleFeedback: string | null = null;
 /** The refusal code that sentence belongs to, null when the last attempt was accepted. */
@@ -429,7 +434,13 @@ function projectsHubSurface(state: ProximaState): string {
     projectEdit: projectEditor,
   };
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
-  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: { ...projectWorkflowBoardView, writeRefusal: projectWorkflowRefusal }, projectBacklog: { ...projectBacklogView, bulkWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null }, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView, projectWrites: lifecycleWrites, ...projectForms });
+  return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: {
+      ...projectWorkflowBoardView,
+      writeRefusal: projectWorkflowRefusal,
+      // The same resolution the drop path uses: a stage control is a record write, so it is real
+      // exactly when this run can write, and otherwise carries the reason that it is not.
+      stageWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null,
+    }, projectBacklog: { ...projectBacklogView, bulkWriteRefusal: taskMutations === null ? taskMutationUnavailable ?? TASK_EDITOR_SAVE_REFUSAL : null }, projectDeadlines: projectDeadlinesView, projectSchedule: projectScheduleView, projectWrites: lifecycleWrites, ...projectForms });
 }
 
 function diagnosticsSurface(problems: LoadProblem[]): string {
@@ -860,6 +871,47 @@ async function moveTaskFromWorkflowDrop(intent: { taskId: string; targetStageId:
   render();
 }
 
+/**
+ * The workflow board's stage controls.
+ *
+ * The sequences live in `src/app/workflowStageWriteActions.ts`, where tests execute them against a
+ * real store; the shell supplies the resolved operations, what to say when this run has none, and
+ * the two sinks the board draws. An accepted write closes the form, because the stage it described
+ * now is what the board is about to draw.
+ *
+ * Delete is offered on the same terms as Rename. A stage that still holds cards is answered by the
+ * operation with the count and the question — `semantic-conflict`, naming how many cards would be
+ * affected — rather than this shell quietly deciding to empty someone's workflow. A caller that has
+ * decided passes `remapTo`; the board's own button does not decide for the reader.
+ */
+function workflowStageWriteDependencies() {
+  return {
+    state: appState,
+    writes: resolveTaskWritePath,
+    unavailableReason: () => taskMutationUnavailable,
+    refresh: refreshFromSource,
+    setRefusal: (reason: string | null) => { projectWorkflowStageRefusal = reason; },
+    setFeedback: (message: string | null) => { projectWorkflowStageFeedback = message; },
+    render,
+  };
+}
+
+async function saveWorkflowStageFormAction(): Promise<void> {
+  const form = projectWorkflowStageForm;
+  if (form === null || form === undefined) return;
+  const outcome: WorkflowStageWriteOutcome = form.kind === 'create'
+    ? await createWorkflowStageAction(workflowStageWriteDependencies(), { projectId: selection, name: form.name })
+    : await renameWorkflowStageAction(workflowStageWriteDependencies(), { stageId: form.stageId, name: form.name });
+  if (outcome.ok) {
+    projectWorkflowStageForm = null;
+    render();
+  }
+}
+
+/** Delete a stage at the revision the board was rendering; a full stage answers with its question. */
+async function deleteWorkflowStageFromBoardAction(stageId: string): Promise<void> {
+  await deleteWorkflowStageAction(workflowStageWriteDependencies(), { stageId });
+}
 /**
  * The Projects Hub's lifecycle controls.
  *
@@ -1326,6 +1378,34 @@ function bindInteractions(): void {
     previewMove: ({ taskId, targetStageId, targetIndex }) => { projectWorkflowBoardView = { ...projectWorkflowBoardView, projectId: selection, dragTaskId: taskId, dragTargetStageId: targetStageId ?? NO_WORKFLOW_STAGE, dragTargetIndex: targetIndex }; },
     dropMove: (intent) => { void moveTaskFromWorkflowDrop(intent); },
     clearDrag: () => { projectWorkflowBoardView = { ...projectWorkflowBoardView, dragTaskId: null, dragTargetStageId: null, dragTargetIndex: null }; },
+    // A stage control carries the same meaning as the drop: a record write. The form's value lives
+    // here rather than in the DOM, so what Save submits is what the reader typed.
+    openStageForm: (form) => {
+      if (form.kind === 'create') {
+        projectWorkflowStageForm = { kind: 'create', name: '' };
+      } else {
+        const stage = (appState?.workflowStages ?? []).find((candidate) => candidate.id === form.stageId);
+        if (stage === undefined) return;
+        projectWorkflowStageForm = { kind: 'rename', stageId: form.stageId, name: stage.name };
+      }
+      projectWorkflowStageRefusal = null;
+      projectWorkflowStageFeedback = null;
+      projectWorkflowBoardView = { ...projectWorkflowBoardView, projectId: selection };
+      render();
+    },
+    editStageName: (value) => {
+      const form = projectWorkflowStageForm;
+      if (form === null || form === undefined) return;
+      projectWorkflowStageForm = { ...form, name: value };
+      render();
+      const field = root.querySelector<HTMLInputElement>('[data-project-workflow-stage-name]');
+      if (field === null) return;
+      field.focus();
+      field.setSelectionRange(value.length, value.length);
+    },
+    saveStageForm: () => { void saveWorkflowStageFormAction(); },
+    deleteStage: (stageId) => { void deleteWorkflowStageFromBoardAction(stageId); },
+    closeStageForm: () => { projectWorkflowStageForm = null; projectWorkflowStageRefusal = null; render(); },
   });
   const restoreBacklogSearchFocus = (caret: number) => { const field = root.querySelector<HTMLInputElement>('[data-project-backlog-search-input]'); if (!field) return; field.focus(); field.setSelectionRange(caret, caret); };
   bindProjectBacklogInteractions(root, {

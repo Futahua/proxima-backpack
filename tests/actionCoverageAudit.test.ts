@@ -19,13 +19,16 @@
  * The equivalence column is checked against `tests/uiAgentMutationParity.test.ts` rather than trusted:
  * a row that claims an equivalence case must be named by that file.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
+
+/** Every module in the app layer, so an absence assertion cannot be dodged by a new file name. */
+const APP_FILES = readdirSync(resolve(process.cwd(), 'src/app')).filter((name) => name.endsWith('.ts')).sort();
 
 const MAIN = source('src/browser/main.ts');
 const TASK_MUTATIONS = source('src/app/taskMutations.ts');
@@ -40,6 +43,14 @@ interface TaskActionRow {
   readonly caller?: string;
   /** Where that call is, when it is not the shell: a planner is reached by the module that plans with it. */
   readonly callerFile?: string;
+  /**
+   * The call in the shell that reaches the caller above.
+   *
+   * A row whose write is owned by a module that is itself reached from the shell needs both halves
+   * asserted: the sequence must call the operation, and the shell must call the sequence. Otherwise a
+   * row could pass by having a caller nobody reaches.
+   */
+  readonly shellCaller?: string;
   /** A test file that must name the module's operation. */
   readonly testFile: string;
   readonly testMarker: string;
@@ -114,10 +125,9 @@ const EVENT_OPERATION_ONLY_ROWS = [
  * the counts it would affect, because what deleting a project *means* for its members is the creator's
  * decision (D56). This table therefore says "wired" about a verb that refuses, and says why.
  *
- * The other six rows are not wired and the audit asserts that rather than leaving it to memory:
- * workflow-stage create/rename/delete-remap and property-schema create/update/delete with its options,
- * formulas, rollups and relation edits. A record kind existing — and both do, canonically — is not an
- * operation, and the gap table below is what keeps the distinction checkable.
+ * The other rows are the workflow-stage ones, which are wired now and carry their own table below,
+ * and the three property-schema rows, which are not: a record kind existing — and schema records do,
+ * canonically — is not an operation, and the gap table below is what keeps that distinction checkable.
  */
 const PROJECT_ROWS: readonly TaskActionRow[] = [
   { action: 'project.create', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function createProjectAction', caller: 'createProjectAction(', testFile: 'tests/projectLifecycleActions.test.ts', testMarker: 'createProjectAction', equivalence: false },
@@ -129,15 +139,26 @@ const PROJECT_ROWS: readonly TaskActionRow[] = [
 ];
 
 /**
+ * The workflow-stage rows, which are no longer gaps.
+ *
+ * The board's New stage, Rename and Delete are real controls, the sequences that carry them live in
+ * `workflowStageWriteActions.ts`, and the operations they call live in `workflowStageMutations.ts`.
+ * The row names the operation module and marker, the sequence that reaches it, and the call in the
+ * shell that reaches the sequence, so all three links are asserted rather than assumed.
+ */
+const WORKFLOW_STAGE_ROWS: readonly TaskActionRow[] = [
+  { action: 'workflow stage create', module: 'src/app/workflowStageMutations.ts', marker: 'export async function createWorkflowStage', callerFile: 'src/app/workflowStageWriteActions.ts', caller: 'export async function createWorkflowStageAction', shellCaller: 'createWorkflowStageAction(', testFile: 'tests/workflowStageBoard.test.ts', testMarker: 'createWorkflowStageAction', equivalence: false },
+  { action: 'workflow stage rename', module: 'src/app/workflowStageMutations.ts', marker: 'export async function renameWorkflowStage', callerFile: 'src/app/workflowStageWriteActions.ts', caller: 'export async function renameWorkflowStageAction', shellCaller: 'renameWorkflowStageAction(', testFile: 'tests/workflowStageBoard.test.ts', testMarker: 'renameWorkflowStageAction', equivalence: false },
+  { action: 'workflow stage delete/remap', module: 'src/app/workflowStageMutations.ts', marker: 'export async function deleteWorkflowStage', callerFile: 'src/app/workflowStageWriteActions.ts', caller: 'export async function deleteWorkflowStageAction', shellCaller: 'deleteWorkflowStageAction(', testFile: 'tests/workflowStageBoard.test.ts', testMarker: 'deleteWorkflowStageAction', equivalence: false },
+];
+
+/**
  * Rows whose operation does not exist yet, asserted as absent.
  *
  * Each entry names what would have to appear for the row to become tickable: an exported operation in
  * the app layer. Until then the audit proves the gap instead of the checklist remembering it.
  */
 const UNWRITTEN_PROJECT_ROWS = [
-  { action: 'workflow stage create', absentExport: 'export async function createWorkflowStage' },
-  { action: 'workflow stage rename', absentExport: 'export async function renameWorkflowStage' },
-  { action: 'workflow stage delete/remap', absentExport: 'export async function deleteWorkflowStage' },
   { action: 'property schema create/update/delete', absentExport: 'export async function updatePropertySchema' },
   { action: 'schema options', absentExport: 'export async function updateSchemaOption' },
   { action: 'formula/rollup/relation schema edits', absentExport: 'export async function updateSchemaField' },
@@ -234,15 +255,51 @@ describe('Stage 17 project, workflow and schema coverage', () => {
     }
   });
 
-  it('proves the six rows that have no operation rather than remembering them', () => {
-    // A canonical record kind is not an operation: both workflow stages and schema records exist in
-    // the model, and neither has a write here yet. The audit asserts the absence so that the day an
-    // operation appears, this table is what has to change.
-    const appFiles = ['src/app/projectMutations.ts', 'src/app/projectLifecycleActions.ts', 'src/app/taskMutations.ts', 'src/app/eventMutations.ts'];
-    const appText = appFiles.map((file) => source(file)).join('\n');
+  it('names the operation, the sequence and the shell call for every workflow-stage action', () => {
+    for (const row of WORKFLOW_STAGE_ROWS) {
+      expect(source(row.module), `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
+      // The sequence that carries it…
+      expect(source(row.callerFile!), `${row.action}: ${row.callerFile} must reach it`).toContain(row.caller!);
+      // …and the shell call that reaches the sequence.
+      expect(MAIN, `${row.action}: the shell must reach the sequence`).toContain(row.shellCaller!);
+      expect(source(row.testFile), `${row.action}: ${row.testFile} must exercise it`).toContain(row.testMarker);
+      const compared = PARITY.includes(row.testMarker)
+        || (row.equivalenceFile !== undefined && source(row.equivalenceFile).includes(row.testMarker));
+      expect(compared, `${row.action}: equivalence claimed but not asserted`).toBe(row.equivalence);
+    }
+  });
+
+  it('proves the rows that have no operation rather than remembering them', () => {
+    // A canonical record kind is not an operation: schema records exist in the model and their write
+    // does not exist here yet. The audit asserts the absence so that the day an operation appears,
+    // this table is what has to change.
+    //
+    // The scan is the whole app layer rather than a hand-listed set of files: the stage rows above
+    // were once proved absent by a list that did not include the module they were about to appear in,
+    // which is exactly how an audit stops auditing.
+    const appText = APP_FILES.map((file) => source(`src/app/${file}`)).join('\n');
     for (const row of UNWRITTEN_PROJECT_ROWS) {
       expect(appText, `${row.action}: an operation appeared, so the row must be revisited`).not.toContain(row.absentExport);
     }
+    // And the complement: the stage operations are in that same scan, so they cannot be "absent" and
+    // "present" at once.
+    for (const marker of ['export async function createWorkflowStage', 'export async function renameWorkflowStage', 'export async function deleteWorkflowStage']) {
+      expect(appText, `${marker} must be in the app layer`).toContain(marker);
+    }
+  });
+
+  it('carries the record layer contract the workflow-stage rows lean on', () => {
+    const mutations = source('src/app/workflowStageMutations.ts');
+    for (const reason of ["'validation-refused'", "'not-found'", "'stale-revision'", "'semantic-conflict'", "'recovery-required'", "'storage-failure'"]) {
+      expect(mutations, `the stage refusal vocabulary must carry ${reason}`).toContain(reason);
+    }
+    // A create goes through the store's own idempotent boundary; an update or a delete is conditional
+    // and carries the revision the caller read, which is what makes a lost race reportable.
+    expect(mutations).toContain('createIfAbsent(record)');
+    expect(mutations).toContain('expectedRevision: input.expectedRevision');
+    expect(mutations).toContain('actualRevision');
+    // The delete moves its cards through the task operation rather than a second rule of its own.
+    expect(mutations).toContain('updateTask(deps.taskDependencies');
   });
 
   it('states what project delete answers, since the box is about a refusing verb being wired', () => {

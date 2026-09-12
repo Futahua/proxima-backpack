@@ -54,6 +54,15 @@ import {
   type EventMutationResult,
   type EventResizeTarget,
 } from '../app/eventMutations.js';
+import {
+  createWorkflowStage,
+  deleteWorkflowStage,
+  renameWorkflowStage,
+  type CreateWorkflowStageRequest,
+  type WorkflowStageMutationResult,
+  type WorkflowStageMutationDependencies,
+  type WorkflowStageRemapTarget,
+} from '../app/workflowStageMutations.js';
 import type { Clock } from '../domain/clock.js';
 import { systemClock } from '../domain/clock.js';
 import { opaqueRecordIdFromRandomBytes, type OpaqueRecordId } from '../domain/canonicalIdentity.js';
@@ -89,7 +98,16 @@ export interface BrowserEventMutations {
 }
 
 /** Everything one activated store hands a surface, resolved once. */
-export type BrowserRecordMutations = BrowserTaskMutations & BrowserProjectMutations & BrowserEventMutations;
+/** The workflow-stage verbs: the project workflow's own records, not its tasks. */
+export interface BrowserWorkflowStageMutations {
+  createWorkflowStage(request: CreateWorkflowStageRequest): Promise<WorkflowStageMutationResult>;
+  renameWorkflowStage(input: { stageId: OpaqueRecordId; expectedRevision: string; name: string }): Promise<WorkflowStageMutationResult>;
+  /** A delete that does not say where the cards go is refused while the stage still holds any. */
+  deleteWorkflowStage(input: { stageId: OpaqueRecordId; expectedRevision: string; remapTo?: WorkflowStageRemapTarget }): Promise<WorkflowStageMutationResult>;
+}
+
+/** Everything one activated store hands a surface, resolved once. */
+export type BrowserRecordMutations = BrowserTaskMutations & BrowserProjectMutations & BrowserEventMutations & BrowserWorkflowStageMutations;
 
 export type BrowserTaskMutationResolution =
   | { readonly ok: true; readonly mutations: BrowserRecordMutations }
@@ -170,6 +188,14 @@ export async function resolveBrowserTaskMutations(
   };
 
   const projectDeps = deps;
+  // The stage operations compose the task operations, because emptying a stage moves cards by the
+  // rule that owns the stage-and-position pair rather than by a second implementation of it.
+  const stageDeps: WorkflowStageMutationDependencies = {
+    store,
+    coordinator: authority.coordinator,
+    allocateRecordId: freshRecordId,
+    taskDependencies: deps,
+  };
 
   return {
     ok: true,
@@ -187,6 +213,9 @@ export async function resolveBrowserTaskMutations(
       deleteEvent: (input) => deleteEvent(projectDeps, input),
       rescheduleEvent: (input) => rescheduleEvent(projectDeps, input),
       resizeEvent: (input) => resizeEvent(projectDeps, input),
+      createWorkflowStage: (request) => createWorkflowStage(stageDeps, request),
+      renameWorkflowStage: (input) => renameWorkflowStage(stageDeps, input),
+      deleteWorkflowStage: (input) => deleteWorkflowStage(stageDeps, input),
     },
   };
 }
