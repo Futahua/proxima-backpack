@@ -168,6 +168,7 @@ const TASK_FIELD_IDS:
     'name',
     'project',
     'executionState',
+    'workflowStage',
     'weight',
     'fixedDurationOn',
     'fixedDuration',
@@ -248,6 +249,9 @@ function taskValues(
       ?? '',
     executionState:
       task.status,
+    workflowStage:
+      task.workflowStageId
+      ?? '',
     weight:
       text(
         task.weight,
@@ -494,6 +498,69 @@ function statusOptions(
   );
 }
 
+/**
+ * The workflow stages a task may be moved into: the ones its own project owns, in the state's order.
+ *
+ * A stage belongs to exactly one project, so the choice is the task's project's stages and nothing else - a
+ * select built from every stage in the vault would offer a card a column that is not on its board. A task with
+ * no project has no stages to choose from, which the field says rather than showing an empty select.
+ */
+function stageOptions(
+  state:
+    ProximaState,
+  task:
+    Task,
+): TaskEditorOption[] {
+  const all =
+    state.workflowStages
+    ?? [];
+
+  const options:
+    TaskEditorOption[] =
+      all
+        .filter(
+          (stage) =>
+            stage.projectId
+            === (task.projectId ?? ''),
+        )
+        .map(
+          (stage) => ({
+            id:
+              stage.id,
+            label:
+              stage.name,
+          }),
+        );
+
+  const stored =
+    task.workflowStageId
+    ?? '';
+
+  // A record that carries a stage its project does not declare is still shown, and says what it is: the same
+  // rule that keeps a property with no schema entry on the form, because a value nobody can see is a value the
+  // editor would misrepresent. It is shown rather than offered - a save that names it is refused, and its own
+  // option is the one already selected.
+  if (stored !== '' && !options.some((option) => option.id === stored)) {
+    const known =
+      all.find(
+        (stage) =>
+          stage.id
+          === stored,
+      );
+
+    options.push({
+      id:
+        stored,
+      label:
+        known === undefined
+          ? `${stored} (not a stage this project declares)`
+          : `${known.name} (another project's stage)`,
+    });
+  }
+
+  return options;
+}
+
 /** The control a schema type is edited with. */
 function controlForPropertyType(
   type:
@@ -630,6 +697,12 @@ export function projectTaskEditor(
       state,
     );
 
+  const stages =
+    stageOptions(
+      state,
+      task,
+    );
+
   const values =
     taskValues(
       task,
@@ -683,6 +756,23 @@ export function projectTaskEditor(
         statuses.length > 0
           ? null
           : 'This vault declares no statuses, so the stored status is shown as it is.',
+        null,
+      ),
+      field(
+        'workflowStage',
+        'Workflow stage',
+        stages.length > 0
+          ? 'select'
+          : 'text',
+        edited,
+        values.workflowStage!,
+        false,
+        stages,
+        [],
+        true,
+        stages.length > 0
+          ? 'Moving a card into a stage appends it to the end of that stage; the board is where a position is chosen.'
+          : 'This task\'s project declares no workflow stages, so the stored stage is shown as it is.',
         null,
       ),
       field(

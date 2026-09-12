@@ -243,7 +243,47 @@ describe('Task editor projection', () => {
     const editor = projectTaskEditor(loaded, 't1', null)!;
 
     expect(editor.fieldCount).toBe(fieldsOf(editor.sections).length);
-    expect(editor.fieldCount).toBe(10 + loaded.taskSchema.length);
+    // The eleven are the task's own values: name, project, execution state, workflow stage, weight, the fixed
+    // duration and its flag, the maximum duration, both dates and completion.
+    expect(editor.fieldCount).toBe(11 + loaded.taskSchema.length);
+  });
+
+  it('offers the workflow stages of the task\'s own project, and shows a stage it does not own', () => {
+    const loaded = state({
+      workflowStages: [
+        { id: 'st-a', projectId: 'p1', name: 'Review', revision: 'st-a.json@1' },
+        { id: 'st-b', projectId: 'p1', name: 'Doing', revision: 'st-b.json@1' },
+        { id: 'st-other', projectId: 'p2', name: 'Their review', revision: 'st-other.json@1' },
+      ],
+    });
+
+    // A task in the project: its stage choices are that project's stages, and nothing from another board.
+    const inside = projectTaskEditor(state({ ...loaded, tasks: [task({ id: 't1', projectId: 'p1', workflowStageId: 'st-b' })] }), 't1', null)!;
+    const choose = fieldFor(inside.sections, 'workflowStage');
+    expect(choose.control).toBe('select');
+    expect(choose.value).toBe('st-b');
+    expect(choose.options.map((option) => option.id)).toEqual(['st-a', 'st-b']);
+    expect(choose.options.map((option) => option.label)).toEqual(['Review', 'Doing']);
+    // The note says the one thing the modal cannot do, so a reader is not left guessing where the card lands.
+    expect(choose.note).toContain('appends it to the end of that stage');
+
+    // A task carrying a stage of another project still shows it - and says whose it is, because a field nobody
+    // can see is a value the editor would misrepresent.
+    const adrift = projectTaskEditor(state({ ...loaded, tasks: [task({ id: 't1', projectId: 'p1', workflowStageId: 'st-other' })] }), 't1', null)!;
+    const shown = fieldFor(adrift.sections, 'workflowStage');
+    expect(shown.value).toBe('st-other');
+    expect(shown.options.map((option) => option.id)).toEqual(['st-a', 'st-b', 'st-other']);
+    expect(shown.options.at(-1)!.label).toBe("Their review (another project's stage)");
+    // And a stage no record declares at all travels as its own id rather than disappearing.
+    const orphan = projectTaskEditor(state({ ...loaded, tasks: [task({ id: 't1', projectId: 'p1', workflowStageId: 'st-gone' })] }), 't1', null)!;
+    expect(fieldFor(orphan.sections, 'workflowStage').options.at(-1)).toEqual({ id: 'st-gone', label: 'st-gone (not a stage this project declares)' });
+
+    // A project with no stages declares none, and the field says so instead of showing an empty select.
+    const bare = state({ workflowStages: [], tasks: [task({ id: 't1', projectId: 'p1' })] });
+    const none = fieldFor(projectTaskEditor(bare, 't1', null)!.sections, 'workflowStage');
+    expect(none.control).toBe('text');
+    expect(none.value).toBe('');
+    expect(none.note).toContain('declares no workflow stages');
   });
 });
 

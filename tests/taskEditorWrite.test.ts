@@ -80,6 +80,8 @@ interface World {
   readonly deps: TaskMutationDependencies;
   readonly refreshCalls: string[];
   seed(name: string, executionState?: CanonicalExecutionState): Promise<OpaqueRecordId>;
+  /** A workflow stage record of this project's, so a task can be moved into it. */
+  stage(name: string): Promise<string>;
   task(id: OpaqueRecordId): Promise<Task>;
   stored(id: OpaqueRecordId): Promise<CanonicalTaskRecordV2>;
   /** The editor's dependencies, with the sinks and the write operations a browser would supply. */
@@ -122,6 +124,15 @@ async function world(): Promise<World> {
       const created = await createTask(deps, { name, projectId: PROJECT, executionState, executionOrder: 0 });
       if (!created.ok) throw new Error(`seeding ${name} failed: ${created.reason}`);
       return created.recordId;
+    },
+    stage: async (name) => {
+      const id = idFromLastByte(nextId++);
+      const created = await store.createIfAbsent({
+        ...defineCanonicalRecordHeader({ kind: 'workflow-stage', id, name }),
+        projectId: PROJECT,
+      } as CanonicalRecordV2);
+      if (!created.ok) throw new Error(`seeding the stage ${name} failed: ${created.reason}`);
+      return id;
     },
     task: async (id) => {
       const loaded = await source.load();
@@ -197,6 +208,92 @@ describe('Stage 9 planTaskEditorSave', () => {
     expect(planTaskEditorSave(task, null)).toMatchObject({ ok: false, reason: 'nothing-to-save', fieldId: null });
     const editedBack = applyTaskEditorEdit(taskEditorDraftFor(task), { fieldId: 'name', value: task.name });
     expect(planTaskEditorSave(task, editedBack)).toMatchObject({ ok: false, reason: 'nothing-to-save' });
+  });
+
+  it('places a card that enters a stage at the end of it, and refuses a stage it cannot place', async () => {
+    const app = await world();
+    const id = await app.seed('Moves', 'backlog');
+    const task = await app.task(id);
+    const seed = taskEditorDraftFor(task);
+    const into = applyTaskEditorEdit(seed, { fieldId: 'workflowStage', value: 'st-review' });
+
+    // The placement is the caller's count: three cards are in the stage, so this one is the fourth.
+    const placed = planTaskEditorSave(task, into, [], { appendIndex: (stageId) => (stageId === 'st-review' ? 3 : null) });
+    expect(placed).toMatchObject({ ok: true, mutations: [{ kind: 'workflow-stage', value: 'st-review', order: 3 }] });
+
+    // A caller that cannot say where the card lands is refused rather than given a guessed position, and so is
+    // a stage the caller does not hold - which is how a stage of another project is answered.
+    expect(planTaskEditorSave(task, into)).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'workflowStage' });
+    expect(planTaskEditorSave(task, into, [], { appendIndex: () => null })).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'workflowStage' });
+    expect(planTaskEditorSave(task, into, [], { appendIndex: () => -1 })).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'workflowStage' });
+
+    // Clearing the field leaves the stage, and the position goes with it - the record refuses one without the
+    // other, so the pair is what the plan writes.
+    const inStage = { ...task, workflowStageId: 'st-review', workflowOrder: 2 } as Task;
+    const leaving = applyTaskEditorEdit(taskEditorDraftFor(inStage), { fieldId: 'workflowStage', value: '' });
+    expect(planTaskEditorSave(inStage, leaving)).toMatchObject({ ok: true, mutations: [{ kind: 'workflow-stage', value: null, order: null }] });
+
+    // An untouched stage writes nothing at all, and an edit back to the record is still nothing to save.
+    expect(planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'workflowStage', value: '' }))).toMatchObject({ ok: false, reason: 'nothing-to-save' });
+  });
+
+  it('carries a stage move through the record layer, appending to the end of the stage it enters', async () => {
+    const app = await world();
+    const stageId = await app.stage('Review');
+    const first = await app.seed('First', 'backlog');
+    const second = await app.seed('Second', 'backlog');
+    const editor = app.editor();
+
+    // One card is already in the stage, so the second one that enters it lands after it - the count the
+    // planner asked the shell for, read here from the state the save was opened over.
+    const before = await editor.state();
+    const plan = planTaskEditorSave(
+      before.tasks.find((candidate) => candidate.id === first)!,
+      applyTaskEditorEdit(taskEditorDraftFor(before.tasks.find((candidate) => candidate.id === first)!), { fieldId: 'workflowStage', value: stageId }),
+      before.taskSchema,
+      { appendIndex: (stage) => (stage === stageId ? before.tasks.filter((candidate) => candidate.workflowStageId === stage).length : null) },
+    );
+    expect(plan).toMatchObject({ ok: true });
+
+    const moved = await editor.save({
+      taskId: first,
+      draft: applyTaskEditorEdit(taskEditorDraftFor(await app.task(first)), { fieldId: 'workflowStage', value: stageId }),
+    });
+    expect(moved).toMatchObject({ ok: true, outcome: 'updated' });
+
+    // The stored record is where the claim is settled: the task is in the stage, at position 0.
+    const stored = await app.stored(first as OpaqueRecordId);
+    expect(stored.workflowStageId).toBe(stageId);
+    expect(stored.workflowOrder).toBe(0);
+
+    // The second card enters the same stage and lands after it, which is the append the planner promised.
+    const secondPlan = await editor.save({
+      taskId: second,
+      draft: applyTaskEditorEdit(taskEditorDraftFor(await app.task(second)), { fieldId: 'workflowStage', value: stageId }),
+    });
+    expect(secondPlan).toMatchObject({ ok: true });
+    const secondStored = await app.stored(second as OpaqueRecordId);
+    expect(secondStored.workflowStageId).toBe(stageId);
+    expect(secondStored.workflowOrder).toBe(1);
+
+    // And leaving stages the card with no stage and no position, because the record refuses half of the pair.
+    const left = await editor.save({
+      taskId: second,
+      draft: applyTaskEditorEdit(taskEditorDraftFor(await app.task(second)), { fieldId: 'workflowStage', value: '' }),
+    });
+    expect(left).toMatchObject({ ok: true });
+    const cleared = await app.stored(second as OpaqueRecordId);
+    expect(cleared.workflowStageId).toBeNull();
+    expect(cleared.workflowOrder).toBeNull();
+
+    // A save that names a stage this project does not declare is refused by the shell's own resolver before any
+    // write, and the record is where it was: the check is the caller's, because only the caller can see the board.
+    const ghost = await editor.save({
+      taskId: second,
+      draft: applyTaskEditorEdit(taskEditorDraftFor(await app.task(second)), { fieldId: 'workflowStage', value: 'st-ghost' }),
+    });
+    expect(ghost).toMatchObject({ ok: false, reason: 'validation-refused', fieldId: 'workflowStage' });
+    expect((await app.stored(second as OpaqueRecordId)).workflowStageId).toBeNull();
   });
 
   it('carries a fixed duration together with the flag that makes it count', async () => {

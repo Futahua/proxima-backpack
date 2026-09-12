@@ -450,16 +450,27 @@ describe('Stage 6 Task editor in the Task modal', () => {
       progress: '2/5',
     }),
     name: 'Editable task',
+    projectId: 'p-editor',
     isFixedDuration: true,
     fixedDuration: 90,
     maxDuration: 240,
     startDate: '2026-03-01T00:00:00.000Z',
+    workflowStageId: 'st-review',
   };
 
   const editorState: ProximaState = {
     ...state,
+    // One project, so the modal's workflow control is a select over that project's stages rather than the text
+    // fallback a vault with no stages gets - and so the task's own project is a real choice.
+    projects: [
+      { id: 'p-editor', source: sourceRef('project', 'p-editor'), name: 'Editor project', description: '', createdAt: '2026-09-01T00:00:00.000Z', status: 'active', projectType: 'task', linkedFolders: [] },
+    ],
     tasks: [editableTask],
     taskSchema: editorSchema,
+    workflowStages: [
+      { id: 'st-review', projectId: 'p-editor', name: 'Review', revision: 'st-review.json@1' },
+      { id: 'st-doing', projectId: 'p-editor', name: 'Doing', revision: 'st-doing.json@1' },
+    ],
   };
 
   /**
@@ -548,6 +559,9 @@ describe('Stage 6 Task editor in the Task modal', () => {
     expect((mounted.control('task-editor-name') as HTMLInputElement).value).toBe('Editable task');
     expect((mounted.control('task-editor-executionState') as HTMLSelectElement).value).toBe('running');
     expect(Array.from((mounted.control('task-editor-executionState') as HTMLSelectElement).options).map((option) => option.value)).toEqual(['backlog', 'running', 'review']);
+    // The workflow dimension has its own control, from the task's project's stages, with the record's value.
+    expect((mounted.control('task-editor-workflowStage') as HTMLSelectElement).value).toBe('st-review');
+    expect(Array.from((mounted.control('task-editor-workflowStage') as HTMLSelectElement).options).map((option) => option.value)).toEqual(['st-review', 'st-doing']);
     expect((mounted.control('task-editor-weight') as HTMLInputElement).value).toBe('3');
     expect((mounted.control('task-editor-fixedDurationOn') as HTMLInputElement).checked).toBe(true);
     expect((mounted.control('task-editor-fixedDuration') as HTMLInputElement).value).toBe('90');
@@ -576,7 +590,7 @@ describe('Stage 6 Task editor in the Task modal', () => {
     expect(mounted.root.querySelector('[data-c1-key="task-editor-property:progress"]')!.querySelector('input, select')).toBeNull();
 
     // The editor says how many fields it is showing, so a reader need not count markup.
-    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')!.getAttribute('data-task-editor-field-count')).toBe(String(10 + editorSchema.length));
+    expect(mounted.root.querySelector('[data-c1-key="elastic-task-modal"]')!.getAttribute('data-task-editor-field-count')).toBe(String(11 + editorSchema.length));
   });
 
   it('reports a typed value, and draws the draft without pretending it is saved', () => {

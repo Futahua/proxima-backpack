@@ -1763,3 +1763,34 @@ the record layer's and arrives as a printed refusal.
 **Reverses if:** a chooser for relation, rollup or formula lands, in which case the create form's list grows by
 one entry in the projection rather than by hand in the panel; or the record layer starts allocating option ids at
 the proposal boundary, in which case a create could carry its labels and the second limit would go away.
+## D77 — The Task modal shows the workflow stage, and entering one appends to its end
+
+**Decided** on 2026-09-12, working the parity agenda's "workflow stage where project-scoped" box. That box
+was half met and said so: canonical records already reach the modal — the record-store read path projects
+`workflowStageId`/`workflowOrder` into the same `Task` the editor reads — but the modal had no field for it,
+and the box's own text made the rest a product decision before it was code: does the Task modal show a
+workflow-stage control, or does the board stay the only place the workflow is edited?
+
+**The decision: the modal shows the control.** The workflow dimension is a fact about the task, and hiding it
+from the one place a task's fields are edited is what makes a reader believe the value does not exist. That is
+the same reasoning that already keeps a property with no schema entry on the form, and it is why the field
+list comes from the schema rather than from the record.
+
+**Where a card lands: the end of the stage it enters.** A drop asks for a position because a pointer chose
+one; a select cannot, and the two available answers — invent a position, or refuse to offer the field — are
+both worse than the obvious one. The end is a **count the caller owns**: `planTaskEditorSave` takes a
+`TaskEditorStagePlacement` whose `appendIndex(stageId)` says how many cards the stage holds, and the shell
+reads it from the state the save was opened over. A caller that supplies nothing, or that names a stage its
+project does not declare, is refused with `validation-refused` on that field rather than handed a position
+somebody else may already hold — the lesson `task.create` recorded when its project predicate defaulted to
+"the project is fine".
+
+**What the board keeps is the position.** The field's own note says so, and the drop path is unchanged:
+`workflowMutationsFor` is the helper both callers use, so a modal save and a drop write the same mutation pair
+rather than two implementations of one move. A stage the record carries but its project does not declare is
+still **shown** — labelled with its name and "(another project's stage)", or with the id and "(not a stage this
+project declares)" when no record declares it — and is not writable, because the plan refuses it.
+
+**Reverses if:** the board stops being the only place that owns position, in which case the modal would need
+an order control and the append rule would go with it; or the workflow dimension is decided to be board-only
+after all, in which case the field comes off the form and the agenda box is struck rather than reopened.

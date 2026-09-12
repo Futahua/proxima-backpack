@@ -27,6 +27,7 @@ import type { PropertySchema } from '../domain/types.js';
 import type { ProximaState, Task } from '../domain/types.js';
 import { taskEditorDraftFor, type TaskEditorDraft } from './taskEditor.js';
 import { taskMoveActionType, type TaskMoveActionType } from './taskMoveGesture.js';
+import { workflowMutationsFor } from './workflowMoveGesture.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
@@ -92,10 +93,25 @@ function numberOrNull(value: string): { ok: true; value: number } | { ok: false 
  * @param draft - the edits so far, or null while nothing has been edited.
  * @returns one mutation per changed field, or a typed refusal.
  */
+/**
+ * Where a card lands when an edit moves it into a workflow stage.
+ *
+ * A modal has no pointer, so it cannot choose a position the way a drop does; the honest answer is the end of
+ * the target stage, and the end is a **count the caller owns** rather than something this planner can read. So
+ * the caller supplies it, exactly as the timeline and project operations take a caller-owned revision: an
+ * operation that cannot see the board asks whoever can. A caller that supplies nothing gets a refusal rather
+ * than a guess - the position would otherwise be one somebody else already holds.
+ */
+export interface TaskEditorStagePlacement {
+  /** How many cards the stage holds, so an edit that enters it can append; null when it is not this project's stage. */
+  appendIndex(stageId: string): number | null;
+}
+
 export function planTaskEditorSave(
   task: Task,
   draft: TaskEditorDraft | null,
   schemas: readonly PropertySchema[] = [],
+  stagePlacement?: TaskEditorStagePlacement,
 ): TaskEditorMutationPlan {
   if (draft === null) return planRefused('nothing-to-save', 'nothing has been edited yet', null);
 
@@ -124,6 +140,26 @@ export function planTaskEditorSave(
       return planRefused('validation-refused', 'a column is Backlog, Running or Finished', 'executionState');
     }
     mutations.push({ kind: 'execution-state', value: state });
+  }
+
+  if (valueChanged('workflowStage')) {
+    // The stage and its position move together, and this is the one field whose position a modal cannot
+    // choose: entering a stage appends to the end of it, which is a count only the caller can read. Clearing
+    // the field leaves the stage, and the record clears the position with it.
+    const stage = value('workflowStage').trim();
+    if (stage.length === 0) {
+      mutations.push(...workflowMutationsFor(task.workflowStageId ?? null, null, null));
+    } else {
+      const placement = stagePlacement?.appendIndex(stage) ?? null;
+      if (placement === null || !Number.isSafeInteger(placement) || placement < 0) {
+        return planRefused(
+          'validation-refused',
+          'that workflow stage is not one this task\'s project declares',
+          'workflowStage',
+        );
+      }
+      mutations.push(...workflowMutationsFor(task.workflowStageId ?? null, stage, placement));
+    }
   }
 
   if (valueChanged('weight')) {
@@ -322,7 +358,15 @@ export async function saveTaskFromEditor(
     return writeRefused('unknown-task', 'the editor has no card with that id', requestId);
   }
 
-  const plan = planTaskEditorSave(task, input.draft, deps.state?.taskSchema ?? []);
+  const plan = planTaskEditorSave(task, input.draft, deps.state?.taskSchema ?? [], {
+    // The board's own answer, read from the state this save was opened over: the stage must belong to the
+    // task's project, and the end of it is how many cards are in it now.
+    appendIndex: (stageId) => {
+      const stages = deps.state?.workflowStages ?? [];
+      if (!stages.some((stage) => stage.id === stageId && stage.projectId === (task.projectId ?? ''))) return null;
+      return (deps.state?.tasks ?? []).filter((candidate) => candidate.workflowStageId === stageId).length;
+    },
+  });
   if (!plan.ok) {
     audit('rejected', 'task.update', [task.id], plan.reason);
     return writeRefused(plan.reason, plan.detail, requestId, plan.fieldId);
