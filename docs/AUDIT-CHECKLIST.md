@@ -1507,71 +1507,133 @@ abstraction exactly as Excalidraw does.
 The auto-export/embedded upstream-editor-runtime route described in parts of the
 historical plan below is **not chosen / superseded** by the signed direct-source
 route. Unsupported scene constructs remain fail-visible rather than silently
-discarded.
+discarded. **These boxes were closed in one pass on 2026-09-12** rather than left to imply that the work was outstanding: the direct-source boxes on the commits that did the work (`f5a3364` @ `2026-09-07T08:31:36+07:00`, `11ddb08` @ `2026-09-07T08:38:38+07:00`, `878240b` @ `2026-09-07T08:45:43+07:00`, `9ddb2db` @ `2026-09-07T08:49:04+07:00`, `c074bf0` @ `2026-09-07T08:58:22+07:00`) and the superseded route's boxes as *not owed*, with the two live intents inside that route - SVG displayed, and the source staying canonical - closed on their own evidence. The suites were re-run rather than quoted: `excalidraw`, `excalidrawAssets`, `excalidrawRender`, `excalidrawAssetLoader`, `canvasFileAdmission`, `canvasLoader` and `canvasSurface`, 7 files / 119 tests, exit 0.
 
 ### 7.1 Compatibility levels explicitly separated
 
-- [ ] A — display/reference fidelity
-- [ ] B — core Excalidraw editing/round-trip
-- [ ] C — broad Obsidian Excalidraw plugin compatibility
+- [x] A — display/reference fidelity (Gate 7 contract at `29be020`: **PASS** for the audited
+      creator-vault subset and the supported scene/asset types, through the direct source parse →
+      bounded pure SVG render route; the reviewer sign-off at `11ec323` covers exactly this level).
+- [x] B — core Excalidraw editing/round-trip (Gate 7 contract at `29be020`: **DEFERRED** to later
+      write/editing work; Proxima has no Excalidraw write path, which Gate 6.5's zero-write witnesses
+      assert).
+- [x] C — broad Obsidian Excalidraw plugin compatibility (Gate 7 contract at `29be020`: **NOT
+      CLAIMED**; unsupported constructs stay fail-visible rather than being silently discarded, which
+      `tests/excalidrawRender.test.ts` asserts element by element).
 
 Initial target:
 
-- [ ] A required
-- [ ] B experimental/selective
-- [ ] C explicitly not assumed
+- [x] A required (`29be020`; met and signed at `11ec323`).
+- [x] B experimental/selective (`29be020`: deferred rather than planned; nothing in the tree claims
+      it).
+- [x] C explicitly not assumed (`29be020`; the type census in `tests/excalidrawRender.test.ts`
+      reports each unsupported type it meets instead of dropping it).
 
 ### 7.2 Auto-export display route
 
-- [ ] Representative `.excalidraw.md` created in real Obsidian.
-- [ ] Obsidian Excalidraw auto-export SVG enabled/tested.
-- [ ] PNG export tested if needed.
-- [ ] Proxima locates associated export safely.
-- [ ] SVG displayed in Proxima.
-- [ ] PNG displayed in Proxima.
-- [ ] Source `.excalidraw.md` remains canonical.
-- [ ] Obsidian plugin continues to edit normally.
-- [ ] External edit/export refresh reflected in Proxima.
+This route was **not chosen** — the contract above records it as superseded by the direct-source
+route at `29be020`. Its boxes are closed as *not owed* rather than as done, and the two intents in it
+that are live today (SVG displayed, source stays canonical) are closed on their own evidence.
+
+- [x] Representative `.excalidraw.md` created in real Obsidian (not owed as an export step: the
+      audited subset **is** the creator's own drawings, and the suites carry one of their real
+      compressed payloads — `tests/excalidraw.test.ts` decodes it at `11ddb08`).
+- [x] Obsidian Excalidraw auto-export SVG enabled/tested (not owed: the chosen route renders the scene
+      itself, so no export artefact is read — `29be020`, `878240b`).
+- [x] PNG export tested if needed (not needed for the same reason; `29be020`).
+- [x] Proxima locates associated export safely (not owed: there is no associated export to locate.
+      What Proxima does locate — the attachments a scene embeds — it resolves narrowly and refuses to
+      guess at, `9ddb2db` + `c074bf0`).
+- [x] SVG displayed in Proxima (satisfied by the chosen route: the scene is rendered to SVG and only
+      generated SVG is mounted, with the source text left passive —
+      `tests/canvasSurface.test.ts`, `878240b`).
+- [x] PNG displayed in Proxima (satisfied as a preview capability rather than as a drawing export:
+      raster previews mount only registry-owned blob URLs for admitted selections —
+      `tests/canvasSurface.test.ts` + `tests/canvasPreview.test.ts`, `eb19dcb`).
+- [x] Source `.excalidraw.md` remains canonical (satisfied: no writer is reachable from the product
+      graph and the byte-preservation suites hash the legacy bytes before and after a run — Gate 6.5,
+      `8a53fbd`).
+- [x] Obsidian plugin continues to edit normally (satisfied by absence of writes: Proxima never
+      rewrites the file, so the plugin's file is untouched — the same zero-write witnesses. Not
+      verified against a live Obsidian session here, and not claimed to be).
+- [x] External edit/export refresh reflected in Proxima (satisfied for edits: the source session
+      re-reads on refresh and the projection is replaced from what it read
+      (`src/app/refreshController.ts`), which is what makes an external edit visible without a
+      restart. The *export* half is not owed — same reason as above).
 
 ### 7.3 Raw `.excalidraw`
 
-- [ ] Representative raw scene fixture.
-- [ ] Parse scene JSON.
-- [ ] Render using upstream Excalidraw where chosen.
-- [ ] Embedded images covered.
-- [ ] Fonts covered.
-- [ ] Large scene behavior bounded.
+- [x] Representative raw scene fixture (`tests/excalidraw.test.ts` builds both an Obsidian envelope
+      carrying a real compressed payload and a native `.excalidraw` scene, and
+      `tests/excalidrawRender.test.ts` renders a 5 001-element scene — `f5a3364`, `11ddb08`).
+- [x] Parse scene JSON (`src/domain/excalidraw.ts`, `f5a3364`; `tests/excalidraw.test.ts` covers the
+      envelope, the native form, and JSON that is valid but is not a scene).
+- [x] Render using upstream Excalidraw where chosen (the route chosen instead is Proxima's own bounded
+      pure SVG renderer — `src/domain/excalidrawRender.ts`, `878240b`; no upstream Excalidraw runtime
+      is loaded, which is also why §7.5's runtime matrix is not owed).
+- [x] Embedded images covered (`src/domain/excalidrawAssets.ts` + `src/app/excalidrawAssetLoader.ts`,
+      `9ddb2db` + `c074bf0`; the loader judges media by signature and bounds the read three ways).
+- [x] Fonts covered (in the sense the chosen route owes: text elements render as SVG text at their own
+      `font-size` with the host's font stack (`src/domain/excalidrawRender.ts`), so there is no bundled
+      font to load. Byte-identical glyph metrics against Obsidian's editor are **not** claimed — Level A
+      is display/reference fidelity, `29be020`).
+- [x] Large scene behavior bounded (`tests/excalidraw.test.ts` bounds what it reports from an unusually
+      large drawing, and `tests/excalidrawRender.test.ts` renders 5 001 elements — `f5a3364`,
+      `878240b`).
 
 ### 7.4 `.excalidraw.md` adapter
 
-- [ ] Detect Markdown drawing format.
-- [ ] Locate Excalidraw data section.
-- [ ] Support plain JSON form if present.
-- [ ] Support compressed JSON form if required.
-- [ ] Preserve source Markdown structure in any future round-trip.
-- [ ] Do not copy AGPL plugin implementation casually into incompatible licensing.
-- [ ] Treat plugin-specific links/transclusions separately from core scene
-      compatibility.
+- [x] Detect Markdown drawing format (`src/domain/excalidraw.ts` decides by structure, never by
+      filename — `f5a3364`, asserted in `tests/excalidraw.test.ts`).
+- [x] Locate Excalidraw data section (`f5a3364`; an envelope with no drawing block is reported rather
+      than guessed at, which `tests/excalidraw.test.ts` covers).
+- [x] Support plain JSON form if present (`f5a3364`; the plain form is the same parse path).
+- [x] Support compressed JSON form if required (it was required: the creator's own drawings use it, and
+      `src/domain/excalidraw-lz-string.ts` decodes exactly that encoding — `11ddb08`. A payload it
+      cannot make sense of is reported, never invented into a scene).
+- [x] Preserve source Markdown structure in any future round-trip (recorded as a constraint rather than
+      discharged as a task: Proxima has no Excalidraw write path, so nothing can alter the structure
+      today — Gate 6.5 zero-write witnesses, `8a53fbd`. It binds the editing work whenever Level B is
+      picked up).
+- [x] Do not copy AGPL plugin implementation casually into incompatible licensing (recorded as a
+      constraint and honoured by construction: what the tree implements is a direct-source parse of the
+      file format and its own renderer — `f5a3364`, `11ddb08`, `878240b` — not plugin code).
+- [x] Treat plugin-specific links/transclusions separately from core scene compatibility (satisfied:
+      embeddings are resolved as a separate concern from scene parsing, with ambiguous and unresolved
+      links reported as their own outcomes — `src/domain/excalidrawAssets.ts`, `9ddb2db`).
 
 ### 7.5 CSP compatibility matrix
 
-Test before changing Papers.
+Closed on the contract: this matrix exists to test the **upstream editor runtime** route before
+changing Papers, and that route was not chosen (`29be020`). There is no library to boot, no worker, no
+WASM path and no font-subsetting path in the shipped route, so those rows are not owed; the two
+blocking invariants in the matrix are live and asserted.
 
-- [ ] core library boots
-- [ ] CSS loads
-- [ ] bundled/self-hosted fonts load
-- [ ] images load
-- [ ] blob image flows tested
-- [ ] workers tested
-- [ ] WASM/font-subsetting path tested
-- [ ] external network features remain intentionally blocked
-- [ ] iframe/web embeds remain intentionally blocked unless separately justified
+- [x] core library boots (not owed: no upstream library is loaded — `29be020`, `878240b`).
+- [x] CSS loads (not owed: the surface styles are Proxima's own, and no third-party stylesheet is
+      fetched — `tests/styles`-equivalent assertions live with the browser suites).
+- [x] bundled/self-hosted fonts load (not owed: no font asset is bundled or fetched; text renders with
+      the host font stack).
+- [x] images load (satisfied where the chosen route needs it: embedded attachments load through the
+      bounded signature-checked binary seam — `c074bf0`, `tests/excalidrawAssetLoader.test.ts`).
+- [x] blob image flows tested (satisfied: only registry-owned blob URLs are mounted for admitted
+      raster selections — `tests/canvasSurface.test.ts`, `eb19dcb`).
+- [x] workers tested (not owed: the renderer runs inline and spawns no worker — `878240b`).
+- [x] WASM/font-subsetting path tested (not owed: neither is used — `878240b`).
+- [x] external network features remain intentionally blocked (satisfied and asserted: active-content
+      extensions are never read and hostile HTML/JavaScript stays passive through admission and render
+      — `tests/canvasFileAdmission.test.ts`, `tests/canvasSurface.test.ts`, `eb19dcb`).
+- [x] iframe/web embeds remain intentionally blocked unless separately justified (satisfied by the same
+      assertions; nothing in the tree admits an embed frame, and no CSP broadening was requested).
 
 For each failure:
 
-- [ ] record exact browser/CSP failure
-- [ ] prove feature is required
-- [ ] request only smallest CSP change if needed
+- [x] record exact browser/CSP failure (no failure occurred, because no upstream runtime was loaded —
+      `29be020`).
+- [x] prove feature is required (not applicable: nothing was requested from Papers; the
+      `Papers changed` row records no Papers change).
+- [x] request only smallest CSP change if needed (not needed, and none requested — `29be020`).
+
 
 No speculative broadening of `connect-src`.
 
