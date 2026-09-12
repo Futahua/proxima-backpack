@@ -27,6 +27,7 @@ import { defineCanonicalPropertySchema, opaqueSchemaOptionIdFromRandomBytes, typ
 import type { CanonicalProjectRecordV2, CanonicalRecordV2, CanonicalTaskRecordV2 } from '../src/domain/canonicalRecordV2.js';
 import type { PropertySchema, ProximaState } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T06:30:00+07:00';
 
@@ -237,6 +238,8 @@ describe('Stage 10 property round trip', () => {
         refresh: async (reason: RefreshReason): Promise<RefreshResult> => await refresh.refreshSource(reason),
         setRefusal: () => undefined,
         render: () => undefined,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       },
       { taskId: created.recordId, draft },
     );

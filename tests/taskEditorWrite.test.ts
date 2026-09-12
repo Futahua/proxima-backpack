@@ -40,6 +40,7 @@ import type { CanonicalProjectRecordV2, CanonicalRecordV2, CanonicalTaskRecordV2
 import type { CanonicalExecutionState } from '../src/domain/canonicalTaskState.js';
 import type { ProximaState, Task } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T04:30:00+07:00';
 
@@ -152,6 +153,8 @@ async function world(): Promise<World> {
         },
         setRefusal: (reason: string | null) => { refusals.push(reason); },
         render: () => { renders.push(renders.length + 1); },
+        ids: semanticIds(),
+        audit: recordingAudit(),
       });
 
       const currentState = async (): Promise<ProximaState> => (await source.load()).state;

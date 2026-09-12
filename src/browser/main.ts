@@ -730,6 +730,14 @@ function taskEditorWriteDependencies() {
     refresh: refreshFromSource,
     setRefusal: (reason: string | null) => { taskEditorRefusal = reason; },
     render,
+    // The same envelope and sink every applicable write gets: the action mints the id, and the event goes
+    // into the one ring the surfaces are inspected through, with the dispatcher's real state revision.
+    ids: DETERMINISTIC_IDS,
+    audit: {
+      append: (event: SemanticAuditEvent) => {
+        actionDispatcher?.auditSemantic(event);
+      },
+    },
   };
 }
 

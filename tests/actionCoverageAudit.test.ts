@@ -946,6 +946,27 @@ const SCHEMA_CONTRACT: FamilyContract = {
  * that union is what a caller actually composes; the refusal cell names the sentence the row's own
  * semantics produces rather than the vocabulary in general.
  */
+/**
+ * The envelope cells for the rows whose write goes through the editor's Save or Delete.
+ *
+ * `saveTaskFromEditor` and `deleteTaskFromEditor` mint the id before the card lookup and append one terminal
+ * event per run, so these four rows close the family's two gaps while `task.execution.move` and the bulk rows
+ * keep asserting them - the envelope is wired one action at a time, and the audit says which.
+ */
+const EDITOR_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/taskEditorWrite.ts',
+    'readonly requestId: string;',
+    'the run mints a semantic request id before the card lookup and returns it on both branches, so a save or a delete refused because the card is gone, because there was nothing to write, because no write path exists or because the revision moved is correlatable exactly like an accepted one; tests/taskEditorSemanticAudit.test.ts asserts each of those',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/taskEditorSemanticAudit.test.ts',
+    'audit:accepted',
+    "behavioural rather than structural: one terminal event per run through the injected sink, after convergence where the store moved and not before it, naming the verb a reader would - a save that changes the column journals the execution move rather than flattening to task.update - and carrying the target id on a refusal as well as on an acceptance",
+  ),
+};
 const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
   {
     action: 'task.create',
@@ -969,6 +990,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: "'an update with no field to change is not an update'", reason: 'an empty mutation list is refused as a validation refusal rather than written as a record that says the same thing' },
     observable: { file: 'tests/taskEditorWrite.test.ts', marker: '(await app.deps.store.read(id))?.observedRevision', note: 'the save case reads the stored revision back and asserts the revision the write moved it to' },
+    overrides: EDITOR_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task.delete',
@@ -977,6 +999,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: "'the task record is not in the store'", reason: 'deleting a task the store does not hold answers a stable reason instead of throwing, and the conditional write reports a lost race rather than a false success' },
     observable: { file: 'tests/taskEditorWrite.test.ts', marker: 'expect(await app.deps.store.read(id)).toBeUndefined();', note: 'the delete case asserts the record is gone from the store, which is deletion absence rather than a returned flag' },
+    overrides: EDITOR_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task dates set/clear',
@@ -985,6 +1008,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: "'the start date is not a readable instant'", reason: 'an unreadable instant is refused by name before the write, and an end before its start has its own sentence' },
     observable: { file: 'tests/taskEditorWrite.test.ts', marker: '(await app.deps.store.read(id))?.observedRevision', note: 'the dates case reads the stored record back after the save, so the two ends are observed in the store rather than in the plan' },
+    overrides: EDITOR_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task weight/duration edits',
@@ -993,6 +1017,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: "'the maximum duration is whole minutes, or nothing at all'", reason: 'a duration that is not a whole number of minutes is refused by name, and so is a maximum below the fixed duration' },
     observable: { file: 'tests/taskMutations.test.ts', marker: '(await deps.store.read(seeded.recordId))?.observedRevision', note: 'the record-layer suite reads the stored revision back and asserts it equals the revision the operation returned' },
+    overrides: EDITOR_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task.execution.move',

@@ -31,6 +31,7 @@ import { renderElasticCockpit } from '../src/browser/elasticCockpit.js';
 import { EMPTY_PROJECT_BACKLOG_VIEW, renderProjectBacklog } from '../src/browser/projectBacklog.js';
 import { EMPTY_PROJECT_TASK_BOARD_VIEW, renderProjectTaskBoard } from '../src/browser/projectTaskBoard.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T05:00:00+07:00';
 const DEADLINE = '2026-10-05T09:00:00.000Z';
@@ -115,6 +116,8 @@ async function world() {
       refresh: refreshFromSource,
       setRefusal: () => undefined,
       render: () => undefined,
+      ids: semanticIds(),
+      audit: recordingAudit(),
     }),
   };
 }

@@ -22,11 +22,13 @@
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { CanonicalExecutionState } from '../domain/canonicalTaskState.js';
+import type { IdGenerator } from '../domain/clock.js';
 import type { PropertySchema } from '../domain/types.js';
 import type { ProximaState, Task } from '../domain/types.js';
 import { taskEditorDraftFor, type TaskEditorDraft } from './taskEditor.js';
 import { taskMoveActionType, type TaskMoveActionType } from './taskMoveGesture.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
+import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
 import { planPropertyMutation } from './propertyMutationPlan.js';
 import { convergeAfterWrite } from './writeConvergence.js';
@@ -229,6 +231,10 @@ export interface TaskEditorWriteDependencies {
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
   readonly setRefusal: (reason: string | null) => void;
   readonly render: () => void;
+  /** Mints this run's semantic request id. Injected, like every other identity in this repository. */
+  readonly ids: IdGenerator;
+  /** Where the run's one terminal audit event goes. */
+  readonly audit: SemanticAuditSink;
 }
 
 export type TaskEditorWriteFailureReason =
@@ -242,6 +248,8 @@ export type TaskEditorWriteOutcome =
       readonly ok: true;
       readonly schemaVersion: typeof TASK_EDITOR_WRITE_SCHEMA_VERSION;
       readonly outcome: 'updated' | 'deleted';
+      /** This run's semantic request id: minted at the boundary, returned on every result. */
+      readonly requestId: string;
       readonly revision: string;
       readonly refreshed: boolean;
     }
@@ -251,6 +259,8 @@ export type TaskEditorWriteOutcome =
       readonly reason: TaskEditorWriteFailureReason;
       readonly detail: string;
       readonly fieldId: string | null;
+      /** Present on a refusal too, so a save that lost a race is correlatable with the event it left. */
+      readonly requestId: string;
       readonly refreshed: boolean;
       /** The revision that beat this caller, when the refusal was a lost race. */
       readonly actualRevision?: string;
@@ -259,6 +269,7 @@ export type TaskEditorWriteOutcome =
 function writeRefused(
   reason: TaskEditorWriteFailureReason,
   detail: string,
+  requestId: string,
   fieldId: string | null = null,
   refreshed = false,
   actualRevision?: string,
@@ -269,6 +280,7 @@ function writeRefused(
     reason,
     detail,
     fieldId,
+    requestId,
     refreshed,
     ...(actualRevision === undefined ? {} : { actualRevision }),
   };
@@ -283,16 +295,40 @@ function taskOf(deps: TaskEditorWriteDependencies, taskId: string): Task | null 
  *
  * The plan is built from the record the *surface* is showing, and the write carries that record's
  * revision, so a save against a card someone else has since changed is refused rather than merged.
+ *
+ * The semantic envelope is minted here, before the card lookup, so a save refused because the card is gone is
+ * correlatable too; one terminal event follows, after convergence where the store was touched. The event's
+ * action type is the semantic verb this save actually is - a save that moves the card between columns is an
+ * execution move as well as an edit, and `taskEditorSaveActionType` is the function that already knows that.
  */
 export async function saveTaskFromEditor(
   deps: TaskEditorWriteDependencies,
   input: { readonly taskId: string; readonly draft: TaskEditorDraft | null },
 ): Promise<TaskEditorWriteOutcome> {
+  const requestId = mintSemanticRequestId(deps.ids);
+  const audit = (outcome: SemanticOutcome, actionType: string, entityIds: readonly string[], errorCode?: string): void => {
+    deps.audit.append({
+      requestId,
+      actionType,
+      outcome,
+      entityIds: [...entityIds],
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  };
+
   const task = taskOf(deps, input.taskId);
-  if (task === null) return writeRefused('unknown-task', 'the editor has no card with that id');
+  if (task === null) {
+    audit('rejected', 'task.update', [], 'unknown-task');
+    return writeRefused('unknown-task', 'the editor has no card with that id', requestId);
+  }
 
   const plan = planTaskEditorSave(task, input.draft, deps.state?.taskSchema ?? []);
-  if (!plan.ok) return writeRefused(plan.reason, plan.detail, plan.fieldId);
+  if (!plan.ok) {
+    audit('rejected', 'task.update', [task.id], plan.reason);
+    return writeRefused(plan.reason, plan.detail, requestId, plan.fieldId);
+  }
+
+  const actionType = taskEditorSaveActionType(task, plan.mutations);
 
   deps.setRefusal(null);
   const writes = await deps.writes();
@@ -300,7 +336,8 @@ export async function saveTaskFromEditor(
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
     deps.setRefusal(reason);
     deps.render();
-    return writeRefused('writes-unavailable', reason);
+    audit('rejected', actionType, [task.id], 'writes-unavailable');
+    return writeRefused('writes-unavailable', reason, requestId);
   }
 
   const written = await writes.updateTask({
@@ -317,15 +354,20 @@ export async function saveTaskFromEditor(
   if (!written.ok) deps.setRefusal(written.reason);
   deps.render();
 
-  return written.ok
-    ? {
-        ok: true,
-        schemaVersion: TASK_EDITOR_WRITE_SCHEMA_VERSION,
-        outcome: 'updated',
-        revision: written.revision,
-        refreshed: convergence.refreshed,
-      }
-    : writeRefused(written.reason, written.detail, null, convergence.refreshed, written.actualRevision);
+  if (!written.ok) {
+    audit(semanticOutcomeOf({ wrote: 0, refused: true }), actionType, [task.id], written.reason);
+    return writeRefused(written.reason, written.detail, requestId, null, convergence.refreshed, written.actualRevision);
+  }
+
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), actionType, [task.id]);
+  return {
+    ok: true,
+    schemaVersion: TASK_EDITOR_WRITE_SCHEMA_VERSION,
+    outcome: 'updated',
+    requestId,
+    revision: written.revision,
+    refreshed: convergence.refreshed,
+  };
 }
 
 /**
@@ -338,8 +380,22 @@ export async function deleteTaskFromEditor(
   deps: TaskEditorWriteDependencies,
   input: { readonly taskId: string },
 ): Promise<TaskEditorWriteOutcome> {
+  const requestId = mintSemanticRequestId(deps.ids);
+  const audit = (outcome: SemanticOutcome, entityIds: readonly string[], errorCode?: string): void => {
+    deps.audit.append({
+      requestId,
+      actionType: 'task.delete',
+      outcome,
+      entityIds: [...entityIds],
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  };
+
   const task = taskOf(deps, input.taskId);
-  if (task === null) return writeRefused('unknown-task', 'the editor has no card with that id');
+  if (task === null) {
+    audit('rejected', [], 'unknown-task');
+    return writeRefused('unknown-task', 'the editor has no card with that id', requestId);
+  }
 
   deps.setRefusal(null);
   const writes = await deps.writes();
@@ -347,7 +403,8 @@ export async function deleteTaskFromEditor(
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
     deps.setRefusal(reason);
     deps.render();
-    return writeRefused('writes-unavailable', reason);
+    audit('rejected', [task.id], 'writes-unavailable');
+    return writeRefused('writes-unavailable', reason, requestId);
   }
 
   const written = await writes.deleteTask({
@@ -363,15 +420,20 @@ export async function deleteTaskFromEditor(
   if (!written.ok) deps.setRefusal(written.reason);
   deps.render();
 
-  return written.ok
-    ? {
-        ok: true,
-        schemaVersion: TASK_EDITOR_WRITE_SCHEMA_VERSION,
-        outcome: 'deleted',
-        revision: written.revision,
-        refreshed: convergence.refreshed,
-      }
-    : writeRefused(written.reason, written.detail, null, convergence.refreshed, written.actualRevision);
+  if (!written.ok) {
+    audit(semanticOutcomeOf({ wrote: 0, refused: true }), [task.id], written.reason);
+    return writeRefused(written.reason, written.detail, requestId, null, convergence.refreshed, written.actualRevision);
+  }
+
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [task.id]);
+  return {
+    ok: true,
+    schemaVersion: TASK_EDITOR_WRITE_SCHEMA_VERSION,
+    outcome: 'deleted',
+    requestId,
+    revision: written.revision,
+    refreshed: convergence.refreshed,
+  };
 }
 
 /**
