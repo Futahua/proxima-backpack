@@ -1621,3 +1621,49 @@ against an observed revision — then this wire should fold into it rather than 
 alternative to a sibling entry is loosening `action-not-available`, which the containment and coverage suites
 exist to prevent.
 
+## D74 — The property-schema verbs get a boundary, and it is a sibling entry like the other two
+
+**Decided** on 2026-09-12, working the contract matrix's three schema rows. The record layer already wrote
+schemas correctly — create, update, delete, one option at a time, and a field edit that may not change the
+type a stored value was written under — and it refused in the taxonomy's own vocabulary. What it never had was
+an *entry*: a caller handed it typed requests, nothing accepted `unknown`, nothing answered a malformed
+submission with a sentence, and no result carried a request id or left an event. The matrix recorded that as
+three structural-gap rows rather than as missing fields, and the checklist's three remaining data-write
+universals were waiting on it.
+
+**What it is:** `src/app/propertySchemaActions.ts`, a sibling entry on D72's pattern — the third one, after
+template execution and the agent write path. It parses a submission of one of five verbs
+(`property.schema.create`, `.update`, `.delete`, `.option.change`, `.field.change`), binds it to the record
+operation it names, and returns the record layer's own outcome.
+
+**Why not a `ProximaAction`:** the taxonomy's registry carries no schema verb, and adding one would put a
+record mutation behind `dispatch` — the containment rule that `tests/actionCoverageAudit.test.ts` and
+`tests/recordMutationContainment.test.ts` exist to keep true. The dispatcher's job in this repository is to
+answer record verbs as unavailable; a schema write is reached the way the other two sibling entries are.
+
+**Three deliberate narrownesses, and one thing it does not do:**
+
+- **The boundary validates the outer shape only.** Whether a name is acceptable, whether a definition is a
+  real property definition of the right shape, whether an option rename is legal and whether a re-type would
+  orphan stored values are the record layer's answers, and they arrive as its refusals. There is one copy of
+  each rule — the domain constructor's — rather than two.
+- **The request id is minted before the submission is parsed**, which is the convention `dispatch` and the
+  agent write path already follow: a submission this layer cannot read is still correlatable with the refusal
+  it got. A caller-supplied `requestId` is never read, and it is never one of the ids a submission may name.
+- **No refresh is taken.** The Backlog reads the declared schema on every render
+  (`tests/schemaReprojection.test.ts`), so a schema write leaves no stale surface to converge; what it owes is
+  the record, its revision and the event. A refresh here would be a redraw that means nothing.
+- **It does not paper over the record layer's gaps.** The coordinator's request id is still dropped inside
+  `propertySchemaMutations.ts` and the layer still emits no event; those cells stay gaps in the matrix, and
+  the semantic id and the semantic event are a different pair of facts one layer up. A reader comparing the
+  two files should find exactly that, which is why each overridden cell's reason says so.
+
+**Consequence:** the three schema rows carry the boundary, the request id and the event, and the record
+layer's own cells still assert their gaps. The data-write universal "every human DATA WRITE gesture has one
+semantic Proxima action" loses its stated blocker; the other two keep theirs, which is now the agent entry
+question rather than the action question.
+
+**Reverses if:** the protocol grows a dispatch that can carry a schema verb with an observed revision, or a
+schema editor arrives in the shell — either would move this entry's role rather than its rules, and the
+editor would give the family the UI caller its rows still do not have.
+

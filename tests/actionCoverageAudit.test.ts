@@ -910,7 +910,7 @@ const SCHEMA_CONTRACT: FamilyContract = {
   validation: {
     file: 'src/app/propertySchemaMutations.ts',
     witness: 'request: CreatePropertySchemaRequest',
-    note: 'the name and the definition are checked, and the definition is validated by the domain constructor, but the request object is typed and nothing accepts it as unknown, so the parse happens inside the module rather than at a boundary',
+    note: 'the record layer still takes typed requests only - the name and the definition are checked inside the module and the domain constructor validates the definition - and the boundary that accepts `unknown` lives one layer up, in `src/app/propertySchemaActions.ts`, which is what every row below overrides this cell to name',
   },
   success: {
     file: 'src/app/propertySchemaMutations.ts',
@@ -929,13 +929,13 @@ const SCHEMA_CONTRACT: FamilyContract = {
   requestId: {
     file: 'src/app/propertySchemaMutations.ts',
     witness: 'readonly recordId: OpaqueRecordId',
-    note: 'the coordinator requestId is dropped by writeSchema and by the delete branch, and createPropertySchema never reaches the coordinator, so no schema result can be correlated with its journal entry',
+    note: 'the coordinator requestId is still dropped by writeSchema and by the delete branch, and createPropertySchema never reaches the coordinator - that is the record layer, and it is unchanged. The semantic request id a caller can cite is minted one layer up in `src/app/propertySchemaActions.ts`, which every row below overrides this cell to name; the two ids are different things and neither is read from a caller',
   },
   ids: { file: 'src/app/propertySchemaMutations.ts', marker: 'readonly recordId: OpaqueRecordId' },
   audit: {
     file: 'src/app/propertySchemaMutations.ts',
     witness: 'export type PropertySchemaMutationResult',
-    note: 'no semantic event is emitted: the schema rows are operation-only and the dispatcher has no schema verb, so nothing records a schema write outside the journal that made it recoverable',
+    note: 'the record layer emits no event - it is a store operation, not an action - and the terminal semantic event per run is appended by `src/app/propertySchemaActions.ts` through the injected sink, which is what the audit column now reads for these rows',
   },
 };
 
@@ -1403,6 +1403,35 @@ const STAGE_CONTRACT_ROWS: readonly ContractRow[] = contractRows(STAGE_CONTRACT,
   },
 ]);
 
+/**
+ * The envelope cells for the schema rows.
+ *
+ * The record layer's own gaps stay exactly as they are - it still accepts typed requests only, drops the
+ * coordinator's id and emits no event - and these overrides record where the closed cells now live: the
+ * semantic action layer that submits to it. All three rows carry them because one entry runs all five verbs,
+ * which is the difference from the other families, where the envelope arrived a row at a time.
+ */
+const SCHEMA_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_VALIDATION]: carried(
+    COLUMN_VALIDATION,
+    'src/app/propertySchemaActions.ts',
+    'export function parsePropertySchemaSubmission(',
+    'the boundary accepts `unknown` and answers a submission it cannot read with a sentence, which is the half the record layer never had; what it deliberately does not do is re-decide whether a name or a definition is acceptable, because those are the layer\'s rules and a second copy of them would be a second thing to keep true',
+  ),
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/propertySchemaActions.ts',
+    'const requestId = mintSemanticRequestId(deps.ids);',
+    'one semantic request id, minted before the submission is parsed so a malformed one is still correlatable, returned on every branch and never read from the caller - the record layer\'s dropped coordinator id is untouched and the two are different ids for different things',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/propertySchemaActions.test.ts',
+    'property.schema.option.change',
+    'behavioural rather than structural: one terminal event per run, named for the verb (property.schema.create/update/delete, .option.change, .field.change), carrying the schema record the run touched and the refusal code when it was refused; the case asserts five runs leave five events under five distinct ids, and that a fifteen-submission malformed battery leaves one rejected event each',
+  ),
+};
+
 /** The property-schema family, which has operations and no surface. */
 const SCHEMA_CONTRACT_ROWS: readonly ContractRow[] = contractRows(SCHEMA_CONTRACT, [
   {
@@ -1413,6 +1442,7 @@ const SCHEMA_CONTRACT_ROWS: readonly ContractRow[] = contractRows(SCHEMA_CONTRAC
     conflictNote: 'the update and the delete refuse a lost race with stale-revision and the revision that beat them, and the create half carries the collision that is possible instead - a record already holding that id',
     refusal: { marker: "'an update with no field to change is not an update'", reason: 'an update that names neither a name nor a definition is refused by name, and a delete is refused while records still carry a value for the property' },
     observable: { file: 'tests/propertySchemaMutations.test.ts', marker: 'const projection = projectRecordState(await worldValue.deps.store.list());', note: 'the create case reads the store back through the projection every surface uses and finds the property there, and the delete case asserts the record is gone' },
+    overrides: SCHEMA_ENVELOPE_OVERRIDES,
   },
   {
     action: 'schema options',
@@ -1421,6 +1451,7 @@ const SCHEMA_CONTRACT_ROWS: readonly ContractRow[] = contractRows(SCHEMA_CONTRAC
     shape: 'write',
     refusal: { marker: "'only a select or multi-select property has options'", reason: 'the verb refuses a property that has no options, a duplicate label, and an option id the schema does not declare' },
     observable: { file: 'tests/propertySchemaMutations.test.ts', marker: 'expectedRevision: (await worldValue.deps.store.read(schemaId))!.observedRevision,', note: 'the option case reads the schema revision back out of the store for each conditional write, so an option write that had not landed would be refused as stale' },
+    overrides: SCHEMA_ENVELOPE_OVERRIDES,
   },
   {
     action: 'formula/rollup/relation schema edits',
@@ -1429,6 +1460,7 @@ const SCHEMA_CONTRACT_ROWS: readonly ContractRow[] = contractRows(SCHEMA_CONTRAC
     shape: 'write',
     refusal: { marker: 'a field edit may not change ${current.record.definition.type} into ${input.definition.type}', reason: 'a field edit that would change the kind of value is refused with a sentence naming both kinds, because that is a value migration rather than an edit' },
     observable: { gap: { file: 'tests/propertySchemaMutations.test.ts', marker: 'store.read(formula.recordId)', witness: "expect(edited.record).toMatchObject({ name: 'Score', definition: { type: 'formula', expression: 'weight * 3' } });", reason: 'the field-edit case asserts the definition the operation returned and never reads the schema record back out of the store, so the authoritative post-action state of this verb is not observed by any test' } },
+    overrides: SCHEMA_ENVELOPE_OVERRIDES,
   },
 ]);
 

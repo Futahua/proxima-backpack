@@ -434,6 +434,19 @@ Potential categories:
       stopped reshaping the gesture's result, which is what lets the two entries be compared
       as whole objects rather than as a chosen subset of fields
       (`tests/agentWritePath.test.ts`, `docs/DECISIONS.md#d73`).
+- [x] the property-schema verbs have a boundary — `src/app/propertySchemaActions.ts` is the entry the
+      three schema rows of the contract matrix were missing: it accepts `unknown` and answers a
+      submission it cannot read with a sentence, answers a verb it does not run with
+      `action-not-available`, mints one semantic request id **before** it parses anything, submits to
+      the record layer's own operations (so the domain constructor stays the only validator of a
+      property definition), returns the record's revision and the ids the run touched, and appends one
+      terminal event named for the verb (`property.schema.create` / `.update` / `.delete` /
+      `.option.change` / `.field.change`). It is a sibling entry rather than a `ProximaAction`, for
+      D72's reason: the registry carries no schema verb, and putting a record write behind `dispatch`
+      is what the containment rule exists to prevent. The record layer keeps its own gaps and the
+      matrix still asserts them — it takes typed requests only, drops the coordinator's id and emits
+      no event — while the three rows now carry the boundary, the id and the event through overrides
+      (`tests/propertySchemaActions.test.ts`, `docs/DECISIONS.md#d74`).
 
 ### 3.2 State-inspection seam
 
