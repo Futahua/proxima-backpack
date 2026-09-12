@@ -842,6 +842,76 @@ describe(
     );
 
     it(
+      'reports a construct only for a record that landed, not for one the run blocked',
+      async () => {
+        const importPlan =
+          await plan({
+            'Proxima/projects/alpha.md': [
+              '---',
+              'id: alpha',
+              'type: project',
+              '---',
+              '',
+            ].join('\n'),
+
+            'Proxima/tasks/orphan.md': [
+              '---',
+              'id: orphan',
+              'project: alpha',
+              'description: |',
+              '  unsupported',
+              'status: running',
+              'orderIndex: 1',
+              '---',
+              '',
+            ].join('\n'),
+          });
+
+        // The project record is never staged, so the task is blocked rather than converted - while the
+        // record itself carries the same unsupported construct the report exists for. A report is a
+        // statement about a record this run produced, so there must not be one here: a caller told about a
+        // construct on a record it cannot find has been told about nothing.
+        const result =
+          await materializeLegacyImportTaskStaging(
+            importPlan,
+            new MemoryTaskStagingStore(),
+            {
+              schemaVersion: 1,
+              reconciliationKey:
+                'project-record-id+legacy-status-id',
+              entries: [],
+            },
+          );
+
+        expect(result.staged)
+          .toEqual([]);
+
+        expect(result.blockers)
+          .toEqual([
+            expect.objectContaining({
+              reason:
+                'project-record-missing',
+              sourcePath:
+                'Proxima/tasks/orphan.md',
+            }),
+          ]);
+
+        expect(result.counts)
+          .toEqual({
+            taskCandidates: 1,
+            eligibleTaskRecords: 0,
+            created: 0,
+            reusedIdentical: 0,
+            blocked: 1,
+            reported: 0,
+          });
+
+        expect(result.reported)
+          .toEqual([]);
+      },
+    );
+
+    it(
       'does not stage a project task before its exact project and workflow-stage dependency records exist',
       async () => {
         const importPlan =
