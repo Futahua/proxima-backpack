@@ -276,7 +276,9 @@ async function world(seedOffset: number): Promise<World> {
   const agent: AgentWriteDependencies = {
     writes: async () => operations,
     // The schema family, resolved the way a composition with a schema editor would resolve it. The wire's
-    // own deps make this optional on purpose: the browser shell has no schema editor yet.
+    // own deps keep this optional on purpose: the browser shell reaches these five verbs through
+    // `submitPropertySchemaAction` with its own resolved port rather than through this entry, so a
+    // composition that does not carry a schema port here is a real composition and not a gap.
     schemaWrites: async () => ({
       createPropertySchema: (request) => createPropertySchema(schemaMutations, request),
       updatePropertySchema: (input) => updatePropertySchema(schemaMutations, input),

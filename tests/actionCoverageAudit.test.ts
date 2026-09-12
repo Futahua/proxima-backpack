@@ -167,14 +167,15 @@ const WORKFLOW_STAGE_ROWS: readonly TaskActionRow[] = [
 ];
 
 /**
- * The schema rows, which now have operations and no surface.
+ * The schema rows, which now have a surface as well as operations.
  *
  * The record layer writes a schema: create, update, delete, one option at a time, and a field edit
- * that may not change what kind of value the property holds. Nothing in the shell reaches them yet —
- * there is no schema editor — so these rows are declared **operation-only** and the test below asserts
- * the absence of a caller, exactly as the task-recurrence row does. That is the honest state: the verb
- * exists, its refusals are real, and a reader who wants to manage schemas in the app is told what is
- * missing rather than shown a control that is not there.
+ * that may not change what kind of value the property holds. Nothing in the shell reached them until
+ * `src/browser/propertySchemaPanel.ts` existed — there was no schema editor — and until then these rows
+ * were declared **operation-only** with the test below asserting the absence of a caller, exactly as the
+ * task-recurrence row still does. The surface arrived, so the assertion flipped: the shell binds the
+ * panel, carries its projection into the Backlog and submits the three forms through the entry, and
+ * `tests/propertySchemaPanel.test.ts` proves a click reaches the handlers a source reading cannot.
  */
 const SCHEMA_ROWS: readonly TaskActionRow[] = [
   { action: 'property schema create/update/delete', module: 'src/app/propertySchemaMutations.ts', marker: 'export async function updatePropertySchema', testFile: 'tests/propertySchemaMutations.test.ts', testMarker: 'updatePropertySchema', equivalence: false },
@@ -1526,7 +1527,7 @@ const SCHEMA_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
   ),
 };
 
-/** The property-schema family, which has operations and no surface. */
+/** The property-schema family, whose surface arrived after these envelope cells did. */
 const SCHEMA_CONTRACT_ROWS: readonly ContractRow[] = contractRows(SCHEMA_CONTRACT, [
   {
     action: 'property schema create/update/delete',
