@@ -72,6 +72,9 @@ function projectRecord(id: OpaqueRecordId): CanonicalProjectRecordV2 {
 function reportFor(status: BulkTaskActionReport['status'], entities: BulkTaskActionReport['entities']): BulkTaskActionReport {
   return {
     schemaVersion: 1,
+    // The same rule the report itself applies: nothing landed exactly when the status is `refused`, and a
+    // partial run did write records.
+    ok: status !== 'refused',
     action: 'task.bulk.complete',
     status,
     // Fixed rather than minted: this is a report the projection is handed to draw, not a run being executed.

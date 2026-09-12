@@ -57,6 +57,15 @@ export type BulkTaskActionStatus = 'accepted' | 'partial' | 'refused';
 
 export interface BulkTaskActionReport {
   readonly schemaVersion: typeof BULK_TASK_ACTION_SCHEMA_VERSION;
+  /**
+   * Whether anything landed, which is the same question every other result in this tree answers with `ok`.
+   *
+   * Derived rather than decided a second time: false exactly when the status is `refused`, and true for a
+   * `partial` run, because a partial run did write records and reporting it as a failure would be the lie the
+   * status field exists to avoid. It is here so a caller can ask "did this succeed" of a submission result
+   * without first asking which family answered: a union member with no discriminant is one no guard narrows.
+   */
+  readonly ok: boolean;
   readonly action: BulkTaskActionKind;
   /** How the caller is meant to read this: never `accepted` unless every member was. */
   readonly status: BulkTaskActionStatus;
@@ -79,16 +88,42 @@ export interface BulkTaskWriteOperations {
   deleteTask(input: { taskId: OpaqueRecordId; expectedRevision: string }): Promise<TaskMutationResult>;
 }
 
-export interface BulkTaskActionDependencies {
+export interface BulkTaskActionDependencies extends BulkTaskActionOperationDependencies {
   readonly state: ProximaState | null;
+  readonly render: () => void;
+}
+
+/**
+ * What the operation needs, and nothing a cockpit owns.
+ *
+ * The one fact a bulk run took from a projection was each member's revision, and the caller is the one that
+ * read the selection - so it arrives through `resolveRevision`, which answers with the revision the caller read
+ * for a member and null for one it cannot answer for. The cockpit answers from the board it rendered; the agent
+ * wire answers from the revisions the agent sent. `render` is the surface's own and stays above.
+ */
+export interface BulkTaskActionOperationDependencies {
   readonly writes: () => Promise<BulkTaskWriteOperations | null>;
   readonly unavailableReason: () => string | null;
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
-  readonly render: () => void;
   /** Mints this run's semantic request id: one per run, not one per member. */
   readonly ids: IdGenerator;
   /** Where the run's one terminal audit event goes. */
   readonly audit: SemanticAuditSink;
+  /**
+   * The revision a member is written at, or null when the caller cannot answer for it.
+   *
+   * Null is a refusal and not a default: a member the caller cannot say it read is one this run will not write
+   * on a guess, and the report names it as unknown rather than losing the whole selection to it.
+   */
+  readonly resolveRevision?: (taskId: string) => string | null;
+  /**
+   * What the surface does with the run so far, before the run is journalled.
+   *
+   * Present only where there is a surface, because the order is this family's contract: the board redraws after
+   * convergence and before the terminal event. A caller with no board omits it and draws nothing, which is
+   * exactly what the agent wire does.
+   */
+  readonly settle?: () => void;
 }
 
 function statusOf(entities: readonly BulkEntityOutcome[]): BulkTaskActionStatus {
@@ -105,6 +140,7 @@ function report(
 ): BulkTaskActionReport {
   return {
     schemaVersion: BULK_TASK_ACTION_SCHEMA_VERSION,
+    ok: statusOf(entities) !== 'refused',
     action,
     status: statusOf(entities),
     requestId,
@@ -148,8 +184,8 @@ function refusal(entity: TaskMutationResult, taskId: string): BulkEntityOutcome 
  * @param action - which bulk action this is, which decides the write and the report's name.
  * @returns the per-entity report, with a status that cannot overstate it.
  */
-async function runBulk(
-  deps: BulkTaskActionDependencies,
+export async function runBulk(
+  deps: BulkTaskActionOperationDependencies,
   input: { readonly taskIds: readonly string[] },
   action: BulkTaskActionKind,
 ): Promise<BulkTaskActionReport> {
@@ -175,7 +211,6 @@ async function runBulk(
     return report(action, [], false, requestId);
   }
 
-  const state = deps.state;
   const writes = await deps.writes();
   if (writes === null) {
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
@@ -185,7 +220,7 @@ async function runBulk(
       reason: 'writes-unavailable' as const,
       detail: reason,
     }));
-    deps.render();
+    deps.settle?.();
     audit('rejected', requested, 'writes-unavailable');
     return report(action, entities, false, requestId);
   }
@@ -194,19 +229,19 @@ async function runBulk(
   let acceptedAny = false;
 
   for (const taskId of requested) {
-    const task = state?.tasks.find((candidate) => candidate.id === taskId);
-    if (task === undefined) {
+    const revision = deps.resolveRevision?.(taskId) ?? null;
+    if (revision === null) {
       entities.push({ taskId, ok: false, reason: 'unknown-task', detail: 'the selection names a task that is not loaded' });
       continue;
     }
 
-    // One attempt per entity, with the revision the surface was rendering. A member that lost a
-    // race is reported and the loop continues: one raced record must not cost the whole action.
+    // One attempt per entity, with the revision the caller read. A member that lost a race is reported and the
+    // loop continues: one raced record must not cost the whole action.
     const result = action === 'task.bulk.delete'
-      ? await writes.deleteTask({ taskId: taskId as OpaqueRecordId, expectedRevision: task.source.revision })
+      ? await writes.deleteTask({ taskId: taskId as OpaqueRecordId, expectedRevision: revision })
       : await writes.updateTask({
           taskId: taskId as OpaqueRecordId,
-          expectedRevision: task.source.revision,
+          expectedRevision: revision,
           mutations: [{ kind: 'execution-state', value: 'finished' }],
         });
 
@@ -223,7 +258,7 @@ async function runBulk(
       refreshed = false;
     }
   }
-  deps.render();
+  deps.settle?.();
 
   const built = report(action, entities, refreshed, requestId);
   // One terminal event for the whole run, after convergence: the outcome comes from the members - a selection
@@ -242,16 +277,39 @@ async function runBulk(
   return built;
 }
 
+/**
+ * The cockpit's entry: answer each member's revision from the board it rendered, then draw the report.
+ *
+ * The board is handed over as a resolver rather than read here, so the "not loaded" refusal is still the run's
+ * own and stays in one place. A caller with no board supplies its own resolver - the agent wire answers with
+ * the revisions the agent sent - and this wrapper is not on its path.
+ */
+async function runBulkFromBoard(
+  deps: BulkTaskActionDependencies,
+  input: { readonly taskIds: readonly string[] },
+  action: BulkTaskActionKind,
+): Promise<BulkTaskActionReport> {
+  return await runBulk(
+    {
+      ...deps,
+      resolveRevision: (taskId) => deps.state?.tasks.find((candidate) => candidate.id === taskId)?.source.revision ?? null,
+      settle: () => deps.render(),
+    },
+    input,
+    action,
+  );
+}
+
 export async function bulkCompleteTasks(
   deps: BulkTaskActionDependencies,
   input: { readonly taskIds: readonly string[] },
 ): Promise<BulkTaskActionReport> {
-  return await runBulk(deps, input, 'task.bulk.complete');
+  return await runBulkFromBoard(deps, input, 'task.bulk.complete');
 }
 
 export async function bulkDeleteTasks(
   deps: BulkTaskActionDependencies,
   input: { readonly taskIds: readonly string[] },
 ): Promise<BulkTaskActionReport> {
-  return await runBulk(deps, input, 'task.bulk.delete');
+  return await runBulkFromBoard(deps, input, 'task.bulk.delete');
 }

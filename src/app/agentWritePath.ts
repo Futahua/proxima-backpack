@@ -50,6 +50,13 @@ import {
 } from './projectLifecycleActions.js';
 import type { ProjectFieldMutation } from './projectMutations.js';
 import {
+  BULK_TASK_ACTION_SCHEMA_VERSION,
+  runBulk,
+  type BulkTaskActionKind,
+  type BulkTaskActionReport,
+  type BulkTaskWriteOperations,
+} from './bulkTaskActions.js';
+import {
   PROPERTY_SCHEMA_ACTION_TYPES,
   submitPropertySchemaAction,
   type PropertySchemaActionOutcome,
@@ -123,6 +130,19 @@ const PROJECT_VERB_TYPES: Readonly<Record<string, ProjectLifecycleVerb>> = {
 };
 
 /**
+ * The two bulk verbs, which are the only family whose submission names many records at once.
+ *
+ * Each member carries the revision it was read at, because a bulk run writes every member at the revision its
+ * caller read - the board takes them from what it rendered, and a caller with no board has to send them. That
+ * is also why the wire refuses a selection with no members: "accepted" for zero writes is the kind of success a
+ * caller should never be told, which is the operation's own rule.
+ */
+const BULK_VERB_TYPES: Readonly<Record<string, BulkTaskActionKind>> = {
+  'task.bulk.complete': 'task.bulk.complete',
+  'task.bulk.delete': 'task.bulk.delete',
+};
+
+/**
  * The verbs this wire runs without a cockpit. Every other registered verb is answered, not ignored.
  *
  * Five families qualify today and they qualify by the same rule rather than by seniority: `moveTaskByGesture`
@@ -147,8 +167,83 @@ export const AGENT_WRITE_VERBS = [
   workflowStageActionType('rename'),
   ...Object.keys(EVENT_WRITE_VERB_TYPES),
   ...Object.keys(PROJECT_VERB_TYPES),
+  ...Object.keys(BULK_VERB_TYPES),
   ...Object.values(PROPERTY_SCHEMA_ACTION_TYPES),
 ] as const;
+
+/**
+ * The one family that does not answer `ok`, and why it has its own entry.
+ *
+ * A bulk run reports a status **per member** - accepted, partial or refused over a selection - rather than one
+ * verdict, and a union member with no `ok` field would stop `if (!result.ok)` narrowing for every other family.
+ * So a bulk submission is refused by `submitAgentWrite` with a sentence naming where it belongs, and runs here,
+ * where the result is typed to the report. One entry per shape is what keeps the other families' discriminants
+ * usable, and it is a statement about the report rather than about the wire.
+ *
+ * A submission this entry cannot read comes back as a report with one refusal and no members rather than as a
+ * different shape, so a caller of the bulk family never has to ask which family answered it.
+ */
+export async function submitAgentBulk(
+  deps: AgentWriteDependencies,
+  input: unknown,
+): Promise<BulkTaskActionReport> {
+  const parsed = parseAgentWriteSubmission(input);
+  if (!parsed.ok) {
+    const requestId = mintSemanticRequestId(deps.ids);
+    deps.audit.append({
+      requestId,
+      actionType: parsed.actionType,
+      outcome: 'rejected',
+      entityIds: [...parsed.entityIds],
+      errorCode: parsed.reason === 'unsupported-verb' ? 'action-not-available' : 'validation-refused',
+    });
+    return {
+      schemaVersion: BULK_TASK_ACTION_SCHEMA_VERSION,
+      ok: false,
+      action: 'task.bulk.complete',
+      status: 'refused',
+      requestId,
+      requested: 0,
+      accepted: 0,
+      refused: 0,
+      entities: [],
+      refreshed: false,
+    };
+  }
+  if (parsed.kind !== 'bulk') {
+    // A well-formed submission for a family this entry does not run, answered in the report's own shape rather
+    // than thrown: a caller of the bulk family should never have to ask which family answered it.
+    const requestId = mintSemanticRequestId(deps.ids);
+    deps.audit.append({ requestId, actionType: parsed.actionType, outcome: 'rejected', entityIds: [], errorCode: 'validation-refused' });
+    return {
+      schemaVersion: BULK_TASK_ACTION_SCHEMA_VERSION,
+      ok: false,
+      action: 'task.bulk.complete',
+      status: 'refused',
+      requestId,
+      requested: 0,
+      accepted: 0,
+      refused: 0,
+      entities: [],
+      refreshed: false,
+    };
+  }
+
+  const operations = deps.bulkWrites === undefined ? null : await deps.bulkWrites();
+  const revisions = new Map(parsed.submission.members.map((member) => [member.taskId, member.expectedRevision]));
+  return await runBulk(
+    {
+      writes: async () => operations,
+      unavailableReason: () => deps.unavailableReason() ?? 'writes-unavailable',
+      refresh: deps.refresh,
+      ids: deps.ids,
+      audit: deps.audit,
+      resolveRevision: (taskId) => revisions.get(taskId) ?? null,
+    },
+    { taskIds: parsed.submission.members.map((member) => member.taskId) },
+    parsed.action,
+  );
+}
 
 export type AgentWriteVerb = (typeof AGENT_WRITE_VERBS)[number];
 
@@ -277,6 +372,18 @@ export interface AgentProjectWriteSubmission {
   readonly mutations?: readonly ProjectFieldMutation[];
 }
 
+/**
+ * The wire shape an agent submits for a bulk run over a selection.
+ *
+ * One array of members, each naming a task and the revision it was read at, rather than two parallel arrays:
+ * a pair cannot drift out of step with itself, and a caller that got the alignment wrong would otherwise be
+ * writing one record at another record's revision.
+ */
+export interface AgentBulkWriteSubmission {
+  readonly type: AgentWriteVerb;
+  readonly members: readonly { readonly taskId: string; readonly expectedRevision: string }[];
+}
+
 export interface AgentWriteDependencies {  /** Resolve the sanctioned record write path; null when this run may not write records. */
   readonly writes: () => Promise<AgentWriteOperations | null>;
   /**
@@ -306,6 +413,8 @@ export interface AgentWriteDependencies {  /** Resolve the sanctioned record wri
   readonly eventWrites?: () => Promise<EventWriteOperations | null>;
   /** Resolve the project lifecycle write path, when this composition has one: the fourth write path. */
   readonly projectWrites?: () => Promise<ProjectLifecycleOperations | null>;
+  /** Resolve the bulk task write path, when this composition has one: the fifth write path. */
+  readonly bulkWrites?: () => Promise<BulkTaskWriteOperations | null>;
   /** Why there is no write path, in words a reader can act on. */
   readonly unavailableReason: () => string | null;
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
@@ -385,6 +494,13 @@ export type ParsedAgentWrite =
       readonly actionType: string;
       readonly verb: EventWriteVerb;
       readonly submission: AgentEventWriteSubmission;
+    }
+  | {
+      readonly ok: true;
+      readonly kind: 'bulk';
+      readonly actionType: string;
+      readonly action: BulkTaskActionKind;
+      readonly submission: AgentBulkWriteSubmission;
     }
   | {
       readonly ok: true;
@@ -497,6 +613,32 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
     actionType: rawType,
     entityIds: ids,
   });
+
+  // The bulk family: a selection, and every member carries the revision it was read at, because the run writes
+  // each member at the revision its caller read. An empty selection is refused here rather than reaching the
+  // operation, so the refusal is the wire's own shape rule and the operation keeps its own for the board.
+  const bulkAction = BULK_VERB_TYPES[rawType];
+  if (bulkAction !== undefined) {
+    const members = candidate.members;
+    if (!Array.isArray(members)) return fail('a bulk run needs the members it is about');
+    if (members.length === 0) return fail('a bulk run needs at least one member');
+    for (const member of members) {
+      if (typeof member !== 'object' || member === null || Array.isArray(member)) return fail('every member is a task and the revision it was read at');
+      const pair = member as { taskId?: unknown; expectedRevision?: unknown };
+      if (typeof pair.taskId !== 'string' || pair.taskId === '') return fail('every member is a task and the revision it was read at');
+      if (typeof pair.expectedRevision !== 'string' || pair.expectedRevision === '') {
+        return fail('every member carries the revision it was read at, so a lost race is refused rather than merged');
+      }
+    }
+
+    const bulk: AgentBulkWriteSubmission = {
+      type: rawType as AgentWriteVerb,
+      members: (members as readonly { readonly taskId: string; readonly expectedRevision: string }[])
+        .map((member) => ({ taskId: member.taskId, expectedRevision: member.expectedRevision })),
+    };
+
+    return { ok: true, kind: 'bulk', actionType: rawType, action: bulkAction, submission: bulk };
+  }
 
   // The project family: a create names the project, and the other four name it by id and revision. The field
   // mutations an update carries are the record layer's own vocabulary and are passed through rather than
@@ -918,11 +1060,19 @@ export async function submitAgentWrite(
   }
 
   const submission = parsed.submission;
+  if (submission.type === 'task.bulk.complete' || submission.type === 'task.bulk.delete') {
+    // Unreachable through this entry, and refused rather than reached: a bulk submission is answered by
+    // `submitAgentBulk`, which is typed to the report that family returns. The check is here because the
+    // result union deliberately has no bulk member, so this is the line that keeps the two entries apart.
+    audit(submission.type, 'rejected', [], 'action-not-available');
+    return refused(submission.type, 'unsupported-verb', 'a bulk run is submitted through submitAgentBulk', requestId);
+  }
+  const move = submission as AgentTaskMoveSubmission;
   const operations = await deps.writes();
   if (operations === null) {
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
-    audit(submission.type, 'rejected', [submission.taskId], 'writes-unavailable');
-    return refused(submission.type, 'writes-unavailable', reason, requestId);
+    audit(move.type, 'rejected', [move.taskId], 'writes-unavailable');
+    return refused(move.type, 'writes-unavailable', reason, requestId);
   }
 
   // The gesture mints nothing here: the id belongs to this boundary, which is the one that answers refusals
@@ -935,11 +1085,11 @@ export async function submitAgentWrite(
       audit: deps.audit,
     },
     {
-      taskId: submission.taskId as OpaqueRecordId,
-      from: submission.from,
-      to: submission.to,
-      targetIndex: submission.targetIndex,
-      expectedRevision: submission.expectedRevision,
+      taskId: move.taskId as OpaqueRecordId,
+      from: move.from,
+      to: move.to,
+      targetIndex: move.targetIndex,
+      expectedRevision: move.expectedRevision,
       requestId,
     },
   );

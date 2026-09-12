@@ -35,6 +35,7 @@ import { categoryOf, registeredActionTypes } from '../src/app/actionTaxonomy.js'
 import {
   AGENT_WRITE_VERBS,
   parseAgentWriteSubmission,
+  submitAgentBulk,
   submitAgentWrite,
   type AgentWriteDependencies,
 } from '../src/app/agentWritePath.js';
@@ -57,7 +58,7 @@ import {
   updateSchemaOption,
   type PropertySchemaMutationDependencies,
 } from '../src/app/propertySchemaMutations.js';
-import { createTask, updateTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
+import { createTask, deleteTask, updateTask, type TaskMutationDependencies } from '../src/app/taskMutations.js';
 import { TIMELINE_CHANGE_ACTION_TYPE } from '../src/app/timelineChangeAction.js';
 import {
   WORKFLOW_STAGE_WRITE_VERBS,
@@ -74,6 +75,7 @@ import {
   type ProjectMutationDependencies,
 } from '../src/app/projectMutations.js';
 import type { ProjectLifecycleOperations } from '../src/app/projectLifecycleActions.js';
+import { BULK_TASK_ACTION_SCHEMA_VERSION, type BulkTaskWriteOperations } from '../src/app/bulkTaskActions.js';
 import {
   createWorkflowStage,
   renameWorkflowStage,
@@ -262,6 +264,10 @@ async function world(seedOffset: number): Promise<World> {
     restoreProject: (input) => restoreProject(projectMutations, input),
     deleteProject: (input) => deleteProject(projectMutations, input),
   };
+  const bulkOperations: BulkTaskWriteOperations = {
+    updateTask: (input) => updateTask(deps, input),
+    deleteTask: (input) => deleteTask(deps, input),
+  };
 
   const agent: AgentWriteDependencies = {
     writes: async () => operations,
@@ -280,6 +286,8 @@ async function world(seedOffset: number): Promise<World> {
     eventWrites: async () => eventOperations,
     // …and the Hub's, resolved the way a composition with a Projects Hub would.
     projectWrites: async () => projectOperations,
+    // …and the Backlog's, resolved the way a composition with a task list would.
+    bulkWrites: async () => bulkOperations,
     unavailableReason: () => null,
     refresh,
     ids,
@@ -454,7 +462,7 @@ describe('agent write path', () => {
     // module - a source read is the check that survives a well-meaning later edit. The two resolvers it does
     // take are write paths, and one of them is optional precisely because a composition need not have it.
     expect(AGENT_WRITE_SOURCE).not.toContain('ProximaState');
-    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'eventWrites', 'ids', 'projectWrites', 'refresh', 'schemaWrites', 'stageWrites', 'unavailableReason', 'writes']);
+    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'bulkWrites', 'eventWrites', 'ids', 'projectWrites', 'refresh', 'schemaWrites', 'stageWrites', 'unavailableReason', 'writes']);
   });
 
   it('returns the same result object as the UI gesture, for an accepted run and for a lost race', async () => {
@@ -1037,7 +1045,7 @@ describe('agent write path', () => {
       isCompleted: false,
     });
     expect(created).toMatchObject({ ok: true, verb: 'create', outcome: 'created' });
-    if (!created.ok || !('verb' in created)) throw new Error('the event create was refused');
+    if (!('ok' in created) || !created.ok || !('recordId' in created) || !('revision' in created)) throw new Error('the event create was refused');
     expect(created.requestId).toMatch(/^semantic-request/);
     expect(w.audit.events).toEqual([{
       requestId: created.requestId,
@@ -1074,7 +1082,7 @@ describe('agent write path', () => {
       startDate: '2026-10-02T09:00:00.000Z',
     });
     expect(moved).toMatchObject({ ok: true, verb: 'reschedule', outcome: 'rescheduled' });
-    if (!moved.ok) throw new Error('the reschedule was refused');
+    if (!('ok' in moved) || !moved.ok || !('revision' in moved)) throw new Error('the reschedule was refused');
     const rescheduled = (await w.state()).events.find((event) => event.id === created.recordId);
     expect(rescheduled?.startDate).toBe('2026-10-02T09:00:00.000Z');
     // The duration is the record's: two hours in, two hours out.
@@ -1094,7 +1102,7 @@ describe('agent write path', () => {
 
     // A lost race, in both directions: the agent holds the revision it read, the store has moved on, and the
     // refusal names the revision that beat it.
-    if (!resized.ok) throw new Error('the resize was refused');
+    if (!('ok' in resized) || !resized.ok || !('revision' in resized)) throw new Error('the resize was refused');
     const stale = await submitAgentWrite(w.agent, {
       type: 'event.reschedule',
       eventId: created.recordId,
@@ -1160,7 +1168,7 @@ describe('agent write path', () => {
       description: 'Made by an agent',
     });
     expect(created).toMatchObject({ ok: true, verb: 'create', outcome: 'created' });
-    if (!created.ok || !('verb' in created)) throw new Error('the project create was refused');
+    if (!('ok' in created) || !created.ok || !('recordId' in created)) throw new Error('the project create was refused');
     expect(created.requestId).toMatch(/^semantic-request/);
     expect(w.audit.events).toEqual([{
       requestId: created.requestId,
@@ -1180,7 +1188,7 @@ describe('agent write path', () => {
       mutations: [{ kind: 'name', value: 'Renamed by an agent' }],
     });
     expect(updated).toMatchObject({ ok: true, verb: 'update', outcome: 'updated' });
-    if (!updated.ok) throw new Error('the project update was refused');
+    if (!('ok' in updated) || !updated.ok || !('revision' in updated)) throw new Error('the project update was refused');
     expect((await w.state()).projects.find((project) => project.id === created.recordId)?.name).toBe('Renamed by an agent');
 
     // Archive and restore are each the id and the revision, and they move the record's own status.
@@ -1190,7 +1198,7 @@ describe('agent write path', () => {
       expectedRevision: updated.revision,
     });
     expect(archived).toMatchObject({ ok: true, verb: 'archive', outcome: 'archived' });
-    if (!archived.ok) throw new Error('the archive was refused');
+    if (!('ok' in archived) || !archived.ok || !('revision' in archived)) throw new Error('the archive was refused');
     expect((await w.state()).projects.find((project) => project.id === created.recordId)?.status).toBe('archived');
 
     const restored = await submitAgentWrite(w.agent, {
@@ -1199,7 +1207,7 @@ describe('agent write path', () => {
       expectedRevision: archived.revision,
     });
     expect(restored).toMatchObject({ ok: true, verb: 'restore', outcome: 'restored' });
-    if (!restored.ok) throw new Error('the restore was refused');
+    if (!('ok' in restored) || !restored.ok || !('revision' in restored)) throw new Error('the restore was refused');
 
     // Delete is on the wire and refuses with the operation's own answer, which is the point of putting it
     // there: an agent asking gets the same sentence a person clicking Delete gets, rather than a different
@@ -1249,6 +1257,101 @@ describe('agent write path', () => {
       expectedRevision: task.source.revision,
     });
     expect(moved).toMatchObject({ ok: true, actionType: 'task.execution.move' });
+  });
+
+  it('runs a bulk selection through its own entry, per member, and keeps it out of the submission union', async () => {
+    const w = await world(2000);
+    const first = await w.seed('Bulk one', 0);
+    const second = await w.seed('Bulk two', 1);
+    const third = await w.seed('Bulk three', 2);
+
+    // Each member carries the revision it was read at, because a caller with no board has to send them.
+    const completed = await submitAgentBulk(w.agent, {
+      type: 'task.bulk.complete',
+      members: [
+        { taskId: first.id, expectedRevision: first.source.revision },
+        { taskId: second.id, expectedRevision: second.source.revision },
+      ],
+    });
+    expect(completed).toMatchObject({ ok: true, status: 'accepted', requested: 2, accepted: 2, refused: 0 });
+    expect(completed.requestId).toMatch(/^semantic-request/);
+    expect((await w.taskNamed('Bulk one')).status).toBe('finished');
+    expect((await w.taskNamed('Bulk two')).status).toBe('finished');
+    // The member that was not in the selection is untouched, which is what makes the selection the request.
+    expect((await w.taskNamed('Bulk three')).status).toBe('backlog');
+
+    // One terminal event for the run, naming only what landed.
+    expect(w.audit.events.at(-1)).toEqual({
+      requestId: completed.requestId,
+      actionType: 'task.bulk.complete',
+      outcome: 'accepted',
+      entityIds: [first.id, second.id],
+    });
+
+    // A raced member is reported per member and does not cost the rest of the selection: the first task's
+    // revision is the one read before the run above, so only that member loses.
+    const partial = await submitAgentBulk(w.agent, {
+      type: 'task.bulk.complete',
+      members: [
+        { taskId: third.id, expectedRevision: third.source.revision },
+        { taskId: first.id, expectedRevision: first.source.revision },
+      ],
+    });
+    // `ok` is true for a partial run on purpose: something did land, and reporting that as a failure would be
+    // the lie the `status` field exists to avoid. The status is where the difference between all and some is
+    // read, and both are asserted here so neither can drift into the other.
+    expect(partial).toMatchObject({ ok: true, status: 'partial', requested: 2, accepted: 1, refused: 1 });
+    expect(partial.entities.find((entity) => entity.taskId === third.id)).toMatchObject({ ok: true });
+    expect(partial.entities.find((entity) => entity.taskId === first.id)).toMatchObject({ ok: false, reason: 'stale-revision' });
+    // The journal calls a run where something landed and something did not `partial`, not a rejection.
+    expect(w.audit.events.at(-1)).toMatchObject({ outcome: 'partial', entityIds: [third.id] });
+
+    // A delete over a selection is the other verb, and the member the store does not hold is reported rather
+    // than aborting the run.
+    const deleted = await submitAgentBulk(w.agent, {
+      type: 'task.bulk.delete',
+      members: [
+        { taskId: third.id, expectedRevision: (await w.taskNamed('Bulk three')).source.revision },
+        { taskId: 'pxr_000000000000000000000000000000ff', expectedRevision: 'pxr_000000000000000000000000000000ff.json@1' },
+      ],
+    });
+    expect(deleted).toMatchObject({ status: 'partial', requested: 2, accepted: 1, refused: 1 });
+    expect((await w.state()).tasks.some((task) => task.id === third.id)).toBe(false);
+
+    // The empty selection is refused, and it is the wire's own shape rule: a run with nothing marked has no
+    // members to report and "accepted" for zero writes is the kind of success a caller should never be told.
+    const empty = await submitAgentBulk(w.agent, { type: 'task.bulk.complete', members: [] });
+    expect(empty).toMatchObject({ ok: false, status: 'refused' });
+
+    // A member without the revision it was read at is refused too, because that is the field the whole
+    // family's race protection rests on.
+    const noRevision = await submitAgentBulk(w.agent, {
+      type: 'task.bulk.complete',
+      members: [{ taskId: first.id }],
+    });
+    expect(noRevision).toMatchObject({ ok: false, status: 'refused' });
+
+    // And the two entries stay apart in both directions: `submitAgentWrite` answers a bulk submission with the
+    // sentence naming where it belongs rather than running it, which is what keeps the result union free of a
+    // member that would stop `if (!result.ok)` narrowing for every other family.
+    const throughTheWrongEntry = await submitAgentWrite(w.agent, {
+      type: 'task.bulk.complete',
+      members: [{ taskId: first.id, expectedRevision: first.source.revision }],
+    });
+    expect(throughTheWrongEntry).toMatchObject({ ok: false, reason: 'unsupported-verb', actionType: 'task.bulk.complete' });
+    if (!('detail' in throughTheWrongEntry)) throw new Error('a bulk submission through the submission entry was not refused');
+    expect(throughTheWrongEntry.detail).toBe('a bulk run is submitted through submitAgentBulk');
+    // …and a well-formed submission for another family, handed to the bulk entry, comes back in the report's
+    // own shape rather than as a different one - a caller of this family never has to ask who answered.
+    const wrongWay = await submitAgentBulk(w.agent, {
+      type: 'task.execution.move',
+      taskId: first.id,
+      from: 'finished',
+      to: 'running',
+      targetIndex: 0,
+      expectedRevision: first.source.revision,
+    });
+    expect(wrongWay).toMatchObject({ ok: false, status: 'refused', requested: 0 });
   });
 
   it('leaves the dispatcher containment rule exactly where it was', async () => {
@@ -1368,7 +1471,7 @@ describe('agent write path', () => {
       targetIndex: 1,
       expectedRevision: racing.source.revision,
     });
-    if (!acceptedByAgent.ok) throw new Error('the agent write was refused');
+    if (!('ok' in acceptedByAgent) || !acceptedByAgent.ok || !('revision' in acceptedByAgent)) throw new Error('the agent write was refused');
     const winnerRevision = acceptedByAgent.revision;
 
     // The UI drops from the projection it rendered before the agent's write, so it is the stale caller.
