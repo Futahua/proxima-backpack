@@ -1255,3 +1255,90 @@ the record) nor `resize` (one end, start from the record) can express. The origi
 holds where it mattered: there is one validated span rule and one write, shared by the two gesture
 verbs and the form's mutation, so the three cannot disagree about what a span is. What the amendment
 rejects is only the idea that a form should have to send two writes to say one thing.
+
+---
+
+## D60 — Deleting a project is an explicit two-step cascade
+
+**Decided:** the answer to D56 is *requires explicit cascading action*. Deleting a project that still
+holds members becomes **two steps**: the Hub's first Delete reports what the project holds and asks,
+and only a confirmed second step removes the project together with the members the reader was shown.
+The members travel as an **explicit list in the request** (`project.delete` gains a cascade list) rather
+than being inferred from the store, so a list that no longer matches what the store holds is refused
+instead of acted on — a stale first step can never delete a record the reader never saw. Deleting an
+empty project stays one step, because there is nothing to confirm.
+
+**Why:** the three possible answers in D56 were left to the creator and this is the one they chose. An
+explicit list is what makes "two step" mean something at the operation as well as at the surface: a
+`cascade: true` flag would put the inference back inside the write path, which is the thing being
+avoided, and the reader's confirm step and the request's member list are then the same fact rather
+than two descriptions of it that can drift.
+
+**Reverses if:** the creator later prefers a single-step delete with an inline confirmation, at which
+point the operation takes the members from the store and the refusal for a mismatch is dropped; or if
+members are to survive their project, in which case the cascade list disappears and the projection's
+existing dangling-project gap becomes the ordinary case.
+
+---
+
+## D61 — Proxima has no tag model
+
+**Decided:** *no tags*. Tag filtering is not a Proxima feature and no tag field, tag column or tag
+filter will be added. The Backlog's filtering stays what it is: field filters over the record's own
+fields, and property filters over schema-keyed custom properties. A `tags` list is not a canonical
+field, and inventing one to satisfy a filter box would be adding a data model to the product to fill a
+checkbox.
+
+**Why:** the creator answered the product question the box was waiting on. Proxima's organising
+concepts are projects, execution state, the project workflow and custom properties; a tag list would
+overlap all four without being any of them, and a filter is not a reason to add a concept.
+
+**Reverses if:** the creator asks for tags, at which point they are a schema-shaped concept of their
+own and get a definition, a column and a filter like every other property rather than a special field.
+
+---
+
+## D62 — Task recurrence is retained
+
+**Decided:** *yes* — a task may repeat, exactly as an event may. The record layer already accepts a
+`recurrence` series for a task (the mutation kind exists and is exercised), so this decision settles
+what was genuinely open: whether the concept survives at all. It does. What is still missing is a
+surface — the Task editor has no repeats control, and the checklist's coverage row for task
+recurrence therefore stays declared **operation-only**, with the audit asserting that no caller exists.
+Wiring a control that reaches the existing mutation is ordinary work now rather than a question.
+
+**Why:** the creator answered. Retaining it also keeps tasks and events symmetric: both are canonical
+records with a recurrence series, and the Event editor's this-occurrence/series scope modal is the
+pattern a Task editor control would follow rather than a new one to invent.
+
+**Reverses if:** the creator drops task recurrence, at which point the mutation kind is removed and the
+coverage row becomes an absence assertion rather than a declared gap.
+
+---
+
+## D63 — Artifacts and vault files stay read-only; the writer question waits behind the UX
+
+**Decided:** *read-only*, for now and deliberately. Proxima does not create, rename, move, delete or
+attach vault files: the workspace's Notes tree, its previews and its navigation are the read half, and
+the file-write actions named in the checklist are **not offered** rather than half-offered. The creator's
+intent is that Proxima eventually becomes a writer — and their instruction for the present pass is to
+get the UX right first — so the destination and authority question (whose directory, under whose
+boundary) is deferred rather than answered by implication.
+
+**Why:** the checklist's three candidate answers all change what `artifact.move`, `artifact.rename` and
+`artifact.delete` mean and where they may reach, and `VaultWriter` cannot be the answer by itself:
+native browser FSA has no atomic compare-and-swap commit, so `evaluateFsaWriteBoundary()` fails closed
+and no FSA writer is exposed, while `evaluateOwnerAuthorityBoundary()` grants read authority only.
+Shipping a file gesture on that foundation would be the silent last-writer-wins behaviour this tree
+exists to refuse.
+
+**Also decided, and already asserted:** file-write operations may be implemented and tested on
+disposable roots, Notes/files read parity can close, no native shared-vault rename/move/delete may be
+declared fully safe merely because record JSON is journaled (HARD GATE D's standing position), and H4
+remains unclaimed until the creator explicitly chooses it.
+
+**Reverses if:** the creator names a destination — files under Proxima's own record-store root, or an
+explicitly granted creator directory with its own authority boundary — at which point the artifact
+operations gain that destination as their meaning, the surface gains the gestures, and this decision is
+amended rather than deleted. The creator has said they want a writer *eventually*; this records the
+order, not a refusal in principle.
