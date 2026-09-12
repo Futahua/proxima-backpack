@@ -2721,13 +2721,30 @@ Only after fallback file cards are already first-class.
       generation 1 to 2 for the same external change.
 - [x] no surface-local state is written as canonical file state; the multi-surface
       tests use read-only sessions and dispose both refresh policies.
+- [x] scoped ordering does not cross-contaminate surfaces — asserted with three tasks whose
+      three orders are three different permutations: the project Task Board and the Backlog both
+      follow the execution scope and agree with each other, the workflow board follows the
+      workflow scope, the Gantt follows chronology (neither durable scope), and a change to one
+      durable scope leaves the other scope's **stored** values and the other surfaces' renderings
+      untouched. The third order-ish fact is not a scope at all: placing a Gantt row is local
+      state, and the case asserts every record file and revision is byte-identical afterwards
+      (`tests/scopedOrdering.test.ts`, `docs/DECISIONS.md#d64`).
 
 ### 17.2 If writes become enabled
 
 - [ ] simultaneous Proxima edits tested
-- [ ] stale writer refused
+- [x] stale writer refused — the store refuses a conditional write whose observed revision has
+      moved, and the two Proxima callers that exist are asserted against each other over one
+      record in **both** directions: the agent writes first and the UI drops from the projection
+      it rendered before, then the UI writes first and the agent submits the revision it read
+      before. Whichever loses is refused `stale-revision` **with the revision that beat it**,
+      re-reads rather than merging, and the record keeps the winner's value
+      (`tests/agentWritePath.test.ts`, `tests/recordMutationConcurrency.test.ts`).
 - [ ] unrelated-file edits preserved
-- [ ] same-file conflict explicit
+- [x] same-file conflict explicit — the refusal is typed, names the revision that won, and the
+      loser's projection still holds what it held, so nothing was merged into it; the store-level
+      contract is Gate 13's conditional writer and the two-caller case above is the surface level
+      (`tests/agentWritePath.test.ts`, `tests/recordMutationConcurrency.test.ts`).
 - [ ] last-writer-wins used only where intentionally specified
 
 ---

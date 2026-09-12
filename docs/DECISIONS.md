@@ -1380,6 +1380,27 @@ this is written down as an assumption the working slice carries rather than a qu
 removed and rows are derived again; or the scope answer is per-project or per-view, which changes where
 the position lives and what a reorder means when the Gantt is filtered.
 
+**Amendment (2026-09-12) — the answer that shipped is local state, and this entry said the opposite.** The
+tree implements row placement as disposable local state, per HARD GATE A / A3: `CanonicalDurableOrderScope`
+in `src/domain/canonicalOrdering.ts` admits exactly two scopes (`elastic-execution` and
+`project-workflow-stage`) and the same file says why the third is not one of them — `GANTT_ROW_PLACEMENT_CATEGORY`
+is `'local-state'` and `placeCanonicalGanttRow` changes only the list it is handed; `task.timeline.change`
+reports `rowApplied: false` on every branch, and `tests/recordMutationContainment.test.ts` asserts that
+literal, so a date change cannot smuggle a row position into a record.
+
+The consequence is asserted at the surface level rather than assumed, at `65f88ef`'s successor:
+`tests/scopedOrdering.test.ts` builds three tasks whose three orders are three different permutations, then
+shows the project Board and the Backlog following the execution scope, the workflow board following the
+workflow scope, the Gantt following chronology, and a local row placement leaving every record file and
+revision byte-identical. The sub-question above (global, per-project or per-view) is moot while the order is
+local: there is no durable scope to choose, which is also why this paragraph does not answer it.
+
+This paragraph is kept rather than deleted because the creator *did* declare row placement semantic at the
+time; what changed is where a semantic arrangement lives — in the reader's session rather than in a third
+record field. Reopens if the creator asks for row placement to survive a reload, a window or an agent: that
+is the trigger that makes it a durable scope, and it would then need the field, the mutation, the conflict
+behaviour with the revision that beat the loser, and its own audit row, exactly as described above.
+
 ---
 
 ## D65 — The importer preserves what it cannot map, and reports it
