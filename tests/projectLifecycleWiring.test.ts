@@ -44,9 +44,11 @@ import { ALL_PROJECTS } from '../src/domain/selectors.js';
 import type { ProximaState } from '../src/domain/types.js';
 import { createInteractionHarness } from '../src/browser/interactionHarness.js';
 import {
+  beginProjectDelete,
   bindProjectsHubInteractions,
   renderProjectsHub,
   type ProjectCreateIntent,
+  type ProjectDeleteConfirmation,
   type ProjectEditView,
   type ProjectFormRefusal,
   type ProjectsHubHandlers,
@@ -74,6 +76,8 @@ const quietHandlers: ProjectsHubHandlers = {
   archiveProject: () => undefined,
   restoreProject: () => undefined,
   deleteProject: () => undefined,
+  confirmDeleteProject: () => undefined,
+  cancelDeleteProject: () => undefined,
 };
 
 function mount(html: string): HTMLElement {
@@ -106,8 +110,8 @@ function hubState() {
   };
 }
 
-function renderHub(state: ReturnType<typeof hubState> | ProximaState, selection: string, filter: 'active' | 'archived', writes: ProjectWriteView): string {
-  return renderProjectsHub({ state, selection, filter, workspaceTab: 'notes', now: NOW, projectWrites: writes });
+function renderHub(state: ReturnType<typeof hubState> | ProximaState, selection: string, filter: 'active' | 'archived', writes: ProjectWriteView, pendingDelete: ProjectDeleteConfirmation | null = null): string {
+  return renderProjectsHub({ state, selection, filter, workspaceTab: 'notes', now: NOW, projectWrites: writes, projectDelete: pendingDelete });
 }
 
 class MemoryJournal implements RecoveryJournalBackend {
@@ -274,9 +278,9 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     expect(calls).toEqual(['archive:hub-active', 'delete:hub-active', 'open:hub-active']);
   });
 
-  it('offers Delete while the policy is undecided and draws the refusal it answers with', () => {
-    const sentence = 'policy-not-decided: deleting Hub Active would affect 2 task(s) and 1 event(s); whether those are left uncategorised, cascaded explicitly, or whether the delete is refused while they exist is the creator\'s decision, so nothing was changed';
-    const host = mount(renderHub(hubState(), ALL_PROJECTS, 'active', { refusal: null, feedback: sentence, feedbackRefusal: 'policy-not-decided' }));
+  it('offers Delete and draws the refusal the operation answered with, rather than a missing feature', () => {
+    const sentence = 'membership-mismatch: the submitted project members no longer match the current membership.';
+    const host = mount(renderHub(hubState(), ALL_PROJECTS, 'active', { refusal: null, feedback: sentence, feedbackRefusal: 'membership-mismatch' }));
     const harness = createInteractionHarness(host);
 
     // Enabled, and carrying no control-level refusal: the answer is a sentence, not a missing feature.
@@ -286,8 +290,8 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     expect(harness.target('project-lifecycle-controls-hub-active').dataset.projectLifecycleWrites).toBe('available');
 
     const feedback = host.querySelector<HTMLElement>('[data-project-lifecycle-feedback]')!;
-    expect(feedback.getAttribute('data-project-lifecycle-feedback')).toBe('policy-not-decided');
-    expect(feedback.textContent).toContain('the creator\'s decision');
+    expect(feedback.getAttribute('data-project-lifecycle-feedback')).toBe('membership-mismatch');
+    expect(feedback.textContent).toContain('no longer match the current membership');
   });
 
   it('archives and restores the project a clicked control named, from the state the surface was drawn from', async () => {
@@ -302,7 +306,7 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
 
     // The shell's half: the world the surface is rendering goes in, and the sentence it will draw
     // comes out. A click's id is the one the button carried, not one the shell looked up again.
-    const run = (kind: 'archive' | 'restore' | 'delete', projectId: string): Promise<void> => (async () => {
+    const run = (kind: 'archive' | 'restore', projectId: string): Promise<void> => (async () => {
       const dependencies = {
         state: drawn,
         writes: async () => app.operations,
@@ -315,9 +319,7 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
       };
       const outcome = kind === 'archive'
         ? await archiveProjectAction(dependencies, { projectId })
-        : kind === 'restore'
-          ? await restoreProjectAction(dependencies, { projectId })
-          : await deleteProjectAction(dependencies, { projectId });
+        : await restoreProjectAction(dependencies, { projectId });
       view = {
         refusal: null,
         feedback: outcome.ok ? `${outcome.outcome} at revision ${outcome.revision}` : `${outcome.reason}: ${outcome.detail}`,
@@ -331,7 +333,6 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
       ...quietHandlers,
       archiveProject: (projectId) => { pending.push(run('archive', projectId)); },
       restoreProject: (projectId) => { pending.push(run('restore', projectId)); },
-      deleteProject: (projectId) => { pending.push(run('delete', projectId)); },
     });
 
     const archiveControl = host.querySelector<HTMLElement>('[data-project-lifecycle-action="archive"]')!;
@@ -371,58 +372,88 @@ describe('Stage 11 Projects Hub lifecycle controls with a write path', () => {
     expect(host.querySelector<HTMLElement>(`[data-papers-visual-key="project-lifecycle-controls-${app.projectId}"]`)).not.toBeNull();
   });
 
-  it('answers Delete on a project with members without writing, and draws the question it is waiting on', async () => {
+  it('asks before it deletes a project with members, and submits the ids it captured', async () => {
     const app = await projectWorld(2200);
-    await app.seedTask('Member one');
-    await app.seedTask('Member two');
-    const before = await app.read();
-    const filesBefore = app.files.size;
+    const first = await app.seedTask('Member one');
+    const second = await app.seedTask('Member two');
+    let drawn = await app.read();
     let view: ProjectWriteView = { refusal: null, feedback: null };
-    const host = mount(renderHub(before, ALL_PROJECTS, 'active', view));
+    let pendingDelete: ProjectDeleteConfirmation | null = null;
+    const host = mount(renderHub(drawn, ALL_PROJECTS, 'active', view));
+    const redraw = (): void => { host.innerHTML = renderHub(drawn, ALL_PROJECTS, 'active', view, pendingDelete); };
     const pending: Promise<void>[] = [];
+
+    // The shell's half, as `main.ts` performs it: the first press captures from the projection the hub
+    // is drawing and either submits at once or holds the confirmation, and the second press submits
+    // what was held. The held value is cleared before the outcome is known, so a second press cannot
+    // submit a request that is already in flight.
+    const submit = (request: ProjectDeleteConfirmation): Promise<void> => (async () => {
+      const outcome = await deleteProjectAction(
+        {
+          state: drawn,
+          writes: async () => app.operations,
+          unavailableReason: () => null,
+          refresh: async () => null,
+          setRefusal: () => undefined,
+          render: () => undefined,
+          ids: semanticIds(),
+          audit: recordingAudit(),
+        },
+        request,
+      );
+      view = {
+        refusal: null,
+        feedback: outcome.ok ? `${outcome.outcome} at revision ${outcome.revision}` : `${outcome.reason}: ${outcome.detail}`,
+        feedbackRefusal: outcome.ok ? null : outcome.reason,
+      };
+      drawn = await app.read();
+      redraw();
+    })();
 
     bindProjectsHubInteractions(host, {
       ...quietHandlers,
       deleteProject: (projectId) => {
-        pending.push((async () => {
-          const outcome = await deleteProjectAction(
-            {
-              state: before,
-              writes: async () => app.operations,
-              unavailableReason: () => null,
-              refresh: async () => null,
-              setRefusal: () => undefined,
-              render: () => undefined,
-              ids: semanticIds(),
-              audit: recordingAudit(),
-            },
-            { projectId },
-          );
-          view = {
-            refusal: null,
-            feedback: outcome.ok ? 'deleted' : `${outcome.reason}: ${outcome.detail}`,
-            feedbackRefusal: outcome.ok ? null : outcome.reason,
-          };
-          host.innerHTML = renderHub(await app.read(), ALL_PROJECTS, 'active', view);
-        })());
+        const decision = beginProjectDelete(drawn, projectId);
+        if (decision === null) return;
+        if (decision.kind === 'submit') { pendingDelete = null; pending.push(submit(decision.request)); return; }
+        pendingDelete = decision.pending;
+        redraw();
       },
+      confirmDeleteProject: () => { const held = pendingDelete; pendingDelete = null; if (held !== null) pending.push(submit(held)); },
+      cancelDeleteProject: () => { pendingDelete = null; redraw(); },
     });
 
     const remove = host.querySelector<HTMLElement>('[data-project-lifecycle-action="delete"]')!;
     expect(remove.hasAttribute('disabled')).toBe(false);
     createInteractionHarness(host).click(remove.getAttribute('data-papers-visual-key')!);
+
+    // The first press decided nothing. It captured the two displayed task ids in the order the
+    // projection lists them, drew them, and wrote no file at all.
+    expect(pending).toHaveLength(0);
+    expect((await app.read()).tasks).toHaveLength(2);
+    const confirmation = host.querySelector<HTMLElement>('[data-project-delete-confirmation]')!;
+    expect(confirmation.dataset.projectDeleteTasks).toBe(`${first} ${second}`);
+    expect(confirmation.dataset.projectDeleteEvents).toBe('');
+    expect(confirmation.dataset.projectDeleteTaskCount).toBe('2');
+    const sentence = host.querySelector<HTMLElement>('[data-project-delete-sentence]')!.textContent ?? '';
+    expect(sentence).toContain(first);
+    expect(sentence).toContain(second);
+    expect(sentence).toContain('Nothing is deleted until you confirm');
+
+    createInteractionHarness(host).click('project-delete-confirm');
     await Promise.all(pending);
 
-    // Same request, same answer, and the counts it names are the members that exist.
-    expect(view.feedbackRefusal).toBe('policy-not-decided');
-    expect(view.feedback).toContain('would affect 2 task(s) and 0 event(s)');
-    const drawn = host.querySelector<HTMLElement>('[data-project-lifecycle-feedback]')!;
-    expect(drawn.getAttribute('data-project-lifecycle-feedback')).toBe('policy-not-decided');
-    expect(drawn.textContent).toContain('the creator\'s decision');
-    // Nothing was written and nothing was removed, so the button is still there to answer for.
-    expect(app.files.size).toBe(filesBefore);
-    expect((await app.read()).projects).toHaveLength(1);
-    expect(host.querySelector('[data-project-lifecycle-action="delete"]')).not.toBeNull();
+    // The second press submitted exactly those ids, and the store answered by removing all three
+    // records: the project and both members it named.
+    expect(view.feedbackRefusal).toBeNull();
+    expect(view.feedback).toContain('deleted at revision');
+    expect(drawn.projects).toHaveLength(0);
+    expect(drawn.tasks).toHaveLength(0);
+    const remaining = (await app.store.list()).map((observation) => observation.record.id);
+    expect(remaining).not.toContain(app.projectId);
+    expect(remaining).not.toContain(first);
+    expect(remaining).not.toContain(second);
+    expect(host.querySelector('[data-project-delete-confirmation]')).toBeNull();
   });
 
   it('keeps a combined project\'s task and event valid through the lifecycle, on the surfaces', async () => {

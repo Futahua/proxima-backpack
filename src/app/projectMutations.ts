@@ -2,22 +2,20 @@
  * Project lifecycle operations: `project.create`, `project.update`, `project.archive`,
  * `project.restore` and `project.delete`.
  *
- * Four of the five are ordinary record writes and are decided here. The fifth is not, and the code
- * says so rather than choosing for the creator.
+ * All five are record writes and are decided here.
  *
  * **Archive is a status change, not a removal.** A project carries `status` and `archivedAt`, so
  * archiving sets both and touches nothing else — not one task, not one event, not one byte of a
  * member record. That is the difference between an archive and a delete, and the only way to keep
  * the promise is to assert it against the members' own bytes.
  *
- * **Delete is an open semantic question.** The checklist names three possible answers — leave
- * members uncategorised, require an explicit cascade, or refuse while members exist — and says in as
- * many words that the source cannot answer what the creator wants. Each answer changes what a
- * click means and what an agent's request means, so implementing one of them would be inventing a
- * product decision. What this module does instead is refuse **deterministically and in the
- * taxonomy's vocabulary**, naming the question and the size of what it would affect, and touching
- * nothing at all. When the creator answers, this is the one function that changes, and every caller
- * — UI or agent — changes with it because they already meet here.
+ * **Delete is an explicit cascade (D60).** The checklist named three possible answers — leave
+ * members uncategorised, require an explicit cascade, or refuse while members exist — and the
+ * creator chose the cascade: the caller submits the task and event ids it is deleting, this module
+ * verifies them against the store, and the members go before the project. What replaced the old
+ * open-question refusal is not a looser check but a narrower one: the verb can no longer be called
+ * without saying what it means, which is why the request carries the membership and why every
+ * caller — UI or agent — had to change with it.
  *
  * `projectType` is deliberately absent from the mutable fields: A4 removed that legacy label from
  * capability decisions, so a lifecycle operation that could set it would be reintroducing the silo.
@@ -41,7 +39,7 @@ export const PROJECT_MUTATION_SCHEMA_VERSION = 1 as const;
 const MAX_NAME_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 20_000;
 
-/** The action taxonomy's non-accepted outcomes, plus the one that is this module's own. */
+/** The action taxonomy's non-accepted outcomes, plus the two that are this module's own. */
 export type ProjectMutationFailureReason =
   | 'validation-refused'
   | 'not-found'
@@ -50,6 +48,10 @@ export type ProjectMutationFailureReason =
   | 'semantic-conflict'
   | 'recovery-required'
   | 'storage-failure'
+  /**
+   * Retired by the delete decision rather than deleted: D60 answered the question this code asked, so
+   * no path in this module returns it any more and the union keeps it until the taxonomy drops it.
+   */
   | 'policy-not-decided';
 
 export interface ProjectMutationSuccess {
@@ -311,12 +313,14 @@ export async function restoreProject(
 }
 
 /**
- * Delete a project — refused, because what deleting *means* is the creator's decision.
+ * Delete a project and the members the caller confirmed.
  *
- * The refusal is the deterministic, typed answer the acceptance box asks for: same request, same
- * reason, same detail, nothing written. It names what the decision would affect, so a reader can
- * answer it, and it invents no policy of its own — the three candidates are exactly the ones the
- * checklist lists.
+ * The confirmation is the request: the caller submits the task and event ids it is deleting, and this
+ * function verifies them against the store before it removes anything, so a list that no longer
+ * matches the current membership is refused as `membership-mismatch` rather than acted on. Members go
+ * first and the project last, because a half-finished cascade that still has its project is a state a
+ * reader can finish from, and one whose members survived it is not — and every entity removed travels
+ * back to the caller in `affectedEntityIds` rather than being summarised as a count.
  */
 export async function deleteProject(
   deps: ProjectMutationDependencies,
@@ -381,9 +385,8 @@ export async function deleteProject(
     );
   }
 
-  // Declared executor placeholder, not part of the packet: the block replaced above carried this
-  // function's only terminal return, and the AUTHOR's instruction is not to implement deletion yet.
-  // This keeps the function total and performs nothing; packet B2 replaces it with the cascade.
+  // The membership guard above proved the submitted lists are the current ones, and every member is
+  // re-read and re-checked immediately before its own delete, so this is the set that will be gone.
   const affectedEntityIds: OpaqueRecordId[] = [
     input.projectId,
     ...input.members.tasks,

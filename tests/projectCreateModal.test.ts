@@ -34,6 +34,7 @@ async function mountProjectCreate() {
     },
     openProjectEditor: () => {}, closeProjectEditor: () => {}, saveProjectEdit: () => {},
     archiveProject: () => undefined, restoreProject: () => undefined, deleteProject: () => undefined,
+    confirmDeleteProject: () => undefined, cancelDeleteProject: () => undefined,
   });
   rerender();
   return { root, harness: createInteractionHarness(root), state, pending, isOpen: () => newProjectOpen };

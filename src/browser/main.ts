@@ -54,7 +54,7 @@ import { scheduleEventsForSelection } from './scheduleSelection.js';
 import { bindScheduleRecurrenceInteractions, type ScheduleRecurrenceScope, type ScheduleRecurringOccurrenceSelection } from './scheduleRecurrence.js';
 import { renderProjectNavigation } from './projectNavigation.js';
 import { eventRecurrenceFor } from './eventModal.js';
-import { bindProjectsHubInteractions, renderProjectsHub, type ProjectCreateIntent, type ProjectEditView, type ProjectFormRefusal, type ProjectsHubFilter } from './projectsHub.js';
+import { beginProjectDelete, bindProjectsHubInteractions, renderProjectsHub, type ProjectCreateIntent, type ProjectDeleteConfirmation, type ProjectEditView, type ProjectFormRefusal, type ProjectsHubFilter } from './projectsHub.js';
 import { bindProjectNotesInteractions, EMPTY_PROJECT_NOTES_VIEW, PROJECT_NOTE_WRITE_REFUSAL, type ProjectNotesViewState } from './projectNotes.js';
 import { bindProjectTaskBoardInteractions, EMPTY_PROJECT_TASK_BOARD_VIEW, PROJECT_TASK_BOARD_WRITE_REFUSAL, type ProjectTaskBoardViewState } from './projectTaskBoard.js';
 import { bindProjectWorkflowBoardInteractions, EMPTY_PROJECT_WORKFLOW_BOARD_VIEW, NO_WORKFLOW_STAGE, type ProjectWorkflowBoardViewState } from './projectWorkflowBoard.js';
@@ -162,6 +162,17 @@ let acceptanceToolsView: AcceptanceToolsViewState = EMPTY_ACCEPTANCE_TOOLS_VIEW;
 let projectLifecycleFeedback: string | null = null;
 /** The refusal code that sentence belongs to, null when the last attempt was accepted. */
 let projectLifecycleRefusalCode: string | null = null;
+/**
+ * The delete the first press captured and the second press will submit, or null when no confirmation
+ * is open.
+ *
+ * It sits here rather than in the hub module because this is where the hub's state already lives —
+ * the filter, the selection, the two forms and the editor are all module-locals of this shell — and
+ * the ids it holds are a snapshot rather than a projection: the second press submits these lists even
+ * if the store's membership changed in between, which is what makes the confirmation an answer about
+ * the records the reader was shown instead of about whatever is there when they press it.
+ */
+let pendingProjectDelete: ProjectDeleteConfirmation | null = null;
 let projectBacklogView: ProjectBacklogViewState = EMPTY_PROJECT_BACKLOG_VIEW;
 /**
  * The property-schema editor's view state, and the projection it draws.
@@ -447,6 +458,7 @@ function projectsHubSurface(state: ProximaState): string {
     projectCreateRefusal,
     projectCreateDraft,
     projectEdit: projectEditor,
+    projectDelete: pendingProjectDelete,
   };
   const now = currentSourceMode() === 'external' ? new Date() : new Date(FIXED_CLOCK.now());
   return renderProjectsHub({ state, selection, filter: projectsHubFilter, workspaceTab: projectWorkspaceTab, now, newProjectOpen: projectCreateOpen, projectNotes: projectNotesView, projectTaskBoard: projectTaskBoardView, projectWorkflowBoard: {
@@ -1123,10 +1135,11 @@ async function deleteWorkflowStageFromBoardAction(stageId: string): Promise<void
  * where tests execute it against a real store; the shell supplies the resolved record operations,
  * what to say when this run has none, and the sink the feedback line is drawn from.
  *
- * Delete is offered on exactly the same terms as the other two. While the deletion policy is
- * undecided its operation answers `policy-not-decided` — with the member counts it would affect —
- * and that answer is what the reader gets, because it is a question a reader can answer. A disabled
- * button would say the feature is missing, which is not what is true.
+ * Delete is offered on exactly the same terms as the other two, and behaves differently on purpose:
+ * it is the one control that asks before it acts, because the records it removes are named in the
+ * request rather than derived from it. The first press captures the membership the hub is drawing and
+ * shows it; the second press submits that exact list. A project with no members has nothing to
+ * confirm, so it is deleted on the first press.
  */
 function projectLifecycleDependencies() {
   return {
@@ -1158,15 +1171,45 @@ function projectLifecycleSentence(outcome: ProjectLifecycleOutcome): string {
   return `${outcome.reason}: ${outcome.detail}`;
 }
 
-async function runProjectLifecycle(kind: 'archive' | 'restore' | 'delete', projectId: string): Promise<void> {
+async function runProjectLifecycle(kind: 'archive' | 'restore', projectId: string): Promise<void> {
   const dependencies = projectLifecycleDependencies();
   const outcome = kind === 'archive'
     ? await archiveProjectAction(dependencies, { projectId })
-    : kind === 'restore'
-      ? await restoreProjectAction(dependencies, { projectId })
-      : await deleteProjectAction(dependencies, { projectId });
+    : await restoreProjectAction(dependencies, { projectId });
   // The operation's own sentence replaces the progress line, and stays until the next attempt.
   recordLifecycleOutcome(outcome);
+  render();
+}
+
+/**
+ * The second press, or the only one an empty project needs.
+ *
+ * The request is the whole parameter rather than an id, because a delete cannot be made without the
+ * member lists: the operation verifies them against the store before it removes anything, so a caller
+ * that has not confirmed what it is deleting has nothing to submit. Splitting this from the two
+ * status changes is the same split the protocol and the agent wire already carry — the delete arm
+ * requires members and the other arms do not exist in it.
+ */
+async function submitProjectDelete(request: ProjectDeleteConfirmation): Promise<void> {
+  const outcome = await deleteProjectAction(projectLifecycleDependencies(), request);
+  recordLifecycleOutcome(outcome);
+  render();
+}
+
+/**
+ * The Delete control: capture, then either submit or ask.
+ *
+ * `beginProjectDelete` decides which, from the projection the hub is drawing. A project with no
+ * members is deleted on this press; anything else puts the confirmation on screen with the ids it
+ * captured, and submits nothing.
+ */
+function beginProjectDeleteFromHub(projectId: string): void {
+  const state = appState;
+  if (state === null) return;
+  const decision = beginProjectDelete(state, projectId);
+  if (decision === null) return;
+  if (decision.kind === 'submit') { pendingProjectDelete = null; void submitProjectDelete(decision.request); return; }
+  pendingProjectDelete = decision.pending;
   render();
 }
 
@@ -1630,7 +1673,12 @@ function bindInteractions(): void {
     saveProjectEdit: ({ projectId, name, description }) => { void saveProjectEditAction(projectId, { name, description }); },
     archiveProject: (projectId) => { void runProjectLifecycle('archive', projectId); },
     restoreProject: (projectId) => { void runProjectLifecycle('restore', projectId); },
-    deleteProject: (projectId) => { void runProjectLifecycle('delete', projectId); },
+    deleteProject: (projectId) => { beginProjectDeleteFromHub(projectId); },
+    // The second press submits exactly what the first one captured, and stops being pending at the
+    // moment it is submitted — before the outcome is known, so a slow or refused delete cannot leave
+    // a confirmation on screen that a later press would submit twice.
+    confirmDeleteProject: () => { const pending = pendingProjectDelete; pendingProjectDelete = null; if (pending !== null) void submitProjectDelete(pending); },
+    cancelDeleteProject: () => { pendingProjectDelete = null; render(); },
   });
   bindProjectTaskBoardInteractions(root, {
     openTask: (taskId) => { const task = appState?.tasks.find((candidate) => candidate.id === taskId && candidate.projectId === selection); if (!task) return; projectTaskBoardView = { ...EMPTY_PROJECT_TASK_BOARD_VIEW, projectId: selection, selectedTaskId: taskId }; render(); },

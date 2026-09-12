@@ -120,13 +120,15 @@ const EVENT_WRITE_VERB_TYPES: Readonly<Record<string, EventWriteVerb>> = {
 };
 
 /**
- * The five project verbs, all of them, and one of them refuses on purpose.
+ * The five project verbs, all of them, and the one that has to say what it means.
  *
- * `project.delete` is on this wire even though it always answers `policy-not-decided` today, because that
- * refusal is the operation's real answer rather than a wiring gap: what deleting a project does with its
- * members is the creator's decision (D56), and the sequence passes that reason through unchanged. An agent
- * that asks gets the same sentence a person clicking Delete gets, which is the property the parity box wants -
- * and when the creator answers, both callers start working without either of them changing.
+ * `project.delete` is on this wire and carries its membership, because the operation verifies the
+ * confirmed list before it removes anything: the creator answered the open question (D60), so what
+ * deleting a project does with its members is no longer the thing this boundary has to refuse to
+ * invent. A submission that names a project without its members is refused here rather than sent on,
+ * and a list that no longer matches the store comes back as the operation's own
+ * `membership-mismatch`. An agent that asks gets the same answer a person clicking Delete gets,
+ * which is the property the parity box wants.
  */
 const PROJECT_VERB_TYPES: Readonly<Record<string, ProjectLifecycleVerb>> = {
   'project.create': 'create',
