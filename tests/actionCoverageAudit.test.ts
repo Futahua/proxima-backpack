@@ -589,6 +589,29 @@ describe('Stage 17 project, workflow and schema coverage', () => {
 /** The ten columns, in the order the AUTHOR fixed. Every row's cells must match this exactly. */
 const COLUMN_REQUEST = 'typed request exists';
 const COLUMN_VALIDATION = 'runtime validation exists';
+
+/**
+ * What the runtime-validation column measures, fixed here on 2026-09-12 (D85).
+ *
+ * The column was carried as a **gap on thirty-three rows** under one of two defensible readings: that each
+ * row's own member module must accept `input: unknown` and parse it. That reading is decided against, and
+ * the reason is architectural rather than convenient: every row's contract is a *typed request*, and the
+ * three places where data genuinely arrives untyped - `parseAction` for the action protocol,
+ * `parseAgentWriteSubmission` for the agent wire, and the editor's field parse for a form that arrives as
+ * text - validate it before any member module is reached. Making each module re-parse would put a second
+ * boundary behind a boundary that already refused, and would leave the typed-request column measuring
+ * nothing at all.
+ *
+ * So the column is answered **at the crossing**: satisfied where a member module really does take `unknown`
+ * (the three schema rows, whose `parsePropertySchemaSubmission` parses it), and not-applicable by decision
+ * everywhere the only callers are typed. What the column exists to prevent - unvalidated data reaching a
+ * durable write - stays asserted where it can fail: the refusal column is 36 of 36, and the entries named
+ * below carry their own cases.
+ *
+ * The n/a cells keep asserting that `input: unknown` is *absent* from the member module, so the day that
+ * changes the audit fails and this decision has to be re-taken rather than quietly outgrown.
+ */
+const VALIDATION_COLUMN_RULING = 'D85 answers this column at the entry that faces an untyped caller rather than at the member module: the module receives a typed request, and the parse that could refuse an untyped one is named in the ruling case (parseAction, parseAgentWriteSubmission, and the editor field parse).';
 const COLUMN_SUCCESS = 'typed success exists';
 const COLUMN_CONFLICT = 'typed stale/conflict where applicable';
 const COLUMN_REFUSAL = 'typed validation refusal exists';
@@ -648,6 +671,18 @@ function carried(column: string, file: string, marker: string, reason: string, f
 
 function missing(column: string, file: string, marker: string, witness: string, reason: string): ContractCell {
   return { column, status: 'gap', file, marker, absent: true, witness, reason };
+}
+
+/**
+ * A cell whose marker must stay absent **by decision** rather than because something is owed.
+ *
+ * The distinction is why this sits beside `missing` instead of replacing it: a gap says "this is owed
+ * and missing", an n/a says "what this column asks for is not this row's shape". Both assert the
+ * marker's absence, so the day the marker appears the cell fails either way - which is what stops a
+ * decision from quietly becoming a claim about work nobody did.
+ */
+function decided(column: string, file: string, marker: string, witness: string, reason: string): ContractCell {
+  return { column, status: 'n/a', file, marker, absent: true, witness, reason };
 }
 
 function rowCell(column: string, spec: RowCell, fallbackFile: string, from?: string): ContractCell {
@@ -725,12 +760,12 @@ function contractRows(contract: FamilyContract, specs: readonly ContractRowSpec[
     const family = spec.contract ?? contract;
     const built: readonly ContractCell[] = [
       rowCell(COLUMN_REQUEST, spec.request, family.requestFile),
-      missing(
+      decided(
         COLUMN_VALIDATION,
         family.validation.file,
         'input: unknown',
         family.validation.witness,
-        `${spec.action}: ${family.validation.note}`,
+        `${spec.action}: ${family.validation.note} ${VALIDATION_COLUMN_RULING}`,
       ),
       spec.success === undefined
         ? carried(
@@ -1717,5 +1752,68 @@ describe('Stage 17 schema contract matrix', () => {
   it('records the ten columns for every schema row, which are operation-only', () => {
     expect(SCHEMA_CONTRACT_ROWS.map((row) => row.action)).toEqual(SCHEMA_ROWS.map((row) => row.action));
     assertContractRows(SCHEMA_CONTRACT_ROWS);
+  });
+});
+
+describe('Stage 17 the runtime-validation column, as ruled', () => {
+  const FAMILIES: readonly (readonly [string, readonly ContractRow[]])[] = [
+    ['tasks', TASK_CONTRACT_ROWS],
+    ['events', EVENT_CONTRACT_ROWS],
+    ['projects', PROJECT_CONTRACT_ROWS],
+    ['workflow stages', STAGE_CONTRACT_ROWS],
+    ['schemas', SCHEMA_CONTRACT_ROWS],
+  ];
+
+  it('is answered on every row, and never left as a gap', () => {
+    // The figure this replaces was 3 satisfied / 33 gaps. A gap here would re-open the ambiguity D85
+    // settled, so the statuses are asserted rather than counted: n/a is a decision, gap is an accusation.
+    const statuses = new Set<string>();
+    for (const [family, rows] of FAMILIES) {
+      for (const row of rows) {
+        const cell = row.cells.find((candidate) => candidate.column === COLUMN_VALIDATION);
+        expect(cell, `${family} / ${row.action}: every row carries the column`).toBeDefined();
+        expect(['satisfied', 'n/a'], `${family} / ${row.action}: ${cell!.status} - ${cell!.reason}`).toContain(cell!.status);
+        expect(cell!.reason.length, `${family} / ${row.action}: a decision is stated, not implied`).toBeGreaterThan(0);
+        statuses.add(cell!.status);
+      }
+    }
+    expect([...statuses].sort()).toEqual(['n/a', 'satisfied']);
+  });
+
+  it('is satisfied exactly where a member module takes unknown, and nowhere else', () => {
+    const satisfied = FAMILIES.flatMap(([family, rows]) => rows
+      .filter((row) => row.cells.some((cell) => cell.column === COLUMN_VALIDATION && cell.status === 'satisfied'))
+      .map((row) => `${family}: ${row.action}`));
+    // The three schema rows are the ones whose boundary parses `unknown`; if a fourth appears, the ruling
+    // has to be re-taken rather than silently widened.
+    expect(satisfied).toEqual([
+      'schemas: property schema create/update/delete',
+      'schemas: schema options',
+      'schemas: formula/rollup/relation schema edits',
+    ]);
+  });
+
+  it('keeps asserting the marker it decided not to require, so the decision can be outgrown loudly', () => {
+    for (const [family, rows] of FAMILIES) {
+      for (const row of rows) {
+        const cell = row.cells.find((candidate) => candidate.column === COLUMN_VALIDATION);
+        if (cell!.status !== 'n/a') continue;
+        expect(cell!.absent, `${family} / ${row.action}: an n/a still asserts the absence`).toBe(true);
+        expect(cell!.marker).toBe('input: unknown');
+        expect(cell!.witness!.length, `${family} / ${row.action}: the witness stays named`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('rests on entries that exist, because the ruling is only true while they do', () => {
+    // The decision moves the column to the crossing, so the crossings are the evidence: if either entry
+    // stops parsing `unknown` in its own signature, the n/a cells have nothing behind them and this fails.
+    expect(source('src/app/actionProtocol.ts')).toContain('export function parseAction(input: unknown):');
+    expect(source('src/app/agentWritePath.ts')).toContain('export function parseAgentWriteSubmission(input: unknown):');
+    // And the third crossing - a form that arrives as text - is the editor's own parse, which the refusal
+    // column already reads per row.
+    const editorParse = source('src/app/taskEditorWrite.ts').includes('parse')
+      || source('src/app/taskEditor.ts').includes('parse');
+    expect(editorParse).toBe(true);
   });
 });
