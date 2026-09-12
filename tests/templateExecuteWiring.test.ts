@@ -1,25 +1,23 @@
+// @vitest-environment happy-dom
 /**
- * The UI invocation of a template, asserted the way this repository asserts its shell.
+ * The shell's half of the template wiring - the part a click cannot see.
  *
- * `src/browser/main.ts` is not importable from a test — the repository says so in
- * `tests/acceptanceTools.test.ts` and every surface slice since has used the same two halves: the pure
- * renderer is rendered here, and the composition is asserted against the shell's own source. This file is
- * that second half for the template panel, and it exists because Stage 17's matrix asks for a UI invocation
- * test on the Templates row.
+ * `tests/templateExecuteClick.test.ts` is the evidence for Stage 17's *UI invocation test exists*: it renders
+ * the composer, binds the binding the shell binds, clicks the button and watches the action create records.
+ * What a click cannot show is that the shell actually uses that binding, that the verb the panel declares is
+ * the verb the binding listens for, and that the renderer is handed the shell's own view state - so those
+ * three are asserted here, as a guard on the composition rather than as a substitute for the click.
  *
- * What "invocation" means here, stated plainly so a later reader does not over-read it: the click chain
- * reaches the action, the action reaches the execution path with the shell's own dependencies, and the
- * outcome is held as view state the renderer already knows how to draw. The behaviour beneath those three
- * claims is covered by tests that do not need the shell — the panel states, the action outcomes, the
- * executor, the store-level equivalence and the restart case. What cannot be covered on this machine is a
- * synthetic click through the real chain, because the harness that binds the Backlog's interactions is not
- * the shell's.
+ * `src/browser/main.ts` is still not importable from a test (`tests/acceptanceTools.test.ts` records why), so
+ * the shell-side facts are read from its source; the renderer-side facts are asserted by rendering the panel,
+ * which is the difference between this file and the one it replaced.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { renderTemplateComposerPanel } from '../src/browser/templateComposerPanel.js';
+import { TEMPLATE_EXECUTE_ACTION } from '../src/browser/templateExecuteBinding.js';
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -28,52 +26,27 @@ function source(path: string): string {
 const MAIN = source('src/browser/main.ts');
 const BACKLOG = source('src/browser/projectBacklog.ts');
 
-/** The body of a function declared in the shell, from its signature to the closing brace at column 0. */
-function shellFunction(name: string): string {
-  const start = MAIN.indexOf(`async function ${name}(`);
-  if (start === -1) return '';
-  const end = MAIN.indexOf('\n}', start);
-  return end === -1 ? MAIN.slice(start) : MAIN.slice(start, end + 2);
-}
-
-describe('template.execute UI invocation', () => {
-  it('reaches the action from the click chain, on the shell own convention', () => {
-    // The chain is the shell's single delegated listener over [data-action]; an action that is not named
-    // there is a button that does nothing, which is exactly the lie the disabled default prevents.
-    const branch = MAIN.indexOf("action === 'template-execute'");
-    expect(branch).toBeGreaterThan(-1);
-    const branchBody = MAIN.slice(branch, branch + 160);
-    expect(branchBody).toContain('createTemplateTasksAction()');
+describe('template.execute shell wiring', () => {
+  it('binds the extracted module, and no longer handles the verb in its own chain', () => {
+    // The AUTHOR's ruling was that this chain has to be a running listener rather than a string in a file,
+    // so the shell must call the binding - and must not also keep its own branch, which would run it twice.
+    expect(MAIN).toContain('bindTemplateExecuteInteractions(root, {');
+    expect(MAIN).not.toContain("action === 'template-execute'");
+    expect(MAIN).not.toContain('createTemplateTasksAction');
   });
 
-  it('runs the canonical action with the shell dependencies that already exist for task creation', () => {
-    const body = shellFunction('createTemplateTasksAction');
-    expect(body).not.toBe('');
-    // The same dependency set the new-task form uses, which is what makes this the ordinary path rather
-    // than a second one with its own authority.
-    expect(body).toContain('executeTemplateAction(taskCreateDependencies(), { template: text })');
-    expect(body).toContain('templateExecuting: true');
-    expect(body).toContain('templateExecuting: false');
-    expect(body).toContain('templateResult');
-    expect(body).toContain('render()');
+  it('talks to the view the shell already keeps, rather than to a copy of it', () => {
+    expect(MAIN).toContain('template: () => projectBacklogView.templateText');
+    expect(MAIN).toContain('templateExecuting: true');
+    expect(MAIN).toContain('templateExecuting: false');
+    expect(MAIN).toContain('templateResult: result');
+    // The same dependency set the new-task form uses, resolved per run rather than captured at bind time.
+    expect(MAIN).toContain('action: taskCreateDependencies');
   });
 
-  it('holds the outcome as view state, splitting a refusal from a clean run', () => {
-    const body = shellFunction('createTemplateTasksAction');
-    expect(body).toContain('result.ok');
-    expect(body).toContain('created: [...result.created], failure: null');
-    expect(body).toContain('created: [...result.created], failure: result.detail');
-  });
-
-  it('hands the renderer the state it draws, and only when the caller says execution is wired', () => {
-    // The renderer's options are named in the backlog projection, which is where the panel is rendered.
-    expect(BACKLOG).toContain('executable:true');
-    expect(BACKLOG).toContain('executing:view.templateExecuting');
-    expect(BACKLOG).toContain('result:view.templateResult');
-    expect(BACKLOG).toContain('templateExecuting:boolean');
-    expect(BACKLOG).toContain('templateResult:TemplateComposerResult|null');
-
-    // And the pair actually agree: rendered with those options the button is offered as the shell action.
+  it('offers a button whose verb is the one the binding listens for', () => {
+    // A runtime lockstep check: the panel's attribute is compared with the constant, so a rename in either
+    // file fails here rather than producing a button that silently does nothing.
     const html = renderTemplateComposerPanel({
       text: 'Write the brief',
       open: true,
@@ -82,11 +55,27 @@ describe('template.execute UI invocation', () => {
       executing: false,
       result: null,
     });
-    expect(html).toContain('data-action="template-execute"');
-    expect(html).not.toContain('disabled');
+    const host = document.createElement('div');
+    document.body.append(host);
+    host.innerHTML = html;
+    const button = host.querySelector('[data-template-execute]');
+    expect(button?.getAttribute('data-action')).toBe(TEMPLATE_EXECUTE_ACTION);
+    expect(button?.getAttribute('data-c1-key')).toBe(TEMPLATE_EXECUTE_ACTION);
+    expect(button?.hasAttribute('disabled')).toBe(false);
   });
 
-  it('keeps the composer open while it runs, and after a partial result', () => {
+  it('refuses the button until a caller says execution is wired, and keeps the composer open', () => {
+    // `executable` defaults to false, which is the point: a button must not become clickable because a
+    // renderer learned how to draw it enabled.
+    const refused = renderTemplateComposerPanel({
+      text: 'Write the brief',
+      open: true,
+      active: true,
+      result: null,
+    });
+    expect(refused).toContain('data-template-execute-refusal="action-not-available"');
+    expect(refused).toContain('disabled');
+
     const running = renderTemplateComposerPanel({
       text: 'Write the brief',
       open: true,
@@ -107,7 +96,14 @@ describe('template.execute UI invocation', () => {
       result: { created: ['pxr_a'], failure: 'the second task was refused' },
     });
     expect(partial).toContain('data-template-result-partial="true"');
-    expect(partial).toContain('data-template-text');
     expect(partial).toContain('data-action="template-execute"');
+  });
+
+  it('hands the panel the shell state it draws, from the backlog projection', () => {
+    expect(BACKLOG).toContain('executable:true');
+    expect(BACKLOG).toContain('executing:view.templateExecuting');
+    expect(BACKLOG).toContain('result:view.templateResult');
+    expect(BACKLOG).toContain('templateExecuting:boolean');
+    expect(BACKLOG).toContain('templateResult:TemplateComposerResult|null');
   });
 });

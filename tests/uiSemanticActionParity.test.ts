@@ -150,8 +150,12 @@ describe('Stage 6 slice 18 UI semantic-action parity', () => {
     expect(MAIN_SOURCE).not.toContain("type: 'task.timeline.change'");
     expect(TIMELINE_CHANGE_SOURCE).toContain("export type TimelineChangeOperation = 'move' | 'resize-start' | 'resize-end';");
 
+    // The shell reaches the refresh sequence too. It used to be `void executeSourceRefreshAction({` inside
+    // the click chain's template branch and fired in parallel with the run; the branch moved into the
+    // composer's binding, whose post-run step is async, so it is awaited after the write instead of
+    // discarded - the same reach, one step later, which is what "after the write" should have meant.
     expect(MAIN_SOURCE).toContain(
-      'void executeSourceRefreshAction({',
+      'executeSourceRefreshAction({',
     );
     expect(MAIN_SOURCE).toContain(
       'dispatch: (input) => dispatchAction(input),',

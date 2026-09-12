@@ -13,7 +13,7 @@ import { performWorkflowDrop } from '../app/workflowBoardDrop.js';
 import { bulkCompleteTasks, bulkDeleteTasks, type BulkTaskActionReport } from '../app/bulkTaskActions.js';
 import { deleteTaskAction, saveTaskAction } from '../app/taskEditorWrite.js';
 import { createTaskAction, newTaskDraft as newTaskDraftFor } from '../app/taskCreate.js';
-import { executeTemplateAction } from '../app/templateExecuteAction.js';
+import { bindTemplateExecuteInteractions } from './templateExecuteBinding.js';
 import { TASK_EDITOR_SAVE_REFUSAL } from '../app/taskEditor.js';
 import type { SourceMode, SourceSession } from '../app/sourceSession.js';
 import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
@@ -811,27 +811,33 @@ async function runBacklogBulk(action: 'task.bulk.complete' | 'task.bulk.delete')
 }
 
 /**
- * Create the tasks a composed template plans, through the action the agent path also uses.
+ * The composer's Execute, bound where a test can reach the listener.
  *
- * The composer stays open with its result rather than closing over it: a run that stopped part-way has
- * already created records, so the panel has to say which ones and leave the template where it is for a
- * correction. That is the AUTHOR's rule for this surface, and it is why the result is view state rather
- * than a message that disappears with the next render.
+ * The binding itself lives in `src/browser/templateExecuteBinding.ts`, because the AUTHOR ruled on
+ * 2026-09-12 that a claim about this chain has to be a claim about a running listener: the shell composes on
+ * import, so no test can import it, and reading this file as text proves only that a string is present.
+ * What the shell keeps is what the shell owns - where the text comes from, the two states a run passes
+ * through, and the source refresh a write owes afterwards.
  */
-async function createTemplateTasksAction(): Promise<void> {
-  const text = projectBacklogView.templateText;
-  projectBacklogView = { ...projectBacklogView, templateExecuting: true, templateResult: null };
-  render();
-  const result = await executeTemplateAction(taskCreateDependencies(), { template: text });
-  projectBacklogView = {
-    ...projectBacklogView,
-    templateExecuting: false,
-    templateResult: result.ok
-      ? { created: [...result.created], failure: null }
-      : { created: [...result.created], failure: result.detail },
-  };
-  render();
+function bindTemplateExecute(root: HTMLElement): void {
+  bindTemplateExecuteInteractions(root, {
+    template: () => projectBacklogView.templateText,
+    action: taskCreateDependencies,
+    begin: () => {
+      projectBacklogView = { ...projectBacklogView, templateExecuting: true, templateResult: null };
+    },
+    finish: (result) => {
+      projectBacklogView = { ...projectBacklogView, templateExecuting: false, templateResult: result };
+    },
+    afterRun: async () => {
+      await executeSourceRefreshAction({
+        dispatch: (input) => dispatchAction(input),
+        refresh: refreshFromSource,
+      });
+    },
+  });
 }
+
 async function createTaskFromFormAction(): Promise<void> {
   const effect = await createTaskAction(taskCreateDependencies(), { draft: newTaskFormDraft });
   if (effect.closeEditor) {
@@ -1622,6 +1628,8 @@ function bindInteractions(): void {
     },
   });
 
+  bindTemplateExecute(root);
+
   bindTimekeepingCockpitInteractions(root, {
     openTask: (taskId) => {
       elasticSelectedTaskId = taskId;
@@ -1717,12 +1725,6 @@ function bindInteractions(): void {
     } else if (action === 'calendar-today') {
       dispatchAction({ type: 'calendar.today' });
     } else if (action === 'source-refresh') {
-    } else if (action === 'template-execute') {
-      void createTemplateTasksAction();
-      void executeSourceRefreshAction({
-        dispatch: (input) => dispatchAction(input),
-        refresh: refreshFromSource,
-      });
     }
   });
   root.addEventListener('dragover', (event) => {

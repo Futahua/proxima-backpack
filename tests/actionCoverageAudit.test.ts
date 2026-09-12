@@ -198,14 +198,14 @@ const OPERATION_ONLY_ROWS = [
  * sibling entry, so its shell caller is the named function the click chain reaches rather than a
  * `data-action` verb - and the row names that function, which is what keeps the claim checkable.
  *
- * The first row is the UI-invocation half, evidenced by the wiring test: `src/browser/main.ts` cannot be
- * imported from a test (that is what `tests/acceptanceTools.test.ts` records), so that file renders the
- * panel with the options the shell passes and reads the click chain as source. The second row is the
- * equivalence half, which D69 judges on records through this same action.
+ * The first row is the UI-invocation half. It named `createTemplateTasksAction` and a source-shape test until
+ * the AUTHOR rejected that as the box's evidence - reading `main.ts` as text cannot prove a listener runs -
+ * so the binding was extracted into `src/browser/templateExecuteBinding.ts` and the row now names the module
+ * a test can import, the shell call that composes it, and the click test that drives it.
  */
 const TEMPLATE_ROWS: readonly TaskActionRow[] = [
-  { action: 'template.execute (UI invocation)', module: 'src/app/templateExecuteAction.ts', marker: 'export async function executeTemplateAction', caller: 'createTemplateTasksAction(', testFile: 'tests/templateExecuteWiring.test.ts', testMarker: "'template-execute'", equivalence: false },
-  { action: 'template.execute (equivalence)', module: 'src/app/templateExecuteAction.ts', marker: 'export async function executeTemplateAction', caller: 'createTemplateTasksAction(', testFile: 'tests/templateExecuteAction.test.ts', testMarker: 'executeTemplateAction', equivalence: true, equivalenceFile: 'tests/templateEquivalence.test.ts' },
+  { action: 'template.execute (UI invocation)', module: 'src/browser/templateExecuteBinding.ts', marker: 'export function bindTemplateExecuteInteractions', caller: 'bindTemplateExecute(root)', testFile: 'tests/templateExecuteClick.test.ts', testMarker: "'template-execute'", equivalence: false },
+  { action: 'template.execute (equivalence)', module: 'src/app/templateSubmission.ts', marker: 'export async function submitTemplateExecution', caller: 'bindTemplateExecute(', testFile: 'tests/templateCallerEquivalence.test.ts', testMarker: 'submitTemplateExecution', equivalence: true, equivalenceFile: 'tests/templateCallerEquivalence.test.ts' },
 ];
 
 describe('Stage 17 task action coverage', () => {
@@ -266,9 +266,11 @@ describe('Stage 17 template action coverage', () => {
     // The row above asserts the wiring; this asserts the decision behind its shape, so a later refactor
     // cannot quietly promote a sibling entry into the `ProximaAction` vocabulary and inherit a set of
     // guarantees (a verb a surface dispatches, a request the agent protocol validates) that were never
-    // designed for a run of variable length.
-    expect(MAIN).toContain("action === 'template-execute'");
+    // designed for a run of variable length. The sibling is reached by binding a module, not by naming a
+    // verb in the dispatcher's union, and the agent's wire type lives in the submission entry alone.
+    expect(MAIN).toContain('bindTemplateExecute(root)');
     expect(MAIN).not.toContain("kind: 'template.execute'");
+    expect(MAIN).not.toContain("type: 'template.execute'");
     expect(source('src/app/templateSubmission.ts')).toContain("type: 'template.execute'");
   });
 });
