@@ -983,6 +983,22 @@ const MOVE_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
   ),
 };
 
+/** The envelope cells for the bulk rows, where one run covers many members and still leaves one event. */
+const BULK_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/bulkTaskActions.ts',
+    'readonly requestId: string;',
+    'the run mints one id at its boundary and returns it on the report, whatever the selection holds - an id per member would turn one thing a person asked for into N things in the journal and leave the run itself untraceable - and the two refusals decided before any member is written (an empty selection, and no write path) carry it too',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/bulkSemanticAudit.test.ts',
+    'audit:accepted',
+    'behavioural rather than structural: exactly one terminal event per run, after convergence when anything landed, whose outcome comes from the members - accepted only when every one landed, partial when some did, rejected when none did - with the ids that landed, or for a rejection the targets it was refused about, because a rejection nobody can trace to a record is a dead end',
+  ),
+};
+
 const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
   {
     action: 'task.create',
@@ -1117,6 +1133,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { file: 'src/app/bulkTaskActions.ts', marker: "'the selection names a task that is not loaded'", reason: 'a marked task the world does not hold is reported per entity rather than aborting the run, and a member that lost a race is reported with the revision that beat it' },
     observable: { file: 'tests/backlogBulkActions.test.ts', marker: '(await app.state()).tasks.find((task) => task.id === first)?.status', note: 'the bulk case reads the projected state back after the run and finds the member finished' },
+    overrides: BULK_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task.bulk.delete',
@@ -1126,6 +1143,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { file: 'src/app/bulkTaskActions.ts', marker: "'the selection names a task that is not loaded'", reason: 'the same per-entity refusals, so one raced record cannot cost the rest of the selection' },
     observable: { file: 'tests/stageTenAcceptance.test.ts', marker: 'expect(await app.stored(first.id)).toBeUndefined();', note: 'the acceptance case reads each member back out of the store and asserts the deleted ones are absent' },
+    overrides: BULK_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task recurrence (retained)',

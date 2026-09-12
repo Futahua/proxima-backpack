@@ -20,6 +20,7 @@ import { defineCanonicalRecordHeader, opaqueRecordIdFromRandomBytes, type Opaque
 import type { CanonicalProjectRecordV2, CanonicalRecordV2, CanonicalTaskRecordV2 } from '../src/domain/canonicalRecordV2.js';
 import type { ProximaState } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T08:00:00+07:00';
 
@@ -104,6 +105,8 @@ async function world(): Promise<World> {
       return await refresh.refreshSource(reason);
     },
     render: () => undefined,
+    ids: semanticIds(),
+    audit: recordingAudit(),
   });
 
   return {
@@ -177,6 +180,8 @@ describe('Stage 10 bulk task actions', () => {
           return null;
         },
         render: () => undefined,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       },
       { taskIds: [first.id, second.id, third.id] },
     );
@@ -272,6 +277,8 @@ describe('Stage 10 bulk task actions', () => {
         unavailableReason: () => null,
         refresh: async () => null,
         render: () => undefined,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       },
       { taskIds: [fourth.id] },
     );

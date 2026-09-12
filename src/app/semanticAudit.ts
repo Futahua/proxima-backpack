@@ -36,7 +36,13 @@ export interface SemanticAuditEvent {
   readonly requestId: string;
   readonly actionType: string;
   readonly outcome: SemanticOutcome;
-  /** Every id that actually landed; empty for a refusal decided before the first write. */
+  /**
+   * The ids this event is about.
+   *
+   * For an acceptance or a partial run: every id that actually landed. For a rejection: the targets the run
+   * was refused about, when they are known - a run with nothing marked has none - because a refusal nobody can
+   * trace to a record is a dead end. A bulk run names them all, in the order they were requested.
+   */
   readonly entityIds: readonly string[];
   /** The machine-readable refusal, when the run did not complete. */
   readonly errorCode?: string;

@@ -34,6 +34,7 @@ import {
   type ProjectBacklogViewState,
 } from '../src/browser/projectBacklog.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T09:00:00+07:00';
 
@@ -73,6 +74,8 @@ function reportFor(status: BulkTaskActionReport['status'], entities: BulkTaskAct
     schemaVersion: 1,
     action: 'task.bulk.complete',
     status,
+    // Fixed rather than minted: this is a report the projection is handed to draw, not a run being executed.
+    requestId: 'semantic-request-test',
     requested: entities.length,
     accepted: entities.filter((entity) => entity.ok).length,
     refused: entities.filter((entity) => !entity.ok).length,
@@ -144,6 +147,8 @@ async function world(seedOffset: number) {
         unavailableReason: () => null,
         refresh: async () => null,
         render: () => undefined,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       },
       { taskIds },
     ),

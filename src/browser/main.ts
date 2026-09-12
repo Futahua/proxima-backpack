@@ -797,27 +797,24 @@ function taskCreateDependencies() {
  */
 async function runBacklogBulk(action: 'task.bulk.complete' | 'task.bulk.delete'): Promise<void> {
   const taskIds = [...projectBacklogView.selectedTaskIds];
+  // One envelope per run, whatever the selection holds: a bulk action is one semantic operation, and the
+  // event it leaves carries every id that landed rather than one event per member.
+  const bulkDependencies = () => ({
+    state: appState,
+    writes: resolveTaskWritePath,
+    unavailableReason: () => taskMutationUnavailable,
+    refresh: refreshFromSource,
+    render,
+    ids: DETERMINISTIC_IDS,
+    audit: {
+      append: (event: SemanticAuditEvent) => {
+        actionDispatcher?.auditSemantic(event);
+      },
+    },
+  });
   const report: BulkTaskActionReport = action === 'task.bulk.delete'
-    ? await bulkDeleteTasks(
-        {
-          state: appState,
-          writes: resolveTaskWritePath,
-          unavailableReason: () => taskMutationUnavailable,
-          refresh: refreshFromSource,
-          render,
-        },
-        { taskIds },
-      )
-    : await bulkCompleteTasks(
-        {
-          state: appState,
-          writes: resolveTaskWritePath,
-          unavailableReason: () => taskMutationUnavailable,
-          refresh: refreshFromSource,
-          render,
-        },
-        { taskIds },
-      );
+    ? await bulkDeleteTasks(bulkDependencies(), { taskIds })
+    : await bulkCompleteTasks(bulkDependencies(), { taskIds });
 
   projectBacklogView = {
     ...projectBacklogView,

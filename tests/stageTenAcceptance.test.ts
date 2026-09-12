@@ -26,6 +26,7 @@ import { defineCanonicalPropertySchema } from '../src/domain/canonicalSchema.js'
 import type { CanonicalProjectRecordV2, CanonicalRecordV2, CanonicalTaskRecordV2 } from '../src/domain/canonicalRecordV2.js';
 import type { Project, ProximaState } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T08:30:00+07:00';
 
@@ -205,6 +206,8 @@ describe('Stage 10 acceptance: what a mutation must not destroy', () => {
         unavailableReason: () => null,
         refresh: async () => null,
         render: () => undefined,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       },
       { taskIds: [first.id, second.id] },
     );

@@ -28,8 +28,10 @@
  * available through the editor's own field, which is where a distinction that fine belongs.
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import type { IdGenerator } from '../domain/clock.js';
 import type { ProximaState } from '../domain/types.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
+import { mintSemanticRequestId, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
 
 export const BULK_TASK_ACTION_SCHEMA_VERSION = 1 as const;
@@ -58,6 +60,8 @@ export interface BulkTaskActionReport {
   readonly action: BulkTaskActionKind;
   /** How the caller is meant to read this: never `accepted` unless every member was. */
   readonly status: BulkTaskActionStatus;
+  /** This run's semantic request id: one run, one id, however many members it touched. */
+  readonly requestId: string;
   readonly requested: number;
   readonly accepted: number;
   readonly refused: number;
@@ -81,6 +85,10 @@ export interface BulkTaskActionDependencies {
   readonly unavailableReason: () => string | null;
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
   readonly render: () => void;
+  /** Mints this run's semantic request id: one per run, not one per member. */
+  readonly ids: IdGenerator;
+  /** Where the run's one terminal audit event goes. */
+  readonly audit: SemanticAuditSink;
 }
 
 function statusOf(entities: readonly BulkEntityOutcome[]): BulkTaskActionStatus {
@@ -93,17 +101,31 @@ function report(
   action: BulkTaskActionKind,
   entities: readonly BulkEntityOutcome[],
   refreshed: boolean,
+  requestId: string,
 ): BulkTaskActionReport {
   return {
     schemaVersion: BULK_TASK_ACTION_SCHEMA_VERSION,
     action,
     status: statusOf(entities),
+    requestId,
     requested: entities.length,
     accepted: entities.filter((entity) => entity.ok).length,
     refused: entities.filter((entity) => !entity.ok).length,
     entities,
     refreshed,
   };
+}
+
+/** The run's outcome, from the status the report already computes: `refused` is the journal's `rejected`. */
+function semanticOutcomeOfStatus(status: BulkTaskActionStatus): SemanticOutcome {
+  switch (status) {
+    case 'accepted':
+      return 'accepted';
+    case 'partial':
+      return 'partial';
+    default:
+      return 'rejected';
+  }
 }
 
 /** What a refused member records, so nothing is summarised away. */
@@ -131,11 +153,26 @@ async function runBulk(
   input: { readonly taskIds: readonly string[] },
   action: BulkTaskActionKind,
 ): Promise<BulkTaskActionReport> {
+  // One run, one id, whatever the selection holds: a bulk action is one semantic operation even though it
+  // writes many records, and the journal that gave every member its own id would stop being a record of what
+  // a person asked for.
+  const requestId = mintSemanticRequestId(deps.ids);
+  const audit = (outcome: SemanticOutcome, entityIds: readonly string[], errorCode?: string): void => {
+    deps.audit.append({
+      requestId,
+      actionType: action,
+      outcome,
+      entityIds: [...entityIds],
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  };
+
   const requested = [...input.taskIds];
   if (requested.length === 0) {
     // An action with nothing marked is refused as a whole: there are no entities to report, and
     // "accepted" for zero writes is the kind of success a caller should never be told.
-    return report(action, [], false);
+    audit('rejected', [], 'nothing-selected');
+    return report(action, [], false, requestId);
   }
 
   const state = deps.state;
@@ -149,7 +186,8 @@ async function runBulk(
       detail: reason,
     }));
     deps.render();
-    return report(action, entities, false);
+    audit('rejected', requested, 'writes-unavailable');
+    return report(action, entities, false, requestId);
   }
 
   const entities: BulkEntityOutcome[] = [];
@@ -187,7 +225,21 @@ async function runBulk(
   }
   deps.render();
 
-  return report(action, entities, refreshed);
+  const built = report(action, entities, refreshed, requestId);
+  // One terminal event for the whole run, after convergence: the outcome comes from the members - a selection
+  // where some landed and some were refused is `partial`, which is neither an acceptance nor a rejection -
+  // and the ids are the records that landed. A run where *nothing* landed names the targets it was refused
+  // about instead, because a rejection nobody can trace to a record is a dead end.
+  const landed = entities.filter((entity) => entity.ok).map((entity) => entity.taskId);
+  const about = built.status === 'refused' ? requested : landed;
+  const stopped = entities.find((entity) => !entity.ok);
+  audit(
+    semanticOutcomeOfStatus(built.status),
+    about,
+    built.status === 'accepted' || stopped === undefined || stopped.ok ? undefined : stopped.reason,
+  );
+
+  return built;
 }
 
 export async function bulkCompleteTasks(
