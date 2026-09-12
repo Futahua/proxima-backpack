@@ -41,11 +41,12 @@ back.”
 | --- | --- |
 | Current slice | Stage 17 record writes and Stage 20 chrome, at `425a631`: workflow-stage and property-schema operations with their surfaces, the acceptance probes behind one disclosure, and Stage 20 closed with no open boxes. `docs/DECISIONS.md` D60-D66 record the creator's answers (two-step project delete, no tag model, task recurrence retained, artifacts read-only for now, Gantt rows as a durable order, preserve-and-report for unmappable frontmatter, and boxes closing on tested logic). |
 | Branch | `stage7-record-store-contract` |
-| Last audited SHA | `06619c2` - fixture generation 0, source/test typecheck 0, build 0, `git diff --check` 0, vitest 0 under default parallelism: 218 test files / 1451 tests. |
+| Last audited SHA | `469ee8c` - fixture generation 0, source/test typecheck 0, build 0, `git diff --check` 0, vitest 0 under default parallelism: 220 test files / 1456 tests. |
 | Parity agenda | `D:\Letters\MatTroiSeConMoc\LongHorizon\proxima\proxima-full-parity-checklist.md` (branch `codex/reviewer-send-verification`) carries the full-parity agenda this work is driven by: 763 ticked / 77 open at `9a090ec`. |
 | Papers changed | No Papers change is recorded by this Proxima commit. |
 | Papers baseline (exact) | `0a0d89f267f6ca1125159a8b0022c9a620f62e82` - retained as the repository's recorded machine-local baseline, not a fresh current-Papers acceptance claim. |
 | Real-vault write authority | **Disabled.** Gate 13 contains the conditional mutation and recovery substrate for memory and disposable roots. Gate 13.3 closes native FSA writing as `BLOCKED / fsa-no-compare-and-swap`; Gate 14 closes owner authority as exact-root-scoped read-only with writes disabled. |
+| Canonical cutover | **Never automatic (D67).** The shipped default is the legacy Markdown reader; the record store becomes canonical only through an explicit, one-time, user-invoked activation, and once activated the legacy directories are legacy source only - present, never read as canonical while the store is the source, never deleted. HARD GATE C is closed on that trigger; what is not decided is whether the ordinary UI should *offer* activation. |
 
 ## Baseline, unless deliberately changed later
 
