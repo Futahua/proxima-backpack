@@ -1,0 +1,156 @@
+/**
+ * The canonical `template.execute` submission, in the shape the other write actions use.
+ *
+ * This is the path the AUTHOR scoped on 2026-09-12, after ruling that the composer panel must not be the
+ * next authority-bearing slice: one submission path, backed by `executeTemplatePlan`, which an agent and a
+ * panel Confirm both call rather than each growing its own execution. It follows the house pattern that
+ * `eventWriteActions.ts` sets - operations resolved structurally by the shell (no store, no coordinator, no
+ * paths reachable from here), a refusal the surface can draw, convergence after the write, and a typed
+ * outcome.
+ *
+ * What a caller needs to know about the result: `complete` means every draft became a record and `created`
+ * names them; a refusal **after** a creation is `ok: false` with `reason: 'creation-refused'` and a
+ * non-empty `created`, so a surface can keep its composer open and show what did land rather than closing as
+ * though the run had finished. Nothing here retries or rolls back: the ids are returned so the caller can
+ * offer correction, which is the rule the AUTHOR gave for the panel.
+ */
+import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
+import type { ProximaState } from '../domain/types.js';
+import { convergeAfterWrite } from './writeConvergence.js';
+import type { RefreshReason, RefreshResult } from './refreshController.js';
+import { parseTemplatePlan } from './templateComposer.js';
+import { executeTemplatePlan, type TemplateExecutionRefusal } from './templateExecution.js';
+import type { CreateTaskRequest, TaskMutationResult } from './taskMutations.js';
+
+export const TEMPLATE_EXECUTE_ACTION_SCHEMA_VERSION = 1 as const;
+
+export type TemplateExecuteVerb = 'execute';
+
+/** The operations the shell resolved, structurally: no store, no coordinator, no paths. */
+export interface TemplateExecuteOperations {
+  createTask(request: CreateTaskRequest): Promise<TaskMutationResult>;
+}
+
+export interface TemplateExecuteDependencies {
+  readonly state: ProximaState | null;
+  readonly writes: () => Promise<TemplateExecuteOperations | null>;
+  readonly unavailableReason: () => string | null;
+  readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
+  /** The refusal the surface will draw, or null to clear it. */
+  readonly setRefusal: (reason: string | null) => void;
+  readonly render: () => void;
+}
+
+export interface TemplateExecuteRequest {
+  readonly template: string;
+  readonly projectId?: OpaqueRecordId | null;
+  readonly requestId?: string;
+}
+
+export type TemplateExecuteFailureReason =
+  | 'writes-unavailable'
+  | 'plan-invalid'
+  | 'untranslatable-draft-field'
+  | 'creation-refused';
+
+export type TemplateExecuteOutcome =
+  | {
+      readonly ok: true;
+      readonly schemaVersion: typeof TEMPLATE_EXECUTE_ACTION_SCHEMA_VERSION;
+      readonly verb: TemplateExecuteVerb;
+      readonly outcome: 'created';
+      readonly created: readonly OpaqueRecordId[];
+      readonly refreshed: boolean;
+    }
+  | {
+      readonly ok: false;
+      readonly schemaVersion: typeof TEMPLATE_EXECUTE_ACTION_SCHEMA_VERSION;
+      readonly verb: TemplateExecuteVerb;
+      readonly reason: TemplateExecuteFailureReason;
+      readonly detail: string;
+      /** Empty for a refusal decided before the first call; the ids that did land otherwise. */
+      readonly created: readonly OpaqueRecordId[];
+      readonly refreshed: boolean;
+    };
+
+function refused(
+  reason: TemplateExecuteFailureReason,
+  detail: string,
+  created: readonly OpaqueRecordId[] = [],
+): TemplateExecuteOutcome {
+  return {
+    ok: false,
+    schemaVersion: TEMPLATE_EXECUTE_ACTION_SCHEMA_VERSION,
+    verb: 'execute',
+    reason,
+    detail,
+    created: [...created],
+    refreshed: false,
+  };
+}
+
+function refusalReasonOf(refusal: TemplateExecutionRefusal): TemplateExecuteFailureReason {
+  switch (refusal.reason) {
+    case 'plan-invalid':
+      return 'plan-invalid';
+    case 'untranslatable-draft-field':
+      return 'untranslatable-draft-field';
+    default:
+      return 'creation-refused';
+  }
+}
+
+/**
+ * Submit a template for execution. The template text is parsed here rather than by the caller, so an
+ * invalid template is refused by the same path that would have run it - and a caller cannot execute a plan
+ * it built by hand.
+ */
+export async function executeTemplateAction(
+  deps: TemplateExecuteDependencies,
+  request: TemplateExecuteRequest,
+): Promise<TemplateExecuteOutcome> {
+  deps.setRefusal(null);
+  const operations = await deps.writes();
+  if (operations === null) {
+    const reason = deps.unavailableReason() ?? 'writes-unavailable';
+    deps.setRefusal(reason);
+    deps.render();
+    return refused('writes-unavailable', reason);
+  }
+
+  const plan = parseTemplatePlan(request.template);
+  const executed = await executeTemplatePlan({
+    plan,
+    tasks: operations,
+    projectId: request.projectId ?? null,
+  });
+
+  const lostRace = executed.kind !== 'complete' && executed.refusal.cause === 'stale-revision';
+  const created = executed.kind === 'refused' ? [] : executed.created;
+  // Convergence is owed whenever the store changed, which is not the same as "the run succeeded": a partial
+  // run has already written records, so leaving the surfaces stale would be the bug the panel rule is trying
+  // to avoid. A refusal decided before the first call changes nothing, so it does not re-read - the rule
+  // convergeAfterWrite documents for every other refusal.
+  const wrote = executed.kind === 'complete' || created.length > 0;
+  const convergence = await convergeAfterWrite(deps, { accepted: wrote, lostRace });
+  const refreshed = convergence.refreshed;
+
+  if (executed.kind === 'complete') {
+    deps.render();
+    return {
+      ok: true,
+      schemaVersion: TEMPLATE_EXECUTE_ACTION_SCHEMA_VERSION,
+      verb: 'execute',
+      outcome: 'created',
+      created: [...executed.created],
+      refreshed,
+    };
+  }
+
+  deps.setRefusal(executed.refusal.detail);
+  deps.render();
+  return {
+    ...refused(refusalReasonOf(executed.refusal), executed.refusal.detail, created),
+    refreshed,
+  };
+}

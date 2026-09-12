@@ -41,6 +41,12 @@ export interface TemplateExecutionRefusal {
   /** Present when the refusal belongs to one draft, so a reader can point at the line. */
   readonly line?: number;
   readonly name?: string;
+  /**
+   * The port's own reason, when the refusal came from a creation rather than from the plan. Carried rather
+   * than flattened so a caller can tell a lost race ('stale-revision') from a validation refusal without
+   * re-reading the store - the write-action layer above needs exactly that distinction.
+   */
+  readonly cause?: string;
 }
 
 export type TemplateExecutionOutcome =
@@ -164,6 +170,7 @@ export async function executeTemplatePlan(
         detail: result.detail,
         line: draft.line,
         name: draft.name,
+        cause: result.reason,
       };
       if (created.length === 0) {
         return { kind: 'refused', schemaVersion: TEMPLATE_EXECUTION_SCHEMA_VERSION, refusal };
