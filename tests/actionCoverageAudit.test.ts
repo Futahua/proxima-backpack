@@ -1062,6 +1062,50 @@ const MOVE_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
 };
 
 /**
+ * The envelope cells for the two workflow-drop rows, which are the other axis of the same gesture.
+ *
+ * `workflowMoveGesture.ts` and its wrapper are the mirror of the Elastic pair, and they close together for the
+ * same reason: one drop mints one id at the wrapper, hands it down, and leaves one terminal event naming
+ * `task.workflow.move` or `task.workflow.reorder`.
+ */
+const WORKFLOW_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/workflowBoardDrop.ts',
+    'const requestId = mintSemanticRequestId(deps.ids);',
+    'the board drop mints a semantic request id at its boundary and hands it to the gesture, and the gesture returns it on both branches - so the two refusals the wrapper decides before the gesture is reached (a card the board is not showing, and a run with no write path) are journalled with the same id an accepted drop carries rather than not at all, exactly like the Elastic drop on the other axis',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/workflowDropSemanticAudit.test.ts',
+    'audit:accepted',
+    'behavioural rather than structural: one terminal event per drop through the injected sink, after convergence where the store moved and not before it, naming `task.workflow.move` for a stage change and `task.workflow.reorder` for a position inside one - and the wrapper handing its id down is asserted as one event per drop rather than as a comment, because a gesture that minted a second id would make one drop two events',
+  ),
+};
+
+/**
+ * The envelope cells for the two property rows, which ride the editor's save rather than a gesture.
+ *
+ * A property edit and a relation edit are one mutation, so they share a verb rather than growing a second name
+ * for the same write: `task.property.change`. The cells cite the editor's own envelope, because that is the run
+ * that mints the id and appends the event, plus the naming case that makes the verb true for these rows.
+ */
+const PROPERTY_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/taskEditorWrite.ts',
+    'readonly requestId: string;',
+    'the save mints a semantic request id before the card lookup and returns it on both branches, so a property edit refused because the card is gone, because nothing changed, because no write path exists or because the revision moved is correlatable exactly like an accepted one; tests/taskEditorSemanticAudit.test.ts asserts each of those for this path',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/taskEditorWrite.test.ts',
+    "toBe('task.property.change')",
+    'behavioural rather than structural: one terminal event per run through the injected sink, and the event names the verb the save is rather than flattening to task.update - the naming case asserts `task.property.change` for a property mutation, which is also what a relation edit is, and the editor suite asserts the event carries whatever name that function returns',
+  ),
+};
+
+/**
  * The envelope cells for the three Gantt rows.
  *
  * They are one write - `changeTaskSpan` - with three operations over it, so they close together, exactly as the
@@ -1219,6 +1263,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: "'a task in a workflow stage needs its position in that stage'", reason: 'a stage without a position and a position without a stage are both refused by name, and a stage belonging to another project is a semantic conflict' },
     observable: { file: 'tests/projectWorkflowBoard.test.ts', marker: 'settle: async (id) => {', note: 'the board suite settles each card by reading it out of the store, which is the authoritative position rather than the drawn one' },
+    overrides: WORKFLOW_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task workflow reorder',
@@ -1227,6 +1272,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: "'a task with no workflow stage has no workflow position to change'", reason: 'the position that cannot exist is refused with its own sentence rather than silently created' },
     observable: { file: 'tests/workflowMoveGesture.test.ts', marker: '(await app.deps.store.read(task.id))!.observedRevision', note: 'the gesture suite reads the stored revision back before the next conditional write, so a write that had not landed would be refused as stale' },
+    overrides: WORKFLOW_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task Gantt date move',
@@ -1262,6 +1308,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: 'no schema record defines the property ${', reason: 'a property nothing defines is refused as a semantic conflict by name, before the record is written' },
     observable: { file: 'tests/propertyMutationPlan.test.ts', marker: '(await store.read(created.recordId))?.record', note: 'the case reads the stored task back and asserts the property value the plan landed on it' },
+    overrides: PROPERTY_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task relation edit',
@@ -1270,6 +1317,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: 'no schema record defines the property ${', reason: 'the same refusal: a relation value keyed by a schema record that does not exist is a conflict rather than an orphan value' },
     observable: { file: 'tests/propertyMutationPlan.test.ts', marker: '(await store.read(created.recordId))?.record', note: 'the same read-back: the stored relation value is asserted on the record, not on the plan that produced it' },
+    overrides: PROPERTY_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task.bulk.complete',
@@ -1297,6 +1345,26 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     effect: "'updated'",
     shape: 'write',
     refusal: { marker: "'an update with no field to change is not an update'", reason: 'the field union is what refuses here, and an update with nothing to change is refused rather than written' },
+    overrides: {
+      // Not a gap and not a satisfaction: this is the row the audit declares operation-only, so there is no
+      // run to mint an id for and no run to owe an event. Recorded as not-applicable with its marker, so the
+      // day a surface composes a task series the audit fails and these cells are revisited rather than
+      // staying quietly green.
+      [COLUMN_REQUEST_ID]: {
+        column: COLUMN_REQUEST_ID,
+        status: 'n/a',
+        file: 'src/app/taskMutations.ts',
+        marker: "kind: 'recurrence'",
+        reason: 'no surface composes this mutation by decision - a caller is asserted absent rather than assumed - so there is no run to mint an id for; the envelope is owed by the surface that composes it, which is the product question the parity agenda carries on its own box rather than a wiring gap here',
+      },
+      [COLUMN_AUDIT]: {
+        column: COLUMN_AUDIT,
+        status: 'n/a',
+        file: 'src/app/taskMutations.ts',
+        marker: "kind: 'recurrence'",
+        reason: 'for the same reason: nothing runs this operation, so nothing owes a terminal event; a composed task series would make both cells fail the audit until the run mints an id and journals one',
+      },
+    },
     observable: { file: 'tests/taskMutations.test.ts', marker: 'expect(stored?.observedRevision).toBe(written.revision);', note: 'the recurrence case composes the mutation through the field union - which no other case did, because the record-layer suite seeds every task with recurrence null - and then reads the task back out of the store: the stored rule, the observed revision the write reported and the clear that removes it are all asserted, so the record rather than the value the operation returned is what this row observes. The row stays operation-only; unobserved stopped being true of it at this commit' },
   },
 ]);
@@ -1600,6 +1668,24 @@ describe('Stage 17 task contract matrix', () => {
       ...OPERATION_ONLY_ROWS.map((row) => row.action),
     ]);
     assertContractRows(TASK_CONTRACT_ROWS);
+  });
+
+  it('records the operation-only row as not-applicable for the two envelope columns, not as a gap', () => {
+    const row = TASK_CONTRACT_ROWS.find((candidate) => candidate.action === 'task recurrence (retained)');
+    expect(row).toBeDefined();
+    const envelope = row!.cells.filter((cell) => cell.column === COLUMN_REQUEST_ID || cell.column === COLUMN_AUDIT);
+
+    // A gap would say the envelope is owed on this row and missing, which is what the family's own gap cells
+    // say about the record layer. n/a says something different and true: nothing runs this operation by
+    // decision - the audit asserts the caller is absent - so there is no run to mint an id for and nothing to
+    // journal. The distinction is why these two cells are written per row rather than left to the family
+    // default, and asserting the status here is what stops a later edit from turning the decision into a gap.
+    expect(envelope.map((cell) => cell.column)).toEqual([COLUMN_REQUEST_ID, COLUMN_AUDIT]);
+    expect(envelope.map((cell) => cell.status)).toEqual(['n/a', 'n/a']);
+    for (const cell of envelope) {
+      expect(cell.reason.length).toBeGreaterThan(0);
+      expect(cell.marker.length).toBeGreaterThan(0);
+    }
   });
 });
 

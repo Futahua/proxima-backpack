@@ -27,7 +27,7 @@ import type { PropertySchema } from '../domain/types.js';
 import type { ProximaState, Task } from '../domain/types.js';
 import { taskEditorDraftFor, type TaskEditorDraft } from './taskEditor.js';
 import { taskMoveActionType, type TaskMoveActionType } from './taskMoveGesture.js';
-import { workflowMutationsFor } from './workflowMoveGesture.js';
+import { workflowMutationsFor, workflowMoveAction, workflowMoveActionType, type WorkflowMoveActionType } from './workflowMoveGesture.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
 import { mintSemanticRequestId, semanticOutcomeOf, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
@@ -484,18 +484,42 @@ export async function deleteTaskFromEditor(
  * The action type a save is reported as, for callers that audit coverage by semantic operation.
  *
  * A save that moves the card between columns *is* an execution move as well as an edit, and
- * saying so is how the audit sees both without a second write.
+ * saying so is how the audit sees both without a second write. The same rule names the other
+ * structural edits a save can carry, in the order a reader would rank them: the execution column
+ * first, then the workflow stage, then an in-stage position, then a property, and `task.update` for
+ * an ordinary field edit. One run leaves one event, so a save that carries two of these is reported
+ * as the one that moved the card somewhere rather than as both.
  */
+export type TaskEditorSaveActionType = 'task.update' | 'task.property.change' | TaskMoveActionType | WorkflowMoveActionType;
+
 export function taskEditorSaveActionType(
   task: Task,
   mutations: readonly TaskFieldMutation[],
-): 'task.update' | TaskMoveActionType {
+): TaskEditorSaveActionType {
   const moved = mutations.find((mutation) => mutation.kind === 'execution-state');
-  if (moved === undefined || moved.kind !== 'execution-state') return 'task.update';
-  return taskMoveActionType(
-    task.status === 'running' || task.status === 'finished' ? task.status : 'backlog',
-    moved.value,
-  );
+  if (moved !== undefined && moved.kind === 'execution-state') {
+    return taskMoveActionType(
+      task.status === 'running' || task.status === 'finished' ? task.status : 'backlog',
+      moved.value,
+    );
+  }
+
+  const staged = mutations.find((mutation) => mutation.kind === 'workflow-stage');
+  if (staged !== undefined && staged.kind === 'workflow-stage') {
+    return workflowMoveActionType(workflowMoveAction(task.workflowStageId ?? null, staged.value));
+  }
+
+  if (mutations.some((mutation) => mutation.kind === 'workflow-order')) {
+    return 'task.workflow.reorder';
+  }
+
+  // A relation is a property value here, so the two rows Stage 17 audits separately share this verb
+  // rather than growing a second name for one mutation.
+  if (mutations.some((mutation) => mutation.kind === 'property')) {
+    return 'task.property.change';
+  }
+
+  return 'task.update';
 }
 
 /**

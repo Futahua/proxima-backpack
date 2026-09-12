@@ -1835,3 +1835,56 @@ not be the same fact to something that can write.
 **Reverses if:** the editor's rule control is removed (the row reopens, and the audit's operation-only list gets
 its entry back), or a future surface legitimately sets rules as part of one record update, in which case the
 composition was unnecessary and the mutation belongs in the update.
+
+## D79 — A workflow drop names itself, and a property edit names itself, so the two envelope columns close
+
+**Decided** on 2026-09-12, working the parity agenda's two remaining "for every row above" umbrella
+columns: `request ID exists` and `event/audit record exists`. Both stood at 31 satisfied / 5 gaps, and
+all five gaps were the same five task-family rows — the four the editor and the workflow board compose,
+plus the operation-only recurrence row. Every other family already had a semantic boundary that mints
+one request id and leaves one terminal event. The task family had boundaries too; what these five rows
+lacked was a *name* for what they are.
+
+**The decision: register the three verbs the rows are, and let the boundaries that already exist say
+them.** `task.workflow.move` is a card entering or leaving a project stage, `task.workflow.reorder` is
+its position inside one, and `task.property.change` is one property set or cleared — which is also what
+a relation edit is, because a relation is a property value here.
+
+`src/app/workflowMoveGesture.ts` used to report both workflow drops as `task.update` with a
+`workflowAction` discriminator, for a reason its own header recorded: the taxonomy had no registered
+workflow verb and inventing one where nothing could audit it is how a coverage audit later finds
+unbacked vocabulary. The matrix is that audit, so the reason has expired. The gesture now mints a
+semantic request id, returns it on both branches, and appends one terminal event naming the verb it
+actually is; `performWorkflowDrop` mints at its own boundary and hands the id down, exactly as
+`performElasticDrop` does on the other axis, so the two refusals it decides before the gesture is
+reached (a card the board is not showing, and a run with no write path) are journalled with the same id
+an accepted drop carries. Those two refusals name `task.workflow.move` — the family verb — for the
+reason the Elastic wrapper names `task.execution.move`: the column the card is in is exactly what is
+missing, so a sharper verb would be a guess.
+
+`taskEditorSaveActionType` answers the same question for the editor's Save, and now names the other
+structural edits a save can carry in the order a reader would rank them: the execution column, then the
+workflow stage, then an in-stage position, then a property, and `task.update` for an ordinary field
+edit. One run leaves one event, so a save carrying two of these is reported as the one that moved the
+card rather than as both.
+
+**The operation-only row is not-applicable rather than a gap, and that is a claim the audit now
+asserts.** `task recurrence (retained)` has no caller by decision — the audit declares it
+operation-only and asserts the caller is absent — so there is no run to mint an id for and nothing to
+journal. The two cells are `n/a` with a reason and a marker, and `tests/actionCoverageAudit.test.ts`
+asserts that status, so a later edit cannot turn the decision back into a gap. A gap would say the
+envelope is owed on this row and missing, which is what the family's own gap cells say about the record
+layer; `n/a` says nothing runs it. The day a surface composes a task series, the caller assertion fails
+first and these cells are revisited.
+
+**Two of the six mutations that verify this survived at first, and both were holes in the tests rather
+than in the code.** A gesture that minted its own id instead of using the one handed down leaves the
+same single event carrying a different id, so nothing noticed; the suite now counts the ids the run
+consumed, which is one. And flipping the operation-only cells back to gaps passed, because a gap cell
+without its absence flag still asks for the marker's presence; the assertion above is what makes the
+status load-bearing. Both are recorded here because a probe that survives is evidence about the tests,
+and pretending otherwise is how a matrix stops meaning anything.
+
+**Reverses if:** a surface composes a task series (the two `n/a` cells become gaps the audit enforces),
+or a future audit wants one event per dimension rather than one per run, in which case the precedence
+in `taskEditorSaveActionType` is the thing to revisit rather than the verbs.

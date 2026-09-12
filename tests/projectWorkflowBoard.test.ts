@@ -34,6 +34,7 @@ import {
 } from '../src/browser/projectWorkflowBoard.js';
 import { renderProjectWorkspace } from '../src/browser/projectWorkspace.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T07:30:00+07:00';
 
@@ -317,6 +318,8 @@ async function world(): Promise<World> {
         },
         setRefusal: () => undefined,
         render: () => undefined,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       };
       const outcome = await performWorkflowDrop(depsForDrop, {
         taskId: input.taskId,
@@ -374,6 +377,8 @@ describe('Stage 10 workflow board drop', () => {
         refresh: async () => null,
         setRefusal: (reason) => { refusals.push(reason); },
         render: () => undefined,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       },
       { taskId: task.id, targetStageId: REVIEW, targetIndex: 0 },
     );

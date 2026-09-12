@@ -357,6 +357,19 @@ describe('Stage 9 planTaskEditorSave', () => {
     expect(taskEditorSaveActionType(task, [{ kind: 'execution-state', value: 'backlog' }])).toBe('task.execution.reorder');
     const moved = planTaskEditorSave(task, applyTaskEditorEdit(seed, { fieldId: 'executionState', value: 'finished' }));
     expect(moved).toMatchObject({ ok: true, mutations: [{ kind: 'execution-state', value: 'finished' }] });
+
+    // The other structural edits a save can carry are named too, rather than flattened into `task.update`:
+    // entering a stage, a position inside one, and a property - which is also what a relation edit is,
+    // because a relation is a property value here. One run leaves one event, so the order above is the
+    // order: the column a reader would notice first, then the stage, then the position, then the value.
+    expect(taskEditorSaveActionType(task, [{ kind: 'workflow-stage', value: 'st-review' as OpaqueRecordId, order: 2 }])).toBe('task.workflow.move');
+    expect(taskEditorSaveActionType({ ...task, workflowStageId: 'st-review' } as Task, [{ kind: 'workflow-stage', value: null, order: null }])).toBe('task.workflow.move');
+    expect(taskEditorSaveActionType(task, [{ kind: 'workflow-order', value: 2 }])).toBe('task.workflow.reorder');
+    expect(taskEditorSaveActionType(task, [{ kind: 'property', key: 'pxr_effort' as OpaqueRecordId, value: { type: 'number', value: 3 } }])).toBe('task.property.change');
+    expect(taskEditorSaveActionType(task, [
+      { kind: 'property', key: 'pxr_effort' as OpaqueRecordId, value: { type: 'number', value: 3 } },
+      { kind: 'workflow-order', value: 1 },
+    ])).toBe('task.workflow.reorder');
   });
 });
 

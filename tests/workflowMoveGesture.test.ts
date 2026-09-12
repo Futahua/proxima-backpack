@@ -24,6 +24,7 @@ import { defineCanonicalRecordHeader, opaqueRecordIdFromRandomBytes, type Opaque
 import type { CanonicalProjectRecordV2, CanonicalRecordV2, CanonicalTaskRecordV2 } from '../src/domain/canonicalRecordV2.js';
 import type { CanonicalWorkflowStageStateRecord } from '../src/domain/canonicalTaskState.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds, type RecordingAudit } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T07:00:00+07:00';
 
@@ -69,6 +70,8 @@ function stageRecord(id: OpaqueRecordId, projectId: OpaqueRecordId, name: string
 interface World {
   readonly deps: TaskMutationDependencies;
   readonly refreshCalls: string[];
+  /** The run's terminal events, so a case asserts what a drop owed rather than assuming it. */
+  readonly audit: RecordingAudit;
   seedTask(): Promise<{ id: OpaqueRecordId; revision: string }>;
   task(id: OpaqueRecordId): Promise<CanonicalTaskRecordV2>;
   projected(id: OpaqueRecordId): Promise<{ executionState?: string; workflowStageId?: string | null; workflowOrder?: number | null; orderIndex?: number } | undefined>;
@@ -109,8 +112,10 @@ async function world(): Promise<World> {
   const source = recordStoreStateSource(store);
   const refresh = createRefreshController({ initial: await source.load(), source });
   const refreshCalls: string[] = [];
+  const audit = recordingAudit();
 
   return {
+    audit,
     deps,
     refreshCalls,
     seedTask: async () => {
@@ -146,6 +151,8 @@ async function world(): Promise<World> {
           refreshCalls.push(reason);
           return await refresh.refreshSource(reason);
         },
+        ids: semanticIds(),
+        audit,
       },
       input,
     ),
@@ -173,8 +180,19 @@ describe('Stage 10 workflow drop', () => {
 
     const moved = await app.move({ taskId: task.id, from: DESIGN, to: REVIEW, targetIndex: 2, expectedRevision: task.revision });
 
-    expect(moved).toMatchObject({ ok: true, outcome: 'moved', actionType: 'task.update', workflowAction: 'move', refreshed: true });
+    // The verb the drop is, D79: a stage change, not a flattened `task.update` - and one event, whose
+    // id is the one the result carries, emitted after convergence rather than before it.
+    expect(moved).toMatchObject({ ok: true, outcome: 'moved', actionType: 'task.workflow.move', workflowAction: 'move', refreshed: true });
     expect(app.refreshCalls).toEqual(['manual']);
+    const accepted = moved.ok ? moved.requestId : 'no request id';
+    expect(app.audit.events).toEqual([
+      {
+        requestId: accepted,
+        actionType: 'task.workflow.move',
+        outcome: 'accepted',
+        entityIds: [task.id],
+      },
+    ]);
 
     const stored = await app.task(task.id);
     expect(stored).toMatchObject({

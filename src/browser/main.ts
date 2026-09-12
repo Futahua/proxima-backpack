@@ -1031,6 +1031,15 @@ async function moveTaskFromWorkflowDrop(intent: { taskId: string; targetStageId:
       refresh: refreshFromSource,
       setRefusal: (reason) => { projectWorkflowRefusal = reason; },
       render,
+      // The drop mints the run's id and hands it to the gesture, so a drop refused before the gesture is
+      // reached is journalled with the same id an accepted one would have carried - the same rule the
+      // Elastic board's drop follows on the other axis.
+      ids: DETERMINISTIC_IDS,
+      audit: {
+        append: (event: SemanticAuditEvent) => {
+          actionDispatcher?.auditSemantic(event);
+        },
+      },
     },
     intent,
   );
