@@ -1342,3 +1342,72 @@ explicitly granted creator directory with its own authority boundary — at whic
 operations gain that destination as their meaning, the surface gains the gestures, and this decision is
 amended rather than deleted. The creator has said they want a writer *eventually*; this records the
 order, not a refusal in principle.
+
+---
+
+## D64 — Gantt row placement is a third durable order scope
+
+**Decided:** the creator declares row placement **semantic**, so it gets its own scoped durable field,
+in the same shape as `executionOrder` and `workflowOrder`: a canonical field on the task, one typed
+`task.update` mutation that writes it, a projection that carries it into the readable world, conflict
+behaviour identical to the other two orders (the revision the surface was rendering, a lost race
+reported with the revision that beat it), and its own row in the action-coverage audit. A3 named this
+case in as many words — "any durable user-authored ordering elsewhere" — so the model already has a
+place for it; nothing about the existing two scopes changes.
+
+**Why:** the preferred correction (row layout as local state) was the tree's working assumption, not a
+creator decision, and the creator has now decided the other way. The cost is real and recorded here so
+nobody is surprised by it later: a third order can drift from the board and the workflow, two writers can
+race over a row order, and legacy import has to map or default the old plugin's row placement. What the
+answer buys is a Gantt whose arrangement is authored rather than derived — persistent across reloads,
+windows and agents, and independent of the Elastic queue.
+
+**Open sub-question, and the proposed answer.** A durable order needs a scope, and the three candidates
+are visible to the reader: one global row order, one per project, or one per saved view. The proposal is
+**one global order**, because the Timekeeping Gantt is a single global surface rather than a
+project-scoped one — a per-project order would have to be interleaved whenever the Gantt shows more than
+one project, and a per-view order has no view to belong to until saved views exist. This is the one part
+of D64 the creator has not been asked about; the slice should confirm it before the field is added, since
+changing the scope later means migrating rows rather than editing a rule.
+
+**Reverses if:** the creator prefers local state after seeing the drift, at which point the field is
+removed and rows are derived again; or the scope answer is per-project or per-view, which changes where
+the position lives and what a reorder means when the Gantt is filtered.
+
+---
+
+## D65 — The importer preserves what it cannot map, and reports it
+
+**Decided:** the answer to Stage 8's question is **preserve and report**. Legacy frontmatter that does not
+map to a canonical field is never dropped, rewritten or "normalised away": the source keeps its bytes,
+and the import report names every such field as a problem with the record it belongs to, so the reader
+sees exactly what Proxima did not understand rather than discovering it later as missing data.
+
+**Why:** preservation is already this tree's habit — `sourcePreservingMarkdown` exists so that reading
+and writing a Markdown source cannot silently reformat it, and the byte-preservation verifier proves the
+claim against real trees; the import planners already separate what they can stage from what they must
+report. Reporting rather than refusing also keeps a migration possible: a vault with one odd field should
+import with a note, not fail as a whole.
+
+**Reverses if:** the creator prefers dropping unmappable fields with a report (which changes what a
+re-export means, since the data would no longer be there), or refusing that record's import (which makes
+one odd field block a whole vault).
+
+---
+
+## D66 — A box closes on tested logic, with its residual stated
+
+**Decided:** the closure standard for this pass is **tested logic**: a box closes when the behaviour it
+names is covered by a code path plus a test, or by a written decision in `docs/`. Where the capability is
+not reachable in the running app — because it waits on HARD GATE C's shipped trigger, on an agent write
+path, or on a surface that does not exist yet — the tick says so in as many words instead of leaving the
+box open for in-app reachability, and the residual names what would make it reachable.
+
+**Why:** it is what the pass has actually been doing, and the creator has confirmed it. Making it explicit
+is what stops the standard drifting per agent: "probably true" stays unticked, a decision is a legitimate
+close when the box asks a question, and a reachability gap is disclosed rather than hidden or used as a
+reason to leave a box open forever.
+
+**Reverses if:** the creator wants the stricter standard — nothing closes until a reader can reach it in
+the running product — at which point the boxes ticked on tested logic alone are re-opened with their
+residuals promoted to blockers.
