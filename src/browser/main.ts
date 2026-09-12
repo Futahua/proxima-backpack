@@ -884,6 +884,14 @@ async function moveTaskFromDrop(
       refresh: refreshFromSource,
       setRefusal: (reason) => { elasticDropRefusal = reason; },
       render,
+      // The drop mints the run's id and hands it to the gesture, so a drop refused before the gesture is
+      // reached is journalled with the same id an accepted one would have carried.
+      ids: DETERMINISTIC_IDS,
+      audit: {
+        append: (event: SemanticAuditEvent) => {
+          actionDispatcher?.auditSemantic(event);
+        },
+      },
     },
     { taskId, targetColumn, targetIndex },
   );

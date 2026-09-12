@@ -17,7 +17,9 @@
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { CanonicalExecutionState } from '../domain/canonicalTaskState.js';
+import type { IdGenerator } from '../domain/clock.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
+import { mintSemanticRequestId, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
 import { convergeAfterWrite } from './writeConvergence.js';
 
@@ -33,6 +35,10 @@ export interface TaskMoveGestureDependencies {
   }) => Promise<TaskMutationResult>;
   /** The session's refresh, so every surface converges from the store rather than from a guess. */
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
+  /** Mints this run's semantic request id. Injected, like every other identity in this repository. */
+  readonly ids: IdGenerator;
+  /** Where the run's one terminal audit event goes. */
+  readonly audit: SemanticAuditSink;
 }
 
 export interface TaskMoveGestureInput {
@@ -43,6 +49,13 @@ export interface TaskMoveGestureInput {
   readonly targetIndex: number;
   /** The revision the card was read at; a caller that lost a race is refused, not merged. */
   readonly expectedRevision: string;
+  /**
+   * The semantic request id, when a trusted internal layer already minted one for this run.
+   *
+   * `performElasticDrop` is such a layer: it refuses before this gesture is reached, so it mints at its own
+   * boundary and hands the id down rather than leaving its refusals uncorrelated. A wire never supplies one.
+   */
+  readonly requestId?: string;
 }
 
 export type TaskMoveGestureResult =
@@ -51,6 +64,8 @@ export type TaskMoveGestureResult =
       readonly schemaVersion: typeof TASK_MOVE_GESTURE_SCHEMA_VERSION;
       readonly outcome: 'moved';
       readonly actionType: TaskMoveActionType;
+      /** This run's semantic request id: minted at the boundary, returned on every result. */
+      readonly requestId: string;
       readonly revision: string;
       readonly refreshed: boolean;
       /** Set when the write was accepted and the refresh then failed: the write still stands. */
@@ -63,6 +78,8 @@ export type TaskMoveGestureResult =
       readonly actionType: TaskMoveActionType;
       readonly reason: TaskMutationFailureReason;
       readonly detail: string;
+      /** Present on a refusal too, so a refused drop is correlatable with the event it left behind. */
+      readonly requestId: string;
       /**
        * True when the refusal was a lost race and the surface was re-read, so the card is
        * showing where the store says it is rather than where this caller last saw it.
@@ -85,8 +102,21 @@ export async function moveTaskByGesture(
   input: TaskMoveGestureInput,
 ): Promise<TaskMoveGestureResult> {
   const actionType = taskMoveActionType(input.from, input.to);
+  const requestId = input.requestId ?? mintSemanticRequestId(deps.ids);
+  const audit = (outcome: SemanticOutcome, errorCode?: string): void => {
+    deps.audit.append({
+      requestId,
+      // The verb the gesture actually is: moving between columns and reordering within one are different
+      // semantic operations, and `taskMoveActionType` is the rule that already says which this is.
+      actionType,
+      outcome,
+      entityIds: [input.taskId],
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  };
 
   if (!Number.isSafeInteger(input.targetIndex) || input.targetIndex < 0) {
+    audit('rejected', 'validation-refused');
     return {
       ok: false,
       schemaVersion: TASK_MOVE_GESTURE_SCHEMA_VERSION,
@@ -94,6 +124,7 @@ export async function moveTaskByGesture(
       actionType,
       reason: 'validation-refused',
       detail: 'a drop needs a position in the target column',
+      requestId,
       refreshed: false,
       refreshFailure: null,
     };
@@ -122,6 +153,7 @@ export async function moveTaskByGesture(
       lostRace: written.reason === 'stale-revision',
     });
 
+    audit('rejected', written.reason);
     return {
       ok: false,
       schemaVersion: TASK_MOVE_GESTURE_SCHEMA_VERSION,
@@ -129,6 +161,7 @@ export async function moveTaskByGesture(
       actionType,
       reason: written.reason,
       detail: written.detail,
+      requestId,
       refreshed: convergence.refreshed,
       refreshFailure: convergence.refreshFailure,
       ...(written.actualRevision === undefined ? {} : { actualRevision: written.actualRevision }),
@@ -137,11 +170,13 @@ export async function moveTaskByGesture(
 
   const convergence = await convergeAfterWrite(deps, { accepted: true });
 
+  audit('accepted');
   return {
     ok: true,
     schemaVersion: TASK_MOVE_GESTURE_SCHEMA_VERSION,
     outcome: 'moved',
     actionType,
+    requestId,
     revision: written.revision,
     refreshed: convergence.refreshed,
     refreshFailure: convergence.refreshFailure,

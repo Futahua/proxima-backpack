@@ -32,6 +32,7 @@ import type { CanonicalProjectRecordV2, CanonicalRecordV2, CanonicalTaskRecordV2
 import type { CanonicalExecutionState } from '../src/domain/canonicalTaskState.js';
 import type { ElasticColumn, ProximaState, Task } from '../src/domain/types.js';
 import { MemoryRecordFiles } from './test-record-store.js';
+import { recordingAudit, semanticIds } from './test-semantic-audit.js';
 
 const CLOCK_ISO = '2026-09-12T04:00:00+07:00';
 
@@ -118,6 +119,8 @@ async function harness(): Promise<Harness> {
       {
         updateTask: (request) => updateTask(deps, request),
         refresh: gestureRefresh,
+        ids: semanticIds(),
+        audit: recordingAudit(),
       },
       input,
     ),
@@ -168,6 +171,8 @@ function shellGlue(
         },
         setRefusal: (reason) => { refusals.push(reason); },
         render: () => { events.push('render'); },
+        ids: semanticIds(),
+        audit: recordingAudit(),
       },
       intent,
     ),
@@ -283,6 +288,8 @@ describe('Stage 9 drop wiring', () => {
       {
         updateTask: (request) => updateTask(app.deps, request),
         refresh: () => { throw new Error('the source went away'); },
+        ids: semanticIds(),
+        audit: recordingAudit(),
       },
       { taskId: task.id, from: 'backlog', to: 'running', targetIndex: 0, expectedRevision: task.revision },
     );

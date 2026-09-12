@@ -967,6 +967,22 @@ const EDITOR_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
     "behavioural rather than structural: one terminal event per run through the injected sink, after convergence where the store moved and not before it, naming the verb a reader would - a save that changes the column journals the execution move rather than flattening to task.update - and carrying the target id on a refusal as well as on an acceptance",
   ),
 };
+/** The envelope cells for the move and reorder rows, whose run is minted by the drop and carried by the gesture. */
+const MOVE_ENVELOPE_OVERRIDES: Partial<Record<string, ContractCell>> = {
+  [COLUMN_REQUEST_ID]: carried(
+    COLUMN_REQUEST_ID,
+    'src/app/taskMoveGesture.ts',
+    'readonly requestId: string;',
+    'the gesture mints a semantic request id at its boundary and returns it on both branches, and so does the drop that wraps it - which mints once and hands the id down, so the two refusals it decides before the gesture is reached (a card the board is not showing, and a run with no write path) are journalled with the same id an accepted drop carries rather than not at all',
+  ),
+  [COLUMN_AUDIT]: carried(
+    COLUMN_AUDIT,
+    'tests/taskMoveSemanticAudit.test.ts',
+    'audit:accepted',
+    'behavioural rather than structural: one terminal event per run, after convergence where the card moved and not before it, naming move or reorder as the verb the gesture actually is, and exactly one event per drop - the test asserts the wrapper hands its id down precisely because a second event would mean the audit counted the same drop twice',
+  ),
+};
+
 const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
   {
     action: 'task.create',
@@ -1026,6 +1042,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: "'the execution order is a position, so it is a whole number that is not negative'", reason: 'a position that is not a whole number is refused with a named reason before the column moves' },
     observable: { file: 'tests/taskMoveGesture.test.ts', marker: 'observation?.observedRevision', note: 'the gesture suite reads every dragged task back out of the store and asserts the revision the move left on it' },
+    overrides: MOVE_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task.execution.reorder',
@@ -1034,6 +1051,7 @@ const TASK_CONTRACT_ROWS: readonly ContractRow[] = contractRows(TASK_CONTRACT, [
     shape: 'write',
     refusal: { marker: "'the execution order is a position, so it is a whole number that is not negative'", reason: 'the same position rule the move uses, refused rather than clamped' },
     observable: { file: 'tests/taskMoveGesture.test.ts', marker: 'observation?.observedRevision', note: 'the same suite drives the reorder and reads the stored revision back, so the position that landed is the store own' },
+    overrides: MOVE_ENVELOPE_OVERRIDES,
   },
   {
     action: 'task workflow-stage move',

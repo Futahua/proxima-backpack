@@ -17,8 +17,10 @@
  */
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
 import type { ElasticColumn, ProximaState } from '../domain/types.js';
+import type { IdGenerator } from '../domain/clock.js';
 import { executionStateOf } from './recordStateProjection.js';
 import type { RefreshReason, RefreshResult } from './refreshController.js';
+import { mintSemanticRequestId, type SemanticAuditSink, type SemanticOutcome } from './semanticAudit.js';
 import { moveTaskByGesture, type TaskMoveActionType, type TaskMoveGestureResult } from './taskMoveGesture.js';
 import type { TaskFieldMutation, TaskMutationFailureReason, TaskMutationResult } from './taskMutations.js';
 
@@ -49,6 +51,10 @@ export interface ElasticDropDependencies {
   /** The refusal the surface will draw, or null to clear it. */
   readonly setRefusal: (reason: string | null) => void;
   readonly render: () => void;
+  /** Mints this run's semantic request id, which the gesture below is handed rather than minting its own. */
+  readonly ids: IdGenerator;
+  /** Where the run's one terminal audit event goes. */
+  readonly audit: SemanticAuditSink;
 }
 
 export interface ElasticDropIntent {
@@ -62,6 +68,8 @@ export type ElasticDropOutcome =
       readonly ok: true;
       readonly schemaVersion: typeof ELASTIC_DROP_ACTION_SCHEMA_VERSION;
       readonly actionType: TaskMoveActionType;
+      /** This run's semantic request id: the wrapper mints it and the gesture below carries it through. */
+      readonly requestId: string;
       readonly revision: string;
       readonly refreshed: boolean;
     }
@@ -70,25 +78,39 @@ export type ElasticDropOutcome =
       readonly schemaVersion: typeof ELASTIC_DROP_ACTION_SCHEMA_VERSION;
       readonly reason: 'unknown-task' | 'writes-unavailable' | TaskMutationFailureReason;
       readonly detail: string;
+      /** Present on a refusal too, including the two this wrapper decides before the gesture runs. */
+      readonly requestId: string;
       readonly refreshed: boolean;
     };
 
 function refused(
   reason: 'unknown-task' | 'writes-unavailable' | TaskMutationFailureReason,
   detail: string,
+  requestId: string,
   refreshed = false,
 ): ElasticDropOutcome {
-  return { ok: false, schemaVersion: ELASTIC_DROP_ACTION_SCHEMA_VERSION, reason, detail, refreshed };
+  return { ok: false, schemaVersion: ELASTIC_DROP_ACTION_SCHEMA_VERSION, reason, detail, requestId, refreshed };
 }
 
 export async function performElasticDrop(
   deps: ElasticDropDependencies,
   intent: ElasticDropIntent,
 ): Promise<ElasticDropOutcome> {
+  // The boundary for this run, minted before the two refusals below can happen and handed down to the
+  // gesture, so a drop refused because the board has no such card or because there is no write path is
+  // journalled with the same id an accepted drop would have carried.
+  const requestId = mintSemanticRequestId(deps.ids);
+  const audit = (outcome: SemanticOutcome, errorCode: string, entityIds: readonly string[]): void => {
+    deps.audit.append({ requestId, actionType: 'task.execution.move', outcome, entityIds: [...entityIds], errorCode });
+  };
+
   const task = deps.state?.tasks.find((candidate) => candidate.id === intent.taskId);
   // A card the board is not showing cannot be dropped anywhere: there is no revision to write
   // against, and writing against a guessed one is how a gesture overwrites someone else's edit.
-  if (!task) return refused('unknown-task', 'the board has no card with that id');
+  if (!task) {
+    audit('rejected', 'unknown-task', []);
+    return refused('unknown-task', 'the board has no card with that id', requestId);
+  }
 
   // Cleared before the attempt so a refusal cannot outlive the gesture that produced it.
   deps.setRefusal(null);
@@ -98,13 +120,16 @@ export async function performElasticDrop(
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
     deps.setRefusal(reason);
     deps.render();
-    return refused('writes-unavailable', reason);
+    audit('rejected', 'writes-unavailable', [task.id]);
+    return refused('writes-unavailable', reason, requestId);
   }
 
   const result: TaskMoveGestureResult = await moveTaskByGesture(
     {
       updateTask: (input) => writes.updateTask(input),
       refresh: deps.refresh,
+      ids: deps.ids,
+      audit: deps.audit,
     },
     {
       taskId: task.id as OpaqueRecordId,
@@ -114,6 +139,7 @@ export async function performElasticDrop(
       to: intent.targetColumn,
       targetIndex: intent.targetIndex,
       expectedRevision: task.source.revision,
+      requestId,
     },
   );
 
@@ -127,8 +153,9 @@ export async function performElasticDrop(
         ok: true,
         schemaVersion: ELASTIC_DROP_ACTION_SCHEMA_VERSION,
         actionType: result.actionType,
+        requestId: result.requestId,
         revision: result.revision,
         refreshed: result.refreshed,
       }
-    : refused(result.reason, result.detail, result.refreshed);
+    : refused(result.reason, result.detail, result.requestId, result.refreshed);
 }

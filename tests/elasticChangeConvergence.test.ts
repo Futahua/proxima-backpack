@@ -105,6 +105,8 @@ async function world() {
         {
           updateTask: (input) => updateTask(deps, input),
           refresh: refreshFromSource,
+          ids: semanticIds(),
+          audit: recordingAudit(),
         },
         { taskId, from: task.status === 'running' || task.status === 'finished' ? task.status : 'backlog', to, targetIndex: index, expectedRevision: task.source.revision },
       );
