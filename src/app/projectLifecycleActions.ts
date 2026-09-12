@@ -39,19 +39,31 @@ export interface ProjectLifecycleOperations {
   deleteProject(input: { projectId: OpaqueRecordId; expectedRevision: string }): Promise<ProjectMutationResult>;
 }
 
-export interface ProjectLifecycleDependencies {
+export interface ProjectLifecycleDependencies extends ProjectLifecycleOperationDependencies {
   readonly state: ProximaState | null;
-  readonly writes: () => Promise<ProjectLifecycleOperations | null>;
-  readonly unavailableReason: () => string | null;
-  readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
   /** The refusal the surface will draw, or null to clear it. */
   readonly setRefusal: (reason: string | null) => void;
   readonly render: () => void;
-  /** Mints this run's semantic request id. Injected, like every other identity in this repository. */
-  readonly ids: IdGenerator;
-  /** Where the run's one terminal audit event goes. */
-  readonly audit: SemanticAuditSink;
 }
+
+/**
+ * What the operation needs, and nothing a cockpit owns.
+ *
+ * The one fact a lifecycle run ever took from a projection was a project's revision, and a caller that read
+ * the record has that - so it arrives through `resolveRevision` and the family is reachable from an entry with
+ * no hub to consult. `settle` is where a surface draws the answer, and it is absent on a caller that has none.
+ */
+export interface ProjectLifecycleOperationDependencies {
+  readonly writes: () => Promise<ProjectLifecycleOperations | null>;
+  readonly unavailableReason: () => string | null;
+  readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
+  readonly ids: IdGenerator;
+  readonly audit: SemanticAuditSink;
+  readonly settle?: (outcome: ProjectLifecycleOutcome) => void;
+}
+
+/** Where the revision a lifecycle write carries comes from: the caller that read the record. */
+export type ProjectRevisionResolver = () => string | null;
 
 export type ProjectLifecycleFailureReason =
   | 'unknown-project'
@@ -105,10 +117,11 @@ function refused(
  * @param write - the operation to call once a path has resolved.
  * @returns the outcome, with the store's revision when it was accepted.
  */
-async function runLifecycle(
-  deps: ProjectLifecycleDependencies,
+export async function runLifecycle(
+  deps: ProjectLifecycleOperationDependencies,
   verb: ProjectLifecycleVerb,
   projectId: string | null,
+  resolveRevision: ProjectRevisionResolver | null,
   write: (operations: ProjectLifecycleOperations, revision: string) => Promise<ProjectMutationResult>,
 ): Promise<ProjectLifecycleOutcome> {
   const requestId = mintSemanticRequestId(deps.ids);
@@ -125,22 +138,25 @@ async function runLifecycle(
 
   let revision = '';
   if (projectId !== null) {
-    const project = deps.state?.projects.find((candidate) => candidate.id === projectId);
-    if (project === undefined) {
+    const resolved = resolveRevision?.() ?? null;
+    if (resolved === null) {
+      // A verb that names a project must say which revision it read. The hub answers that by finding the
+      // project it was showing; a caller that read the record supplies the revision, so it has no such answer
+      // and this branch is the hub's. Every verb in this family carries a project except a create, which is
+      // why there is no `unsupported-verb` arm here - the whole family is reachable without a hub.
       audit('rejected', target, 'unknown-project');
       return refused(verb, 'unknown-project', 'the hub has no project with that id', requestId);
     }
-    revision = project.source.revision;
+    revision = resolved;
   }
 
-  deps.setRefusal(null);
   const operations = await deps.writes();
   if (operations === null) {
     const reason = deps.unavailableReason() ?? 'writes-unavailable';
-    deps.setRefusal(reason);
-    deps.render();
+    const refusal = refused(verb, 'writes-unavailable', reason, requestId);
+    deps.settle?.(refusal);
     audit('rejected', target, 'writes-unavailable');
-    return refused(verb, 'writes-unavailable', reason, requestId);
+    return refusal;
   }
 
   const written = await write(operations, revision);
@@ -149,16 +165,14 @@ async function runLifecycle(
     lostRace: !written.ok && written.reason === 'stale-revision',
   });
 
-  if (!written.ok) deps.setRefusal(written.reason);
-  deps.render();
-
   if (!written.ok) {
+    const refusal = refused(verb, written.reason, written.detail, requestId, convergence.refreshed);
+    deps.settle?.(refusal);
     audit(semanticOutcomeOf({ wrote: 0, refused: true }), target, written.reason);
-    return refused(verb, written.reason, written.detail, requestId, convergence.refreshed);
+    return refusal;
   }
 
-  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId]);
-  return {
+  const accepted: ProjectLifecycleOutcome = {
     ok: true,
     schemaVersion: PROJECT_LIFECYCLE_ACTION_SCHEMA_VERSION,
     verb,
@@ -168,13 +182,51 @@ async function runLifecycle(
     revision: written.revision,
     refreshed: convergence.refreshed,
   };
+  deps.settle?.(accepted);
+  audit(semanticOutcomeOf({ wrote: 1, refused: false }), [written.recordId]);
+  return accepted;
+}
+
+/**
+ * The hub's entry over the operation: answer with the revision it is showing, and draw the answer.
+ *
+ * Everything the cockpit owns is here - the projection the revision comes from, the refusal sink and the
+ * redraw - and the operation above knows none of it.
+ */
+async function runLifecycleFromHub(
+  deps: ProjectLifecycleDependencies,
+  verb: ProjectLifecycleVerb,
+  projectId: string | null,
+  write: (operations: ProjectLifecycleOperations, revision: string) => Promise<ProjectMutationResult>,
+): Promise<ProjectLifecycleOutcome> {
+  // The lookup happens once, here, and it decides two things: the revision the write carries, and whether the
+  // hub clears the refusal it is showing. A project the hub cannot show clears nothing - the hub has no answer
+  // to give, so the refusal already on screen is still the true one, and the sequence refuses with its own.
+  const revision = projectId === null
+    ? null
+    : deps.state?.projects.find((candidate) => candidate.id === projectId)?.source.revision ?? null;
+  if (projectId === null || revision !== null) deps.setRefusal(null);
+
+  return await runLifecycle(
+    {
+      ...deps,
+      settle: (outcome) => {
+        if (!outcome.ok) deps.setRefusal(outcome.reason);
+        deps.render();
+      },
+    },
+    verb,
+    projectId,
+    () => revision,
+    write,
+  );
 }
 
 export async function createProjectAction(
   deps: ProjectLifecycleDependencies,
   input: CreateProjectRequest,
 ): Promise<ProjectLifecycleOutcome> {
-  return await runLifecycle(deps, 'create', null, async (operations) => await operations.createProject(input));
+  return await runLifecycleFromHub(deps, 'create', null, async (operations) => await operations.createProject(input));
 }
 
 /**
@@ -188,7 +240,7 @@ export async function updateProjectAction(
   deps: ProjectLifecycleDependencies,
   input: { readonly projectId: string; readonly mutations: readonly ProjectFieldMutation[] },
 ): Promise<ProjectLifecycleOutcome> {
-  return await runLifecycle(deps, 'update', input.projectId, async (operations, revision) => await operations.updateProject({
+  return await runLifecycleFromHub(deps, 'update', input.projectId, async (operations, revision) => await operations.updateProject({
     projectId: input.projectId as OpaqueRecordId,
     expectedRevision: revision,
     mutations: input.mutations,
@@ -199,7 +251,7 @@ export async function archiveProjectAction(
   deps: ProjectLifecycleDependencies,
   input: { readonly projectId: string },
 ): Promise<ProjectLifecycleOutcome> {
-  return await runLifecycle(deps, 'archive', input.projectId, async (operations, revision) => await operations.archiveProject({
+  return await runLifecycleFromHub(deps, 'archive', input.projectId, async (operations, revision) => await operations.archiveProject({
     projectId: input.projectId as OpaqueRecordId,
     expectedRevision: revision,
   }));
@@ -209,7 +261,7 @@ export async function restoreProjectAction(
   deps: ProjectLifecycleDependencies,
   input: { readonly projectId: string },
 ): Promise<ProjectLifecycleOutcome> {
-  return await runLifecycle(deps, 'restore', input.projectId, async (operations, revision) => await operations.restoreProject({
+  return await runLifecycleFromHub(deps, 'restore', input.projectId, async (operations, revision) => await operations.restoreProject({
     projectId: input.projectId as OpaqueRecordId,
     expectedRevision: revision,
   }));
@@ -226,7 +278,7 @@ export async function deleteProjectAction(
   deps: ProjectLifecycleDependencies,
   input: { readonly projectId: string },
 ): Promise<ProjectLifecycleOutcome> {
-  return await runLifecycle(deps, 'delete', input.projectId, async (operations, revision) => await operations.deleteProject({
+  return await runLifecycleFromHub(deps, 'delete', input.projectId, async (operations, revision) => await operations.deleteProject({
     projectId: input.projectId as OpaqueRecordId,
     expectedRevision: revision,
   }));

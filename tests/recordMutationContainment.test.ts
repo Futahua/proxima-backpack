@@ -153,8 +153,9 @@ describe('Stage 7 slice 18 semantic/UI mutation containment', () => {
     for (const forbidden of STORE_AUTHORITY_COMPOSITION) expect(lifecycleActions).not.toContain(forbidden);
     expect(lifecycleActions).not.toContain('RecordStore');
     // The revision a lifecycle write carries is the one the surface was rendering, and the re-read
-    // follows an accepted write rather than a redraw from a guess.
-    expect(lifecycleActions).toContain('revision = project.source.revision');
+    // follows an accepted write rather than a redraw from a guess. It reaches the sequence through the
+    // resolver - the hub answers with the project it was showing - so the assertion follows the fact.
+    expect(lifecycleActions).toContain("    : deps.state?.projects.find((candidate) => candidate.id === projectId)?.source.revision ?? null;");
     expect(lifecycleActions).toContain('convergeAfterWrite(');
     // The editor's mutations are planned from the record and the draft, not read out of the markup.
     const editor = await readFile(new URL('../src/app/projectEditor.ts', import.meta.url), 'utf8');

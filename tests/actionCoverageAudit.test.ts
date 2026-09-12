@@ -138,12 +138,12 @@ const EVENT_OPERATION_ONLY_ROWS = [
  * canonically — is not an operation, and the gap table below is what keeps that distinction checkable.
  */
 const PROJECT_ROWS: readonly TaskActionRow[] = [
-  { action: 'project.create', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function createProjectAction', caller: 'createProjectAction(', testFile: 'tests/projectLifecycleActions.test.ts', testMarker: 'createProjectAction', equivalence: false },
-  { action: 'project.update', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function updateProjectAction', caller: 'updateProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'updateProjectAction', equivalence: false },
-  { action: 'project.archive', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function archiveProjectAction', caller: 'archiveProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'archiveProjectAction', equivalence: false },
-  { action: 'project.restore', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function restoreProjectAction', caller: 'restoreProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'restoreProjectAction', equivalence: false },
+  { action: 'project.create', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function createProjectAction', caller: 'createProjectAction(', testFile: 'tests/projectLifecycleActions.test.ts', testMarker: 'createProjectAction', equivalence: false, agentVerb: 'project.create' },
+  { action: 'project.update', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function updateProjectAction', caller: 'updateProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'updateProjectAction', equivalence: false, agentVerb: 'project.update' },
+  { action: 'project.archive', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function archiveProjectAction', caller: 'archiveProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'archiveProjectAction', equivalence: false, agentVerb: 'project.archive' },
+  { action: 'project.restore', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function restoreProjectAction', caller: 'restoreProjectAction(', testFile: 'tests/projectLifecycleWiring.test.ts', testMarker: 'restoreProjectAction', equivalence: false, agentVerb: 'project.restore' },
   // Wired, and refused on purpose: the sequence runs and the operation answers `policy-not-decided`.
-  { action: 'project.delete', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function deleteProjectAction', caller: 'deleteProjectAction(', testFile: 'tests/projectMutations.test.ts', testMarker: 'policy-not-decided', equivalence: false },
+  { action: 'project.delete', module: 'src/app/projectLifecycleActions.ts', marker: 'export async function deleteProjectAction', caller: 'deleteProjectAction(', testFile: 'tests/projectMutations.test.ts', testMarker: 'policy-not-decided', equivalence: false, agentVerb: 'project.delete' },
 ];
 
 /**
@@ -422,10 +422,17 @@ describe('Stage 17 event action coverage', () => {
 
 describe('Stage 17 project, workflow and schema coverage', () => {
   it('names a module, a caller and a test for every project action the Hub reaches', () => {
+    // The wire's own list, imported rather than read as text: a verb is on it or it is not.
+    const onWire: readonly string[] = AGENT_WRITE_VERBS;
     for (const row of PROJECT_ROWS) {
       expect(source(row.module), `${row.action}: ${row.module} must carry ${row.marker}`).toContain(row.marker);
       expect(MAIN, `${row.action}: the shell must reach it`).toContain(row.caller!);
       expect(source(row.testFile), `${row.action}: ${row.testFile} must exercise it`).toContain(row.testMarker);
+      // A row that declares an agent verb must have it on the wire - the same presence guard the stage and
+      // event rows carry, and a presence guard only, for the reason written down there.
+      if (row.agentVerb !== undefined) {
+        expect(onWire.includes(row.agentVerb), `${row.action}: ${row.agentVerb} must be on the agent wire`).toBe(true);
+      }
     }
   });
 

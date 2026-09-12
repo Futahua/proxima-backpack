@@ -43,6 +43,13 @@ import {
 } from './eventWriteActions.js';
 import type { EventResizeTarget } from './eventMutations.js';
 import {
+  runLifecycle,
+  type ProjectLifecycleOperations,
+  type ProjectLifecycleOutcome,
+  type ProjectLifecycleVerb,
+} from './projectLifecycleActions.js';
+import type { ProjectFieldMutation } from './projectMutations.js';
+import {
   PROPERTY_SCHEMA_ACTION_TYPES,
   submitPropertySchemaAction,
   type PropertySchemaActionOutcome,
@@ -99,15 +106,33 @@ const EVENT_WRITE_VERB_TYPES: Readonly<Record<string, EventWriteVerb>> = {
 };
 
 /**
+ * The five project verbs, all of them, and one of them refuses on purpose.
+ *
+ * `project.delete` is on this wire even though it always answers `policy-not-decided` today, because that
+ * refusal is the operation's real answer rather than a wiring gap: what deleting a project does with its
+ * members is the creator's decision (D56), and the sequence passes that reason through unchanged. An agent
+ * that asks gets the same sentence a person clicking Delete gets, which is the property the parity box wants -
+ * and when the creator answers, both callers start working without either of them changing.
+ */
+const PROJECT_VERB_TYPES: Readonly<Record<string, ProjectLifecycleVerb>> = {
+  'project.create': 'create',
+  'project.update': 'update',
+  'project.archive': 'archive',
+  'project.restore': 'restore',
+  'project.delete': 'delete',
+};
+
+/**
  * The verbs this wire runs without a cockpit. Every other registered verb is answered, not ignored.
  *
  * Five families qualify today and they qualify by the same rule rather than by seniority: `moveTaskByGesture`
  * takes the update callable, the refresh, the id source and the sink; `propertySchemaActions` takes the five
  * schema operations, the id source and the sink; `changeTaskSpan` takes the same four the gesture does, having
  * been given the record facts - the revision and the end a resize keeps - as a parameter; `runStageWrite` takes
- * those same four, with the one fact it used to read from a board supplied as a lookup the caller owns; and
- * `runEventWrite` takes them with the revision the caller read, for the four verbs that need nothing else.
- * None of the five reads a projection, a draft or a modal.
+ * those same four, with the one fact it used to read from a board supplied as a lookup the caller owns;
+ * `runEventWrite` takes them with the revision the caller read, for the four verbs that need nothing else; and
+ * `runLifecycle` takes them with the same, for all five of its verbs. None of the six reads a projection, a
+ * draft or a modal.
  *
  * Two verbs are deliberately absent, and both for the same reason rather than by oversight: `workflow.stage.delete`
  * carries the caller's remap decision about the cards the stage holds, and `event.update` plans a diff against
@@ -121,6 +146,7 @@ export const AGENT_WRITE_VERBS = [
   workflowStageActionType('create'),
   workflowStageActionType('rename'),
   ...Object.keys(EVENT_WRITE_VERB_TYPES),
+  ...Object.keys(PROJECT_VERB_TYPES),
   ...Object.values(PROPERTY_SCHEMA_ACTION_TYPES),
 ] as const;
 
@@ -230,6 +256,27 @@ export interface AgentEventWriteSubmission {
   readonly resize?: EventResizeTarget;
 }
 
+/**
+ * The wire shape an agent submits for one of the five project verbs.
+ *
+ * One shape for five verbs, because they differ in which fields they carry: a create names the project and
+ * leaves the id out, an update names the id, the revision and the field mutations it wants, and archive,
+ * restore and delete name the id and the revision. Which fields a verb requires is stated where the verb is.
+ */
+export interface AgentProjectWriteSubmission {
+  readonly type: AgentWriteVerb;
+  /** The project a non-create verb names. Absent on a create, which has no id yet. */
+  readonly projectId?: string;
+  /** The revision the agent read the project at. Required by every verb except a create. */
+  readonly expectedRevision?: string;
+  /** A create's name, or an update's new name when it changes one. */
+  readonly name?: string;
+  /** A create's description. */
+  readonly description?: string;
+  /** An update's fields, in the record layer's own vocabulary. */
+  readonly mutations?: readonly ProjectFieldMutation[];
+}
+
 export interface AgentWriteDependencies {  /** Resolve the sanctioned record write path; null when this run may not write records. */
   readonly writes: () => Promise<AgentWriteOperations | null>;
   /**
@@ -257,6 +304,8 @@ export interface AgentWriteDependencies {  /** Resolve the sanctioned record wri
    * stage, and a composition may resolve one store's operations without another's.
    */
   readonly eventWrites?: () => Promise<EventWriteOperations | null>;
+  /** Resolve the project lifecycle write path, when this composition has one: the fourth write path. */
+  readonly projectWrites?: () => Promise<ProjectLifecycleOperations | null>;
   /** Why there is no write path, in words a reader can act on. */
   readonly unavailableReason: () => string | null;
   readonly refresh: (reason: RefreshReason) => Promise<RefreshResult | null>;
@@ -297,6 +346,7 @@ export type AgentWriteResult =
   | TimelineSpanWriteOutcome
   | WorkflowStageWriteOutcome
   | EventWriteOutcome
+  | ProjectLifecycleOutcome
   | PropertySchemaActionOutcome
   | AgentWriteRefusal;
 
@@ -335,6 +385,13 @@ export type ParsedAgentWrite =
       readonly actionType: string;
       readonly verb: EventWriteVerb;
       readonly submission: AgentEventWriteSubmission;
+    }
+  | {
+      readonly ok: true;
+      readonly kind: 'project';
+      readonly actionType: string;
+      readonly verb: ProjectLifecycleVerb;
+      readonly submission: AgentProjectWriteSubmission;
     }
   | {
       readonly ok: true;
@@ -440,6 +497,37 @@ export function parseAgentWriteSubmission(input: unknown): ParsedAgentWrite | Re
     actionType: rawType,
     entityIds: ids,
   });
+
+  // The project family: a create names the project, and the other four name it by id and revision. The field
+  // mutations an update carries are the record layer's own vocabulary and are passed through rather than
+  // re-validated here - the operation owns whether a mutation list is one, and answers an empty one with its
+  // own sentence.
+  const projectVerb = PROJECT_VERB_TYPES[rawType];
+  if (projectVerb !== undefined) {
+    if (projectVerb === 'create') {
+      if (typeof candidate.name !== 'string' || candidate.name.trim() === '') return fail('a project create needs a name');
+      if (candidate.description !== undefined && typeof candidate.description !== 'string') return fail('description must be text');
+    } else {
+      if (typeof candidate.projectId !== 'string' || candidate.projectId === '') return fail('the submission needs a projectId');
+      if (typeof candidate.expectedRevision !== 'string' || candidate.expectedRevision === '') {
+        return fail('the submission needs the revision it read the project at, so a lost race is refused rather than merged');
+      }
+      if (projectVerb === 'update' && !Array.isArray(candidate.mutations)) {
+        return fail('a project update needs the field mutations it wants');
+      }
+    }
+
+    const project: AgentProjectWriteSubmission = {
+      type: rawType as AgentWriteVerb,
+      ...(typeof candidate.projectId === 'string' ? { projectId: candidate.projectId } : {}),
+      ...(typeof candidate.expectedRevision === 'string' ? { expectedRevision: candidate.expectedRevision } : {}),
+      ...(typeof candidate.name === 'string' ? { name: candidate.name } : {}),
+      ...(typeof candidate.description === 'string' ? { description: candidate.description } : {}),
+      ...(Array.isArray(candidate.mutations) ? { mutations: candidate.mutations as readonly ProjectFieldMutation[] } : {}),
+    };
+
+    return { ok: true, kind: 'project', actionType: rawType, verb: projectVerb, submission: project };
+  }
 
   // The event family: four of its five verbs, and the fields each requires stated once here rather than left
   // to the operation to discover. An instant that is not a real one is refused here because a span the caller
@@ -641,6 +729,58 @@ export async function submitAgentWrite(
       input,
       { requestId },
     );
+  }
+
+  // The project arm: all five verbs, and every one that names a project carries the revision it read instead of
+  // a record taken from a hub. The delete is here on purpose and answers its own refusal - what deleting does
+  // with a project's members is the creator's decision, and an agent asking is told the same thing a person
+  // clicking Delete is told rather than something else.
+  if (parsed.kind === 'project') {
+    const projectOperations = deps.projectWrites === undefined ? null : await deps.projectWrites();
+    const { submission, verb } = parsed;
+    const projectDeps = {
+      writes: async () => projectOperations,
+      unavailableReason: () => deps.unavailableReason() ?? 'writes-unavailable',
+      refresh: deps.refresh,
+      ids: deps.ids,
+      audit: deps.audit,
+    };
+    const resolver = () => submission.expectedRevision ?? null;
+    const projectId = submission.projectId ?? '';
+
+    if (verb === 'create') {
+      return await runLifecycle(projectDeps, 'create', null, null, async (operations) => await operations.createProject({
+        name: submission.name ?? '',
+        description: submission.description ?? '',
+      }));
+    }
+
+    if (verb === 'update') {
+      return await runLifecycle(projectDeps, 'update', projectId, resolver, async (operations, revision) => await operations.updateProject({
+        projectId: projectId as OpaqueRecordId,
+        expectedRevision: revision,
+        mutations: submission.mutations ?? [],
+      }));
+    }
+
+    if (verb === 'archive') {
+      return await runLifecycle(projectDeps, 'archive', projectId, resolver, async (operations, revision) => await operations.archiveProject({
+        projectId: projectId as OpaqueRecordId,
+        expectedRevision: revision,
+      }));
+    }
+
+    if (verb === 'restore') {
+      return await runLifecycle(projectDeps, 'restore', projectId, resolver, async (operations, revision) => await operations.restoreProject({
+        projectId: projectId as OpaqueRecordId,
+        expectedRevision: revision,
+      }));
+    }
+
+    return await runLifecycle(projectDeps, 'delete', projectId, resolver, async (operations, revision) => await operations.deleteProject({
+      projectId: projectId as OpaqueRecordId,
+      expectedRevision: revision,
+    }));
   }
 
   // The event arm: the same sequence the Schedule runs, with the revision the agent read instead of a record

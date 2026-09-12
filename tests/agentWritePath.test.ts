@@ -66,6 +66,15 @@ import {
 } from '../src/app/workflowStageWriteActions.js';
 import type { EventWriteOperations } from '../src/app/eventWriteActions.js';
 import {
+  archiveProject,
+  createProject,
+  deleteProject,
+  restoreProject,
+  updateProject,
+  type ProjectMutationDependencies,
+} from '../src/app/projectMutations.js';
+import type { ProjectLifecycleOperations } from '../src/app/projectLifecycleActions.js';
+import {
   createWorkflowStage,
   renameWorkflowStage,
   type WorkflowStageMutationDependencies,
@@ -240,6 +249,19 @@ async function world(seedOffset: number): Promise<World> {
     rescheduleEvent: (input) => rescheduleEvent(eventMutations, input),
     resizeEvent: (input) => resizeEvent(eventMutations, input),
   };
+  const projectMutations: ProjectMutationDependencies = {
+    store,
+    coordinator: authority.coordinator,
+    clock: fixedClock(CLOCK_ISO),
+    allocateRecordId: () => idFromLastByte(nextId++),
+  };
+  const projectOperations: ProjectLifecycleOperations = {
+    createProject: (request) => createProject(projectMutations, request),
+    updateProject: (input) => updateProject(projectMutations, input),
+    archiveProject: (input) => archiveProject(projectMutations, input),
+    restoreProject: (input) => restoreProject(projectMutations, input),
+    deleteProject: (input) => deleteProject(projectMutations, input),
+  };
 
   const agent: AgentWriteDependencies = {
     writes: async () => operations,
@@ -256,6 +278,8 @@ async function world(seedOffset: number): Promise<World> {
     stageWrites: async () => stageOperations,
     // …and the Schedule's, resolved the way a composition with a calendar would.
     eventWrites: async () => eventOperations,
+    // …and the Hub's, resolved the way a composition with a Projects Hub would.
+    projectWrites: async () => projectOperations,
     unavailableReason: () => null,
     refresh,
     ids,
@@ -430,7 +454,7 @@ describe('agent write path', () => {
     // module - a source read is the check that survives a well-meaning later edit. The two resolvers it does
     // take are write paths, and one of them is optional precisely because a composition need not have it.
     expect(AGENT_WRITE_SOURCE).not.toContain('ProximaState');
-    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'eventWrites', 'ids', 'refresh', 'schemaWrites', 'stageWrites', 'unavailableReason', 'writes']);
+    expect(Object.keys(w.agent).sort()).toEqual(['audit', 'eventWrites', 'ids', 'projectWrites', 'refresh', 'schemaWrites', 'stageWrites', 'unavailableReason', 'writes']);
   });
 
   it('returns the same result object as the UI gesture, for an accepted run and for a lost race', async () => {
@@ -572,8 +596,6 @@ describe('agent write path', () => {
       // The three verb names this wire runs are the ones it runs: the drop pair and the Gantt change each
       // have their own case below, and a submission that merely *says* it is one of them is still parsed.
       { input: { ...wellFormed, type: 'task.execution.park' }, reason: 'malformed-submission', actionType: 'task.execution.park' },
-      { input: { ...wellFormed, type: 'project.create' }, reason: 'unsupported-verb', actionType: 'project.create' },
-      { input: { ...wellFormed, type: 'project.delete' }, reason: 'unsupported-verb', actionType: 'project.delete' },
       { input: { ...wellFormed, type: 'event.schedule.create' }, reason: 'unsupported-verb', actionType: 'event.schedule.create' },
       { input: { ...wellFormed, type: 'canvas.node.remove' }, reason: 'unsupported-verb', actionType: 'canvas.node.remove' },
       { input: { ...wellFormed, type: 'surface.select' }, reason: 'unsupported-verb', actionType: 'surface.select' },
@@ -590,16 +612,16 @@ describe('agent write path', () => {
 
     // One event per refusal, each carrying the id its own result named, and the two codes this wire uses:
     // `action-not-available` for a verb the product registers and this wire does not run, and the
-    // taxonomy's validation code for a submission whose shape is not one.
+    // taxonomy's validation code for a submission whose shape is not one. `project.create` and
+    // `project.delete` were once in this list; they are verbs the wire runs now, which is why they moved out.
     expect(w.audit.events).toHaveLength(battery.length);
     expect(w.audit.events.map((event) => event.requestId)).toEqual(results.map((result) => result.requestId));
     expect(w.audit.events.every((event) => event.outcome === 'rejected')).toBe(true);
     expect(w.audit.events.filter((event) => event.errorCode === 'action-not-available').map((event) => event.actionType))
-      .toEqual(['project.create', 'project.delete', 'event.schedule.create', 'canvas.node.remove', 'surface.select']);
-    // A refusal names the ids the submission named, and the entries whose shape is not one name none.
+      .toEqual(['event.schedule.create', 'canvas.node.remove', 'surface.select']);
     // A refusal names the ids the submission named, and the entries whose shape is not one name none.
     expect(w.audit.events[5]!.entityIds).toEqual([]);
-    expect(w.audit.events[12]!.entityIds).toEqual([task.id]);
+    expect(w.audit.events[10]!.entityIds).toEqual([task.id]);
 
     // Nothing was written: the same files, at the same revisions.
     expect(await w.fileNames()).toEqual(beforeFiles);
@@ -1126,6 +1148,107 @@ describe('agent write path', () => {
       expect(result.requestId).toMatch(/^semantic-request/);
     }
     expect(await w.revisionMap()).toEqual(before);
+  });
+
+  it('runs the project lifecycle through the same wire, delete included because its refusal is an answer', async () => {
+    const w = await world(1900);
+
+    // A create names the project and no revision, because there is no record to have read yet.
+    const created = await submitAgentWrite(w.agent, {
+      type: 'project.create',
+      name: 'Second project',
+      description: 'Made by an agent',
+    });
+    expect(created).toMatchObject({ ok: true, verb: 'create', outcome: 'created' });
+    if (!created.ok || !('verb' in created)) throw new Error('the project create was refused');
+    expect(created.requestId).toMatch(/^semantic-request/);
+    expect(w.audit.events).toEqual([{
+      requestId: created.requestId,
+      actionType: 'project.create',
+      outcome: 'accepted',
+      entityIds: [created.recordId],
+    }]);
+    const storedProject = (await w.state()).projects.find((project) => project.id === created.recordId);
+    expect(storedProject).toMatchObject({ name: 'Second project', description: 'Made by an agent' });
+
+    // An update carries the fields it wants in the record layer's own vocabulary, at the revision the agent
+    // read - so a lost race is refused rather than merged.
+    const updated = await submitAgentWrite(w.agent, {
+      type: 'project.update',
+      projectId: created.recordId,
+      expectedRevision: created.revision,
+      mutations: [{ kind: 'name', value: 'Renamed by an agent' }],
+    });
+    expect(updated).toMatchObject({ ok: true, verb: 'update', outcome: 'updated' });
+    if (!updated.ok) throw new Error('the project update was refused');
+    expect((await w.state()).projects.find((project) => project.id === created.recordId)?.name).toBe('Renamed by an agent');
+
+    // Archive and restore are each the id and the revision, and they move the record's own status.
+    const archived = await submitAgentWrite(w.agent, {
+      type: 'project.archive',
+      projectId: created.recordId,
+      expectedRevision: updated.revision,
+    });
+    expect(archived).toMatchObject({ ok: true, verb: 'archive', outcome: 'archived' });
+    if (!archived.ok) throw new Error('the archive was refused');
+    expect((await w.state()).projects.find((project) => project.id === created.recordId)?.status).toBe('archived');
+
+    const restored = await submitAgentWrite(w.agent, {
+      type: 'project.restore',
+      projectId: created.recordId,
+      expectedRevision: archived.revision,
+    });
+    expect(restored).toMatchObject({ ok: true, verb: 'restore', outcome: 'restored' });
+    if (!restored.ok) throw new Error('the restore was refused');
+
+    // Delete is on the wire and refuses with the operation's own answer, which is the point of putting it
+    // there: an agent asking gets the same sentence a person clicking Delete gets, rather than a different
+    // one that would have to be kept in step. The store is untouched by it.
+    const beforeDelete = await w.revisionMap();
+    const deleteAttempt = await submitAgentWrite(w.agent, {
+      type: 'project.delete',
+      projectId: created.recordId,
+      expectedRevision: restored.revision,
+    });
+    expect(deleteAttempt).toMatchObject({ ok: false, verb: 'delete', reason: 'policy-not-decided' });
+    expect(await w.revisionMap()).toEqual(beforeDelete);
+    expect((await w.state()).projects.some((project) => project.id === created.recordId)).toBe(true);
+
+    // The malformed battery: a create with no name, an update with no mutations, and a verb that names a
+    // project without the revision it read.
+    const battery: readonly { readonly input: unknown; readonly detail: string }[] = [
+      { input: { type: 'project.create', name: '   ', description: '' }, detail: 'a project create needs a name' },
+      { input: { type: 'project.archive', projectId: created.recordId }, detail: 'the submission needs the revision it read the project at, so a lost race is refused rather than merged' },
+      { input: { type: 'project.update', expectedRevision: restored.revision, mutations: [] }, detail: 'the submission needs a projectId' },
+      { input: { type: 'project.update', projectId: created.recordId, expectedRevision: restored.revision }, detail: 'a project update needs the field mutations it wants' },
+    ];
+    for (const entry of battery) {
+      const result = await submitAgentWrite(w.agent, entry.input);
+      expect(result.ok, `${JSON.stringify(entry.input)} must be refused`).toBe(false);
+      if (result.ok || !('detail' in result)) throw new Error(`${JSON.stringify(entry.input)} was not refused by the wire`);
+      expect(result.detail).toBe(entry.detail);
+      expect(result.requestId).toMatch(/^semantic-request/);
+    }
+
+    // A composition that resolves no project path refuses that family by name, and the task family it does
+    // resolve still works - three optional write paths cannot disable each other.
+    const withoutProjects = await submitAgentWrite({ ...w.agent, projectWrites: undefined }, {
+      type: 'project.create',
+      name: 'Nowhere',
+      description: '',
+    });
+    expect(withoutProjects).toMatchObject({ ok: false, verb: 'create', reason: 'writes-unavailable' });
+
+    const task = await w.seed('Still moves after projects', 0);
+    const moved = await submitAgentWrite(w.agent, {
+      type: 'task.execution.move',
+      taskId: task.id,
+      from: 'backlog',
+      to: 'running',
+      targetIndex: 0,
+      expectedRevision: task.source.revision,
+    });
+    expect(moved).toMatchObject({ ok: true, actionType: 'task.execution.move' });
   });
 
   it('leaves the dispatcher containment rule exactly where it was', async () => {
