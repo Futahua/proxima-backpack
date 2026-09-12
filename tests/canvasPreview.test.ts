@@ -69,4 +69,26 @@ describe('Gate 8D browser raster preview registry', () => {
     expect(registry.get('node')).toBeNull();
     expect(io.revoked).toEqual(['blob:test-1']);
   });
+
+  it('creates and revokes a real object URL, not only an injected one', async () => {
+    // Every other case injects the port, which is what makes the registry testable without a DOM - but
+    // an injected port is not the same as the registry working against the real thing. This case uses
+    // node's own Blob and object-URL primitives: the URL is real, it resolves to the copied bytes, and
+    // revoking it takes it away.
+    const registry = createCanvasPreviewRegistry({
+      createObjectURL: (blob: Blob) => URL.createObjectURL(blob),
+      revokeObjectURL: (url: string) => URL.revokeObjectURL(url),
+    });
+
+    expect(registry.install('node-real', seed)).toBe(true);
+    const url = registry.get('node-real')?.url ?? '';
+    expect(url.startsWith('blob:')).toBe(true);
+
+    const response = await fetch(url);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(seed.bytes);
+
+    registry.remove('node-real');
+    await expect(fetch(url)).rejects.toBeTruthy();
+    expect(registry.get('node-real')).toBeNull();
+  });
 });

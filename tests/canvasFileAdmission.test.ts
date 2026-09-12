@@ -129,4 +129,26 @@ describe('Gate 8B one-shot browser File admission', () => {
     const drawing = await admitCanvasFileForPresentation(sequentialIdGenerator(), file('drawing.md', new TextEncoder().encode(scene)));
     expect(drawing.preview?.kind).toBe('excalidraw');
   });
+
+  it('admits a real File object, not only the structural stand-in the other cases build', async () => {
+    // The helper above builds a File-like object, which is what makes these cases fast and portable.
+    // This one hands the path node's own `File` - the same shape a browser hands a drop handler - so
+    // the admission is exercised against a real primitive: a real `arrayBuffer()`, a real `type`, a
+    // real `lastModified`, and the decoder doing the work rather than a stub.
+    const bytes = new TextEncoder().encode(scene);
+    const real = new File([bytes], 'drawing.excalidraw', { lastModified: Date.parse('2026-09-07T02:00:00.000Z') });
+    expect(real.size).toBe(bytes.length);
+
+    const presented = await admitCanvasFileForPresentation(sequentialIdGenerator(), real);
+    expect(presented.admission.status).toBe('selected');
+    expect(presented.admission.node.source.kind).toBe('browser-file');
+    expect(presented.admission.selection.kind).toBe('excalidraw');
+    expect(presented.preview?.kind).toBe('excalidraw');
+
+    // And a real File whose extension is active content is skipped before its bytes are read, which is
+    // the same rule the stand-in cases assert - proved here against an object that really has bytes.
+    const active = new File([bytes], 'page.svg', { type: 'image/svg+xml' });
+    const skipped = await admitCanvasFile(sequentialIdGenerator(), active);
+    expect(skipped.status).toBe('active-content-skipped');
+  });
 });
