@@ -1,5 +1,7 @@
 import type { ScheduleMode } from '../app/actionProtocol.js';
 import { localDateKey } from '../domain/time.js';
+import { hostZone } from './hostTimeZone.js';
+import type { TimeZone } from '../domain/timeZone.js';
 import { localCalendarDate } from './calendarGrid.js';
 
 export type ScheduleNavigationDirection =
@@ -101,6 +103,7 @@ export function scheduleNavigationDateKey(
   mode: ScheduleMode,
   direction: ScheduleNavigationDirection,
   today: Date,
+  zone: TimeZone = hostZone(),
 ): string {
   return localDateKey(
     scheduleNavigationDate(
@@ -109,24 +112,28 @@ export function scheduleNavigationDateKey(
       direction,
       today,
     ),
+    zone,
   );
 }
 
 function navigationLabel(
   cursor: Date,
   mode: ScheduleMode,
+  zone: TimeZone,
 ): string {
   if (mode === 'day') {
-    return localDateKey(cursor);
+    return localDateKey(cursor, zone);
   }
   if (mode === 'four-day') {
-    return `${localDateKey(cursor)} – ${localDateKey(
+    return `${localDateKey(cursor, zone)} – ${localDateKey(
       shiftCivilDays(cursor, 3),
+      zone,
     )}`;
   }
   if (mode === 'week') {
     return `${localDateKey(cursor)} – ${localDateKey(
       shiftCivilDays(cursor, 6),
+      zone,
     )}`;
   }
   if (mode === 'year') {
@@ -142,8 +149,9 @@ function navigationLabel(
 export function renderScheduleNavigation(
   cursor: Date,
   mode: ScheduleMode,
+  zone: TimeZone = hostZone(),
 ): string {
-  const label = navigationLabel(cursor, mode);
+  const label = navigationLabel(cursor, mode, zone);
 
   return `<div class="calendar-controls" data-schedule-navigation="true" data-schedule-navigation-mode="${mode}" data-schedule-navigation-date="${localDateKey(cursor)}"><button type="button" class="icon-button" data-action="schedule-navigate" data-direction="previous" data-papers-visual-key="schedule-previous" aria-label="Previous ${mode}">←</button><button type="button" class="icon-button" data-action="schedule-navigate" data-direction="today" data-papers-visual-key="schedule-today">Today</button><strong data-papers-visual-key="schedule-navigation-label">${label}</strong><button type="button" class="icon-button" data-action="schedule-navigate" data-direction="next" data-papers-visual-key="schedule-next" aria-label="Next ${mode}">→</button></div>`;
 }
