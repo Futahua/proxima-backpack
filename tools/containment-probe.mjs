@@ -31,11 +31,15 @@ const EXPECTATIONS = [
 ];
 
 /**
- * The native-source handoff, from the refusal side. Opt-in (`--handoff true`) because it is a
- * different question about a different host: a positive open needs an OS-backed File, which only
- * a person's drag-and-drop can produce, and the page-side handoff exists in Papers' production
- * preload but not in its developer-control preload - so on a diagnostic instance these four
- * requests are answered with silence, which is recorded as `no-answer` rather than as a refusal.
+ * The native-source handoff, from the refusal side. Opt-in (`--handoff true`) because a
+ * positive open needs an OS-backed File, which only a person's drag-and-drop can produce.
+ *
+ * **Since the Papers branch `native-source-diagnostic-preload` these four are observable**: the
+ * developer-control preload now carries the same `papers:project:native-source-grant/open/reveal`
+ * requests as the production preload, with the same validation, so a diagnostic instance answers
+ * them from the host's own refusal rules instead of staying silent. Before that change the page
+ * recorded `no-answer` for all four, which is a different verdict from a refusal, and the box
+ * that asks for this acceptance said so in as many words.
  */
 const HANDOFF_EXPECTATIONS = [
   { question: 'handoff-fabricated', accept: ['refused'], claim: 'a page-made File is not a disk-backed source, so no grant is issued for it' },
@@ -178,8 +182,14 @@ export async function runContainmentProbe(options = {}) {
 
     // The answer channel: one key per question, `probe-<question>-<answer>`. The question is
     // matched by prefix rather than by a pattern, because both halves may contain hyphens.
+    //
+    // It reads the questions this run actually asks (`expectations`), not the six containment
+    // ones (`EXPECTATIONS`): with `--handoff true` the four handoff questions are asked and
+    // answered too, and collecting only the first six left their answers permanently null, so
+    // a run in which every handoff refusal had really been observed still reported BLOCKED with
+    // four empty answers. The instrument has to read back everything it asks for.
     const answers = {};
-    for (const expectation of EXPECTATIONS) {
+    for (const expectation of expectations) {
       const prefix = `probe-${expectation.question}-`;
       const key = keys.find((candidate) => candidate.startsWith(prefix));
       if (key) answers[expectation.question] = key.slice(prefix.length);
