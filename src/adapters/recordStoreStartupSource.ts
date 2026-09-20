@@ -17,7 +17,6 @@ import { chooseStartupSource } from '../app/startupSourceChoice.js';
 import { recordStoreStateSource } from '../app/recordStoreSource.js';
 import type { StateSource } from '../app/stateSource.js';
 import { createBrowserOpfsRecordStoreFileBackend } from './opfsRecordStoreFileBackend.js';
-import type { ProximaState } from '../domain/types.js';
 
 export interface BrowserRecordStoreResolution {
   /** The store as a source, or null when the store is unavailable. */
@@ -26,23 +25,6 @@ export interface BrowserRecordStoreResolution {
     readonly kind: 'record-store' | 'legacy';
     readonly reason: string;
     readonly detail: string;
-  };
-}
-
-function emptyOwnedRecordStoreSource(): StateSource {
-  const state: ProximaState = {
-    projects: [],
-    tasks: [],
-    events: [],
-    statuses: [],
-    taskSchema: [],
-    workflowStages: [],
-  };
-  return {
-    kind: 'record-store',
-    async load() {
-      return { state, problems: [], revisions: {} };
-    },
   };
 }
 
@@ -58,12 +40,12 @@ export async function resolveBrowserRecordStoreSource(): Promise<BrowserRecordSt
     };
   } catch (error) {
     return {
-      // A host without OPFS still gets a valid, empty Proxima app. This is an
-      // owned in-memory record-store seam, never a fixture or an external vault.
-      source: emptyOwnedRecordStoreSource(),
+      // Do not present a read-only empty projection as a writable workspace. A host
+      // without OPFS fails explicitly rather than pretending Schedule writes work.
+      source: null,
       decision: {
-        kind: 'record-store',
-        reason: 'record-store-memory-fallback',
+        kind: 'legacy',
+        reason: 'store-unreadable',
         detail: `record store unavailable: ${error instanceof Error ? error.message.slice(0, 120) : 'unknown error'}`,
       },
     };
