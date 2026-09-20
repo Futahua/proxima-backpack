@@ -25,7 +25,7 @@ import { loadProjectNotePreview, loadProjectNotesTree } from '../app/projectNote
 import { createUiHealthModel, type UiHealthModel } from '../app/uiHealth.js';
 import { evaluateCleanProfileAcceptance } from '../app/fsaEvidence.js';
 import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
-import { loadVaultState } from '../app/vaultRepository.js';
+import { createMemoryVault } from '../adapters/memoryVault.js';
 import { fixedClock, sequentialIdGenerator, systemClock } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
 import type { OpaqueRecordId } from '../domain/canonicalIdentity.js';
@@ -33,10 +33,8 @@ import { opaqueRecurrenceSeriesIdFromRandomBytes } from '../domain/canonicalRecu
 import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
 import type { ProximaState, ElasticColumn, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
-import { createHttpDirectoryHandle } from '../adapters/httpDirectory.js';
 import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
 import { bindRefreshWiring } from './refreshWiring.js';
-import { createBrowserSource } from './sourceFactory.js';
 import { bindCanvasSurfaceInteractions, CANVAS_SURFACE_WRITE_REFUSAL, createCanvasDropQueue, EMPTY_CANVAS_SURFACE, EMPTY_CANVAS_SURFACE_VIEW, renderCanvasSurface, type CanvasSurfaceState, type CanvasSurfaceViewState } from './canvasSurface.js';
 import type { BrowserFileLike } from './canvasFileAdmission.js';
 import { createCanvasPreviewRegistry, disposeCanvasPreviewsOnPageHide } from './canvasPreview.js';
@@ -81,7 +79,6 @@ import { bindProjectDeadlinesInteractions, EMPTY_PROJECT_DEADLINES_VIEW, type Pr
 import { bindProjectScheduleInteractions, EMPTY_PROJECT_SCHEDULE_VIEW, type ProjectScheduleViewState } from './projectSchedule.js';
 import { applyBootState, type BootState } from './bootState.js';
 import { createProjectNameLookup, projectLabel } from './projectLookup.js';
-import { bridgeUrlForLaunch } from './agentBridge.js';
 import { cockpitSubmode, renderCockpitNavigation } from './cockpitNavigation.js';
 import { sourceLabelFor, workspaceIdentityFor, workspaceWritesFor, writeAdmissionViewFor } from './workspaceIdentity.js';
 import { recoveryNoticeFor } from './recoveryNotice.js';
@@ -95,7 +92,6 @@ import { skipOccurrenceFromScope, updateOccurrenceFromScope } from './scheduleSc
 import { eventEditorDraftFor, type EventEditorDraft } from '../app/eventEditor.js';
 import type { EventFormValues } from '../app/eventFormPlan.js';
 
-const FIXTURE_NAME = 'vault-basic';
 const FIXED_CLOCK = fixedClock(BUILD_IDENTITY.fixedClock);
 const DETERMINISTIC_IDS = sequentialIdGenerator();
 /** What the Hub's lifecycle controls say while nothing has happened yet and a write path exists. */
@@ -485,7 +481,7 @@ function healthSurface(health: UiHealthModel): string {
 }
 
 function updateHydrationSummary(state: ProximaState, problems: LoadProblem[]): void {
-  setText('#hydration-summary', JSON.stringify({ mode: currentSourceMode(), fixture: currentSourceMode() === 'external' ? null : FIXTURE_NAME, hydrationRevision: currentSourceMode() === 'external' ? `external:${sourceProjection?.generation ?? 0}` : `fixture:${BUILD_IDENTITY.fixtureHash.slice(0, 16)}:1`, applicationStateRevision: actionDispatcher?.snapshot().stateRevision ?? 0, sourceHealth: currentUiHealth(), surface, selection, projects: state.projects.length, tasks: state.tasks.length, events: state.events.length, problems: problems.length, fixedClock: BUILD_IDENTITY.fixedClock, deterministicIds: true }, null, 2));
+  setText('#hydration-summary', JSON.stringify({ mode: currentSourceMode(), hydrationRevision: `record-store:${sourceProjection?.generation ?? 0}`, applicationStateRevision: actionDispatcher?.snapshot().stateRevision ?? 0, sourceHealth: currentUiHealth(), surface, selection, projects: state.projects.length, tasks: state.tasks.length, events: state.events.length, problems: problems.length, fixedClock: BUILD_IDENTITY.fixedClock, deterministicIds: false }, null, 2));
 }
 
 function exposeInspection(): void {
@@ -494,8 +490,8 @@ function exposeInspection(): void {
   const session = sourceSession?.snapshot();
   const report = evaluateRealVaultAcceptance({
     build: BUILD_IDENTITY,
-    startup: startupInspection ?? { startupSourceMode: 'fixture', restoredHandlePresent: false, bootstrapStatus: 'no-restored-handle' },
-    session: { sourceMode: session?.sourceMode ?? 'fixture', sourceGeneration: session?.sourceGeneration ?? sourceProjection?.generation ?? 1, transitionState: session?.transitionState ?? 'stable' },
+    startup: startupInspection ?? { startupSourceMode: 'record-store', restoredHandlePresent: false, bootstrapStatus: 'no-restored-handle' },
+    session: { sourceMode: session?.sourceMode ?? 'record-store', sourceGeneration: session?.sourceGeneration ?? sourceProjection?.generation ?? 1, transitionState: session?.transitionState ?? 'stable' },
     projection: sourceProjection ?? { generation: 1, state: actionDispatcher.snapshot().state, health: currentUiHealth(), revisions: actionDispatcher.snapshot().revisions, problems: actionDispatcher.snapshot().problems },
     inspection,
     refreshEvidence: lastRefreshEvidence,
@@ -547,7 +543,7 @@ async function runFsaProbe(): Promise<void> {
 
 function syncElasticProgressTimer(): void {
   const shouldTick = shouldTickElasticProgress(
-    currentSourceMode(),
+    currentSourceMode() === 'external' ? 'external' : 'fixture',
     surface,
     tasksMode,
     elasticLockedAt,
@@ -573,7 +569,7 @@ function render(): void {
   const health = currentUiHealth();
   const projectNames = createProjectNameLookup(appState);
   root.dataset.proximaHealthGeneration = String(health.sourceRevision);
-  const sourceMode = sourceSession?.snapshot().sourceMode ?? 'fixture';
+  const sourceMode = sourceSession?.snapshot().sourceMode ?? 'record-store';
   const sourceLabel = sourceLabelFor(sourceMode);
   // Gate 14's enrollment gate, asked at render time for the source actually in front of the reader.
   // The badge and this verdict come from one call, so the surface cannot claim a capability the
@@ -669,8 +665,8 @@ function dispatchAction(input: unknown): ActionResult | null {
  * the machine-readable field an agent would trust to decide whether it is looking at
  * disposable data, and it was wrong in the one direction that matters.
  */
-function currentSourceMode(): 'fixture' | 'external' {
-  return sourceSession?.snapshot().sourceMode === 'external' ? 'external' : 'fixture';
+function currentSourceMode(): SourceMode {
+  return sourceSession?.snapshot().sourceMode ?? 'record-store';
 }
 
 function applyProjection(next: ReadOnlyProjection, mode: SourceMode, result?: RefreshResult): void {
@@ -723,6 +719,7 @@ async function resolveTaskWritePath(): Promise<BrowserRecordMutations | null> {
         return null;
       }
       const resolved = await resolveBrowserTaskMutations({
+        standalone: true,
         // The same clock rule the dispatcher follows: a deterministic run stays deterministic,
         // and only a live external source gets wall time. A record store reached by an
         // acceptance run is deterministic on purpose.
@@ -2069,32 +2066,26 @@ function bindInteractions(): void {
 
 async function boot(): Promise<void> {
   setBootState('loading');
-  // The bridge needs both the build opt-in and a session token, which the launch carries in the
-  // fragment; without one there is no bridge rather than an unauthenticated one.
-  const bridgeUrl = bridgeUrlForLaunch(window.location.search, window.location.hash, BUILD_IDENTITY.agentBridgeEnabled);
-  const automationDirectory = bridgeUrl ? createHttpDirectoryHandle(bridgeUrl) : null;
-  const fixture = createBrowserSource();
-  const loaded = await loadVaultState(fixture.reader);
-
-  // HARD GATE C: an activated record store is the record source; anything else keeps the
-  // legacy reader and says why. The resolution happens in the adapter layer and hands back a
-  // read-only source, because the shell must hold no RecordStore authority of its own — the
-  // containment guard asserts that, and it is a better rule than a comment.
+  // Standalone Proxima has one source of truth: its own OPFS record store. A fresh store is a
+  // valid empty app, not a reason to inspect a vault, fixtures, or a restored external handle.
   const resolved = await resolveBrowserRecordStoreSource();
   const recordStore = resolved.source;
   const sourceDecision = resolved.decision;
+  if (!recordStore) throw new Error(`Proxima record store unavailable: ${sourceDecision.detail}`);
+  const standaloneReader = createMemoryVault({});
+  const loaded = await recordStore.load();
 
   const startup = createStartupSessionOrchestrator({
-    fixture: { mode: 'fixture', reader: fixture.reader, initial: loaded },
+    fixture: { mode: 'record-store', reader: standaloneReader, source: recordStore, initial: loaded },
     recordStore,
     sourceDecision,
-    restored: { store: { restore: async () => automationDirectory }, permissions: { queryPermission: async () => automationDirectory ? 'granted' : 'denied' } },
+    restored: { store: { restore: async () => null }, permissions: { queryPermission: async () => 'denied' } },
     intervalMs: 60_000,
     onProjection: (projection, mode, result) => applyProjection(projection, mode, result),
     // The journal is reconciled on the boot, not on the first write gesture. The clock rule is
     // the one the write path follows: a deterministic run stays deterministic, and only a live
     // external source gets wall time.
-    runRecovery: ({ sourceMode }) => resolveBrowserRecoveryStartup({ clock: sourceMode === 'external' ? systemClock : FIXED_CLOCK }),
+    runRecovery: ({ sourceMode }) => resolveBrowserRecoveryStartup({ standalone: true, clock: sourceMode === 'external' ? systemClock : FIXED_CLOCK }),
   });
   const started = await startup.start();
   sourceSession = started.session;
@@ -2113,13 +2104,13 @@ async function boot(): Promise<void> {
   elasticTargetTime = initial.elasticTargetTime;
   elasticLockedAt = initial.elasticLockedAt;
   const root = element<HTMLElement>('#proxima-app');
-  root.dataset.proximaFixture = FIXTURE_NAME;
+  root.dataset.proximaStandalone = 'true';
   root.dataset.proximaMode = sourceSession.snapshot().sourceMode;
   root.dataset.proximaSourceMode = sourceSession.snapshot().sourceMode;
   root.dataset.proximaClock = new Date(FIXED_CLOCK.now()).toISOString();
-  root.dataset.proximaIdSeed = DETERMINISTIC_IDS.next('fixture');
+  root.dataset.proximaIdSeed = DETERMINISTIC_IDS.next('standalone');
   setBootState('ready');
-  setText('#boot-mode', sourceSession.snapshot().sourceMode === 'external' ? 'External source — restored read-only handle' : 'Fixture mode — bundled vault bytes');
+  setText('#boot-mode', 'Standalone Proxima record store');
   setText('#boot-status', 'Hydrated');
   bindInteractions();
   render();
@@ -2131,6 +2122,6 @@ async function boot(): Promise<void> {
 
 boot().catch((error: unknown) => {
   setBootState('error');
-  setText('#boot-status', 'Fixture boot failed');
+  setText('#boot-status', 'Standalone Proxima boot failed');
   setText('#hydration-summary', error instanceof Error ? error.message : String(error));
 });

@@ -11,11 +11,21 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createMemoryVault } from '../src/adapters/memoryVault.js';
+import { FIXTURE_VAULTS } from '../src/browser/generated/fixtureVault.generated.js';
 import type { RecordKind, SourceRef } from '../src/domain/records.js';
 
 export function fixtureFiles(name: string): Record<string, string> {
   const root = fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
   const files: Record<string, string> = {};
+  // The product build no longer needs the deleted fixture directories. Keep historical
+  // parser tests runnable from this branch by using the checked-in test-only snapshot.
+  try {
+    readdirSync(root);
+  } catch {
+    const snapshot = FIXTURE_VAULTS[name as keyof typeof FIXTURE_VAULTS];
+    if (!snapshot) throw new Error(`Unknown test fixture: ${name}`);
+    return { ...snapshot };
+  }
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir).sort()) {
       const full = join(dir, entry);

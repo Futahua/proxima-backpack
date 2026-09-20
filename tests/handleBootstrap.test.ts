@@ -40,11 +40,11 @@ describe('Gate 6G persisted-handle bootstrap', () => {
     expect(source.bootstrap.bootstrapStatus).toBe('ready');
   });
 
-  it('uses the fixture source when a restored handle is still waiting for permission', async () => {
+  it('uses an empty source when a restored handle is still waiting for permission', async () => {
     const source = await createBrowserSourceFromRestored(store(new EmptyDirectory()), permissions('prompt'));
     expect(source.mode).toBe('fixture');
     expect(source.bootstrap).toMatchObject({ sourceMode: 'fixture', bootstrapStatus: 'permission-required', permission: 'prompt' });
-    expect(await source.reader.walk('Proxima/tasks')).toContain('Proxima/tasks/Daily standup.md');
+    expect(await source.reader.walk('Proxima/tasks')).toEqual([]);
   });
 
   it('keeps prompt and denied states explicit without reading or requesting permission', async () => {

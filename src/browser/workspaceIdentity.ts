@@ -38,10 +38,7 @@ export function sourceLabelFor(mode: SourceMode): string {
     return 'Live data · read-only';
   }
   if (mode === 'record-store') {
-    // Records come from the record store; notes, drawings and attachments stay vault artifacts,
-    // which is why both halves are named rather than saying "record store" and letting a reader
-    // assume the vault is gone.
-    return 'Record store records · vault notes';
+    return 'Proxima record store';
   }
   return 'Fixture data · read-only';
 }

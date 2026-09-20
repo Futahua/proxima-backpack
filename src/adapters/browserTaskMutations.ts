@@ -192,36 +192,35 @@ function freshSchemaOptionId(): OpaqueSchemaOptionId {
  * coordinator and holds no storage the caller can reach.
  */
 export async function resolveBrowserRecoveryStartup(
-  options: { readonly clock?: Clock } = {},
+  options: { readonly clock?: Clock; readonly standalone?: boolean } = {},
 ): Promise<StartupRecoveryCandidate & { readonly detail: string }> {
   let backend;
   let journal;
-  let activation;
   try {
     backend = await createBrowserOpfsRecordStoreFileBackend();
     journal = await createBrowserOpfsRecordRecoveryJournalBackend();
-    activation = await createBrowserOpfsRecordStoreActivationStorage();
+    if (!options.standalone) await createBrowserOpfsRecordStoreActivationStorage();
   } catch {
     return { mutationAuthority: 'blocked', outcomes: 0, unresolved: 0, reason: 'store-unreadable', detail: 'record store unavailable' };
   }
 
-  let marker;
-  try {
-    marker = await readRecordStoreActivation(activation);
-  } catch {
-    marker = { status: 'invalid' as const, marker: null, detail: 'activation storage could not be read' };
-  }
-  if (marker.status !== 'present' || marker.marker === null) {
-    // No activation means no canonical records and no journal to reconcile: reported as the
-    // reason rather than as a clean reconciliation, because "nothing was pending" and "nothing
-    // was examined" are different answers.
-    return {
-      mutationAuthority: 'blocked',
-      outcomes: 0,
-      unresolved: 0,
-      reason: 'not-activated',
-      detail: marker.status === 'absent' ? 'the record store has never been activated' : marker.detail,
-    };
+  if (!options.standalone) {
+    let activation;
+    try {
+      activation = await createBrowserOpfsRecordStoreActivationStorage();
+      const marker = await readRecordStoreActivation(activation);
+      if (marker.status !== 'present' || marker.marker === null) {
+        return {
+          mutationAuthority: 'blocked',
+          outcomes: 0,
+          unresolved: 0,
+          reason: 'not-activated',
+          detail: marker.status === 'absent' ? 'the record store has never been activated' : marker.detail,
+        };
+      }
+    } catch {
+      return { mutationAuthority: 'blocked', outcomes: 0, unresolved: 0, reason: 'not-activated', detail: 'activation storage could not be read' };
+    }
   }
 
   const recovery = createDurableRecoveryStore(journal);
@@ -244,14 +243,13 @@ function freshRecordId(): OpaqueRecordId {
 }
 
 export async function resolveBrowserTaskMutations(
-  options: { readonly clock?: Clock } = {},
+  options: { readonly clock?: Clock; readonly standalone?: boolean } = {},
 ): Promise<BrowserTaskMutationResolution> {  let backend;
   let journal;
-  let activation;
   try {
     backend = await createBrowserOpfsRecordStoreFileBackend();
     journal = await createBrowserOpfsRecordRecoveryJournalBackend();
-    activation = await createBrowserOpfsRecordStoreActivationStorage();
+    if (!options.standalone) await createBrowserOpfsRecordStoreActivationStorage();
   } catch (error) {
     return {
       ok: false,
@@ -260,20 +258,23 @@ export async function resolveBrowserTaskMutations(
     };
   }
 
-  let marker;
-  try {
-    marker = await readRecordStoreActivation(activation);
-  } catch {
-    marker = { status: 'invalid' as const, marker: null, detail: 'activation storage could not be read' };
-  }
-  if (marker.status !== 'present' || marker.marker === null) {
-    return {
-      ok: false,
-      reason: 'not-activated',
-      detail: marker.status === 'absent'
-        ? 'the record store has never been activated'
-        : marker.detail,
-    };
+  if (!options.standalone) {
+    let activation;
+    try {
+      activation = await createBrowserOpfsRecordStoreActivationStorage();
+      const marker = await readRecordStoreActivation(activation);
+      if (marker.status !== 'present' || marker.marker === null) {
+        return {
+          ok: false,
+          reason: 'not-activated',
+          detail: marker.status === 'absent'
+            ? 'the record store has never been activated'
+            : marker.detail,
+        };
+      }
+    } catch {
+      return { ok: false, reason: 'not-activated', detail: 'activation storage could not be read' };
+    }
   }
 
   const recovery = createDurableRecoveryStore(journal);

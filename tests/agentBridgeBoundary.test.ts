@@ -13,8 +13,8 @@ const QUERY = '?bridge=http%3A%2F%2F127.0.0.1%3A4174';
 const HASH = '#token=run-token-1';
 
 describe('Developer control bridge launch boundary', () => {
-  it('does not activate ?bridge= in the ordinary fixture build', () => {
-    expect(BUILD_IDENTITY.buildMode).toBe('fixture');
+  it('does not activate ?bridge= in the ordinary standalone build', () => {
+    expect(BUILD_IDENTITY.buildMode).toBe('standalone');
     expect(BUILD_IDENTITY.agentBridgeEnabled).toBe(false);
     expect(bridgeUrlForLaunch(QUERY, HASH, BUILD_IDENTITY.agentBridgeEnabled)).toBeNull();
   });

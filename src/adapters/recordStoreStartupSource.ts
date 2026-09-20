@@ -8,20 +8,17 @@
  * object itself never crosses this boundary, so the shell could not write a record even by
  * mistake.
  *
- * Everything here is best-effort. A browser without OPFS, a store whose marker this build
- * cannot read, or an activation this build does not understand all resolve to `source: null`
- * with a reason, which the caller reports and then reads the legacy vault as before.
+ * Everything here is best-effort. A browser without OPFS or a store that cannot be read
+ * resolves to `source: null` with a reason. A readable store is canonical immediately,
+ * including an empty first-launch store; standalone Proxima has no import activation gate.
  */
 import { createCanonicalJsonRecordStore } from '../app/canonicalRecordCodec.js';
 import { chooseStartupSource } from '../app/startupSourceChoice.js';
 import { recordStoreStateSource, type StateSource } from '../app/stateSource.js';
-import {
-  createBrowserOpfsRecordStoreActivationStorage,
-  createBrowserOpfsRecordStoreFileBackend,
-} from './opfsRecordStoreFileBackend.js';
+import { createBrowserOpfsRecordStoreFileBackend } from './opfsRecordStoreFileBackend.js';
 
 export interface BrowserRecordStoreResolution {
-  /** The store as a source, or null when the legacy reader should keep the records. */
+  /** The store as a source, or null when the store is unavailable. */
   readonly source: StateSource | null;
   readonly decision: {
     readonly kind: 'record-store' | 'legacy';
@@ -33,9 +30,8 @@ export interface BrowserRecordStoreResolution {
 export async function resolveBrowserRecordStoreSource(): Promise<BrowserRecordStoreResolution> {
   try {
     const backend = await createBrowserOpfsRecordStoreFileBackend();
-    const activation = await createBrowserOpfsRecordStoreActivationStorage();
     const store = createCanonicalJsonRecordStore(backend);
-    const decision = await chooseStartupSource({ store, activation });
+    const decision = await chooseStartupSource({ store });
 
     return {
       source: decision.kind === 'record-store' ? recordStoreStateSource(store) : null,

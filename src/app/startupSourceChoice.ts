@@ -6,10 +6,10 @@
  * including the ones that mean "stay on the legacy reader", because a fallback that does not
  * say why is how a cutover becomes invisible.
  *
- * The rule is deliberately conservative: the store is chosen only when a valid activation
- * marker is present **and** the store still holds the records that marker counted. Anything
- * else keeps the product on the legacy reader and reports the reason, because an empty
- * canonical store renders an empty application, and that is worse than reading Markdown.
+ * Standalone Proxima has no import activation step. When `activation` is omitted, a readable
+ * store is canonical even when it is empty: an empty first launch is a valid product state.
+ * The activation-aware branch remains for historical migration tests and callers, but it is
+ * not part of the standalone browser boot.
  */
 import type { CanonicalRecordKind } from '../domain/canonicalIdentity.js';
 import type { CanonicalRecordV2 } from '../domain/canonicalRecordV2.js';
@@ -23,6 +23,7 @@ import {
 export const STARTUP_SOURCE_DECISION_VERSION = 1 as const;
 
 export type StartupSourceReason =
+  | 'record-store-ready'
   | 'activated'
   | 'no-activation-marker'
   | 'invalid-activation-marker'
@@ -62,8 +63,33 @@ function countsOf(observations: readonly { kind: CanonicalRecordKind }[]): Recor
  */
 export async function chooseStartupSource(input: {
   store: RecordStore<CanonicalRecordV2>;
-  activation: RecordStoreActivationStorage;
+  activation?: RecordStoreActivationStorage;
 }): Promise<StartupSourceDecision> {
+  if (!input.activation) {
+    try {
+      const observations = await input.store.list();
+      return {
+        schemaVersion: STARTUP_SOURCE_DECISION_VERSION,
+        kind: 'record-store',
+        reason: 'record-store-ready',
+        marker: null,
+        detail: observations.length === 0
+          ? 'standalone Proxima record store is ready with zero records'
+          : `standalone Proxima record store is ready with ${observations.length} record(s)`,
+        counts: countsOf(observations),
+      };
+    } catch (error) {
+      return {
+        schemaVersion: STARTUP_SOURCE_DECISION_VERSION,
+        kind: 'legacy',
+        reason: 'store-unreadable',
+        marker: null,
+        detail: `record store could not be read: ${error instanceof Error ? error.message.slice(0, 120) : 'unknown error'}`,
+        counts: null,
+      };
+    }
+  }
+
   const activation = await readRecordStoreActivation(input.activation);
 
   if (activation.status === 'absent') {

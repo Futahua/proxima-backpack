@@ -1,12 +1,13 @@
 # Proxima Backpack
 
-Proxima as an independent project: an Elastic board, a calendar and projects, over
-the creator's ordinary Obsidian vault files.
+Proxima is a standalone product: an Elastic board, Schedule and projects backed by
+Proxima-owned canonical records.
 
 This is the successor to the `Proxima-Obsidian` plugin. It is not a port of that
 codebase and not a replication of it. The plugin's defect was structural — its logic
 bent to whatever the Obsidian API happened to support, and grew messy doing so. Here,
-Proxima owns its own domain model and reads the same files from the outside.
+Proxima owns both the domain model and the record store. It does not import, migrate,
+or reuse Obsidian, Papers, legacy-vault, fixture, or other prior-source data.
 
 ## What this is not
 
@@ -19,66 +20,29 @@ Proxima owns its own domain model and reads the same files from the outside.
   for memory and disposable roots, but creator-vault write authority is disabled. See
   below.
 
-## Relationship to Obsidian
+## Record ownership
 
-Obsidian is a peer, not a host. The vault stays canonical on disk and stays fully
-editable in Obsidian, with its plugins — Excalidraw in particular — working exactly as
-they do today.
-
-**Proxima's creator-vault boundary is read-only.** The repository already contains a
-conditional mutation engine, recovery machinery, and semantic task/project/event writers
-exercised against memory and disposable roots. Gate 13D2 records actual
-Obsidian-versus-Proxima conditional-write concurrency acceptance.
-
-That mutation substrate is not exposed as creator-vault write authority. Native browser
-File System Access cannot atomically validate the previously observed revision at
-commit, so `evaluateFsaWriteBoundary()` fails closed with
-`BLOCKED / fsa-no-compare-and-swap`. `evaluateOwnerAuthorityBoundary()` likewise reports
-read-only authority with writes disabled. Obsidian therefore remains a concurrent peer
-writer that Proxima must never silently overwrite. Read-only first is a decision about
-protecting real creator data, not a limitation to route around.
+The browser boots from Proxima's own OPFS record store. A brand-new store is a valid
+empty workspace; there is no activation marker, migration cutover, vault fallback, or
+restored external handle in the shipping path. Schedule events, recurrence series, and
+occurrence overrides are canonical Proxima records.
 
 ## Data layout
 
-One Markdown file per record, under a configurable root (default `Proxima`):
-
-```
-<root>/projects/{id}.md      or  <root>/projects/{id}/index.md
-<root>/tasks/{id}.md
-<root>/events/{id}.md
-```
-
-The plugin's own default — `-Hide/Proxima/projects | tasks | events` — is read too, in
-place, with no migration. Creator-vault source paths remain read-only. Each of the three
-directories is configured separately, so a vault someone rearranged by hand stays
-readable.
-
-Each file carries frontmatter Proxima interprets and a body it leaves alone. A record's
-logical id is what it declares in `id:`, or failing that its own filename — never its
-path, so moving a file does not silently create a different record. Every record keeps a
-reference back to the file, revision and rule that produced it, and two records claiming
-the same id is a reported error rather than a tiebreak.
-
-The frontmatter parser handles a documented subset — scalars, quoted strings, inline and
-block lists — which is why the fixtures are real files rather than assumed YAML.
+Canonical records are opaque JSON files owned by Proxima's record-store boundary. The
+store exposes validated list/read/create/update/delete operations and revision-checked
+writes; it is not a view over Markdown paths. Historical Markdown readers and fixtures
+remain isolated test or compatibility code and are not reachable from the shipping boot.
 
 ## Browser build and source modes
 
 `npm run build` emits a self-contained static page at `public/index.html` and browser
-modules under `public/build/`. An ordinary build boots the real `vault-basic` fixture
-through the memory adapter and vault reader.
+modules under `public/build/`. The page starts with an empty or previously saved
+Proxima-owned record store; it does not enumerate or load any other data source.
 
-The browser also exposes native FSA selection and re-read controls as bounded acceptance
-probes. Those controls inspect and persist probe authority; they do not make the selected
-FSA directory the active Proxima source session.
-
-An explicitly agent-enabled build may instead restore the loopback bridge as an external
-read-only source. If no accepted external source is available, startup falls back to the
-bundled fixture. Neither source mode exposes creator-vault write authority.
-
-The page exposes the exact git SHA, fixture hash, lockfile hash, schema versions, fixed
-clock, hydration revision and record/problem counts so an acceptance run can identify
-exactly what it loaded.
+The page exposes build identity, schema versions, hydration revision, and record/problem
+counts for diagnostics. Fixture files remain test-only historical inputs and are not part
+of the browser build or startup.
 
 **`docs/VAULT-FORMATS.md`** is the full specification: both layouts, the discovery
 rules, identity semantics and every problem code. **`docs/DECISIONS.md`** records the
@@ -100,10 +64,10 @@ deadline and every card resizes.
 
 ```
 src/domain/      pure model — no host, no filesystem, no framework
-src/ports/       the seam that replaces Obsidian's App/Vault
+src/ports/       storage seams, including the canonical record store
 src/adapters/    implementations of that seam
-src/app/         layout, discovery, and reading Proxima state out of vault files
-fixtures/        real vault files, used by tests and by the page
+src/app/         canonical records, Schedule projections and application behavior
+fixtures/        historical test-only inputs, not shipped startup data
 docs/            formats, decisions and the audit checklist
 public/          the static build Papers serves
 ```
@@ -117,23 +81,19 @@ Node types, so `node:fs` cannot compile there at all.
 
 ```bash
 npm install
-npm test        # vitest, over the real fixture vaults
+npm test        # vitest, including isolated historical parser fixtures
 npm run typecheck
 npm run build
 ```
 
-## Agent-controlled read-only bridge
+## Historical bridge tooling
 
-An explicitly agent-enabled browser build can be bootstrapped without a native
-folder-picker gesture by using the loopback bridge. Ordinary fixture builds ignore
-`?bridge=`; opt in before building, then start the bridge with the explicit
-creator-vault root and open the generated page with `?bridge=`:
+The loopback bridge remains available to legacy acceptance tools, but it is not a
+startup source for the standalone browser and cannot import data into Proxima:
 
 ```powershell
-$env:PROXIMA_AGENT_BRIDGE = '1'
-npm run build
 npm run agent:bridge -- --root "D:\\Vaults\\Creator" --port 4174
-# open http://127.0.0.1:4173/?bridge=http://127.0.0.1:4174
+npm run agent:accept -- --port 4174
 ```
 
 The bridge binds only to loopback, accepts only bounded `GET`/`OPTIONS` requests, and
@@ -149,10 +109,9 @@ The acceptance machine has a real Papers Backpack identity and a machine-local
 The UUID is intentionally not a portable product identity; another machine must mint
 and bind its own Backpack rather than copying this registration state.
 
-The browser surface is read-only. Its active source session can consume either the
-bundled fixture or an explicitly enabled external read-only source, and refreshed
-projections flow through the same source/session path. The native FSA controls are
-acceptance probes rather than an alternate active source.
+The browser surface reads and writes only Proxima's canonical record store. The native
+FSA and bridge controls are compatibility/acceptance tooling and are not alternate
+startup sources.
 
 Its project-owned action dispatcher and inspection projection live in
 `src/app/actionProtocol.ts` and `src/app/inspection.ts`; Papers remains an opaque host
@@ -160,12 +119,12 @@ and does not interpret these contracts.
 
 ## Status
 
-The domain and vault-read layers, Board/Calendar/Canvas browser surfaces, external
-refresh and projection pipeline, semantic action and inspection seams, conditional
-mutation coordinator, durable recovery machinery, and semantic task/project/event
-mutation surfaces exist. Both the preferred and legacy vault layouts load.
+The domain, Board/Schedule/Canvas surfaces, canonical record-store projection, semantic
+action and inspection seams, conditional mutation coordinator, durable recovery machinery,
+and task/project/event mutation surfaces exist. Schedule includes Day, 4-Day, Week, Month,
+Year and Agenda views, timed create/move/resize, and occurrence-versus-series recurrence.
 
 Creator-vault writes remain disabled. Native FSA write authority is explicitly `BLOCKED`,
 and the current owner authority boundary is exact-root-scoped read-only.
 
-Progress is tracked gate by gate in `docs/AUDIT-CHECKLIST.md`.
+Historical design notes remain in `docs/`; they are not the runtime source of truth.

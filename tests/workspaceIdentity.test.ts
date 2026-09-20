@@ -29,9 +29,7 @@ describe('Stage 9 workspace identity', () => {
   it('names the source a reader is looking at, in all three modes', () => {
     expect(sourceLabelFor('fixture')).toBe('Fixture data · read-only');
     expect(sourceLabelFor('external')).toBe('Live data · read-only');
-    // Both halves are named: records moved to the store, and the vault is still where notes,
-    // drawings and attachments live.
-    expect(sourceLabelFor('record-store')).toBe('Record store records · vault notes');
+    expect(sourceLabelFor('record-store')).toBe('Proxima record store');
   });
 
   it('makes live data unmistakable from fixture bytes', () => {

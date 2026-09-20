@@ -43,19 +43,12 @@ describe('Stage 6 slice 21 optional Papers control', () => {
     expect(bridgeUrlForLaunch(query, '', true)).toBeNull();
   });
 
-  it('keeps browser startup viable when the optional bridge resolves to no automation directory', () => {
-    expect(MAIN_SOURCE).toContain(
-      'const bridgeUrl = bridgeUrlForLaunch(window.location.search, window.location.hash, BUILD_IDENTITY.agentBridgeEnabled);',
-    );
-    expect(MAIN_SOURCE).toContain(
-      'const automationDirectory = bridgeUrl ? createHttpDirectoryHandle(bridgeUrl) : null;',
-    );
-    expect(MAIN_SOURCE).toContain(
-      'const fixture = createBrowserSource();',
-    );
-    expect(MAIN_SOURCE).toContain(
-      "restored: { store: { restore: async () => automationDirectory }, permissions: { queryPermission: async () => automationDirectory ? 'granted' : 'denied' } },",
-    );
+  it('keeps browser startup independent of optional bridges and external sources', () => {
+    expect(MAIN_SOURCE).toContain('const resolved = await resolveBrowserRecordStoreSource();');
+    expect(MAIN_SOURCE).toContain('const standaloneReader = createMemoryVault({});');
+    expect(MAIN_SOURCE).toContain('restored: { store: { restore: async () => null }, permissions: { queryPermission: async () => \'denied\' } },');
+    expect(MAIN_SOURCE).not.toContain('createHttpDirectoryHandle');
+    expect(MAIN_SOURCE).not.toContain('createBrowserSource()');
 
     expect(MAIN_SOURCE).not.toContain('window.papers');
     expect(MAIN_SOURCE).not.toContain('postMessage(');
