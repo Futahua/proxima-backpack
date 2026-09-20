@@ -72,8 +72,7 @@ export type ProximaAction =
   | { type: 'calendar.navigate'; direction: 'previous' | 'next' }
   | { type: 'calendar.today' }
   | { type: 'calendar.select-month'; month: string }
-  | { type: 'calendar.shift-month'; delta: -1 | 1 }
-  | { type: 'fixture.reset' };
+  | { type: 'calendar.shift-month'; delta: -1 | 1 };
 
 const ACTION_TAXONOMY_MATCHES_PROTOCOL: [
   Exclude<ProximaAction['type'], RegisteredActionType>,
@@ -201,7 +200,7 @@ export interface ActionDispatcherState {
   state: ProximaState;
   problems: LoadProblem[];
   revisions: Record<string, string>;
-  mode: 'fixture' | 'live';
+  mode: 'fixture' | 'standalone' | 'live';
   surface: Surface;
   selection: string;
   tasksMode: TasksMode;
@@ -224,7 +223,7 @@ export interface ActionDispatcherOptions {
   state: ProximaState;
   problems?: LoadProblem[];
   revisions?: Record<string, string>;
-  mode?: 'fixture' | 'live';
+  mode?: 'fixture' | 'standalone' | 'live';
   initialSurface?: Surface;
   initialSelection?: string;
   initialTasksMode?: TasksMode;
@@ -863,10 +862,6 @@ export function parseAction(input: unknown): { ok: true; action: ProximaAction }
         };
   }
 
-  if (input.type === 'fixture.reset') {
-    return { ok: true, action: { type: input.type } };
-  }
-
   return {
     ok: false,
     error: {
@@ -1076,7 +1071,7 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
     state: options.state,
     problems: [...(options.problems ?? [])],
     revisions: { ...(options.revisions ?? {}) },
-    mode: options.mode ?? 'fixture',
+    mode: options.mode ?? 'standalone',
     surface: options.initialSurface ?? 'tasks',
     selection: options.initialSelection ?? ALL_PROJECTS,
     tasksMode: options.initialTasksMode ?? 'elastic',
@@ -1622,84 +1617,8 @@ export function createActionDispatcher(options: ActionDispatcherOptions): Proxim
         return resultFor(state, action.type, changed, requestId);
       }
 
-      if (state.mode !== 'fixture') {
-        const result = failureFor(
-          state,
-          action.type,
-          {
-            code: 'action-not-available',
-            message: 'fixture reset is only available in fixture mode',
-          },
-          requestId,
-        );
+      throw new Error('unreachable normalized action');
 
-        ring.append({
-          kind: 'action.rejected',
-          category: 'diagnostic',
-          entityIds: [],
-          requestId,
-          actionType: action.type,
-          stateRevision: state.stateRevision,
-          errorCode: result.error.code,
-        });
-        state.latestEventSequence = ring.latestSequence();
-        return result;
-      }
-
-      const resetElasticTarget = defaultElasticTargetTime(clock);
-      const resetTimekeepingPanels = defaultTimekeepingPanels();
-      const resetScheduleDate = scheduleDateForClock(clock);
-      const changed = state.surface !== 'tasks'
-        || state.selection !== ALL_PROJECTS
-        || state.tasksMode !== 'elastic'
-        || state.timekeepingPanels.calendar !== resetTimekeepingPanels.calendar
-        || state.timekeepingPanels.timeline !== resetTimekeepingPanels.timeline
-        || state.timekeepingPanels.countdowns !== resetTimekeepingPanels.countdowns
-        || state.scheduleMode !== 'month'
-        || state.scheduleDate !== resetScheduleDate
-        || state.projectWorkspaceTab !== 'notes'
-        || state.calendarMonth !== '2026-09-01'
-        || state.elasticTargetTime !== resetElasticTarget
-        || state.elasticLockedAt !== null
-        || state.canvasSelectedNodeId !== null;
-
-      state.surface = 'tasks';
-      state.selection = ALL_PROJECTS;
-      state.tasksMode = 'elastic';
-      state.timekeepingPanels = resetTimekeepingPanels;
-      state.scheduleMode = 'month';
-      state.scheduleDate = resetScheduleDate;
-      state.projectWorkspaceTab = 'notes';
-      state.calendarMonth = '2026-09-01';
-      state.elasticTargetTime = resetElasticTarget;
-      state.elasticLockedAt = null;
-      state.canvasSelectedNodeId = null;
-
-      if (changed) {
-        state.stateRevision += 1;
-      }
-
-      ring.append({
-        kind: 'action.accepted',
-        category: 'domain',
-        entityIds: [],
-        requestId,
-        actionType: action.type,
-        stateRevision: state.stateRevision,
-      });
-      ring.append({
-        kind: 'state.settled',
-        category: 'lifecycle',
-        entityIds: [],
-        requestId,
-        actionType: action.type,
-        stateRevision: state.stateRevision,
-      });
-      state.settledRevision = state.stateRevision;
-      state.settled = true;
-      state.latestEventSequence = ring.latestSequence();
-
-      return resultFor(state, action.type, changed, requestId);
     },
 
     replaceSource(input) {

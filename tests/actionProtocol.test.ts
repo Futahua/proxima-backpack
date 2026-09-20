@@ -159,22 +159,7 @@ describe('Gate 3A semantic action protocol', () => {
     });
     expect(isActionResult(canvas)).toBe(true);
 
-    expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({
-      ok: true,
-      changed: true,
-      stateRevision: 12,
-      snapshot: {
-        selection: 'all',
-        surface: 'tasks',
-        tasksMode: 'elastic',
-        scheduleMode: 'month',
-        projectWorkspaceTab: 'notes',
-        calendarMonth: '2026-09-01',
-      },
-    });
-
-    const noOp = dispatcher.dispatch({ type: 'fixture.reset' });
-    expect(noOp).toMatchObject({ ok: true, changed: false, stateRevision: 12 });
+    expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({ ok: false, outcome: 'validation-refused', error: { code: 'invalid-action' } });
     expect(isActionResult(dispatcher.dispatch({ type: 'calendar.shift-month', delta: -1 }))).toBe(true);
   });
 
@@ -446,8 +431,9 @@ describe('Gate 3A semantic action protocol', () => {
     dispatcher.dispatch({ type: 'elastic.lock' });
     dispatcher.dispatch({ type: 'elastic.unlock' });
     expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({
-      ok: true,
-      category: 'local-state',
+      ok: false,
+      outcome: 'validation-refused',
+      error: { code: 'invalid-action' },
     });
 
     const move = dispatcher.dispatch({
@@ -561,10 +547,10 @@ describe('Gate 3A semantic action protocol', () => {
     expect(await vaultByteHash(vault)).toBe(before);
   });
 
-  it('keeps fixture-only reset unavailable for a live dispatcher', async () => {
+  it('keeps the retired fixture reset unavailable to every dispatcher', async () => {
     const fixture = await loadVaultState(fixtureVault('vault-basic'));
     const dispatcher = createActionDispatcher({ state: fixture.state, mode: 'live' });
-    expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({ ok: false, error: { code: 'action-not-available' } });
+    expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({ ok: false, outcome: 'validation-refused', error: { code: 'invalid-action' } });
   });
 
   it('settles synchronously and emits deterministic accepted/rejected events for the same actions', async () => {

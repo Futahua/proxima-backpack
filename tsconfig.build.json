@@ -8,6 +8,6 @@
     "sourceMap": true,
     "resolveJsonModule": true
   },
-  "include": ["src"],
+  "files": ["src/browser/main.ts"],
   "exclude": ["src/browser/generated/fixtureVault.generated.ts"]
 }

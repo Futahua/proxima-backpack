@@ -64,7 +64,7 @@ describe('Stage 20 acceptance', () => {
     expect(initial.selection).toBe('all');
     expect(MAIN).not.toContain('initialSurface:');
     // And the harness is behind the disclosure this stage added, not in front of the cockpit.
-    expect(MAIN).toContain('renderAcceptanceTools(acceptanceToolsView)');
+    expect(MAIN).not.toContain('renderAcceptanceTools(acceptanceToolsView)');
     expect(MAIN).not.toContain('data-action="fsa-probe"');
   });
 
@@ -85,9 +85,9 @@ describe('Stage 20 acceptance', () => {
     expect(projection.degraded).toMatchObject({ state: 'healthy', blockingProblemCount: 0 });
     expect(projection.recordRevisions).toEqual([]);
     expect(projection.sourceRevisions).toEqual([]);
-    // The shell installs it, and the acceptance hook beside it, for the agent path.
-    expect(MAIN).toContain('__PROXIMA_INSPECTION__');
-    expect(MAIN).toContain('createInspectionProjection(');
+    // Standalone startup does not install the retired external-vault inspection hook.
+    expect(MAIN).not.toContain('__PROXIMA_INSPECTION__');
+    expect(MAIN).not.toContain('createInspectionProjection(');
   });
 
   it('removes user-visible diagnostics without removing machine-readable diagnostics', () => {
@@ -117,7 +117,7 @@ describe('Stage 20 acceptance', () => {
     expect(headerStart).toBeGreaterThan(0);
     const header = MAIN.slice(headerStart, MAIN.indexOf('</header>', headerStart));
     expect(header).toContain('source-refresh-button');
-    expect(header).toContain('renderAcceptanceTools(acceptanceToolsView)');
+    expect(header).not.toContain('renderAcceptanceTools(acceptanceToolsView)');
     expect(header).not.toContain('fsa-probe');
     expect(header).not.toContain('refresh-health');
     expect(header).not.toContain('diagnostics');

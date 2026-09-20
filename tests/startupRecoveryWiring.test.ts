@@ -163,7 +163,7 @@ describe('startup reconciliation wiring', () => {
     const root = resolve(import.meta.dirname, '..');
     const main = readFileSync(resolve(root, 'src/browser/main.ts'), 'utf8');
     // The shell composes operations, never storage: it names the adapter function and nothing else.
-    expect(main).toContain('runRecovery: ({ sourceMode }) => resolveBrowserRecoveryStartup(');
+    expect(main).toContain('runRecovery: () => resolveBrowserRecoveryStartup(');
     expect(main).not.toContain('createBrowserOpfsRecordStoreFileBackend');
     const adapter = readFileSync(resolve(root, 'src/adapters/browserTaskMutations.ts'), 'utf8');
     expect(adapter).toContain('export async function resolveBrowserRecoveryStartup(');

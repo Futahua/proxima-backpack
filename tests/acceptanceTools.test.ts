@@ -60,27 +60,20 @@ describe('Stage 20 acceptance-probe chrome', () => {
   });
 
   it('puts the disclosure in the shell header and leaves no probe button outside it', () => {
-    expect(MAIN).toContain('renderAcceptanceTools(acceptanceToolsView)');
-    expect(MAIN).toContain("action === 'acceptance-tools'");
-    expect(MAIN).toContain('acceptanceToolsAfterToggle(acceptanceToolsView)');
-    // The inline probe buttons are gone from the template: rendered by the region instead.
+    expect(MAIN).not.toContain('renderAcceptanceTools(acceptanceToolsView)');
+    expect(MAIN).not.toContain("action === 'acceptance-tools'");
+    expect(MAIN).not.toContain('acceptanceToolsAfterToggle(acceptanceToolsView)');
+    // Standalone Proxima has no external-folder acceptance controls in its product shell.
     expect(MAIN).not.toContain('data-action="fsa-probe"');
     expect(MAIN).not.toContain('data-action="fsa-reread"');
   });
 
   it('keeps the machine-readable evidence the acceptance runs read', () => {
-    // The inspection report the agent path reads.
-    expect(MAIN).toContain('target.__PROXIMA_INSPECTION__');
-    // The hook an acceptance run declares observed evidence through.
-    expect(MAIN).toContain('__PROXIMA_REAL_VAULT_ACCEPTANCE__');
-    // Every status element an acceptance run reads by id, still rendered by the shell.
+    // External-vault evidence is not part of the standalone product shell.
+    expect(MAIN).not.toContain('target.__PROXIMA_INSPECTION__');
+    expect(MAIN).not.toContain('__PROXIMA_REAL_VAULT_ACCEPTANCE__');
     for (const id of [
-      'build-identity',
       'hydration-summary',
-      'fsa-probe-status',
-      'fsa-acceptance-status',
-      'real-vault-acceptance-status',
-      'creator-vault-preflight-status',
     ]) {
       expect(MAIN, `${id} must stay in the shell`).toContain(`id="${id}"`);
     }

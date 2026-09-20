@@ -13,7 +13,7 @@
  * crash. So every status renders, including the clean one, and `tone` is `attention` for everything
  * except a reconciliation that actually resolved everything it found.
  */
-import type { StartupRecoveryInspection } from '../app/startupSession.js';
+import type { StandaloneRecoveryInspection as StartupRecoveryInspection } from '../app/standaloneStartupSession.js';
 
 export interface RecoveryNoticeView {
   readonly status: StartupRecoveryInspection['status'];

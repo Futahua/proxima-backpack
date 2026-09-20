@@ -23,7 +23,7 @@
 import { createCanonicalJsonRecordStore } from '../app/canonicalRecordCodec.js';
 import { createDurableRecoveryStore } from '../app/vaultRecovery.js';
 import { startRecordMutationAuthority } from '../app/recordRecoveryStartup.js';
-import type { StartupRecoveryCandidate } from '../app/startupSession.js';
+import type { StandaloneRecoveryCandidate as StartupRecoveryCandidate } from '../app/standaloneStartupSession.js';
 import { readRecordStoreActivation } from '../app/recordStoreActivation.js';
 import {
   archiveProject,

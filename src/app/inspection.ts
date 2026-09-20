@@ -59,7 +59,7 @@ export interface RecordRecoveryBlockedInspection {
 export interface InspectionProjection {
   schemaVersion: typeof INSPECTION_SCHEMA_VERSION;
   build: BuildIdentityLike;
-  mode: 'fixture' | 'live';
+  mode: 'fixture' | 'standalone' | 'live';
   applicationStateRevision: number;
   surface: Surface;
   submode: TasksMode | ScheduleMode | ProjectWorkspaceTab | null;
@@ -244,7 +244,7 @@ function inspectionSubmode(dispatcher: ActionDispatcherState): InspectionProject
   return null;
 }
 
-function safeProblem(problem: LoadProblem, mode: 'fixture' | 'live'): InspectionProjection['loadProblems'][number] {
+function safeProblem(problem: LoadProblem, mode: 'fixture' | 'standalone' | 'live'): InspectionProjection['loadProblems'][number] {
   const path = mode === 'fixture' ? safeText(problem.path.replaceAll('\\', '/'), 260) : undefined;
   return { code: problem.code, severity: problem.severity, ...(problem.id ? { id: safeText(problem.id) } : {}), ...(path ? { path } : {}), detail: safeText(problem.detail) };
 }

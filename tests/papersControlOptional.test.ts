@@ -46,7 +46,8 @@ describe('Stage 6 slice 21 optional Papers control', () => {
   it('keeps browser startup independent of optional bridges and external sources', () => {
     expect(MAIN_SOURCE).toContain('const resolved = await resolveBrowserRecordStoreSource();');
     expect(MAIN_SOURCE).toContain('const standaloneReader = createMemoryVault({});');
-    expect(MAIN_SOURCE).toContain('restored: { store: { restore: async () => null }, permissions: { queryPermission: async () => \'denied\' } },');
+    expect(MAIN_SOURCE).toContain('createStandaloneStartupSession({');
+    expect(MAIN_SOURCE).not.toContain('restored: { store: { restore: async () => null }, permissions: { queryPermission: async () => \'denied\' } },');
     expect(MAIN_SOURCE).not.toContain('createHttpDirectoryHandle');
     expect(MAIN_SOURCE).not.toContain('createBrowserSource()');
 

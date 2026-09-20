@@ -26,7 +26,9 @@ const RETIRED_ATTRIBUTE = ['data', 'c1', 'key'].join('-');
 const HOST_KEY_MAX_COUNT = 256;
 const HOST_KEY_MAX_LENGTH = 128;
 const HOST_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]*$/;
-const MINIMUM_APP_KEYS = 60;
+// An empty first-launch record store intentionally renders fewer record cards than
+// the historical fixture boot, but the standalone shell still publishes its core keys.
+const MINIMUM_APP_KEYS = 40;
 
 const projectRoot = resolve(import.meta.dirname, '..');
 const bundlePath = resolve(projectRoot, 'public/build/browser/main.js');

@@ -97,7 +97,6 @@ const REGISTRY = {
   'calendar.today': 'local-state',
   'calendar.select-month': 'local-state',
   'calendar.shift-month': 'local-state',
-  'fixture.reset': 'local-state',
 } as const satisfies Readonly<Record<string, ActionCategory>>;
 
 export type RegisteredActionType = keyof typeof REGISTRY;

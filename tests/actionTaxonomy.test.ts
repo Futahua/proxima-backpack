@@ -192,13 +192,11 @@ describe('Stage 0 dispatcher results', () => {
     expect(isActionResult(result)).toBe(true);
   });
 
-  it('an unavailable action is refused as unavailable, not as invalid', async () => {
+  it('a retired fixture action is rejected as invalid', async () => {
     const d = await dispatcher('live');
     const result = d.dispatch({ type: 'fixture.reset' });
-    // The request was well formed; the capability was absent. A caller retries one of
-    // those and not the other.
-    expect(result).toMatchObject({ ok: false, outcome: 'unavailable', error: { code: 'action-not-available' } });
-    expect(isTerminalRefusal('unavailable')).toBe(true);
+    expect(result).toMatchObject({ ok: false, outcome: 'validation-refused', error: { code: 'invalid-action' } });
+    expect(isTerminalRefusal('validation-refused')).toBe(true);
   });
 
   it('malformed input is refused before anything is dispatched', async () => {

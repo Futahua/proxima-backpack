@@ -1,17 +1,11 @@
 import { createActionDispatcher, type ActionResult, type ProjectWorkspaceTab, type ProximaActionDispatcher, type ScheduleMode, type Surface, type TasksMode, type TimekeepingPanelVisibility } from '../app/actionProtocol.js';
 import type { SemanticAuditEvent } from '../app/semanticAudit.js';
-import { createInspectionProjection } from '../app/inspection.js';
 import type { ReadOnlyProjection } from '../app/readOnlyProjection.js';
-import { evaluateRealVaultAcceptance, isRealVaultAcceptanceReport, type RealVaultAcceptanceReport } from '../app/realVaultAcceptance.js';
-import { evaluateCreatorVaultPreflight, isCreatorVaultPreflightReport, type CreatorVaultPreflightReport } from '../app/creatorVaultPreflight.js';
-import { coexistenceReadiness, declareCoexistenceReadiness } from './coexistenceReadiness.js';
-import { evaluateRealVaultRunbook } from '../app/realVaultRunbook.js';
-import { createStartupSessionOrchestrator, type StartupInspection } from '../app/startupSession.js';
+import { createStandaloneStartupSession, type StandaloneStartupInspection } from '../app/standaloneStartupSession.js';
 import { resolveBrowserRecordStoreSource } from '../adapters/recordStoreStartupSource.js';
 import { resolveBrowserTaskMutations, resolveBrowserRecoveryStartup, type BrowserRecordMutations } from '../adapters/browserTaskMutations.js';
 import { performElasticDrop } from '../app/elasticDropAction.js';
 import { normalizeSemanticKeyValues } from './semanticKeyValue.js';
-import { hostZone } from './hostTimeZone.js';
 import { performWorkflowDrop } from '../app/workflowBoardDrop.js';
 import { bulkCompleteTasks, bulkDeleteTasks, type BulkTaskActionReport } from '../app/bulkTaskActions.js';
 import { deleteTaskAction, saveTaskAction } from '../app/taskEditorWrite.js';
@@ -23,8 +17,6 @@ import type { RefreshReason, RefreshResult } from '../app/refreshController.js';
 import { executeSourceRefreshAction } from '../app/sourceRefreshAction.js';
 import { loadProjectNotePreview, loadProjectNotesTree } from '../app/projectNotes.js';
 import { createUiHealthModel, type UiHealthModel } from '../app/uiHealth.js';
-import { evaluateCleanProfileAcceptance } from '../app/fsaEvidence.js';
-import { pickAndProbeDirectory, rereadSelectedDirectory, restoreAndProbeDirectory } from '../app/fsaProbe.js';
 import { createMemoryVault } from '../adapters/memoryVault.js';
 import { fixedClock, sequentialIdGenerator, systemClock } from '../domain/clock.js';
 import type { LoadProblem } from '../domain/problems.js';
@@ -33,7 +25,6 @@ import { opaqueRecurrenceSeriesIdFromRandomBytes } from '../domain/canonicalRecu
 import { ALL_PROJECTS, UNCATEGORISED, elasticBoard, projectsFor, reconcileSelection, tasksForSelection } from '../domain/selectors.js';
 import type { ProximaState, ElasticColumn, Task } from '../domain/types.js';
 import { BUILD_IDENTITY } from './generated/buildIdentity.generated.js';
-import { refreshEvidenceFromProjections, renameDeleteEvidenceFromProjections } from './realVaultLive.js';
 import { bindRefreshWiring } from './refreshWiring.js';
 import { bindCanvasSurfaceInteractions, CANVAS_SURFACE_WRITE_REFUSAL, createCanvasDropQueue, EMPTY_CANVAS_SURFACE, EMPTY_CANVAS_SURFACE_VIEW, renderCanvasSurface, type CanvasSurfaceState, type CanvasSurfaceViewState } from './canvasSurface.js';
 import type { BrowserFileLike } from './canvasFileAdmission.js';
@@ -86,7 +77,6 @@ import { archiveProjectAction, createProjectAction, deleteProjectAction, restore
 import { planProjectFieldMutations, projectEditorDraftFor, type ProjectEditorDraft } from '../app/projectEditor.js';
 import { createEventAction, deleteEventAction, rescheduleEventAction, resizeEventAction, saveEventAction, saveEventFormAction, type EventFormSaveOutcome, type EventWriteOutcome } from '../app/eventWriteActions.js';
 import { changeTaskDatesAction } from '../app/timelineChangeAction.js';
-import { acceptanceToolsAfterToggle, EMPTY_ACCEPTANCE_TOOLS_VIEW, renderAcceptanceTools, type AcceptanceToolsViewState } from './acceptanceTools.js';
 import { createWorkflowStageAction, deleteWorkflowStageAction, renameWorkflowStageAction, type WorkflowStageWriteOutcome } from '../app/workflowStageWriteActions.js';
 import { skipOccurrenceFromScope, updateOccurrenceFromScope } from './scheduleScopeWiring.js';
 import { eventEditorDraftFor, type EventEditorDraft } from '../app/eventEditor.js';
@@ -153,7 +143,6 @@ let projectWorkflowStageForm: ProjectWorkflowBoardViewState['stageForm'] = null;
 let projectWorkflowStageRefusal: string | null = null;
 let projectWorkflowStageFeedback: string | null = null;
 /** The acceptance-probe disclosure: closed on an ordinary boot, so the product leads. */
-let acceptanceToolsView: AcceptanceToolsViewState = EMPTY_ACCEPTANCE_TOOLS_VIEW;
 /** The lifecycle line the Projects Hub draws: an outcome's own words, or the refusal's. */
 let projectLifecycleFeedback: string | null = null;
 /** The refusal code that sentence belongs to, null when the last attempt was accepted. */
@@ -210,10 +199,8 @@ let newTaskRefusal: string | null = null;
 let elasticProgressTimer: number | null = null;
 let actionDispatcher: ProximaActionDispatcher | null = null;
 let sourceSession: SourceSession | null = null;
-let startupInspection: StartupInspection | null = null;
+let startupInspection: StandaloneStartupInspection | null = null;
 let sourceProjection: ReadOnlyProjection | null = null;
-let lastRefreshEvidence: Parameters<typeof evaluateRealVaultAcceptance>[0]['refreshEvidence'];
-let lastRenameDeleteEvidence: Parameters<typeof evaluateRealVaultAcceptance>[0]['renameDeleteEvidence'];
 let canvasState: CanvasSurfaceState = EMPTY_CANVAS_SURFACE;
 let canvasView: CanvasSurfaceViewState = EMPTY_CANVAS_SURFACE_VIEW;
 const canvasPreviewRegistry = createCanvasPreviewRegistry({ createObjectURL: (blob) => URL.createObjectURL(blob), revokeObjectURL: (url) => URL.revokeObjectURL(url) });
@@ -484,63 +471,6 @@ function updateHydrationSummary(state: ProximaState, problems: LoadProblem[]): v
   setText('#hydration-summary', JSON.stringify({ mode: currentSourceMode(), hydrationRevision: `record-store:${sourceProjection?.generation ?? 0}`, applicationStateRevision: actionDispatcher?.snapshot().stateRevision ?? 0, sourceHealth: currentUiHealth(), surface, selection, projects: state.projects.length, tasks: state.tasks.length, events: state.events.length, problems: problems.length, fixedClock: BUILD_IDENTITY.fixedClock, deterministicIds: false }, null, 2));
 }
 
-function exposeInspection(): void {
-  if (!actionDispatcher) return;
-  const inspection = createInspectionProjection(actionDispatcher.snapshot(), BUILD_IDENTITY, currentUiHealth(), hostZone());
-  const session = sourceSession?.snapshot();
-  const report = evaluateRealVaultAcceptance({
-    build: BUILD_IDENTITY,
-    startup: startupInspection ?? { startupSourceMode: 'record-store', restoredHandlePresent: false, bootstrapStatus: 'no-restored-handle' },
-    session: { sourceMode: session?.sourceMode ?? 'record-store', sourceGeneration: session?.sourceGeneration ?? sourceProjection?.generation ?? 1, transitionState: session?.transitionState ?? 'stable' },
-    projection: sourceProjection ?? { generation: 1, state: actionDispatcher.snapshot().state, health: currentUiHealth(), revisions: actionDispatcher.snapshot().revisions, problems: actionDispatcher.snapshot().problems },
-    inspection,
-    refreshEvidence: lastRefreshEvidence,
-    renameDeleteEvidence: lastRenameDeleteEvidence,
-    writeInvariant: { writesAttempted: 0, writerMethodsCalled: [] },
-  });
-  const runbook = evaluateRealVaultRunbook({ report, expectedBuildSha: BUILD_IDENTITY.gitSha });
-  const preflight = evaluateCreatorVaultPreflight({ acceptance: report, runbook, coexistence: coexistenceReadiness(), expectedBuildSha: BUILD_IDENTITY.gitSha });
-  const target = globalThis as typeof globalThis & { __PROXIMA_INSPECTION__?: () => typeof inspection; __PROXIMA_REAL_VAULT_ACCEPTANCE__?: (report: unknown) => void; __PROXIMA_CREATOR_VAULT_PREFLIGHT__?: (report: unknown) => void; __PROXIMA_DECLARE_COEXISTENCE__?: (evidence: unknown) => void };
-  target.__PROXIMA_INSPECTION__ = () => createInspectionProjection(actionDispatcher!.snapshot(), BUILD_IDENTITY, currentUiHealth());
-  target.__PROXIMA_REAL_VAULT_ACCEPTANCE__ = (report) => { if (isRealVaultAcceptanceReport(report)) renderRealVaultAcceptance(report); };
-  target.__PROXIMA_CREATOR_VAULT_PREFLIGHT__ = (report) => { if (isCreatorVaultPreflightReport(report)) renderCreatorVaultPreflight(report); };
-  // An acceptance run declares observed Gate 6M evidence here; the surface never
-  // infers it. Absent a declaration the preflight stays BLOCKED, which is true.
-  target.__PROXIMA_DECLARE_COEXISTENCE__ = (evidence) => {
-    if (!evidence || typeof evidence !== 'object') return;
-    declareCoexistenceReadiness(evidence as Record<string, boolean>);
-    exposeInspection();
-  };
-  const root = element<HTMLElement>('#proxima-app');
-  root.dataset.proximaStateRevision = String(inspection.applicationStateRevision);
-  root.dataset.proximaHealthGeneration = String(inspection.sourceHealth.sourceRevision);
-  renderRealVaultAcceptance(report);
-  renderCreatorVaultPreflight(preflight);
-}
-
-function renderFsaProbe(report: unknown): void {
-  setText('#fsa-probe-status', JSON.stringify(report, null, 2));
-  setText('#fsa-acceptance-status', JSON.stringify(evaluateCleanProfileAcceptance(report, {
-    proximaVersion: BUILD_IDENTITY.proximaVersion,
-    gitSha: BUILD_IDENTITY.gitSha,
-    buildMode: BUILD_IDENTITY.buildMode,
-    fixtureHash: BUILD_IDENTITY.fixtureHash,
-  }), null, 2));
-}
-
-function renderRealVaultAcceptance(report: RealVaultAcceptanceReport): void {
-  if (isRealVaultAcceptanceReport(report)) setText('#real-vault-acceptance-status', JSON.stringify(report, null, 2));
-}
-
-function renderCreatorVaultPreflight(report: CreatorVaultPreflightReport): void {
-  if (isCreatorVaultPreflightReport(report)) setText('#creator-vault-preflight-status', JSON.stringify(report, null, 2));
-}
-
-async function runFsaProbe(): Promise<void> {
-  try { renderFsaProbe(await pickAndProbeDirectory()); }
-  catch (error) { renderFsaProbe({ error: error instanceof Error ? error.message : String(error) }); }
-}
-
 function syncElasticProgressTimer(): void {
   const shouldTick = shouldTickElasticProgress(
     currentSourceMode() === 'external' ? 'external' : 'fixture',
@@ -622,11 +552,10 @@ function render(): void {
   });
   if (surfaceMarkup.failure) root.dataset.proximaRendererFailure = surfaceMarkup.failure.code;
   else delete root.dataset.proximaRendererFailure;
-  root.innerHTML = `<div class="app-shell" data-papers-visual-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span data-papers-visual-key="workspace-identity" data-workspace-writes="${workspaceWritesFor(sourceMode, writesAvailable)}">${escapeHtml(workspaceIdentity)}</span></div></div><div class="header-state"><span class="read-only-badge" data-papers-visual-key="source-mode-badge" data-proxima-source-mode="${sourceMode}" data-proxima-live-data="${admissionView.liveData}">${escapeHtml(sourceLabel)}</span><span class="admission-badge" data-papers-visual-key="write-admission" data-write-admission="${admissionView.machineValue}" data-write-admission-reason="${admissionView.reason}">${escapeHtml(admissionView.sentence)}</span><span class="recovery-badge" data-papers-visual-key="startup-recovery" data-startup-recovery="${recoveryView.machineValue}" data-startup-recovery-tone="${recoveryView.tone}" data-startup-recovery-authority="${recoveryView.mutationAuthority}">${escapeHtml(recoveryView.sentence)}</span><span class="hydrated-badge" data-papers-visual-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-papers-visual-key="source-refresh-button">Refresh source</button>${renderAcceptanceTools(acceptanceToolsView)}</div></header>${healthSurface(health)}<div class="app-layout">${renderProjectNavigation(appState, selection)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-papers-visual-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre><pre id="fsa-probe-status">Not run</pre><pre id="fsa-acceptance-status">Not run</pre><pre id="real-vault-acceptance-status">Not run</pre><pre id="creator-vault-preflight-status" data-papers-visual-key="creator-vault-preflight-status">Not run</pre></details></div>`;
+  root.innerHTML = `<div class="app-shell" data-papers-visual-key="app-root"><header class="app-header"><div class="brand"><span class="brand-mark">P</span><div><h1>Proxima</h1><span data-papers-visual-key="workspace-identity" data-workspace-writes="${workspaceWritesFor(sourceMode, writesAvailable)}">${escapeHtml(workspaceIdentity)}</span></div></div><div class="header-state"><span class="read-only-badge" data-papers-visual-key="source-mode-badge" data-proxima-source-mode="${sourceMode}" data-proxima-live-data="${admissionView.liveData}">${escapeHtml(sourceLabel)}</span><span class="admission-badge" data-papers-visual-key="write-admission" data-write-admission="${admissionView.machineValue}" data-write-admission-reason="${admissionView.reason}">${escapeHtml(admissionView.sentence)}</span><span class="recovery-badge" data-papers-visual-key="startup-recovery" data-startup-recovery="${recoveryView.machineValue}" data-startup-recovery-tone="${recoveryView.tone}" data-startup-recovery-authority="${recoveryView.mutationAuthority}">${escapeHtml(recoveryView.sentence)}</span><span class="hydrated-badge" data-papers-visual-key="hydration-state">Hydrated</span><button type="button" data-action="source-refresh" data-papers-visual-key="source-refresh-button">Refresh source</button></div></header>${healthSurface(health)}<div class="app-layout">${renderProjectNavigation(appState, selection)}<main class="main-content">${surfaceSwitcher()}${surfaceMarkup.markup}${diagnosticsSurface(problems)}</main></div><footer class="app-footer" data-papers-visual-key="app-footer"><span>Fixed clock ${escapeHtml(BUILD_IDENTITY.fixedClock)}</span><span>Build ${escapeHtml(BUILD_IDENTITY.gitSha.slice(0, 8))}</span></footer><details class="build-details"><summary>Build identity and hydration evidence</summary><pre id="build-identity">${escapeHtml(JSON.stringify(BUILD_IDENTITY, null, 2))}</pre><pre id="hydration-summary"></pre></details></div>`;
   normalizeSemanticKeyValues(root);
   syncElasticProgressTimer();
   updateHydrationSummary(appState, problems);
-  exposeInspection();
 }
 
 function dispatchAction(input: unknown): ActionResult | null {
@@ -670,11 +599,6 @@ function currentSourceMode(): SourceMode {
 }
 
 function applyProjection(next: ReadOnlyProjection, mode: SourceMode, result?: RefreshResult): void {
-  const previous = sourceProjection;
-  if (result) {
-    lastRefreshEvidence = refreshEvidenceFromProjections(previous, next, result);
-    lastRenameDeleteEvidence = renameDeleteEvidenceFromProjections(previous, next, result.outcome) ?? lastRenameDeleteEvidence;
-  }
   if (actionDispatcher) {
     const applied = actionDispatcher.replaceSource({ state: next.state, problems: next.problems, revisions: next.revisions, sourceRevision: next.generation });
     sourceProjection = { ...next, health: { ...next.health, applicationRevision: applied.stateRevision } };
@@ -1996,14 +1920,7 @@ function bindInteractions(): void {
     const button = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (!button || !appState) return;
     const action = button.dataset.action;
-    if (action === 'acceptance-tools') {
-      acceptanceToolsView = acceptanceToolsAfterToggle(acceptanceToolsView);
-      render();
-    } else if (action === 'fsa-probe') {
-      void runFsaProbe();
-    } else if (action === 'fsa-reread') {
-      void rereadSelectedDirectory().then((report) => renderFsaProbe(report ?? { error: 'No selected directory handle' }));
-    } else if (action === 'switch-surface') {
+    if (action === 'switch-surface') {
       const next = button.dataset.surface as Surface;
       if (next !== 'tasks' && next !== 'schedule' && next !== 'projects' && next !== 'canvas') return;
       dispatchAction({ type: 'surface.select', surface: next });
@@ -2075,23 +1992,20 @@ async function boot(): Promise<void> {
   const standaloneReader = createMemoryVault({});
   const loaded = await recordStore.load();
 
-  const startup = createStartupSessionOrchestrator({
-    fixture: { mode: 'record-store', reader: standaloneReader, source: recordStore, initial: loaded },
-    recordStore,
+  const startup = createStandaloneStartupSession({
+    source: recordStore,
+    reader: standaloneReader,
+    initial: loaded,
     sourceDecision,
-    restored: { store: { restore: async () => null }, permissions: { queryPermission: async () => 'denied' } },
     intervalMs: 60_000,
     onProjection: (projection, mode, result) => applyProjection(projection, mode, result),
-    // The journal is reconciled on the boot, not on the first write gesture. The clock rule is
-    // the one the write path follows: a deterministic run stays deterministic, and only a live
-    // external source gets wall time.
-    runRecovery: ({ sourceMode }) => resolveBrowserRecoveryStartup({ standalone: true, clock: sourceMode === 'external' ? systemClock : FIXED_CLOCK }),
+    runRecovery: () => resolveBrowserRecoveryStartup({ standalone: true, clock: FIXED_CLOCK }),
   });
   const started = await startup.start();
   sourceSession = started.session;
   startupInspection = started.inspection;
   applyProjection(sourceSession.projection(), sourceSession.snapshot().sourceMode);
-  actionDispatcher = createActionDispatcher({ state: appState!, problems: loadProblems, revisions: sourceProjection!.revisions, mode: sourceSession.snapshot().sourceMode === 'external' ? 'live' : 'fixture', initialSourceRevision: sourceProjection!.generation, initialCalendarMonth: '2026-09-01', clock: sourceSession.snapshot().sourceMode === 'external' ? systemClock : FIXED_CLOCK, idGenerator: DETERMINISTIC_IDS, canvasNodeExists: (nodeId) => canvasState.items.some((item) => item.node.id === nodeId) });
+  actionDispatcher = createActionDispatcher({ state: appState!, problems: loadProblems, revisions: sourceProjection!.revisions, mode: sourceSession.snapshot().sourceMode === 'external' ? 'live' : 'standalone', initialSourceRevision: sourceProjection!.generation, initialCalendarMonth: '2026-09-01', clock: sourceSession.snapshot().sourceMode === 'external' ? systemClock : FIXED_CLOCK, idGenerator: DETERMINISTIC_IDS, canvasNodeExists: (nodeId) => canvasState.items.some((item) => item.node.id === nodeId) });
   const initial = actionDispatcher.snapshot();
   selection = initial.selection;
   surface = initial.surface;
@@ -2117,7 +2031,6 @@ async function boot(): Promise<void> {
   // Resolved once so the Task editor knows whether Save and Delete are real controls before a
   // reader opens it: the answer is a property of this run, not of the gesture that needs it.
   void resolveTaskWritePath().then(async () => { await reloadPropertySchemaProjection(); render(); }).catch(() => undefined);
-  void restoreAndProbeDirectory().then((report) => { if (report) renderFsaProbe(report); }).catch(() => undefined);
 }
 
 boot().catch((error: unknown) => {

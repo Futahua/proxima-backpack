@@ -152,13 +152,8 @@ describe('Stage 6 slice 4 Canvas semantic action seam', () => {
     expect(dispatcher.snapshot().canvasSelectedNodeId).toBe(NODE_ID);
 
     const reset = dispatcher.dispatch({ type: 'fixture.reset' });
-    expect(reset).toMatchObject({
-      ok: true,
-      changed: true,
-      snapshot: {
-        canvasSelectedNodeId: null,
-      },
-    });
+    expect(reset).toMatchObject({ ok: false, outcome: 'validation-refused', error: { code: 'invalid-action' } });
+    expect(dispatcher.snapshot().canvasSelectedNodeId).toBe(NODE_ID);
   });
 
   it('returns typed unavailable for existing-node geometry/removal without changing application or record state', async () => {

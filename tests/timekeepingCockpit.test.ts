@@ -943,14 +943,15 @@ describe('Timekeeping composition shell and Deadline Calendar', () => {
     });
 
     expect(dispatcher.dispatch({ type: 'fixture.reset' })).toMatchObject({
-      ok: true,
-      category: 'local-state',
+      ok: false,
+      outcome: 'validation-refused',
+      error: { code: 'invalid-action' },
     });
 
     expect(dispatcher.snapshot().timekeepingPanels).toEqual({
-      calendar: true,
-      timeline: false,
-      countdowns: false,
+      calendar: false,
+      timeline: true,
+      countdowns: true,
     });
 
     expect(JSON.stringify(dispatcher.snapshot().state)).toBe(beforeRecords);
